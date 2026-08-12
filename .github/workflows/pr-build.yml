@@ -17,8 +17,10 @@ jobs:
 
       - name: Use Bun
         uses: oven-sh/setup-bun@v1
-      - name: bun install, and start
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Verify ERA firmware contracts
+        run: bun run verify:firmware-contracts
+      - name: Build
         run: |
-          bun install
-          bun run refresh-kbs
           bun run build
