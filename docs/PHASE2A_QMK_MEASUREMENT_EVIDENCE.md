@@ -6,21 +6,46 @@
 
 ## 조사 기준선
 
-- App: `feat/era-state-sync` / `e3dddb2b110bb34eb707ff83dd902949d86909a4`
-- QMK reference 종료 상태: `goal/era-arch-autonomous-run` /
-  `3086079c96e41b082d95fa62a6b9da02932febd0` (clean, 읽기 전용)
+- App: `feat/era-state-sync` / `8a431b688fdfa2be86eb5dfdab8ed79b365d2b45`
+- QMK reference 재검증 상태: `goal/era-arch-autonomous-run` /
+  `3dc9addb4310a6dd3a0f9b27739466e64b748fe5` (clean, 읽기 전용)
 - H7S reference: `main` / `cd4473b7896549bb5481b873901da7fc8b5320e4`
-  (clean, 읽기 전용)
+  (clean, 읽기 전용, 변동 없음)
 - upstream `the-via/app` `main`: `510317d811efed929e5cc6543a7ea4495b03b00e`
 
 QMK/H7S 기준선은 움직일 수 있다. 구현 에이전트는 작업 시작 직전에 다시 확인해야 하며,
 위 해시가 다르면 이 문서의 line number보다 새 HEAD의 함수와 owner를 우선한다.
 
-QMK는 조사 시작의 clean `391d31735eceabd3e26508035101d90c7335b420`에서 종료 전
-`3086079c96e41b082d95fa62a6b9da02932febd0`으로 외부 이동했다. 사이의 `33667489a5`,
-`3086079c96`은 `era_performance_gates.md`, `era_source_map.md`,
-`era_verification_ledger.md`만 바꾼 문서 commit이다. 아래 관련 source path의 diff는 비어 있어
-call chain과 line number가 유지됨을 다시 확인했다.
+### 2026-08-13 2차 재검증
+
+1차 조사는 clean `391d3173...` → `3086079c...` 이동 중에 이뤄졌고 그 두 commit은 문서
+전용이었다. 이후 QMK는 네 commit(`69fc8fbb46`, `97c8a13ab8`, `eb79545ddc`, `3dc9addb43`)만큼
+더 이동했고, **이번에는 문서 전용이 아니라 실제 source를 바꿨다** —
+`tomak_common.c`, `tomak79h.c`, `era_split_board.h`, `era_board_hooks.[ch]`,
+`era_nonsplit_board.[ch]`, `era_sram_resident_rules.mk`, `quantum/rgb_matrix/rgb_matrix.c`.
+
+`3dc9addb43`에서 이 문서가 인용한 owner를 전부 다시 대조한 결과는 다음과 같다.
+
+- **§1 call chain과 §2 timestamp hook의 line number는 전부 그대로다.** 해당 파일
+  (`quantum/via.c`, `raw_hid.c`, `tmk_core/protocol/host.c`, `chibios.c`, `usb_main.c`,
+  `usb_driver.c`, `quantum/main.c`)은 네 commit이 건드리지 않았고, 각 심볼 위치를 직접
+  확인했다: `via.c:290/296/300/481`, `usb_main.c:433/510/517`, `send_report():392`,
+  `usb_driver.c:55/185/230/252/326`, `raw_hid.c:7-9`, `host.c:346`, `chibios.c:69-78`.
+- **§3 test 기반도 그대로다**: `build_test.mk:47-75`, `testlist.mk:1-23`,
+  `platforms/test/timer.c:56/63/68`, `host_driver.h:26-35`.
+- **§9의 storage owner도 그대로다**: `era_host_peer_storage.c`의 `:956`, `:997`, `:1948`,
+  `apply_write_finish():1953`(reload `:1965`), `push_apply_finish():2009`(reload `:2026`).
+- **한 곳이 실제로 밀렸다.** domain reload owner
+  `era_split_eeprom_sync_reload_domain_kb()`는 `tomak_common.c:290-316`이 아니라 현재
+  **`:289-315`**다. `69fc8fbb46`이 `era_board_hooks.h` include 한 줄을 지워 1줄 위로
+  이동했다. 아래 §9는 교정된 값을 쓴다.
+
+같은 네 commit이 `era_sram_resident_rules.mk`에 새 refusal을 추가했다: copy-to-RAM bundle은
+이제 `ERA_BOARD_COMMON_ENABLE=yes`를 요구하고 아니면 `$(error)`로 멈춘다. 새 selector를
+추가할 때 건드리면 안 되는 non-composition이 하나 늘었다.
+
+App 쪽은 이 재검증에서 source/test를 바꾸지 않았고 `bun run test:transport`는 9 pass /
+60 assertions로 동일했다.
 
 ## 권고안
 
@@ -119,9 +144,24 @@ ISR에서는 고정된 소수 byte만 복사한다.
   `advance_time()`
 - `tmk_core/protocol/host_driver.h:26-35`: `RAW_ENABLE`에서
   `host_driver_t.send_raw_hid` 제공
-- `tests/test_common/TestDriver`는 raw sender mock을 제공하지 않으므로 새 test fixture가 자체
-  `host_driver_t`와 captured-report vector를 소유해야 한다.
-- 현재 `tests/`에는 VIA/raw HID handler를 직접 검증하는 target이 없다.
+- `platforms/test/eeprom.c`: `eeprom_read/write/update_byte|word|dword|block` 전체를 단순 RAM
+  buffer로 제공한다. `via.c` → `dynamic_keymap.c`/`nvm_via.c`가 요구하는 EEPROM 후단이 TEST에
+  존재한다는 뜻이다.
+- `builddefs/common_features.mk:635-643`: `VIA_ENABLE=yes`가 `DYNAMIC_KEYMAP_ENABLE`,
+  `RAW_ENABLE`, `BOOTMAGIC_ENABLE`, `TRI_LAYER_ENABLE`을 연쇄로 켜고 `RAW_ENABLE`이
+  `SRC += raw_hid.c`를 추가한다(`:645-648`). `build_test.mk:61`이 그 파일을 include하므로
+  연쇄가 TEST 빌드에도 적용된다. `quantum/via.c:17,21`의 두 `#error` 전제가 이것으로 충족된다.
+- 현재 `tests/`에는 `VIA_ENABLE` 또는 `RAW_ENABLE`을 켜는 target이 하나도 없다(이름 검색
+  결과 0건). 이 target은 그 조합의 첫 사례가 된다.
+
+**`TestDriver` 재사용은 vacuous pass를 만든다 — 이 target에서 가장 실수하기 쉬운 지점이다.**
+`host_driver.h:26-35`의 `host_driver_t`는 여섯 번째이자 마지막 member로 `#ifdef RAW_ENABLE`
+안에 `send_raw_hid`를 두는데, `tests/test_common/test_driver.cpp:34`의 생성자는 앞의 다섯
+member만 aggregate-initialize한다. 따라서 `RAW_ENABLE` 빌드에서 그 포인터는 `nullptr`이고
+`host.c:348`의 `if (!driver || !driver->send_raw_hid) return;`가 먼저 걸린다. 결과는 compile
+error가 아니라 **모든 VIA response가 조용히 사라지는 no-op**이며, 그 상태의 test는 crash 없이
+통과하면서 아무것도 증명하지 못한다. 새 fixture는 자체 `host_driver_t`와 captured-report
+vector를 소유하고, 첫 assertion으로 fake sender가 최소 한 번 호출됐음을 확인해야 한다.
 
 우선 `VIA_ENABLE=yes`인 full test target을 compile flag `no`와 `yes` 두 clean configuration으로
 실행하고 실제 `quantum/via.c::raw_hid_receive()`를 링크한다. on test는 production과 같은
@@ -147,6 +187,13 @@ link-time override는 `raw_hid_send()`가 weak가 아니어서 부적합하고, 
 전체 QMK raw HID surface를 넓힌다. production injected callback도 불필요하다. fake clock은 기존
 TEST timer, fake TX는 기존 host driver seam을 사용한다. test-only translation unit는 실제 VIA
 통합 link가 불가능할 때만 제한적인 fallback이다.
+
+이 배치는 취향이 아니라 저장소 자신의 분류 규칙과 일치한다. `era_source_map.md`의 **Where a
+build option is declared**는 "무엇이 compile/link되는지를 바꾸는가"를 rule 1로 두고 그런
+option을 make 변수로 `?=` 선언하되 C가 알아야 하면 같은 `ifeq` 안에서 동일한 이름의 bare
+`-D`를 emit하고 `#ifdef`/`#if defined`로만 검사하라고 규정한다. 이어서 "**One option, one
+declaration**, and that is one *file* — `keyboards/era/era_build_options.mk`"로 선언 위치를
+한 파일로 고정한다. 새 translation unit을 추가하는 이 selector는 정확히 rule 1이다.
 
 ## 5. 동일 legacy GET의 provenance와 결정적 교차
 
@@ -204,6 +251,25 @@ hardware 없이 다음 세 층을 증명한다.
 on image의 timing/state는 진단 비용을 가진다. 따라서 on/off timing 동일성을 주장하지 않는다.
 off image의 code/state/config 부재와 on/no-fault transcript 동등성을 각각 증명한다.
 
+### SRAM 예산은 선택이 아니라 통과 조건
+
+TOMAK79H는 copy-to-RAM image이므로 계측의 static state가 main SRAM을 직접 소비한다.
+`keyboards/era/common/tools/era_residency_gate.sh:37-57`이 build 단계에서 두 gate를 강제한다:
+`ram0_free < 32768`이면 실패, 그리고 allocator entry point symbol이 하나라도 링크되면 실패.
+launcher는 결과를 manifest의 `ram0_free_bytes=`로 기록한다.
+
+재검증 HEAD `3dc9addb43`의 clean release 실측 baseline은 `ram0_resident_bytes=166168`,
+`ram0_free_bytes=95976`이다. floor가 32768이므로 diagnostic image가 쓸 수 있는 실효 상한은
+약 63 KB이고, 권고 규모(hold queue 8건 + trace ring 256건 ≈ 5 KB 미만)는 여기에 크게 못
+미친다. 즉 이 설계는 예산상 안전하지만, 그 사실은 선언이 아니라 diagnostic build의 실제
+`ram0_free_bytes=`로 보고해야 한다. off image는 계측 state가 없으므로 이 값이 baseline과
+같아야 한다.
+
+같은 commit의 release artifact가 `.era-artifacts/`(gitignore됨)에 이미 있어 before-baseline으로
+쓸 수 있다. 다만 그 manifest는 `build_date=automatic`이라 fixed-date 재빌드와 hash가 같지
+않다. 정직한 비교 대상은 hash가 아니라 `arm-none-eabi-nm` symbol set과 section size이며,
+hash 동일성을 주장하려면 base와 off를 같은 `--build-date`로 각각 다시 빌드해야 한다.
+
 ## 8. App Phase 1이 이미 증명한 것과 firmware evidence
 
 `tests/transport-phase1.test.ts`의 9개 focused test와 `src/shims/node-hid.ts` fake hooks가 이미
@@ -242,7 +308,7 @@ TOMAK peer storage의 local intent와 durable peer commit을 혼동하지 않는
 - push responder의 같은 경계:
   `era_host_peer_storage_push_apply_finish():2009-2057`, reload at 2026
 - domain reload owner:
-  `keyboards/era/sirind/common/tomak_common.c:290-316`
+  `keyboards/era/sirind/common/tomak_common.c:289-315`
 
 향후 revision hook을 검토한다면 peer 값이 GET으로 읽힐 수 있는 최초 경계는 successful
 readback/CRC와 `era_split_eeprom_sync_reload_domain_kb()` 직후다. TRANSFER, APPLY_READY 또는
@@ -268,8 +334,8 @@ RX queue로 복사하고, `via_hid_process():91-116`은 main loop에서 `raw_hid
 | trace wrap | bounded overwrite/drop 정책과 counter |
 | disconnect/reset | held/provenance state 폐기, 이전 sequence가 새 session과 결합되지 않음 |
 | transcript replay | ordinary request/response fixture가 off/on-no-fault에서 동일 |
-| TOMAK release compile, flag absent/no | instrumentation source/symbol/config 없음; artifact 동등성 |
-| diagnostic TOMAK compile | enabled hooks와 bounded static state만 포함; 새 selector 없음 |
+| TOMAK release compile, flag absent/no | instrumentation source/symbol/config 없음; artifact 동등성; `ram0_free_bytes=95976` 유지 |
+| diagnostic TOMAK compile | enabled hooks와 bounded static state만 포함; 새 selector 없음; `ram0_free_bytes` 감소분이 선언한 capacity로 설명되고 32768 floor 위 |
 
 이 matrix는 ownership, ordering, timeout state transition과 transcript compatibility를
 증명한다. fake delay percentile은 실제 latency가 아니므로 만들거나 5000 ms app timeout을
