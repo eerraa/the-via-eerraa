@@ -236,7 +236,8 @@ Natural next sequence:
 2. In approved Phase 2A, inspect current app/QMK/H7S ownership paths read-only, review the
    unassigned selector namespace, and exhaust software-only measurement options. Produce a
    codebase-specific QMK measurement/fault-injection prompt, but do not modify a reference
-   firmware worktree or allocate a selector.
+   firmware worktree or allocate a selector. The resulting ownership and test boundary is
+   recorded in [`PHASE2A_QMK_MEASUREMENT_EVIDENCE.md`](PHASE2A_QMK_MEASUREMENT_EVIDENCE.md).
 3. Have a separately authorized firmware agent implement only the compile-time-gated
    measurement support in a clean worktree/branch. Prefer host-native tests and deterministic
    delayed-response/reconnect simulation; keep ordinary response bytes and production builds
