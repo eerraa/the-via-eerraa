@@ -12,12 +12,8 @@ import {
   makeCustomMenu,
   makeCustomMenus,
 } from 'src/components/panes/configure-panes/custom/menu-generator';
-import {
-  KeyboardAPI,
-  UISyncCustomMenuCommandTarget,
-  UISyncRequest,
-  UISyncRequestType,
-} from 'src/utils/keyboard-api';
+import {KeyboardAPI} from 'src/utils/keyboard-api';
+import {getUISyncCommandIds, type UISyncRequest} from 'src/utils/ui-sync';
 import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
 import {
   collectRangeControls,
@@ -27,14 +23,21 @@ import {
   resolveRangeChange,
 } from 'src/utils/range-constraints';
 import type {CommonMenusMap, ConnectedDevice} from '../types/types';
-import {getSelectedDefinition} from './definitionsSlice';
 import {
+  getDefinitionForDevice,
+  getSelectedDefinition,
+} from './definitionsSlice';
+import {
+  getConnectedDevices,
   getSelectedConnectedDevice,
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
 } from './devicesSlice';
 import type {AppThunk, RootState} from './index';
-import {getSelectedFirmwareVersion} from './firmwareSlice';
+import {
+  getFirmwareVersionMap,
+  getSelectedFirmwareVersion,
+} from './firmwareSlice';
 
 type CustomMenuData = {
   [commandName: string]: number[] | number[][];
@@ -54,6 +57,11 @@ type PendingCustomMenuSync = {
 };
 
 const pendingCustomMenuSyncs: Record<string, PendingCustomMenuSync> = {};
+
+const getPendingCustomMenuSyncKey = (
+  devicePath: string,
+  connectionGeneration: number,
+) => `${devicePath}:${connectionGeneration}`;
 
 const initialState: MenusState = {
   customMenuDataMap: {},
@@ -216,32 +224,48 @@ const readCustomMenuValues = async (
   );
 };
 
-const commandMatchesTarget = (
-  command: number[],
-  target: UISyncCustomMenuCommandTarget,
-) => command[0] === target.channelId && command[1] === target.commandId;
-
-const commandMatchesId = (command: number[], commandId: number) =>
-  command[1] === commandId;
-
 export const syncCustomMenuValues =
-  (ids?: string[]): AppThunk =>
+  (
+    devicePath: string,
+    connectionGeneration: number,
+    ids?: string[],
+  ): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
-    const connectedDevice = getSelectedConnectedDevice(state);
-    const menuData = getSelectedCustomMenuData(state) || {};
-    const commands = getCustomCommands(state) as Record<string, number[]>;
+    const connectedDevice = getConnectedDevices(state)[devicePath];
 
-    if (!api || !connectedDevice || !commands) {
+    if (!connectedDevice) {
       return;
     }
+    const api = new KeyboardAPI(devicePath);
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
+    }
+    const definition = getDefinitionForDevice(state, connectedDevice);
+    if (!definition) {
+      return;
+    }
+    const firmwareVersion = getFirmwareVersionMap(state)[devicePath];
+    const commands = getCustomCommandsForDefinition(
+      definition,
+      firmwareVersion,
+    );
+    const menuData = state.menus.customMenuDataMap[devicePath] || {};
 
     await api.waitForCommandQueueIdle();
     const syncedMenuData = await readCustomMenuValues(api, commands, ids);
+    const currentState = getState();
+    const currentDevice = getConnectedDevices(currentState)[devicePath];
+    if (
+      !currentDevice ||
+      !api.isConnectionGenerationCurrent(connectionGeneration) ||
+      getDefinitionForDevice(currentState, currentDevice) !== definition
+    ) {
+      return;
+    }
     dispatch(
       updateSelectedCustomMenuData({
-        devicePath: connectedDevice.path,
+        devicePath,
         menuData: {
           ...menuData,
           ...syncedMenuData,
@@ -250,9 +274,14 @@ export const syncCustomMenuValues =
     );
   };
 
-const enqueueCustomMenuSync = (devicePath: string, ids?: string[]) => {
-  const pending = (pendingCustomMenuSyncs[devicePath] = pendingCustomMenuSyncs[
-    devicePath
+const enqueueCustomMenuSync = (
+  devicePath: string,
+  connectionGeneration: number,
+  ids?: string[],
+) => {
+  const key = getPendingCustomMenuSyncKey(devicePath, connectionGeneration);
+  const pending = (pendingCustomMenuSyncs[key] = pendingCustomMenuSyncs[
+    key
   ] || {
     isSyncing: false,
     syncAll: false,
@@ -270,9 +299,10 @@ const enqueueCustomMenuSync = (devicePath: string, ids?: string[]) => {
 };
 
 const runPendingCustomMenuSyncs =
-  (devicePath: string): AppThunk =>
-  async (dispatch, getState) => {
-    const pending = pendingCustomMenuSyncs[devicePath];
+  (devicePath: string, connectionGeneration: number): AppThunk =>
+  async (dispatch) => {
+    const key = getPendingCustomMenuSyncKey(devicePath, connectionGeneration);
+    const pending = pendingCustomMenuSyncs[key];
     if (!pending || pending.isSyncing) {
       return;
     }
@@ -284,10 +314,12 @@ const runPendingCustomMenuSyncs =
         pending.syncAll = false;
         pending.ids.clear();
 
-        await dispatch(syncCustomMenuValues(ids));
+        await dispatch(
+          syncCustomMenuValues(devicePath, connectionGeneration, ids),
+        );
 
-        const selectedDevice = getSelectedConnectedDevice(getState());
-        if (!selectedDevice || selectedDevice.path !== devicePath) {
+        const api = new KeyboardAPI(devicePath);
+        if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
           pending.syncAll = false;
           pending.ids.clear();
           break;
@@ -295,44 +327,46 @@ const runPendingCustomMenuSyncs =
       }
     } finally {
       pending.isSyncing = false;
+      if (!pending.syncAll && !pending.ids.size) {
+        delete pendingCustomMenuSyncs[key];
+      }
     }
   };
 
 export const syncCustomMenuValuesFromRequest =
-  (request: UISyncRequest): AppThunk =>
+  ({
+    devicePath,
+    connectionGeneration,
+    request,
+  }: {
+    devicePath: string;
+    connectionGeneration: number;
+    request: UISyncRequest;
+  }): AppThunk =>
   async (dispatch, getState) => {
-    const connectedDevice = getSelectedConnectedDevice(getState());
+    const state = getState();
+    const connectedDevice = getConnectedDevices(state)[devicePath];
     if (!connectedDevice) {
       return;
     }
-
-    if (request.type === UISyncRequestType.CUSTOM_MENU_ALL) {
-      enqueueCustomMenuSync(connectedDevice.path);
-      await dispatch(runPendingCustomMenuSyncs(connectedDevice.path));
+    const api = new KeyboardAPI(devicePath);
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
       return;
     }
-
-    const commands = getCustomCommands(getState()) as Record<string, number[]>;
-    const ids =
-      request.type === UISyncRequestType.CUSTOM_MENU_COMMANDS
-        ? Object.entries(commands)
-            .filter(([, command]) =>
-              request.targets.some((target) =>
-                commandMatchesTarget(command, target),
-              ),
-            )
-            .map(([id]) => id)
-        : Object.entries(commands)
-            .filter(([, command]) =>
-              request.commandIds.some((commandId) =>
-                commandMatchesId(command, commandId),
-              ),
-            )
-            .map(([id]) => id);
-
-    if (ids.length) {
-      enqueueCustomMenuSync(connectedDevice.path, ids);
-      await dispatch(runPendingCustomMenuSyncs(connectedDevice.path));
+    const definition = getDefinitionForDevice(state, connectedDevice);
+    if (!definition) {
+      return;
+    }
+    const commands = getCustomCommandsForDefinition(
+      definition,
+      getFirmwareVersionMap(state)[devicePath],
+    );
+    const ids = getUISyncCommandIds(request, commands);
+    if (ids === undefined || ids.length) {
+      enqueueCustomMenuSync(devicePath, connectionGeneration, ids);
+      await dispatch(
+        runPendingCustomMenuSyncs(devicePath, connectionGeneration),
+      );
     }
   };
 
@@ -351,14 +385,15 @@ export const updateV3MenuData =
   (connectedDevice: ConnectedDevice): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const definition = getSelectedDefinition(state);
-    const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
+    const definition = getDefinitionForDevice(state, connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
 
     if (!isVIADefinitionV3(definition)) {
       throw new Error('V3 menus are only compatible with V3 VIA definitions.');
     }
-    const menus = getV3Menus(state);
-    const firmwareVersion = getSelectedFirmwareVersion(state);
+    const menus = getV3MenusForDefinition(definition);
+    const firmwareVersion = getFirmwareVersionMap(state)[connectedDevice.path];
     const commands = menus.flatMap((menu) =>
       extractCommands(menu, firmwareVersion),
     );
@@ -395,6 +430,16 @@ export const updateV3MenuData =
             .map((_, i) => i),
         );
         props.__perKeyRGB = perKeyRGB;
+      }
+
+      const currentState = getState();
+      const currentDevice = getConnectedDevices(currentState)[path];
+      if (
+        !currentDevice ||
+        !api.isConnectionGenerationCurrent(connectionGeneration) ||
+        getDefinitionForDevice(currentState, currentDevice) !== definition
+      ) {
+        return;
       }
 
       dispatch(
@@ -453,6 +498,41 @@ const extractCommands = (
       : [];
 };
 
+type MenuDefinition = NonNullable<ReturnType<typeof getDefinitionForDevice>>;
+
+const getV3MenusForDefinition = (definition: MenuDefinition): V3Menu[] => {
+  if (!isVIADefinitionV3(definition)) {
+    return [];
+  }
+  return (definition.menus || [])
+    .flatMap(tryResolveCommonMenu)
+    .map((menu, idx) =>
+      isVIAMenu(menu) ? compileMenu('custom_menu', 3, menu, idx) : menu,
+    );
+};
+
+export const getCustomCommandsForDefinition = (
+  definition: MenuDefinition,
+  firmwareVersion?: number,
+): Record<string, number[]> => {
+  const menus = isVIADefinitionV2(definition)
+    ? definition.customMenus
+    : getV3MenusForDefinition(definition);
+
+  if (!menus) {
+    return {};
+  }
+  return menus
+    .flatMap((menu: any) => extractCommands(menu, firmwareVersion))
+    .reduce(
+      (commands: Record<string, number[]>, command: any[]) => ({
+        ...commands,
+        [command[0]]: command.slice(1),
+      }),
+      {},
+    );
+};
+
 export const getCommonMenusDataMap = (state: RootState) =>
   state.menus.commonMenusMap;
 
@@ -468,20 +548,8 @@ export const getSelectedCustomMenuData = createSelector(
   (map, path) => path && map[path],
 );
 
-export const getV3Menus = createSelector(
-  getSelectedDefinition,
-  (definition) => {
-    if (!definition || !isVIADefinitionV3(definition)) {
-      return [];
-    }
-
-    // TODO: handle Common menus (built ins in here too?)
-    return (definition.menus || [])
-      .flatMap(tryResolveCommonMenu)
-      .map((menu, idx) =>
-        isVIAMenu(menu) ? compileMenu('custom_menu', 3, menu, idx) : menu,
-      );
-  },
+export const getV3Menus = createSelector(getSelectedDefinition, (definition) =>
+  definition ? getV3MenusForDefinition(definition) : [],
 );
 
 export const getV3MenuComponents = createSelector(
@@ -504,29 +572,11 @@ export const getV3MenuComponents = createSelector(
 
 export const getCustomCommands = createSelector(
   getSelectedDefinition,
-  getV3Menus,
   getSelectedFirmwareVersion,
-  (definition, v3Menus, firmwareVersion) => {
-    if (!definition) {
-      return [];
-    }
-    const menus = isVIADefinitionV2(definition)
-      ? definition.customMenus
-      : v3Menus;
-
-    if (menus === undefined) {
-      return [];
-    }
-
-    return menus
-      .flatMap((menu: any) => extractCommands(menu, firmwareVersion))
-      .reduce((p, n) => {
-        return {
-          ...p,
-          [n[0]]: n.slice(1),
-        };
-      }, {});
-  },
+  (definition, firmwareVersion) =>
+    definition
+      ? getCustomCommandsForDefinition(definition, firmwareVersion)
+      : {},
 );
 
 export const getCustomRangeControls = createSelector(

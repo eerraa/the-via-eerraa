@@ -1,6 +1,6 @@
 import {createSelector, createSlice, PayloadAction} from '@reduxjs/toolkit';
 import type {RootState, AppThunk} from './index';
-import {getSelectedDevicePath, getSelectedKeyboardAPI} from './devicesSlice';
+import {getSelectedDevicePath} from './devicesSlice';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
 import {KeyboardValue} from 'src/utils/keyboard-values';
 import {
@@ -78,6 +78,7 @@ export const loadKeycodesVersion =
     }
 
     const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
     let version: number;
     try {
       version = await readKeycodesVersion(api);
@@ -103,18 +104,20 @@ export const loadKeycodesVersion =
       }
       throw error;
     }
-    dispatch(
-      updateKeycodesVersion({devicePath: connectedDevice.path, version}),
-    );
+    if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+      dispatch(
+        updateKeycodesVersion({devicePath: connectedDevice.path, version}),
+      );
+    }
   };
 
 // Thunk to load firmware version from device
 export const loadFirmwareVersion =
   (connectedDevice: ConnectedDevice): AppThunk =>
-  async (dispatch, getState) => {
-    const state = getState();
-    const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
+  async (dispatch) => {
     const {path} = connectedDevice;
+    const api = new KeyboardAPI(path);
+    const connectionGeneration = api.getConnectionGeneration();
 
     try {
       const result = await api.getKeyboardValue(
@@ -127,7 +130,9 @@ export const loadFirmwareVersion =
       const version =
         (result[0] << 24) | (result[1] << 16) | (result[2] << 8) | result[3];
 
-      dispatch(updateFirmwareVersion({devicePath: path, version}));
+      if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+        dispatch(updateFirmwareVersion({devicePath: path, version}));
+      }
     } catch (e) {
       console.error('Failed to load firmware version:', e);
     }

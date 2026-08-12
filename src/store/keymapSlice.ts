@@ -7,11 +7,12 @@ import type {
 } from '../types/types';
 import type {AppThunk, RootState} from './index';
 import {
-  getDefinitions,
+  getDefinitionForDevice,
   getSelectedDefinition,
   getSelectedKeyDefinitions,
 } from './definitionsSlice';
 import {
+  getSelectedConnectionGeneration,
   getSelectedConnectedDevice,
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
@@ -21,7 +22,8 @@ import {KeyboardAPI} from 'src/utils/keyboard-api';
 
 type KeymapState = {
   rawDeviceMap: DeviceLayerMap;
-  numberOfLayers: number;
+  numberOfLayersMap: Record<string, number>;
+  loadGenerationMap: Record<string, number>;
   selectedLayerIndex: number;
   selectedKey: number | null;
   configureKeyboardIsSelectable: boolean;
@@ -30,7 +32,8 @@ type KeymapState = {
 
 const initialState: KeymapState = {
   rawDeviceMap: {},
-  numberOfLayers: 4,
+  numberOfLayersMap: {},
+  loadGenerationMap: {},
   selectedLayerIndex: 0,
   selectedKey: null,
   configureKeyboardIsSelectable: false,
@@ -47,8 +50,26 @@ const keymapSlice = createSlice({
     ) => {
       state.selectedPaletteColor = action.payload;
     },
-    setNumberOfLayers: (state, action: PayloadAction<number>) => {
-      state.numberOfLayers = action.payload;
+    setNumberOfLayers: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        numberOfLayers: number;
+        connectionGeneration: number;
+      }>,
+    ) => {
+      const {devicePath, numberOfLayers, connectionGeneration} = action.payload;
+      if (
+        state.loadGenerationMap[devicePath] !== connectionGeneration ||
+        state.rawDeviceMap[devicePath]?.length !== numberOfLayers
+      ) {
+        state.rawDeviceMap[devicePath] = Array.from(
+          {length: numberOfLayers},
+          () => ({keymap: [], isLoaded: false}),
+        );
+      }
+      state.numberOfLayersMap[devicePath] = numberOfLayers;
+      state.loadGenerationMap[devicePath] = connectionGeneration;
     },
     setConfigureKeyboardIsSelectable: (
       state,
@@ -63,15 +84,20 @@ const keymapSlice = createSlice({
         layerIndex: number;
         keymap: Keymap;
         devicePath: string;
+        connectionGeneration: number;
       }>,
     ) => {
-      const {layerIndex, keymap, devicePath} = action.payload;
+      const {layerIndex, keymap, devicePath, connectionGeneration} =
+        action.payload;
+      if (state.loadGenerationMap[devicePath] !== connectionGeneration) {
+        return;
+      }
       state.rawDeviceMap[devicePath] =
         state.rawDeviceMap[devicePath] ||
-        Array(state.numberOfLayers).fill({
+        Array.from({length: state.numberOfLayersMap[devicePath] ?? 0}, () => ({
           keymap: [],
           isLoaded: false,
-        });
+        }));
       state.rawDeviceMap[devicePath][layerIndex] = {
         keymap,
         isLoaded: true,
@@ -88,24 +114,28 @@ const keymapSlice = createSlice({
     },
     saveKeymapSuccess: (
       state,
-      action: PayloadAction<{layers: Layer[]; devicePath: string}>,
+      action: PayloadAction<{
+        layers: Layer[];
+        devicePath: string;
+        connectionGeneration: number;
+      }>,
     ) => {
-      const {layers, devicePath} = action.payload;
+      const {layers, devicePath, connectionGeneration} = action.payload;
       state.rawDeviceMap[devicePath] = layers;
+      state.numberOfLayersMap[devicePath] = layers.length;
+      state.loadGenerationMap[devicePath] = connectionGeneration;
     },
     setKey: (
       state,
       action: PayloadAction<{
         devicePath: string;
+        layerIndex: number;
         keymapIndex: number;
         value: number;
       }>,
     ) => {
-      const {keymapIndex, value, devicePath} = action.payload;
-      const {selectedLayerIndex} = state;
-
-      state.rawDeviceMap[devicePath][selectedLayerIndex].keymap[keymapIndex] =
-        value;
+      const {keymapIndex, value, devicePath, layerIndex} = action.payload;
+      state.rawDeviceMap[devicePath][layerIndex].keymap[keymapIndex] = value;
     },
   },
   extraReducers: (builder) => {
@@ -133,23 +163,52 @@ export const loadKeymapFromDevice =
   (connectedDevice: ConnectedDevice): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-
-    if (getLoadProgress(state) === 1) {
+    const {path} = connectedDevice;
+    const api = new KeyboardAPI(path);
+    const connectionGeneration = api.getConnectionGeneration();
+    const definition = getDefinitionForDevice(state, connectedDevice);
+    if (!definition) {
       return;
     }
 
-    const {path, vendorProductId, requiredDefinitionVersion} = connectedDevice;
-    const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
+    const cachedLayerCount = state.keymap.numberOfLayersMap[path];
+    const cachedLayers = state.keymap.rawDeviceMap[path];
+    if (
+      state.keymap.loadGenerationMap[path] === connectionGeneration &&
+      cachedLayerCount !== undefined &&
+      cachedLayers?.length >= cachedLayerCount &&
+      cachedLayers?.slice(0, cachedLayerCount).every((layer) => layer.isLoaded)
+    ) {
+      return;
+    }
 
     const numberOfLayers = await api.getLayerCount();
-    dispatch(setNumberOfLayers(numberOfLayers));
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
+    }
+    dispatch(
+      setNumberOfLayers({
+        devicePath: path,
+        numberOfLayers,
+        connectionGeneration,
+      }),
+    );
 
-    const {matrix} =
-      getDefinitions(state)[vendorProductId][requiredDefinitionVersion];
+    const {matrix} = definition;
 
     for (var layerIndex = 0; layerIndex < numberOfLayers; layerIndex++) {
       const keymap = await api.readRawMatrix(matrix, layerIndex);
-      dispatch(loadLayerSuccess({layerIndex, keymap, devicePath: path}));
+      if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+        return;
+      }
+      dispatch(
+        loadLayerSuccess({
+          layerIndex,
+          keymap,
+          devicePath: path,
+          connectionGeneration,
+        }),
+      );
     }
   };
 
@@ -160,20 +219,30 @@ export const saveRawKeymapToDevice =
   async (dispatch, getState) => {
     const state = getState();
     const {path} = connectedDevice;
-    const api = getSelectedKeyboardAPI(state);
-    const definition = getSelectedDefinition(state);
-    if (!path || !definition || !api) {
+    const api = new KeyboardAPI(path);
+    const connectionGeneration = api.getConnectionGeneration();
+    const definition = getDefinitionForDevice(state, connectedDevice);
+    if (!path || !definition) {
       return;
     }
 
     const {matrix} = definition;
 
     await api.writeRawMatrix(matrix, keymap);
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
+    }
     const layers = keymap.map((layer) => ({
       keymap: layer,
       isLoaded: true,
     }));
-    dispatch(saveKeymapSuccess({layers, devicePath: path}));
+    dispatch(
+      saveKeymapSuccess({
+        layers,
+        devicePath: path,
+        connectionGeneration,
+      }),
+    );
   };
 
 export const updateKey =
@@ -190,21 +259,39 @@ export const updateKey =
 
     const selectedLayerIndex = getSelectedLayerIndex(state);
     const {path} = connectedDevice;
+    const connectionGeneration = api.getConnectionGeneration();
     const {row, col} = keys[keyIndex];
     await api.setKey(selectedLayerIndex, row, col, value);
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
+    }
 
     const {matrix} = selectedDefinition;
     const keymapIndex = row * matrix.cols + col;
 
-    dispatch(setKey({keymapIndex, value, devicePath: path}));
+    dispatch(
+      setKey({
+        keymapIndex,
+        value,
+        devicePath: path,
+        layerIndex: selectedLayerIndex,
+      }),
+    );
   };
 
 export const getConfigureKeyboardIsSelectable = (state: RootState) =>
   state.keymap.configureKeyboardIsSelectable;
 export const getSelectedKey = (state: RootState) => state.keymap.selectedKey;
 export const getRawDeviceMap = (state: RootState) => state.keymap.rawDeviceMap;
-export const getNumberOfLayers = (state: RootState) =>
-  state.keymap.numberOfLayers;
+export const getNumberOfLayersMap = (state: RootState) =>
+  state.keymap.numberOfLayersMap;
+export const getKeymapLoadGenerationMap = (state: RootState) =>
+  state.keymap.loadGenerationMap;
+export const getNumberOfLayers = createSelector(
+  getNumberOfLayersMap,
+  getSelectedDevicePath,
+  (layerCountMap, devicePath) => (devicePath && layerCountMap[devicePath]) || 4,
+);
 export const getSelectedLayerIndex = (state: RootState) =>
   state.keymap.selectedLayerIndex;
 export const getSelected256PaletteColor = (state: RootState) =>
@@ -225,8 +312,13 @@ export const getSelectedRawLayers = createSelector(
 export const getLoadProgress = createSelector(
   getSelectedRawLayers,
   getNumberOfLayers,
-  (layers, layerCount) =>
-    layers && layers.filter((layer) => layer.isLoaded).length / layerCount,
+  getKeymapLoadGenerationMap,
+  getSelectedDevicePath,
+  getSelectedConnectionGeneration,
+  (layers, layerCount, loadGenerationMap, devicePath, connectionGeneration) =>
+    !devicePath || loadGenerationMap[devicePath] !== connectionGeneration
+      ? 0
+      : layers && layers.filter((layer) => layer.isLoaded).length / layerCount,
 );
 
 export const getSelectedRawLayer = createSelector(

@@ -11,7 +11,14 @@ import {
   logKeyboardAPIError,
 } from 'src/store/errorsSlice';
 import {KeyboardValue} from './keyboard-values';
+import {parseUISyncRequest, type UISyncRequest} from './ui-sync';
 export {KeyboardValue} from './keyboard-values';
+export {
+  parseUISyncRequest,
+  UISyncRequestType,
+  type UISyncCustomMenuCommandTarget,
+  type UISyncRequest,
+} from './ui-sync';
 
 // VIA Command IDs
 
@@ -54,68 +61,6 @@ const APICommandValueToName = Object.entries(APICommand).reduce(
   (acc: any, [key, value]) => ({...acc, [value]: key}),
   {} as Record<APICommand, string>,
 );
-
-export enum UISyncRequestType {
-  CUSTOM_MENU_ALL = 0x00,
-  CUSTOM_MENU_COMMANDS = 0x01,
-  CUSTOM_MENU_COMMAND_IDS = 0x02,
-}
-
-export type UISyncCustomMenuCommandTarget = {
-  channelId: number;
-  commandId: number;
-};
-
-export type UISyncRequest =
-  | {type: UISyncRequestType.CUSTOM_MENU_ALL}
-  | {
-      type: UISyncRequestType.CUSTOM_MENU_COMMANDS;
-      targets: UISyncCustomMenuCommandTarget[];
-    }
-  | {
-      type: UISyncRequestType.CUSTOM_MENU_COMMAND_IDS;
-      commandIds: number[];
-    };
-
-const UI_SYNC_REQUEST_VERSION = 0x01;
-
-const parseUISyncRequest = (buffer: Uint8Array): UISyncRequest | undefined => {
-  const [command, version, type, count] = buffer;
-  if (
-    command !== APICommand.UI_SYNC_REQUEST ||
-    version !== UI_SYNC_REQUEST_VERSION
-  ) {
-    return undefined;
-  }
-
-  if (type === UISyncRequestType.CUSTOM_MENU_ALL) {
-    return {type};
-  }
-
-  if (type === UISyncRequestType.CUSTOM_MENU_COMMAND_IDS) {
-    return {
-      type,
-      commandIds: Array.from(buffer.slice(4, 4 + count)),
-    };
-  }
-
-  if (type !== UISyncRequestType.CUSTOM_MENU_COMMANDS) {
-    return undefined;
-  }
-
-  const targets: UISyncCustomMenuCommandTarget[] = [];
-  for (let targetIdx = 0; targetIdx < count; targetIdx++) {
-    const offset = 4 + targetIdx * 2;
-    const channelId = buffer[offset];
-    const commandId = buffer[offset + 1];
-    if (channelId === undefined || commandId === undefined) {
-      break;
-    }
-    targets.push({channelId, commandId});
-  }
-
-  return {type, targets};
-};
 
 // RGB Backlight Value IDs
 // const BACKLIGHT_USE_SPLIT_BACKSPACE = 0x01;
@@ -179,18 +124,6 @@ type HIDAddress = string;
 type Layer = number;
 type Row = number;
 type Column = number;
-type CommandQueueArgs =
-  [number, Array<number>, string | undefined] | (() => Promise<void>);
-type CommandQueueEntry = {
-  res: (val?: any) => void;
-  rej: (error?: any) => void;
-  args: CommandQueueArgs;
-};
-type CommandQueue = Array<CommandQueueEntry>;
-
-const globalCommandQueue: {
-  [kbAddr: string]: {isFlushing: boolean; commandQueue: CommandQueue};
-} = {};
 
 export const canConnect = (device: Device) => {
   try {
@@ -219,10 +152,6 @@ export class KeyboardAPI {
       ...cache[kbAddr],
       hid: initAndConnectDevice({path: kbAddr}),
     };
-  }
-
-  async getByteBuffer(): Promise<Uint8Array> {
-    return this.getHID().readP();
   }
 
   async getProtocolVersion() {
@@ -640,46 +569,16 @@ export class KeyboardAPI {
     await this.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_RESET);
   }
 
-  get commandQueueWrapper() {
-    if (!globalCommandQueue[this.kbAddr]) {
-      globalCommandQueue[this.kbAddr] = {isFlushing: false, commandQueue: []};
-      return globalCommandQueue[this.kbAddr];
-    }
-    return globalCommandQueue[this.kbAddr];
-  }
-
   async timeout(time: number) {
-    return new Promise((res, rej) => {
-      this.commandQueueWrapper.commandQueue.push({
-        res,
-        rej,
-        args: () =>
-          new Promise((r) =>
-            setTimeout(() => {
-              r();
-              res(undefined);
-            }, time),
-          ),
-      });
-      if (!this.commandQueueWrapper.isFlushing) {
-        this.flushQueue();
-      }
-    });
+    return this.getHID().enqueueDelay(time);
   }
 
   isCommandQueueIdle() {
-    return (
-      !this.commandQueueWrapper.isFlushing &&
-      this.commandQueueWrapper.commandQueue.length === 0
-    );
+    return this.getHID().isCommandQueueIdle();
   }
 
   async waitForCommandQueueIdle() {
-    if (this.isCommandQueueIdle()) {
-      return;
-    }
-
-    await this.timeout(0);
+    await this.getHID().waitForCommandQueueIdle();
   }
 
   async hidCommand(
@@ -687,63 +586,43 @@ export class KeyboardAPI {
     bytes: Array<number> = [],
     commandName?: string,
   ): Promise<number[]> {
-    return new Promise((res, rej) => {
-      this.commandQueueWrapper.commandQueue.push({
-        res,
-        rej,
-        args: [command, bytes, commandName],
-      });
-      if (!this.commandQueueWrapper.isFlushing) {
-        this.flushQueue();
-      }
-    });
-  }
-
-  async flushQueue() {
-    if (this.commandQueueWrapper.isFlushing === true) {
-      return;
+    try {
+      return await this._hidCommand(command, bytes, commandName);
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      const deviceInfo = extractDeviceInfo(this.getHID());
+      store.dispatch(
+        logAppError({
+          message: getMessageFromError(error),
+          deviceInfo,
+        }),
+      );
+      throw e;
     }
-    this.commandQueueWrapper.isFlushing = true;
-    while (this.commandQueueWrapper.commandQueue.length !== 0) {
-      const {res, rej, args} =
-        this.commandQueueWrapper.commandQueue.shift() as CommandQueueEntry;
-      // This allows us to queue promises in between hid commands, useful for timeouts
-      if (typeof args === 'function') {
-        await args();
-        res();
-      } else {
-        try {
-          const ans = await this._hidCommand(...args);
-          res(ans);
-        } catch (e: any) {
-          const deviceInfo = extractDeviceInfo(this.getHID());
-          store.dispatch(
-            logAppError({
-              message: getMessageFromError(e),
-              deviceInfo,
-            }),
-          );
-          rej(e);
-        }
-      }
-    }
-    this.commandQueueWrapper.isFlushing = false;
   }
 
   getHID() {
     return cache[this.kbAddr].hid;
   }
 
-  addUISyncRequestHandler(handler: (request: UISyncRequest) => void) {
-    return this.getHID().addInputReportHandler((buffer: Uint8Array) => {
-      const request = parseUISyncRequest(buffer);
-      if (!request) {
-        return false;
-      }
+  getConnectionGeneration(): number {
+    return this.getHID().getConnectionGeneration();
+  }
 
-      handler(request);
-      return true;
-    });
+  isConnectionGenerationCurrent(generation: number): boolean {
+    return this.getHID().isConnectionGenerationCurrent(generation);
+  }
+
+  addUISyncRequestHandler(handler: (request: UISyncRequest) => void) {
+    return this.getHID().addInputReportHandler(
+      (buffer: Uint8Array) => parseUISyncRequest(buffer) !== undefined,
+      (buffer: Uint8Array) => {
+        const request = parseUISyncRequest(buffer);
+        if (request) {
+          handler(request);
+        }
+      },
+    );
   }
 
   async _hidCommand(
@@ -757,12 +636,17 @@ export class KeyboardAPI {
       paddedArray[idx] = val;
     });
 
-    await this.getHID().write(paddedArray);
-
-    const buffer = Array.from(await this.getByteBuffer());
-    const bufferCommandBytes = buffer.slice(0, commandBytes.length - 1);
+    const requestBytes = commandBytes.slice(1);
+    const response = (await this.getHID().exchange(
+      paddedArray,
+      (message: Uint8Array) =>
+        message.length === 32 &&
+        eqArr(requestBytes, Array.from(message.slice(0, requestBytes.length))),
+    )) as Uint8Array;
+    const buffer = Array.from(response);
+    const bufferCommandBytes = buffer.slice(0, requestBytes.length);
     logCommand(this.kbAddr, commandBytes, buffer);
-    if (!eqArr(commandBytes.slice(1), bufferCommandBytes)) {
+    if (!eqArr(requestBytes, bufferCommandBytes)) {
       console.error(
         `Command for ${this.kbAddr}:`,
         commandBytes,

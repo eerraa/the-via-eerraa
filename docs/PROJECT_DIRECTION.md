@@ -70,69 +70,79 @@ The product needs current-state convergence, not exactly-once preservation of ev
 - A split peer is considered updated only after that peer finishes applying the state and can return it.
 - Hidden pages do not generate continuous traffic and catch up when active again.
 
-### Working architecture: semantic event plus revision recovery
+### Working architecture: polling-first revision validation
 
 ```text
-Firmware semantic commit
-    -> increment RAM-only domain revision
-    -> emit a compact semantic invalidation event
-    -> app reuses existing VIA GET to read authoritative values
-    -> patch only the affected per-device cache/UI region
+Selected, visible, explicitly opted-in capable device
+    -> read small RAM-only domain revisions at a measured low frequency
+    -> compare KEYMAP / MACRO / CONFIG equality tokens
+    -> reload only mismatched domains through existing VIA GET commands
+    -> commit a stable, revision-bracketed snapshot to that device's cache
 
-Lost event, browser freeze, reconnect, or device switch
-    -> compare domain revisions
-    -> reload only mismatched domains through existing GET commands
+Reconnect, tab resume, or uncertain connection lifecycle
+    -> do not trust revision equality
+    -> perform the required full authoritative refresh
 ```
 
-Events describe what changed rather than carrying the new value. Candidate targets include:
+Firmware remains the only value authority. Revision tokens indicate that an existing GET
+domain changed; they never carry setting values. The initial candidate domains are:
 
-- `CUSTOM_MENU(channel, command)`
-- `KEYMAP(layer, row, column)` or logical range
-- `MACRO_RANGE(offset, length)`
-- encoder or keyboard-value identifiers
-- `DOMAIN_INVALIDATED(domain)` when exact scope is unavailable
+- `KEYMAP`: dynamic keymap and encoder reads;
+- `MACRO`: dynamic macro reads;
+- `CONFIG`: applicable persistent keyboard values and V3 Custom Value reads.
 
 Never expose raw EEPROM addresses in the host protocol. QMK and H7S storage layouts differ, and existing VIA reads already provide authoritative serialization and normalization.
 
-### Reliability boundary
+Upstream `UI_SYNC_REQUEST 0x16 v1` remains an unchanged Custom Menu invalidation hint and
+keeps its existing all, channel-command, and command-id semantics. It is not reinterpreted
+as State Sync v2 and is not the sole correctness mechanism. Unsolicited advanced events,
+semantic/range event kinds, nonce, ARM/lease, event sequence, descriptor queues, ACK
+journals, and a second snapshot/value protocol are not part of the approved working
+direction. They may be reconsidered only if polling and refresh measurements demonstrate
+a concrete unmet requirement.
 
-The initial extension should contain only the mechanisms needed to make the fast path safe and the cache recoverable:
+### Reliability boundary and staged implementation
 
-- opt-in definition/build metadata plus runtime capability confirmation;
-- a simple `ARM_SYNC(client nonce, timeout)` concept so old clients receive no unsolicited v2 traffic;
-- a short event sequence number to detect gaps;
-- RAM-only revisions for a small set of state domains;
-- bounded event coalescing and domain invalidation on descriptor overflow;
-- a low-frequency revision watchdog while the relevant page is visible;
-- immediate revision checks at lifecycle and device-selection boundaries.
+State Sync work is split so transport correctness does not depend on an unapproved wire
+allocation.
 
-The exact command ID and 32-byte wire layout are not frozen. Specify them in a short ADR and review them with the user before firmware implementation. Keep upstream `0x16 v1` as a Custom Menu compatibility adapter.
+**App Transport/Cache Phase 1** establishes per-device HID ownership, one listener and one
+serialized request/response queue per path, strict `0x16 v1` demultiplexing, connection
+generations, fail-closed legacy timeout handling, explicit-device async operations, and
+generation-guarded cache completeness. It sends no new command and adds no revision or
+freshness protocol.
 
-The watchdog is a recovery mechanism, not high-rate full polling. A provisional five-second interval is small control-plane traffic and must stop while hidden; final intervals come from hardware measurements.
+**Phase 2** may add opt-in definition/build metadata, runtime capability confirmation, an
+as-yet-unassigned read-only `GET_KEYBOARD_VALUE` selector, three RAM-only revision tokens,
+selected-visible polling, and revision-bracketed atomic domain refresh. Selector namespace,
+poll interval, CONFIG refresh cost, reconnect/resume behavior, and QMK/H7S implementation
+and compatibility tests remain a separate user decision gate. No selector number or 32-byte
+wire layout is frozen by this document.
 
-Do not initially add:
-
-- ACK/retransmission for every event;
-- a firmware event journal retained until ACK;
-- a complex subscription-mask/renew state machine;
-- a second snapshot value protocol;
-- a wholesale Redux redesign;
-- continuous background reads for every authorized device;
-- a new split exact-range transport.
-
-Reconsider ACK only if fault injection or hardware testing shows repeated event loss while the page is active, or if the bounded revision recovery delay is unacceptable.
+The poll is a recovery mechanism, not high-rate full polling. Hidden pages send no periodic
+traffic, ordinary keyboards receive no capability probe, and timing values are chosen from
+browser/QMK/H7S measurements instead of hard-coded guesses scattered through the app.
 
 ### App responsibility
 
-The app should provide a small generic state-sync layer rather than scattered ERA component hooks. The first implementation needs:
+The app should provide a small generic state-sync layer rather than scattered ERA component
+hooks. Phase 1 first makes the existing transport and cache ownership deterministic:
 
-- per-device HID timing and deterministic event/response demultiplexing;
-- per-device freshness such as `fresh | dirty | refreshing` for implemented domains;
-- a revision check when selecting a device instead of trusting a complete cache;
-- semantic refresh adapters that call existing GET methods and patch Redux state;
-- race handling when an event arrives during a multi-packet read or write.
+- each WebHID path owns its timestamp, listener, input diagnostics, pending matcher,
+  serialized command queue, and connection generation;
+- strict `0x16 v1` packets are routed to the owning device's Custom Menu adapter without
+  consuming the current command response;
+- malformed or unknown reports use a bounded diagnostic/drop path and never become a future
+  response;
+- a legacy timeout poisons that transport generation because an untagged late response
+  cannot safely be attributed to a retry;
+- async keymap/menu operations capture an explicit path, API/transport, definition, and
+  generation, then revalidate them before committing Redux state;
+- previous-device completions may update only a still-valid cache for that same
+  path/generation and never the newly selected device's ready/current state.
 
-Only the selected capable device needs an active sync arm initially. Non-selected device caches may remain dirty and are validated when selected. Refactor broader Redux state only where this contract requires it.
+Per-domain `dirty | refreshing | fresh(revision)` coordination and revision-bracketed refresh
+belong to Phase 2. Refactor broader Redux state only where these contracts require it.
 
 Important code areas:
 
@@ -147,7 +157,8 @@ src/store/devicesThunks.ts
 
 ### Firmware and split responsibility
 
-Emit an event only after the new value is readable through the corresponding VIA GET path.
+Increment a future domain revision only after the new value is readable through the
+corresponding VIA GET path. Firmware sends no unsolicited advanced State Sync packet.
 
 For a local runtime change, this is after the semantic setter completes. For a split peer change:
 
@@ -157,39 +168,46 @@ source change
   -> USB-side peer staged apply
   -> write/readback or CRC success
   -> required runtime reload
-  -> peer revision/event
+  -> peer domain revision increment
   -> app readback from that peer
 ```
 
 The app must not infer peer success from the source half's intent. Existing firmware remains responsible for split replication and conflict handling.
 
-Start peer notification at domain precision if the receiver no longer knows the exact key. Refresh the visible layer first and mark the remainder dirty. Add changed-range accumulation inside the existing apply pass only if measurement shows domain recovery is a real bottleneck.
+Start future peer revision bookkeeping at domain precision if the receiver no longer knows
+the exact key. The initial app refresh remains atomic at full-domain precision. Add a finer
+domain or changed-range optimization only if measurement shows full-domain recovery is a
+real bottleneck.
 
-QMK notifications belong in deferred housekeeping/task code, never scan or interrupt hot paths.
+Any future QMK revision bookkeeping belongs at semantic commit boundaries and must keep
+configurator control traffic out of scan and interrupt hot paths.
 
-H7S requires a native unsolicited-event TX path. Its current `raw_hid_send()` is a stub while ordinary VIA responses use `usbHidEnqueueViaResponse()`; filling the stub blindly can duplicate responses. Use a separate event enqueue or a TX dispatcher with explicit response/event ownership, lower priority than keyboard reports, backpressure, and queue instrumentation.
+Polling-first does not require an H7S unsolicited-event TX path. A future selector response
+must retain the existing ordinary VIA request/response owner; filling the current
+`raw_hid_send()` stub or adding a second producer could duplicate responses. Endpoint and
+queue ownership still require read-only trace and hardware measurement before H7S changes.
 
 ## Compatibility and performance expectations
 
 - Ordinary keyboards without the extension use the existing VIA path unchanged.
 - v1-capable firmware retains Custom Menu synchronization.
-- v2 firmware sends advanced events only after the ERA fork arms them.
-- Official VIA clients can continue using existing commands against ERA firmware without enabling v2 events.
+- Advanced ERA firmware sends no unsolicited State Sync traffic.
+- Official VIA clients continue using existing commands and never need an arm/subscription flow.
 - Revision counters remain in RAM and never increase EEPROM wear.
 - No synchronization send occurs in scan/ISR paths.
-- Hidden pages stop watchdog traffic.
-- H7S validation compares sync-on/off report interval, jitter and queue overflow under 8 kHz input.
+- Hidden pages stop revision-poll traffic.
+- H7S validation compares polling off/on report interval, jitter and queue overflow under 8 kHz input.
 
 ## Acceptance criteria for State Sync
 
-- Same-unit physical changes appear without F5.
+- Same-unit physical changes appear within the measured visible polling bound without F5.
 - A change committed from the opposite TOMAK half converges on the USB-side UI without F5.
 - Rapid changes settle on the final firmware value.
-- Deliberately dropped events recover through revision or lifecycle checks.
+- Missed `0x16 v1` hints recover through revision or lifecycle checks on advanced-capable firmware.
 - Device switch, unplug/replug and tab hide/show never leave stale cache labeled as current.
 - Ordinary VIA and v1-only firmware behavior remains intact.
-- Hidden state has no ongoing watchdog traffic.
-- H7S input timing and queues show no meaningful 8 kHz regression.
+- Hidden state has no ongoing revision-poll traffic.
+- H7S input timing and queues show no meaningful 8 kHz regression with polling enabled.
 
 Treat timeout and rate values as measured parameters rather than permanent guesses.
 
@@ -197,13 +215,19 @@ Treat timeout and rate values as measured parameters rather than permanent guess
 
 Natural next sequence:
 
-1. Write a concise ADR for the consistency contract, capability operations and proposed wire format.
-2. Establish app transport demultiplexing and per-device freshness with automated fake-device tests.
-3. After user approval, prototype same-unit semantic events in an isolated QMK worktree.
-4. Connect TOMAK split notification at its durable peer-commit boundary.
-5. Fault-test lost events, rapid changes, lifecycle transitions and device switching.
-6. Add exact-range or ACK complexity only if evidence calls for it.
-7. Implement the same logical protocol through the H7S native TX path and measure 8 kHz behavior.
+1. Complete App Transport/Cache Phase 1 without new wire commands: per-device transport,
+   strict demultiplexing, fail-closed generations, explicit-device thunks, and fake-device tests.
+2. At the Phase 2 user gate, review the unassigned `GET_KEYBOARD_VALUE` selector namespace,
+   KEYMAP/MACRO/CONFIG model, selected-visible polling policy, reconnect/resume full refresh,
+   revision-bracketed atomic refresh, polling interval, and CONFIG read cost.
+3. After separate approval, implement and fault-test Phase 2 app capability/revision handling
+   while proving ordinary-device command transcripts remain unchanged.
+4. Report a QMK/TOMAK plan for revision hooks at local and durable peer-readback boundaries,
+   then use an approved clean worktree/branch only.
+5. Report an H7S response-ownership plan and measure polling off/on behavior at 8 kHz before
+   firmware changes.
+6. Reconsider semantic/range events, ACK, or extra domains only if measured polling latency or
+   refresh cost fails the acceptance criteria.
 
 Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.
 

@@ -6,7 +6,10 @@ import {
   LightingValue,
 } from '@the-via/reader';
 import type {AppThunk, RootState} from './index';
-import {getSelectedDefinition} from './definitionsSlice';
+import {
+  getDefinitionForDevice,
+  getSelectedDefinition,
+} from './definitionsSlice';
 import {
   getSelectedConnectedDevice,
   getSelectedDevicePath,
@@ -124,9 +127,10 @@ export const updateLightingData =
   (connectedDevice: ConnectedDevice): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const selectedDefinition = getSelectedDefinition(state);
-    const api = getSelectedKeyboardAPI(state);
-    if (!selectedDefinition || !api) {
+    const selectedDefinition = getDefinitionForDevice(state, connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    if (!selectedDefinition) {
       return;
     }
 
@@ -168,6 +172,14 @@ export const updateLightingData =
         ({res, ref}, n, idx) => ({ref, res: {...res, [n.command]: ref[idx]}}),
         {res: props, ref: commandPromisesRes},
       ).res;
+
+      if (
+        !api.isConnectionGenerationCurrent(connectionGeneration) ||
+        getDefinitionForDevice(getState(), connectedDevice) !==
+          selectedDefinition
+      ) {
+        return;
+      }
 
       dispatch(
         updateLighting({

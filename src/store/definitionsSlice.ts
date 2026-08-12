@@ -2,6 +2,7 @@ import {createSelector, createSlice, PayloadAction} from '@reduxjs/toolkit';
 import type {
   AuthorizedDevice,
   AuthorizedDevices,
+  ConnectedDevice,
   ConnectedDevices,
 } from '../types/types';
 import {
@@ -10,7 +11,7 @@ import {
   packBits,
   unpackBits,
 } from '../utils/bit-pack';
-import {KeyboardValue} from '../utils/keyboard-api';
+import {KeyboardAPI, KeyboardValue} from '../utils/keyboard-api';
 import type {
   DefinitionVersion,
   DefinitionVersionMap,
@@ -151,6 +152,14 @@ export const getSelectedDefinition = createSelector(
     ],
 );
 
+export const getDefinitionForDevice = (
+  state: RootState,
+  connectedDevice: ConnectedDevice | AuthorizedDevice,
+) =>
+  getDefinitions(state)?.[connectedDevice.vendorProductId]?.[
+    connectedDevice.requiredDefinitionVersion
+  ];
+
 export const getBasicKeyToByte = createSelector(
   getSelectedConnectedDevice,
   getSelectedKeycodesVersion,
@@ -211,6 +220,7 @@ export const updateLayoutOption =
     if (!definition || !api || !path || !definition.layouts.labels) {
       return;
     }
+    const connectionGeneration = api.getConnectionGeneration();
 
     const optionsNums = definition.layouts.labels.map((layoutLabel) =>
       Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
@@ -229,6 +239,10 @@ export const updateLayoutOption =
       await api.setKeyboardValue(KeyboardValue.LAYOUT_OPTIONS, ...bytes);
     } catch {
       console.warn('Setting layout option command not working');
+    }
+
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
     }
 
     dispatch(
@@ -295,38 +309,47 @@ export const loadStoredCustomDefinitions =
       console.error(e);
     }
   };
-export const loadLayoutOptions = (): AppThunk => async (dispatch, getState) => {
-  const state = getState();
-  const selectedDefinition = getSelectedDefinition(state);
-  const connectedDevice = getSelectedConnectedDevice(state);
-  const api = getSelectedKeyboardAPI(state);
-  if (
-    !connectedDevice ||
-    !selectedDefinition ||
-    !selectedDefinition.layouts.labels ||
-    !api
-  ) {
-    return;
-  }
+export const loadLayoutOptions =
+  (connectedDevice: ConnectedDevice): AppThunk =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const selectedDefinition = getDefinitionForDevice(state, connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    if (
+      !selectedDefinition ||
+      !selectedDefinition.layouts.labels ||
+      !api.isConnectionGenerationCurrent(connectionGeneration)
+    ) {
+      return;
+    }
 
-  const {path} = connectedDevice;
-  try {
-    const res = await api.getKeyboardValue(KeyboardValue.LAYOUT_OPTIONS, [], 4);
-    const options = unpackBits(
-      bytesIntoNum(res),
-      selectedDefinition.layouts.labels.map((layoutLabel: string[] | string) =>
-        Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
-      ),
-    );
-    dispatch(
-      updateLayoutOptions({
-        [path]: options,
-      }),
-    );
-  } catch {
-    console.warn('Getting layout options command not working');
-  }
-};
+    const {path} = connectedDevice;
+    try {
+      const res = await api.getKeyboardValue(
+        KeyboardValue.LAYOUT_OPTIONS,
+        [],
+        4,
+      );
+      const options = unpackBits(
+        bytesIntoNum(res),
+        selectedDefinition.layouts.labels.map(
+          (layoutLabel: string[] | string) =>
+            Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
+        ),
+      );
+      if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+        return;
+      }
+      dispatch(
+        updateLayoutOptions({
+          [path]: options,
+        }),
+      );
+    } catch {
+      console.warn('Getting layout options command not working');
+    }
+  };
 
 // Take a list of authorized devices and attempt to resolve any missing definitions
 export const reloadDefinitions =
