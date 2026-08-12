@@ -119,6 +119,22 @@ poll interval, CONFIG refresh cost, reconnect/resume behavior, and QMK/H7S imple
 and compatibility tests remain a separate user decision gate. No selector number or 32-byte
 wire layout is frozen by this document.
 
+**Phase 2A** is the evidence and measurement-design gate before any production Phase 2 wire
+or firmware implementation. Start with static call-path/ownership analysis, deterministic fake
+WebHID timing and stale-report scenarios, transcript fixtures, and host-native or unit-level
+firmware fault injection where the selected firmware base supports it. The Phase 2A app agent
+must inspect the live QMK codebase read-only and produce a codebase-specific implementation
+prompt for a separate firmware agent; it must not edit the reference worktree itself. The
+firmware agent must work only in a separately approved clean branch/worktree and keep any
+measurement hook compile-time gated and absent from production builds.
+
+Physical-device validation is deferred until software-only evidence leaves a concrete question
+that cannot be answered by deterministic simulation, host tests, captured transcript replay, or
+static ownership proof. When it is unavoidable, report the exact remaining hypothesis and the
+smallest manual action required before asking for hardware access. Lack of hardware data must
+remain an explicit uncertainty and must not be replaced by assumptions about browser close/open,
+USB endpoint flushing, response latency, or 8 kHz performance.
+
 The poll is a recovery mechanism, not high-rate full polling. Hidden pages send no periodic
 traffic, ordinary keyboards receive no capability probe, and timing values are chosen from
 browser/QMK/H7S measurements instead of hard-coded guesses scattered through the app.
@@ -215,18 +231,24 @@ Treat timeout and rate values as measured parameters rather than permanent guess
 
 Natural next sequence:
 
-1. Complete App Transport/Cache Phase 1 without new wire commands: per-device transport,
-   strict demultiplexing, fail-closed generations, explicit-device thunks, and fake-device tests.
-2. At the Phase 2 user gate, review the unassigned `GET_KEYBOARD_VALUE` selector namespace,
-   KEYMAP/MACRO/CONFIG model, selected-visible polling policy, reconnect/resume full refresh,
-   revision-bracketed atomic refresh, polling interval, and CONFIG read cost.
-3. After separate approval, implement and fault-test Phase 2 app capability/revision handling
-   while proving ordinary-device command transcripts remain unchanged.
-4. Report a QMK/TOMAK plan for revision hooks at local and durable peer-readback boundaries,
-   then use an approved clean worktree/branch only.
-5. Report an H7S response-ownership plan and measure polling off/on behavior at 8 kHz before
-   firmware changes.
-6. Reconsider semantic/range events, ACK, or extra domains only if measured polling latency or
+1. Preserve the completed App Transport/Cache Phase 1 baseline and its ordinary-device
+   transcript/fake-device regression suite.
+2. In approved Phase 2A, inspect current app/QMK/H7S ownership paths read-only, review the
+   unassigned selector namespace, and exhaust software-only measurement options. Produce a
+   codebase-specific QMK measurement/fault-injection prompt, but do not modify a reference
+   firmware worktree or allocate a selector.
+3. Have a separately authorized firmware agent implement only the compile-time-gated
+   measurement support in a clean worktree/branch. Prefer host-native tests and deterministic
+   delayed-response/reconnect simulation; keep ordinary response bytes and production builds
+   unchanged.
+4. Review the resulting evidence and report any hypothesis that still requires physical hardware.
+   Run only the smallest separately approved device experiment needed to close that gap.
+5. At the production Phase 2 gate, decide the `GET_KEYBOARD_VALUE` selector, KEYMAP/MACRO/CONFIG
+   model, selected-visible polling policy, reconnect/resume full refresh, revision-bracketed
+   atomic refresh, polling interval, and CONFIG read cost.
+6. After separate approval, implement and fault-test app capability/revision handling and the
+   matching QMK/H7S production changes while proving ordinary VIA and `0x16 v1` compatibility.
+7. Reconsider semantic/range events, ACK, or extra domains only if measured polling latency or
    refresh cost fails the acceptance criteria.
 
 Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.

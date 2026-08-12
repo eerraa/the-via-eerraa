@@ -543,6 +543,14 @@ Transport/Cache Phase 1을 승인했다. Phase 1 승인은 per-device HID demult
 connection generation, legacy-timeout fail-closed, strict `0x16 v1` 분류,
 explicit-device thunk와 generation-guarded 기존 cache completeness까지만 포함한다.
 
+같은 날 사용자는 Phase 2A의 software-first evidence/measurement 설계 진입도 승인했다.
+이 승인은 live app/QMK/H7S 코드 경로의 read-only 재검증, deterministic fake WebHID와
+transcript replay, 가능한 host-native firmware test/fault injection 설계, 그리고 별도
+QMK 수정 에이전트에게 전달할 codebase-specific prompt 작성까지 포함한다. 실기기 검증은
+software-only 방법으로 해소할 수 없는 구체적 가설에만 후순위로 요청한다. 이 승인은
+reference firmware 수정, measurement hook 구현, selector 할당, capability/revision query,
+polling 또는 production State Sync 구현을 아직 허용하지 않는다.
+
 다음 Phase 2 및 firmware 항목은 여전히 구현 전 별도 승인이 필요하다.
 
 1. 새 top-level command 대신 기존 `GET_KEYBOARD_VALUE (0x02)`의 아직 할당하지 않은
@@ -558,6 +566,6 @@ explicit-device thunk와 generation-guarded 기존 cache completeness까지만 �
 8. Selector allocation 전에 upstream namespace 검토와 `0x16` v1/deployed firmware
    hardware transcript 검증.
 
-이 gate 전에는 selector 값을 확정하거나 revision query/polling을 구현하지 않고, 두
-reference firmware repository를 수정하지 않는다. 이 ADR은 wire allocation과 hardware
-measurement가 남아 있으므로 `Status: Proposed`를 유지한다.
+Phase 2A 결과와 후속 승인이 있기 전에는 selector 값을 확정하거나 revision query/polling을
+구현하지 않고, 두 reference firmware repository를 수정하지 않는다. 이 ADR은 wire
+allocation과 hardware measurement 불확실성이 남아 있으므로 `Status: Proposed`를 유지한다.
