@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 2,
+  "definitionSource": "app-repository",
+  "officialDefinitions": {
+    "bunTag": "the-via-keyboards-79ae8d2",
+    "outputCounts": {
+      "v2": 1484,
+      "v3": 2003
+    },
+    "indexCounts": {
+      "v2": 1484,
+      "v3": 551
+    }
+  },
+  "firmwareSources": {
+    "qmk-eerraa": {
+      "repository": "eerraa/qmk_firmware_eerraa",
+      "commit": "0ac4a79bd039d1c35e859c67d77a241e024aadf8"
+    },
+    "h7s": {
+      "repository": "eerraa/eerraa-qmk-h7s-fw",
+      "commit": "cd4473b7896549bb5481b873901da7fc8b5320e4"
+    }
+  },
+  "definitions": [
+    {
+      "id": "tomak79h-left",
+      "path": "era-definitions/v3/tomak79h/TOMAK79H-L-VIA.json",
+      "definitionVersion": "v3",
+      "vendorId": "0x4552",
+      "productId": "0xA002",
+      "pair": "tomak79h",
+      "firmwareSource": "qmk-eerraa",
+      "firmwareChecks": [
+        {
+          "type": "jsonPath",
+          "path": "keyboards/era/sirind/tomak79h/keyboard.json",
+          "jsonPath": ["usb", "vid"],
+          "matches": "vendorId"
+        },
+        {
+          "type": "cMacro",
+          "path": "keyboards/era/sirind/tomak79h/config.h",
+          "macro": "ERA_SPLIT_USB_IDENTITY_PID_LEFT",
+          "matches": "productId"
+        }
+      ]
+    },
+    {
+      "id": "tomak79h-right",
+      "path": "era-definitions/v3/tomak79h/TOMAK79H-R-VIA.json",
+      "definitionVersion": "v3",
+      "vendorId": "0x4552",
+      "productId": "0xB002",
+      "pair": "tomak79h",
+      "firmwareSource": "qmk-eerraa",
+      "firmwareChecks": [
+        {
+          "type": "jsonPath",
+          "path": "keyboards/era/sirind/tomak79h/keyboard.json",
+          "jsonPath": ["usb", "vid"],
+          "matches": "vendorId"
+        },
+        {
+          "type": "cMacro",
+          "path": "keyboards/era/sirind/tomak79h/config.h",
+          "macro": "ERA_SPLIT_USB_IDENTITY_PID_RIGHT",
+          "matches": "productId"
+        }
+      ]
+    },
+    {
+      "id": "brick60-h7s",
+      "path": "era-definitions/v3/brick60/BRICK60-H7S-VIA.JSON",
+      "definitionVersion": "v3",
+      "vendorId": "0x4552",
+      "productId": "0x0022",
+      "firmwareSource": "h7s",
+      "firmwareChecks": [
+        {
+          "type": "cMacro",
+          "path": "src/ap/modules/qmk/keyboards/era/sirind/brick60/config.h",
+          "macro": "USB_VID",
+          "matches": "vendorId"
+        },
+        {
+          "type": "cMacro",
+          "path": "src/ap/modules/qmk/keyboards/era/sirind/brick60/config.h",
+          "macro": "USB_PID",
+          "matches": "productId"
+        }
+      ]
+    }
+  ]
+}
