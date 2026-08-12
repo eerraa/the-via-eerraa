@@ -5,8 +5,13 @@ import {
   resolveDefinitionName,
 } from '../utils/definition-name';
 import type {AppThunk, RootState} from './index';
-import {getSelectedDefinition, getDefinitions} from './definitionsSlice';
-import {getSelectedDevicePath, getSelectedKeyboardAPI} from './devicesSlice';
+import {
+  getDefinitionForDevice,
+  getSelectedDefinition,
+  getDefinitions,
+} from './definitionsSlice';
+import {getSelectedDevicePath} from './devicesSlice';
+import {KeyboardAPI} from 'src/utils/keyboard-api';
 
 type DefinitionNameState = {
   selectedOptionMap: Record<string, number>;
@@ -72,13 +77,14 @@ export const loadDefinitionName =
   (connectedDevice: ConnectedDevice): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const definition = getSelectedDefinition(state);
-    const api = getSelectedKeyboardAPI(state);
+    const definition = getDefinitionForDevice(state, connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
     const name = definition?.name as unknown;
 
     dispatch(clearDefinitionNameOption({devicePath: connectedDevice.path}));
 
-    if (!api || !isDynamicDefinitionName(name)) {
+    if (!isDynamicDefinitionName(name)) {
       return;
     }
 
@@ -88,7 +94,11 @@ export const loadDefinitionName =
       const result = await api.getCustomMenuValue([channelId, ...command]);
       const selectedOption = result.slice(1)[0];
 
-      if (Number.isInteger(selectedOption)) {
+      if (
+        Number.isInteger(selectedOption) &&
+        api.isConnectionGenerationCurrent(connectionGeneration) &&
+        getDefinitionForDevice(getState(), connectedDevice) === definition
+      ) {
         dispatch(
           updateDefinitionNameOption({
             devicePath: connectedDevice.path,

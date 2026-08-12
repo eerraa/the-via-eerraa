@@ -278,7 +278,7 @@ function importDefinitions(
           version,
         }),
       );
-      dispatch(selectDevice(null));
+      dispatch(selectDevice({device: null, connectionGeneration: null}));
       dispatch(reloadConnectedDevices());
     }
   });

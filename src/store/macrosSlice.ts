@@ -11,10 +11,11 @@ import {RawKeycodeSequence} from 'src/utils/macro-api/types';
 import type {ConnectedDevice} from '../types/types';
 import {
   getSelectedConnectedDevice,
-  getSelectedKeyboardAPI,
+  getSelectionGeneration,
+  isSelectedDeviceOperationCurrent,
 } from './devicesSlice';
 import type {AppThunk, RootState} from './index';
-import {getSelectedKeycodesVersion} from './firmwareSlice';
+import {getKeycodesVersionMap} from './firmwareSlice';
 
 type MacrosState = {
   ast: RawKeycodeSequence[];
@@ -67,24 +68,41 @@ export const loadMacros =
   (connectedDevice: ConnectedDevice): AppThunk =>
   async (dispatch, getState) => {
     const {protocol} = connectedDevice;
+    const state = getState();
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    const selectionGeneration = getSelectionGeneration(state);
+    const isCurrentSelection = () =>
+      api.isConnectionGenerationCurrent(connectionGeneration) &&
+      isSelectedDeviceOperationCurrent(
+        getState(),
+        connectedDevice.path,
+        connectionGeneration,
+        selectionGeneration,
+      );
     if (protocol < 8) {
-      dispatch(setMacrosNotSupported());
+      if (isCurrentSelection()) {
+        dispatch(setMacrosNotSupported());
+      }
     } else {
       try {
-        const state = getState();
-        const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
-        const keycodesVersion = getSelectedKeycodesVersion(state);
+        const keycodesVersion =
+          getKeycodesVersionMap(state)[connectedDevice.path];
         const macroApi = getMacroAPI(protocol, keycodesVersion, api);
         if (macroApi) {
           const sequences = await macroApi.readRawKeycodeSequences();
           const macroBufferSize = await api.getMacroBufferSize();
           const macroCount = await api.getMacroCount();
-          dispatch(
-            loadMacrosSuccess({ast: sequences, macroBufferSize, macroCount}),
-          );
+          if (isCurrentSelection()) {
+            dispatch(
+              loadMacrosSuccess({ast: sequences, macroBufferSize, macroCount}),
+            );
+          }
         }
       } catch (err) {
-        dispatch(setMacrosNotSupported());
+        if (isCurrentSelection()) {
+          dispatch(setMacrosNotSupported());
+        }
       }
     }
   };
@@ -93,8 +111,10 @@ export const saveMacros =
   (connectedDevice: ConnectedDevice, macros: string[]): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
-    const keycodesVersion = getSelectedKeycodesVersion(state);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    const selectionGeneration = getSelectionGeneration(state);
+    const keycodesVersion = getKeycodesVersionMap(state)[connectedDevice.path];
     const {protocol} = connectedDevice;
     const macroApi = getMacroAPI(protocol, keycodesVersion, api);
     if (macroApi) {
@@ -104,7 +124,17 @@ export const saveMacros =
         return rawSequence;
       });
       await macroApi.writeRawKeycodeSequences(sequences);
-      dispatch(saveMacrosSuccess({ast: sequences}));
+      if (
+        api.isConnectionGenerationCurrent(connectionGeneration) &&
+        isSelectedDeviceOperationCurrent(
+          getState(),
+          connectedDevice.path,
+          connectionGeneration,
+          selectionGeneration,
+        )
+      ) {
+        dispatch(saveMacrosSuccess({ast: sequences}));
+      }
     }
   };
 
