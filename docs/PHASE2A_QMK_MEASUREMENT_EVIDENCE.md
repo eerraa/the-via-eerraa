@@ -7,14 +7,20 @@
 ## 조사 기준선
 
 - App: `feat/era-state-sync` / `e3dddb2b110bb34eb707ff83dd902949d86909a4`
-- QMK reference: `goal/era-arch-autonomous-run` /
-  `391d31735eceabd3e26508035101d90c7335b420` (clean, 읽기 전용)
+- QMK reference 종료 상태: `goal/era-arch-autonomous-run` /
+  `3086079c96e41b082d95fa62a6b9da02932febd0` (clean, 읽기 전용)
 - H7S reference: `main` / `cd4473b7896549bb5481b873901da7fc8b5320e4`
   (clean, 읽기 전용)
 - upstream `the-via/app` `main`: `510317d811efed929e5cc6543a7ea4495b03b00e`
 
 QMK/H7S 기준선은 움직일 수 있다. 구현 에이전트는 작업 시작 직전에 다시 확인해야 하며,
 위 해시가 다르면 이 문서의 line number보다 새 HEAD의 함수와 owner를 우선한다.
+
+QMK는 조사 시작의 clean `391d31735eceabd3e26508035101d90c7335b420`에서 종료 전
+`3086079c96e41b082d95fa62a6b9da02932febd0`으로 외부 이동했다. 사이의 `33667489a5`,
+`3086079c96`은 `era_performance_gates.md`, `era_source_map.md`,
+`era_verification_ledger.md`만 바꾼 문서 commit이다. 아래 관련 source path의 diff는 비어 있어
+call chain과 line number가 유지됨을 다시 확인했다.
 
 ## 권고안
 
