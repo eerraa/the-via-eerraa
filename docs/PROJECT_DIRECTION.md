@@ -125,12 +125,10 @@ generations, fail-closed legacy timeout handling, explicit-device async operatio
 generation-guarded cache completeness. It sends no new command and adds no revision or
 freshness protocol.
 
-**Phase 2** may add opt-in definition/build metadata, runtime capability confirmation, an
-as-yet-unassigned read-only `GET_KEYBOARD_VALUE` selector, three RAM-only revision tokens,
-selected-visible polling, and revision-bracketed atomic domain refresh. Selector namespace,
-poll interval, CONFIG refresh cost, reconnect/resume behavior, and QMK/H7S implementation
-and compatibility tests remain a separate user decision gate. No selector number or 32-byte
-wire layout is frozen by this document.
+**Phase 2** adds opt-in definition/build metadata, runtime capability confirmation via
+`GET_KEYBOARD_VALUE` selector `0x06`, three RAM-only revision tokens, selected-visible
+polling at 500 ms, and revision-bracketed atomic domain refresh. G1 froze the selector,
+exact-ms IDs, and 32-byte envelope in ADR 0001.
 
 **Phase 2A** is the evidence and measurement-design gate before any production Phase 2 wire
 or firmware implementation. Start with static call-path/ownership analysis, deterministic fake
