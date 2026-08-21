@@ -80,6 +80,8 @@ describe('exact/legacy term visibility', () => {
     const files = [
       'era-definitions/v3/tomak79h/TOMAK79H-L-VIA.json',
       'era-definitions/v3/tomak79h/TOMAK79H-R-VIA.json',
+      'era-definitions/v3/tomak/TOMAK-TKL-L-VIA.json',
+      'era-definitions/v3/tomak/TOMAK-TKL-R-VIA.json',
       'era-definitions/v3/brick60/BRICK60-H7S-VIA.JSON',
     ];
     for (const file of files) {

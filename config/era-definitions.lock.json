@@ -74,6 +74,56 @@
       ]
     },
     {
+      "id": "tomak-tkl-left",
+      "path": "era-definitions/v3/tomak/TOMAK-TKL-L-VIA.json",
+      "definitionVersion": "v3",
+      "vendorId": "0x4552",
+      "productId": "0xA001",
+      "pair": "tomak-tkl",
+      "firmwareSource": "qmk-eerraa",
+      "stateSync": true,
+      "exactMsFamily": "qmk",
+      "firmwareChecks": [
+        {
+          "type": "jsonPath",
+          "path": "keyboards/era/sirind/tomak/keyboard.json",
+          "jsonPath": ["usb", "vid"],
+          "matches": "vendorId"
+        },
+        {
+          "type": "cMacro",
+          "path": "keyboards/era/sirind/tomak/config.h",
+          "macro": "ERA_SPLIT_USB_IDENTITY_PID_LEFT",
+          "matches": "productId"
+        }
+      ]
+    },
+    {
+      "id": "tomak-tkl-right",
+      "path": "era-definitions/v3/tomak/TOMAK-TKL-R-VIA.json",
+      "definitionVersion": "v3",
+      "vendorId": "0x4552",
+      "productId": "0xB001",
+      "pair": "tomak-tkl",
+      "firmwareSource": "qmk-eerraa",
+      "stateSync": true,
+      "exactMsFamily": "qmk",
+      "firmwareChecks": [
+        {
+          "type": "jsonPath",
+          "path": "keyboards/era/sirind/tomak/keyboard.json",
+          "jsonPath": ["usb", "vid"],
+          "matches": "vendorId"
+        },
+        {
+          "type": "cMacro",
+          "path": "keyboards/era/sirind/tomak/config.h",
+          "macro": "ERA_SPLIT_USB_IDENTITY_PID_RIGHT",
+          "matches": "productId"
+        }
+      ]
+    },
+    {
       "id": "brick60-h7s",
       "path": "era-definitions/v3/brick60/BRICK60-H7S-VIA.JSON",
       "definitionVersion": "v3",
