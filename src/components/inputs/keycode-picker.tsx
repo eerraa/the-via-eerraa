@@ -17,6 +17,15 @@ import {
   selectKeycodeFromMenuCode,
 } from '../../utils/keycode-picker';
 
+const PickerRoot = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+  padding-bottom: 30px;
+  box-sizing: border-box;
+`;
+
 const KeycodeList = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, 64px);
@@ -51,26 +60,50 @@ const KeycodeContent = styled.div`
 const Toolbar = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  padding: 0 12px 12px;
+  gap: 16px 20px;
+  align-items: flex-end;
 `;
 
 const Composer = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px 20px;
   align-items: center;
-  padding: 0 12px 12px;
   color: var(--color_label-highlighted);
   font-size: 13px;
 `;
 
+const ModGroup = styled.div`
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+`;
+
+const ModLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  cursor: pointer;
+`;
+
+const LayerField = styled.label`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+`;
+
 const AdvancedRow = styled.div`
   display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 0 12px 16px;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+  align-items: flex-end;
+`;
+
+const CategoryNav = styled.div`
+  padding: 15px 20px 20px 10px;
 `;
 
 const CategoryButton = styled.button<{$selected: boolean}>`
@@ -84,14 +117,19 @@ const CategoryButton = styled.button<{$selected: boolean}>`
       ? 'var(--color_label-highlighted)'
       : 'var(--color_label)'};
   padding: 8px 12px;
+  margin-bottom: 11px;
   cursor: pointer;
   font-size: 16px;
+  border-radius: 12px;
 `;
 
 const SearchInput = styled(TextInput)`
   margin: 0;
   font-size: 1rem;
-  width: 220px;
+  min-width: 220px;
+  flex: 1 1 220px;
+  max-width: 360px;
+  box-sizing: border-box;
 `;
 
 const LayerInput = styled.input`
@@ -101,10 +139,11 @@ const LayerInput = styled.input`
   border-bottom: 1px solid var(--color_accent);
   color: var(--color_accent);
   font-size: 1rem;
+  margin: 0;
+  padding: 4px 2px;
 `;
 
 const Status = styled.div`
-  padding: 0 12px 8px;
   color: var(--color_label-highlighted);
   font-size: 13px;
 `;
@@ -197,7 +236,7 @@ export const KeycodePicker = ({
   const isMacroCategory = currentMenu?.id === 'macro';
 
   return (
-    <div>
+    <PickerRoot>
       <Toolbar>
         <SearchInput
           aria-label={t('Search keycodes')}
@@ -218,7 +257,7 @@ export const KeycodePicker = ({
         {t('Current')}: {currentLabel || '—'}
       </Status>
       {renderCategoryNav ? (
-        <div>
+        <CategoryNav>
           {filteredMenus.map((menu) => (
             <CategoryButton
               key={menu.id}
@@ -228,7 +267,7 @@ export const KeycodePicker = ({
               {t(menu.label)}
             </CategoryButton>
           ))}
-        </div>
+        </CategoryNav>
       ) : null}
       {isMacroCategory && !macrosSupported ? (
         <Status>
@@ -240,22 +279,24 @@ export const KeycodePicker = ({
         <KeycodeList>{selectedKeycodes.map(renderKeycode)}</KeycodeList>
       )}
       <Composer>
-        {MODIFIERS.map((mod) => (
-          <label key={mod}>
-            <input
-              type="checkbox"
-              checked={activeMods.includes(mod)}
-              onChange={(event) =>
-                setActiveMods((current) =>
-                  event.target.checked
-                    ? [...current, mod]
-                    : current.filter((item) => item !== mod),
-                )
-              }
-            />
-            {mod}
-          </label>
-        ))}
+        <ModGroup>
+          {MODIFIERS.map((mod) => (
+            <ModLabel key={mod}>
+              <input
+                type="checkbox"
+                checked={activeMods.includes(mod)}
+                onChange={(event) =>
+                  setActiveMods((current) =>
+                    event.target.checked
+                      ? [...current, mod]
+                      : current.filter((item) => item !== mod),
+                  )
+                }
+              />
+              {mod}
+            </ModLabel>
+          ))}
+        </ModGroup>
         <AccentButton
           onClick={() => {
             const modifier = activeMods[0];
@@ -283,7 +324,7 @@ export const KeycodePicker = ({
         >
           {t('Mod-Tap')}
         </AccentButton>
-        <label>
+        <LayerField>
           {t('Layer')}
           <LayerInput
             type="number"
@@ -292,7 +333,7 @@ export const KeycodePicker = ({
             value={layer}
             onChange={(event) => setLayer(Number(event.target.value))}
           />
-        </label>
+        </LayerField>
         <AccentButton
           onClick={() =>
             emit(composeLayerTap(layer, tapCode, basicKeyToByte))
@@ -314,7 +355,7 @@ export const KeycodePicker = ({
           {t('Apply')}
         </PrimaryAccentButton>
       </AdvancedRow>
-      {error ? <Status role="alert">{error}</Status> : null}
-    </div>
+      {error ? <Status role="alert">{t(error)}</Status> : null}
+    </PickerRoot>
   );
 };
