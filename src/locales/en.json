@@ -385,18 +385,6 @@
   "Firmware update required for exact millisecond input": "Firmware update required for exact millisecond input",
   "Exact milliseconds": "Exact milliseconds",
   "milliseconds": "milliseconds",
-  "FEATURE": "Features",
-  "TAPDANCE": "Tap Dance",
-  "SYSTEM": "System",
-  "TAPPING": "Tapping",
-  "DEBOUNCE": "Debounce",
-  "MOUSE": "Mouse",
-  "SYNC": "Sync",
-  "LINK": "Link",
-  "BOOT": "Boot",
-  "EEPROM SYNC": "EEPROM Sync",
-  "INPUT SYNC": "Input Sync",
-  "RGB SYNC": "RGB Sync",
   "Compose": "Compose",
   "Base keycode": "Base keycode",
   "Pick from grid": "Pick from grid",
@@ -404,5 +392,8 @@
   "Click a keycode card to set the base. It will not be assigned yet.": "Click a keycode card to set the base. It will not be assigned yet.",
   "Choose a base keycode first": "Choose a base keycode first",
   "Grid clicks assign the selected key. Compose uses the base keycode.": "Grid clicks assign the selected key. Compose uses the base keycode.",
-  "Choose at least one modifier": "Choose at least one modifier"
+  "Choose at least one modifier": "Choose at least one modifier",
+  "Tap": "Tap",
+  "Hold": "Hold",
+  "Any": "Any"
 }

@@ -24,6 +24,11 @@ export function formatKeycodeLabel(
   return formatKeycodeHex(value);
 }
 
+export const COMPOSER_CATEGORY_ID = 'layers';
+
+export const isComposerCategory = (categoryId: string | undefined) =>
+  categoryId === COMPOSER_CATEGORY_ID;
+
 export function resolveComposeBaseCode(
   input: string,
   menus: IKeycodeMenu[],
