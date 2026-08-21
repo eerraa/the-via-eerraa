@@ -368,6 +368,8 @@
   "Add device": "デバイスを追加",
   "Search": "検索",
   "Search keycodes": "キーコードを検索",
+  "Keycode categories": "キーコードカテゴリ",
+  "Choose a keycode": "キーコードを選択",
   "Current": "現在",
   "Modifier": "モディファイア",
   "Mod-Tap": "モッドタップ",

@@ -368,6 +368,8 @@
   "Add device": "장치 추가",
   "Search": "검색",
   "Search keycodes": "키코드 검색",
+  "Keycode categories": "키코드 카테고리",
+  "Choose a keycode": "키코드 선택",
   "Current": "현재",
   "Modifier": "수식 키",
   "Mod-Tap": "모드 탭",

@@ -15,12 +15,13 @@ import {
   selectKeycodeFromMenuCode,
 } from '../src/utils/keycode-picker';
 import {menusWithTapDanceSplit} from '../src/utils/keycode-menus';
-import type {IKeycodeMenu} from '../src/utils/key';
+import {getKeycodes, type IKeycodeMenu} from '../src/utils/key';
 
 const basicKeyToByte: Record<string, number> = {
   KC_NO: 0x0000,
   KC_A: 0x0004,
   KC_B: 0x0005,
+  KC_SPC: 0x002c,
   KC_LSFT: 0x00e1,
   _QK_MODS: 0x0100,
   _QK_MODS_MAX: 0x1fff,
@@ -28,6 +29,8 @@ const basicKeyToByte: Record<string, number> = {
   _QK_MOD_TAP_MAX: 0x3fff,
   _QK_LAYER_TAP: 0x4000,
   _QK_LAYER_TAP_MAX: 0x4fff,
+  _QK_MOMENTARY: 0x5100,
+  _QK_MOMENTARY_MAX: 0x511f,
   _QK_MACRO: 0x7700,
   _QK_MACRO_MAX: 0x777f,
   _QK_KB: 0x7e00,
@@ -137,6 +140,18 @@ describe('keycode picker codec', () => {
 });
 
 describe('tapdance keycode category', () => {
+  test('keeps Layer cards selectable as 16-bit Tap Dance actions', () => {
+    const layerMenu = getKeycodes().find((menu) => menu.id === 'layers');
+    const layerCodes = layerMenu?.keycodes.map((keycode) => keycode.code);
+
+    expect(layerCodes).toContain('MO(1)');
+    expect(layerCodes).toContain('LT(1,KC_SPC)');
+    expect(selectKeycodeFromMenuCode('MO(1)', basicKeyToByte)).toBe(0x5101);
+    expect(selectKeycodeFromMenuCode('LT(1,KC_SPC)', basicKeyToByte)).toBe(
+      0x412c,
+    );
+  });
+
   test('lifts TD0-TD7 out of Custom and places TAPDANCE immediately above it', () => {
     const split = menusWithTapDanceSplit([
       {

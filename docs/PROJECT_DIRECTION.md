@@ -46,6 +46,13 @@ keyboard key. The Special-category Any card remains the advanced QMK/hex escape 
 infer a compose base from the previously assigned grid card or expose a permanent compose form in
 ordinary categories.
 
+V3 `keycode` action controls use a stable wide dialog with the same left-side category navigation
+and card grid as the ordinary keymap picker; dialog width must not depend on the selected category's
+content. The action picker exposes every keycode category enabled by the connected definition,
+including layer cards such as `MO(n)`, while retaining Any/hex as the advanced escape hatch. This
+does not relax the Basic-key-only operand rule inside `LT`/`MT`, and firmware remains authoritative
+for the runtime semantics of the selected 16-bit action.
+
 Tapping-family time values must also be directly editable as integer milliseconds. The first
 scope is the global TAPPING term and the TD0–TD7 terms; boolean tapping options and unrelated
 debounce or anti-ghosting timings are not silently included. A representative non-step value
