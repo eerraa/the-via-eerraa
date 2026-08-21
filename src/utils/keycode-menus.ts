@@ -74,7 +74,7 @@ export function buildEnabledKeycodeMenus(args: {
       );
   }
 
-  return menus.map((menu) => {
+  const withCustomValues = menus.map((menu) => {
     if (menu.id !== 'custom' || !definition.customKeycodes) {
       return menu;
     }
@@ -86,4 +86,34 @@ export function buildEnabledKeycodeMenus(args: {
       })),
     };
   });
+  return menusWithTapDanceSplit(withCustomValues);
+}
+
+export const isTapDanceCustomKeycode = (keycode: {name: string}) =>
+  /^TD[0-7]$/.test(keycode.name);
+
+export function menusWithTapDanceSplit(menus: IKeycodeMenu[]): IKeycodeMenu[] {
+  const next: IKeycodeMenu[] = [];
+  for (const menu of menus) {
+    if (menu.id !== 'custom') {
+      next.push(menu);
+      continue;
+    }
+    const tapdance = menu.keycodes.filter(isTapDanceCustomKeycode);
+    const custom = menu.keycodes.filter(
+      (keycode) => !isTapDanceCustomKeycode(keycode),
+    );
+    if (tapdance.length) {
+      next.push({
+        id: 'tapdance',
+        label: 'TAPDANCE',
+        width: 'label',
+        keycodes: tapdance,
+      });
+    }
+    if (custom.length) {
+      next.push({...menu, keycodes: custom});
+    }
+  }
+  return next;
 }

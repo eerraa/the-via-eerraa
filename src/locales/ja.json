@@ -384,5 +384,17 @@
   "Legacy step {{step}} ms": "レガシー間隔 {{step}} ms",
   "Firmware update required for exact millisecond input": "正確なミリ秒入力にはファームウェアの更新が必要です",
   "Exact milliseconds": "正確なミリ秒",
-  "milliseconds": "ミリ秒"
+  "milliseconds": "ミリ秒",
+  "FEATURE": "機能",
+  "TAPDANCE": "タップダンス",
+  "SYSTEM": "システム",
+  "TAPPING": "タッピング",
+  "DEBOUNCE": "デバウンス",
+  "MOUSE": "マウス",
+  "SYNC": "同期",
+  "LINK": "リンク",
+  "BOOT": "ブート",
+  "EEPROM SYNC": "EEPROM 同期",
+  "INPUT SYNC": "入力同期",
+  "RGB SYNC": "RGB 同期"
 }

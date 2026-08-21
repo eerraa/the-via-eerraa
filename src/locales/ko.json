@@ -384,5 +384,17 @@
   "Legacy step {{step}} ms": "레거시 간격 {{step}} ms",
   "Firmware update required for exact millisecond input": "정확한 밀리초 입력에는 펌웨어 업데이트가 필요합니다",
   "Exact milliseconds": "정확한 밀리초",
-  "milliseconds": "밀리초"
+  "milliseconds": "밀리초",
+  "FEATURE": "기능",
+  "TAPDANCE": "탭 댄스",
+  "SYSTEM": "시스템",
+  "TAPPING": "태핑",
+  "DEBOUNCE": "디바운스",
+  "MOUSE": "마우스",
+  "SYNC": "동기화",
+  "LINK": "링크",
+  "BOOT": "부트",
+  "EEPROM SYNC": "EEPROM 동기화",
+  "INPUT SYNC": "입력 동기화",
+  "RGB SYNC": "RGB 동기화"
 }

@@ -10,6 +10,7 @@ import {
   parseKeycodeInput,
   selectKeycodeFromMenuCode,
 } from '../src/utils/keycode-picker';
+import {menusWithTapDanceSplit} from '../src/utils/keycode-menus';
 import type {IKeycodeMenu} from '../src/utils/key';
 
 const basicKeyToByte: Record<string, number> = {
@@ -80,5 +81,54 @@ describe('keycode picker codec', () => {
       'KC_A',
     ]);
     expect(filterKeycodeMenus(menus, 'nope')).toEqual([]);
+  });
+});
+
+describe('tapdance keycode category', () => {
+  test('lifts TD0-TD7 out of Custom and places TAPDANCE immediately above it', () => {
+    const split = menusWithTapDanceSplit([
+      {
+        id: 'special',
+        label: 'Special',
+        keycodes: [{name: 'Any', code: 'text'}],
+      },
+      {
+        id: 'custom',
+        label: 'Custom',
+        keycodes: [
+          {name: 'TD0', title: 'Tap Dance 0', code: 'CUSTOM(0)'},
+          {name: 'TD7', title: 'Tap Dance 7', code: 'CUSTOM(7)'},
+          {name: 'USER1', title: 'User 1', code: 'CUSTOM(8)'},
+        ],
+      },
+    ]);
+    expect(split.map((menu: {id: string}) => menu.id)).toEqual([
+      'special',
+      'tapdance',
+      'custom',
+    ]);
+    expect(split[1].label).toBe('TAPDANCE');
+    expect(split[1].keycodes.map((keycode: {code: string}) => keycode.code)).toEqual([
+      'CUSTOM(0)',
+      'CUSTOM(7)',
+    ]);
+    expect(split[2].keycodes.map((keycode: {name: string}) => keycode.name)).toEqual([
+      'USER1',
+    ]);
+  });
+
+  test('drops Custom when every custom keycode is TD0-TD7', () => {
+    const split = menusWithTapDanceSplit([
+      {
+        id: 'custom',
+        label: 'Custom',
+        keycodes: [
+          {name: 'TD0', code: 'CUSTOM(0)'},
+          {name: 'TD1', code: 'CUSTOM(1)'},
+        ],
+      },
+    ]);
+    expect(split).toHaveLength(1);
+    expect(split[0].id).toBe('tapdance');
   });
 });
