@@ -368,6 +368,8 @@
   "Add device": "Añadir dispositivo",
   "Search": "Buscar",
   "Search keycodes": "Buscar códigos de tecla",
+  "Keycode categories": "Categorías de códigos de tecla",
+  "Choose a keycode": "Elegir un código de tecla",
   "Current": "Actual",
   "Modifier": "Modificador",
   "Mod-Tap": "Toque con modificador",

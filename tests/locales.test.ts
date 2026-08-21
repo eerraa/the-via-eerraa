@@ -44,6 +44,8 @@ describe('VIA locale coverage', () => {
   test('picker and millisecond strings are translated, not left as English keys', () => {
     const required = [
       'Search',
+      'Keycode categories',
+      'Choose a keycode',
       'Modifier',
       'Mod-Tap',
       'Layer-Tap',

@@ -21,13 +21,28 @@ import {
   selectKeycodeFromMenuCode,
 } from '../../utils/keycode-picker';
 
-const PickerRoot = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+const PickerRoot = styled.div<{$withCategoryNav: boolean}>`
+  display: grid;
+  grid-template-columns: ${(props) =>
+    props.$withCategoryNav ? '148px minmax(0, 1fr)' : 'minmax(0, 1fr)'};
+  align-items: start;
+  gap: ${(props) => (props.$withCategoryNav ? '16px' : '0')};
+  width: 100%;
+  min-width: 0;
   padding: 12px;
   padding-bottom: 30px;
   box-sizing: border-box;
+
+  @media (max-width: 760px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+`;
+
+const PickerContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 `;
 
 const KeycodeList = styled.div<{$picking?: boolean}>`
@@ -35,6 +50,7 @@ const KeycodeList = styled.div<{$picking?: boolean}>`
   grid-template-columns: repeat(auto-fill, 64px);
   grid-auto-rows: 64px;
   justify-content: center;
+  width: 100%;
   grid-gap: 10px;
   outline: ${(props) =>
     props.$picking ? '2px dashed var(--color_accent)' : 'none'};
@@ -198,14 +214,29 @@ const Preview = styled.div`
 `;
 
 const CategoryNav = styled.div`
-  padding: 15px 20px 20px 10px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  padding: 4px 16px 4px 0;
+  border-right: 1px solid var(--border_color_cell);
+  background: var(--bg_menu);
+
+  @media (max-width: 760px) {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border_color_cell);
+  }
 `;
 
 const CategoryButton = styled.button<{$selected: boolean}>`
   display: block;
   width: 100%;
   text-align: left;
-  background: none;
+  background: ${(props) => (props.$selected ? 'var(--bg_icon)' : 'none')};
   border: none;
   color: ${(props) =>
     props.$selected ? 'var(--color_label-highlighted)' : 'var(--color_label)'};
@@ -214,6 +245,11 @@ const CategoryButton = styled.button<{$selected: boolean}>`
   cursor: pointer;
   font-size: 16px;
   border-radius: 12px;
+
+  @media (max-width: 760px) {
+    width: auto;
+    margin-bottom: 0;
+  }
 `;
 
 const CompactInput = styled(TextInput)`
@@ -466,58 +502,17 @@ export const KeycodePicker = ({
     ? composeBaseKeycodes
     : (currentMenu?.keycodes ?? []);
   const isMacroCategory = !pickingBase && currentMenu?.id === 'macro';
+  const showCategoryNav = renderCategoryNav && !pickingBase;
 
   return (
-    <PickerRoot>
-      {pickingBase ? (
-        <Toolbar>
-          <SearchInput
-            aria-label={t('Search keycodes')}
-            placeholder={t('Search')}
-            value={baseQuery}
-            onChange={(event) => setBaseQuery(event.target.value)}
-          />
-          <CompactAccentButton
-            onClick={() => {
-              setPickingBase(false);
-              setBaseQuery('');
-            }}
-          >
-            {t('Back to Layers')}
-          </CompactAccentButton>
-        </Toolbar>
-      ) : (
-        <Toolbar>
-          <SearchInput
-            aria-label={t('Search keycodes')}
-            placeholder={t('Search')}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <CompactAccentButton
-            onClick={() => {
-              setQuery('');
-              emit(clearKeycodeValue(basicKeyToByte));
-            }}
-          >
-            {t('Clear')}
-          </CompactAccentButton>
-        </Toolbar>
-      )}
-      <Status>
-        {t('Current')}: {currentLabel || '—'}
-      </Status>
-      {pickingBase ? (
-        <Hint role="status">
-          {t('Choose a tap key from the grid. It will not be assigned yet.')}
-        </Hint>
-      ) : null}
-      {renderCategoryNav && !pickingBase ? (
-        <CategoryNav>
+    <PickerRoot $withCategoryNav={showCategoryNav}>
+      {showCategoryNav ? (
+        <CategoryNav aria-label={t('Keycode categories')}>
           {filteredMenus.map((menu) => (
             <CategoryButton
               key={menu.id}
               $selected={menu.id === currentMenu?.id}
+              aria-pressed={menu.id === currentMenu?.id}
               onClick={() => setSelectedCategory(menu.id)}
             >
               {t(menu.label)}
@@ -525,149 +520,194 @@ export const KeycodePicker = ({
           ))}
         </CategoryNav>
       ) : null}
-      {isMacroCategory && !macrosSupported ? (
+      <PickerContent>
+        {pickingBase ? (
+          <Toolbar>
+            <SearchInput
+              aria-label={t('Search keycodes')}
+              placeholder={t('Search')}
+              value={baseQuery}
+              onChange={(event) => setBaseQuery(event.target.value)}
+            />
+            <CompactAccentButton
+              onClick={() => {
+                setPickingBase(false);
+                setBaseQuery('');
+              }}
+            >
+              {t('Back to Layers')}
+            </CompactAccentButton>
+          </Toolbar>
+        ) : (
+          <Toolbar>
+            <SearchInput
+              aria-label={t('Search keycodes')}
+              placeholder={t('Search')}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <CompactAccentButton
+              onClick={() => {
+                setQuery('');
+                emit(clearKeycodeValue(basicKeyToByte));
+              }}
+            >
+              {t('Clear')}
+            </CompactAccentButton>
+          </Toolbar>
+        )}
         <Status>
-          {t(
-            'Your current firmware does not support macros. Install the latest firmware for your device.',
-          )}
+          {t('Current')}: {currentLabel || '—'}
         </Status>
-      ) : (
-        <KeycodeList $picking={pickingBase}>
-          {selectedKeycodes.map(renderKeycode)}
-        </KeycodeList>
-      )}
-      {showComposer && !pickingBase ? (
-        <ComposePanel aria-label={t('Compose')}>
-          <ComposeHeader>
-            <ComposeIntro>
-              <ComposeTitle>{t('Compose')}</ComposeTitle>
-              <Hint>
-                {t('Choose a behavior, then set its key and hold action.')}
-              </Hint>
-            </ComposeIntro>
-            <ComposeActions>
-              <ComposeActionButton
-                $selected={composeKind === 'layerTap'}
-                aria-pressed={composeKind === 'layerTap'}
-                onClick={() => openComposer('layerTap')}
-              >
-                {t('Layer-Tap')}
-              </ComposeActionButton>
-              <ComposeActionButton
-                $selected={composeKind === 'modTap'}
-                aria-pressed={composeKind === 'modTap'}
-                onClick={() => openComposer('modTap')}
-              >
-                {t('Mod-Tap')}
-              </ComposeActionButton>
-              <ComposeActionButton
-                $selected={composeKind === 'modifier'}
-                aria-pressed={composeKind === 'modifier'}
-                onClick={() => openComposer('modifier')}
-              >
-                {t('Modifier')}
-              </ComposeActionButton>
-            </ComposeActions>
-          </ComposeHeader>
-          {composeKind ? (
-            <ComposeEditor>
-              <Hint>{composeHint}</Hint>
-              <ActionRow>
-                <RowLabel>
-                  {composeKind === 'modifier' ? t('Key') : t('Tap')}
-                </RowLabel>
-                <CompactInput
-                  aria-label={t('Base keycode')}
-                  placeholder={t('KC_A, A, Esc')}
-                  value={composeDraft}
-                  onChange={(event) => setComposeDraft(event.target.value)}
-                />
-                <CompactAccentButton
-                  onClick={() => {
-                    setBaseQuery('');
-                    setPickingBase(true);
-                  }}
+        {pickingBase ? (
+          <Hint role="status">
+            {t('Choose a tap key from the grid. It will not be assigned yet.')}
+          </Hint>
+        ) : null}
+        {isMacroCategory && !macrosSupported ? (
+          <Status>
+            {t(
+              'Your current firmware does not support macros. Install the latest firmware for your device.',
+            )}
+          </Status>
+        ) : (
+          <KeycodeList $picking={pickingBase}>
+            {selectedKeycodes.map(renderKeycode)}
+          </KeycodeList>
+        )}
+        {showComposer && !pickingBase ? (
+          <ComposePanel aria-label={t('Compose')}>
+            <ComposeHeader>
+              <ComposeIntro>
+                <ComposeTitle>{t('Compose')}</ComposeTitle>
+                <Hint>
+                  {t('Choose a behavior, then set its key and hold action.')}
+                </Hint>
+              </ComposeIntro>
+              <ComposeActions>
+                <ComposeActionButton
+                  $selected={composeKind === 'layerTap'}
+                  aria-pressed={composeKind === 'layerTap'}
+                  onClick={() => openComposer('layerTap')}
                 >
-                  {t('Pick from grid')}
-                </CompactAccentButton>
-                <Resolved>
-                  {composeBaseCode
-                    ? composeBaseCode
-                    : composeDraft.trim()
-                      ? t('Unrecognized keycode')
-                      : t('Choose a base keycode first')}
-                </Resolved>
-              </ActionRow>
-              {composeKind === 'layerTap' ? (
-                <ActionRow>
-                  <RowLabel>{t('Hold')}</RowLabel>
-                  <InlineLabel>{t('Layer')}</InlineLabel>
-                  <LayerInput
-                    type="number"
-                    min={0}
-                    max={15}
-                    aria-label={t('Layer')}
-                    value={layer}
-                    onChange={(event) => setLayer(Number(event.target.value))}
-                  />
-                </ActionRow>
-              ) : (
+                  {t('Layer-Tap')}
+                </ComposeActionButton>
+                <ComposeActionButton
+                  $selected={composeKind === 'modTap'}
+                  aria-pressed={composeKind === 'modTap'}
+                  onClick={() => openComposer('modTap')}
+                >
+                  {t('Mod-Tap')}
+                </ComposeActionButton>
+                <ComposeActionButton
+                  $selected={composeKind === 'modifier'}
+                  aria-pressed={composeKind === 'modifier'}
+                  onClick={() => openComposer('modifier')}
+                >
+                  {t('Modifier')}
+                </ComposeActionButton>
+              </ComposeActions>
+            </ComposeHeader>
+            {composeKind ? (
+              <ComposeEditor>
+                <Hint>{composeHint}</Hint>
                 <ActionRow>
                   <RowLabel>
-                    {composeKind === 'modifier' ? t('Modifier') : t('Hold')}
+                    {composeKind === 'modifier' ? t('Key') : t('Tap')}
                   </RowLabel>
-                  {MODIFIERS.map((modifier) => (
-                    <ChipButton
-                      key={modifier}
-                      type="button"
-                      $on={activeMods.includes(modifier)}
-                      aria-pressed={activeMods.includes(modifier)}
-                      onClick={() =>
-                        setActiveMods((current) =>
-                          current.includes(modifier)
-                            ? current.filter((item) => item !== modifier)
-                            : [...current, modifier],
-                        )
-                      }
-                    >
-                      {modifier}
-                    </ChipButton>
-                  ))}
+                  <CompactInput
+                    aria-label={t('Base keycode')}
+                    placeholder={t('KC_A, A, Esc')}
+                    value={composeDraft}
+                    onChange={(event) => setComposeDraft(event.target.value)}
+                  />
+                  <CompactAccentButton
+                    onClick={() => {
+                      setBaseQuery('');
+                      setPickingBase(true);
+                    }}
+                  >
+                    {t('Pick from grid')}
+                  </CompactAccentButton>
+                  <Resolved>
+                    {composeBaseCode
+                      ? composeBaseCode
+                      : composeDraft.trim()
+                        ? t('Unrecognized keycode')
+                        : t('Choose a base keycode first')}
+                  </Resolved>
                 </ActionRow>
-              )}
-              <ComposeFooter>
-                <Preview>
-                  <span>{t('Preview')}:</span>
-                  <code>{composePreview}</code>
-                </Preview>
-                <CompactAccentButton
-                  onClick={() => {
-                    setComposeKind(null);
-                    setPickingBase(false);
-                  }}
-                >
-                  {t('Cancel')}
-                </CompactAccentButton>
-                <CompactPrimaryAccentButton
-                  disabled={!canApply}
-                  title={
-                    !canCompose
-                      ? t('Choose a base keycode first')
-                      : orderedActiveMods.length === 0 &&
-                          composeKind !== 'layerTap'
-                        ? t('Choose at least one modifier')
-                        : ''
-                  }
-                  onClick={applyCompose}
-                >
-                  {t('Apply')}
-                </CompactPrimaryAccentButton>
-              </ComposeFooter>
-            </ComposeEditor>
-          ) : null}
-        </ComposePanel>
-      ) : null}
-      {error ? <Status role="alert">{t(error)}</Status> : null}
+                {composeKind === 'layerTap' ? (
+                  <ActionRow>
+                    <RowLabel>{t('Hold')}</RowLabel>
+                    <InlineLabel>{t('Layer')}</InlineLabel>
+                    <LayerInput
+                      type="number"
+                      min={0}
+                      max={15}
+                      aria-label={t('Layer')}
+                      value={layer}
+                      onChange={(event) => setLayer(Number(event.target.value))}
+                    />
+                  </ActionRow>
+                ) : (
+                  <ActionRow>
+                    <RowLabel>
+                      {composeKind === 'modifier' ? t('Modifier') : t('Hold')}
+                    </RowLabel>
+                    {MODIFIERS.map((modifier) => (
+                      <ChipButton
+                        key={modifier}
+                        type="button"
+                        $on={activeMods.includes(modifier)}
+                        aria-pressed={activeMods.includes(modifier)}
+                        onClick={() =>
+                          setActiveMods((current) =>
+                            current.includes(modifier)
+                              ? current.filter((item) => item !== modifier)
+                              : [...current, modifier],
+                          )
+                        }
+                      >
+                        {modifier}
+                      </ChipButton>
+                    ))}
+                  </ActionRow>
+                )}
+                <ComposeFooter>
+                  <Preview>
+                    <span>{t('Preview')}:</span>
+                    <code>{composePreview}</code>
+                  </Preview>
+                  <CompactAccentButton
+                    onClick={() => {
+                      setComposeKind(null);
+                      setPickingBase(false);
+                    }}
+                  >
+                    {t('Cancel')}
+                  </CompactAccentButton>
+                  <CompactPrimaryAccentButton
+                    disabled={!canApply}
+                    title={
+                      !canCompose
+                        ? t('Choose a base keycode first')
+                        : orderedActiveMods.length === 0 &&
+                            composeKind !== 'layerTap'
+                          ? t('Choose at least one modifier')
+                          : ''
+                    }
+                    onClick={applyCompose}
+                  >
+                    {t('Apply')}
+                  </CompactPrimaryAccentButton>
+                </ComposeFooter>
+              </ComposeEditor>
+            ) : null}
+          </ComposePanel>
+        ) : null}
+        {error ? <Status role="alert">{t(error)}</Status> : null}
+      </PickerContent>
       {showAdvanced ? (
         <KeycodeModal
           defaultValue={value}

@@ -368,6 +368,8 @@
   "Add device": "添加设备",
   "Search": "搜索",
   "Search keycodes": "搜索键码",
+  "Keycode categories": "键码类别",
+  "Choose a keycode": "选择键码",
   "Current": "当前",
   "Modifier": "修饰键",
   "Mod-Tap": "修饰点按",

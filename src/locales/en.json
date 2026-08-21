@@ -368,6 +368,8 @@
   "Add device": "Add device",
   "Search": "Search",
   "Search keycodes": "Search keycodes",
+  "Keycode categories": "Keycode categories",
+  "Choose a keycode": "Choose a keycode",
   "Current": "Current",
   "Modifier": "Modifier",
   "Mod-Tap": "Mod-Tap",
