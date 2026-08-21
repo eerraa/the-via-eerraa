@@ -7,6 +7,11 @@ import {
   type MillisecondCommitState,
 } from '../src/utils/millisecond-field';
 import {FakeMillisecondDevice} from './fixtures/millisecond-fake';
+import {
+  exactGlobalTermControl,
+  LEGACY_TAPPING_TERM_OPTIONS,
+  legacyGlobalTermControl,
+} from './fixtures/via-ms-definitions';
 
 const idle = (ms: number): MillisecondCommitState => ({
   authoritativeMs: ms,
@@ -125,5 +130,31 @@ describe('commitMillisecondDraft', () => {
     });
     expect(reverted.draft).toBe('200');
     expect(reverted.error).toBeNull();
+  });
+
+  test('legacy dropdown fixtures stay 10ms units; exact fixture is a 100-500 range', () => {
+    expect(legacyGlobalTermControl.content[2]).toBe(1);
+    expect(LEGACY_TAPPING_TERM_OPTIONS[0]).toBe(10);
+    expect(LEGACY_TAPPING_TERM_OPTIONS.at(-1)).toBe(50);
+    expect(exactGlobalTermControl.options).toEqual([100, 500]);
+    expect(exactGlobalTermControl.type).toBe('range');
+  });
+
+  test('eight independent TD slots keep non-grid values on exact adapters', async () => {
+    const slots = Array.from(
+      {length: 8},
+      (_, index) => new FakeMillisecondDevice('exact', 200),
+    );
+    const values = [101, 137, 141, 163, 187, 203, 499, 500];
+    for (const [index, valueMs] of values.entries()) {
+      const result = await commitMillisecondDraft(
+        String(valueMs),
+        idle(200),
+        slots[index],
+      );
+      expect(result.wrote).toBe(true);
+      expect(result.next.authoritativeMs).toBe(valueMs);
+    }
+    expect(slots.map((slot) => slot.storedMs)).toEqual(values);
   });
 });
