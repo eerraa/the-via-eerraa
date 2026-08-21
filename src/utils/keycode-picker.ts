@@ -24,6 +24,49 @@ export function formatKeycodeLabel(
   return formatKeycodeHex(value);
 }
 
+export function resolveComposeBaseCode(
+  input: string,
+  menus: IKeycodeMenu[],
+  basicKeyToByte: Record<string, number>,
+  byteToKey: Record<number, string>,
+): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const needle = trimmed.toLowerCase();
+  for (const menu of menus) {
+    for (const keycode of menu.keycodes) {
+      if (!keycode.code || keycode.code === 'text') {
+        continue;
+      }
+      if (
+        keycode.code.toLowerCase() === needle ||
+        keycode.name.toLowerCase() === needle ||
+        keycode.shortName?.toLowerCase() === needle
+      ) {
+        return keycode.code;
+      }
+    }
+  }
+  const parsed = parseKeycodeInput(trimmed, basicKeyToByte);
+  if (parsed === null) {
+    return null;
+  }
+  const kcNo = basicKeyToByte.KC_NO ?? 0;
+  if (parsed === kcNo) {
+    const explicitNo =
+      needle === 'kc_no' ||
+      needle === 'kc_trns' ||
+      needle === 'kc_transparent' ||
+      needle === 'no';
+    if (!explicitNo) {
+      return null;
+    }
+  }
+  return byteToKey[parsed] ?? formatKeycodeHex(parsed);
+}
+
 export function parseKeycodeInput(
   input: string,
   basicKeyToByte: Record<string, number>,

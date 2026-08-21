@@ -8,6 +8,7 @@ import {
   formatKeycodeHex,
   formatKeycodeLabel,
   parseKeycodeInput,
+  resolveComposeBaseCode,
   selectKeycodeFromMenuCode,
 } from '../src/utils/keycode-picker';
 import {menusWithTapDanceSplit} from '../src/utils/keycode-menus';
@@ -81,6 +82,21 @@ describe('keycode picker codec', () => {
       'KC_A',
     ]);
     expect(filterKeycodeMenus(menus, 'nope')).toEqual([]);
+  });
+
+  test('compose base is resolved only from explicit input, not a side effect', () => {
+    expect(
+      resolveComposeBaseCode('', menus, basicKeyToByte, byteToKey),
+    ).toBeNull();
+    expect(
+      resolveComposeBaseCode('A', menus, basicKeyToByte, byteToKey),
+    ).toBe('KC_A');
+    expect(
+      resolveComposeBaseCode('kc_b', menus, basicKeyToByte, byteToKey),
+    ).toBe('KC_B');
+    expect(
+      resolveComposeBaseCode('nope', menus, basicKeyToByte, byteToKey),
+    ).toBeNull();
   });
 });
 

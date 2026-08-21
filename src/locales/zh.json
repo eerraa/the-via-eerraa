@@ -396,5 +396,13 @@
   "BOOT": "启动",
   "EEPROM SYNC": "EEPROM 同步",
   "INPUT SYNC": "输入同步",
-  "RGB SYNC": "RGB 同步"
+  "RGB SYNC": "RGB 同步",
+  "Compose": "组合",
+  "Base keycode": "基础键码",
+  "Pick from grid": "从网格选择",
+  "KC_A, A, Esc": "KC_A, A, Esc",
+  "Click a keycode card to set the base. It will not be assigned yet.": "点击键码卡片只会设为基础，不会写入键盘。",
+  "Choose a base keycode first": "请先选择基础键码",
+  "Grid clicks assign the selected key. Compose uses the base keycode.": "点击网格会写入当前选中的键。组合使用下方的基础键码。",
+  "Choose at least one modifier": "请至少选择一个修饰键"
 }

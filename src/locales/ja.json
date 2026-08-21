@@ -396,5 +396,13 @@
   "BOOT": "ブート",
   "EEPROM SYNC": "EEPROM 同期",
   "INPUT SYNC": "入力同期",
-  "RGB SYNC": "RGB 同期"
+  "RGB SYNC": "RGB 同期",
+  "Compose": "組み合わせ",
+  "Base keycode": "ベースキーコード",
+  "Pick from grid": "グリッドから選ぶ",
+  "KC_A, A, Esc": "KC_A, A, Esc",
+  "Click a keycode card to set the base. It will not be assigned yet.": "キーコードカードをクリックするとベースだけが設定され、キーボードにはまだ入りません。",
+  "Choose a base keycode first": "先にベースキーコードを選んでください",
+  "Grid clicks assign the selected key. Compose uses the base keycode.": "グリッドのクリックは選択中のキーに直接入ります。組み合わせは下のベースキーコードを使います。",
+  "Choose at least one modifier": "モディファイアを1つ以上選んでください"
 }
