@@ -14,7 +14,8 @@ export const ERA_STATE_SYNC_DOMAIN_MACRO = 0x02;
 export const ERA_STATE_SYNC_DOMAIN_CONFIG = 0x04;
 export const ERA_STATE_SYNC_DOMAIN_MASK_INITIAL = 0x07;
 
-export type StateSyncCapability = 'unknown' | 'probing' | 'capable' | 'unsupported';
+export type StateSyncCapability =
+  'unknown' | 'probing' | 'capable' | 'unsupported';
 
 export type StateSyncRevisions = {
   keymap: number;
@@ -29,6 +30,10 @@ export type StateSyncEnvelope = {
   domainMask: number;
   revisions: StateSyncRevisions;
 };
+
+export type StateSyncQueryResult =
+  | {kind: 'envelope'; envelope: StateSyncEnvelope}
+  | {kind: 'unhandled' | 'timeout' | 'malformed'};
 
 const tags = new Map<string, number>();
 
@@ -62,17 +67,26 @@ const be32 = (bytes: number[] | Uint8Array, offset: number) =>
 
 export const parseStateSyncEnvelope = (
   bytes: number[] | Uint8Array,
+  expectedTag?: number,
 ): StateSyncEnvelope | null => {
-  if (bytes.length < 32) {
+  if (bytes.length !== 32) {
     return null;
   }
   if (bytes[0] === 0xff) {
     return null;
   }
-  if (bytes[0] !== ERA_STATE_SYNC_COMMAND || bytes[1] !== ERA_STATE_SYNC_SELECTOR) {
+  if (
+    bytes[0] !== ERA_STATE_SYNC_COMMAND ||
+    bytes[1] !== ERA_STATE_SYNC_SELECTOR
+  ) {
     return null;
   }
-  if (bytes[7] !== 0) {
+  const tag = (bytes[4] << 8) | bytes[5];
+  if (
+    (expectedTag !== undefined && tag !== expectedTag) ||
+    (bytes[6] & ~ERA_STATE_SYNC_DOMAIN_MASK_INITIAL) !== 0 ||
+    bytes[7] !== 0
+  ) {
     return null;
   }
   for (let i = 20; i < 32; i++) {
@@ -83,7 +97,7 @@ export const parseStateSyncEnvelope = (
   return {
     version: bytes[2],
     status: bytes[3],
-    tag: (bytes[4] << 8) | bytes[5],
+    tag,
     domainMask: bytes[6],
     revisions: {
       keymap: be32(bytes, 8),
@@ -93,16 +107,20 @@ export const parseStateSyncEnvelope = (
   };
 };
 
-export const isCapableStateSyncEnvelope = (envelope: StateSyncEnvelope | null) =>
+export const isCapableStateSyncEnvelope = (
+  envelope: StateSyncEnvelope | null,
+) =>
   envelope !== null &&
   envelope.version === ERA_STATE_SYNC_ENVELOPE_VERSION &&
   envelope.status === ERA_STATE_SYNC_STATUS_OK &&
-  (envelope.domainMask & ERA_STATE_SYNC_DOMAIN_MASK_INITIAL) ===
-    ERA_STATE_SYNC_DOMAIN_MASK_INITIAL;
+  envelope.domainMask === ERA_STATE_SYNC_DOMAIN_MASK_INITIAL &&
+  envelope.revisions.keymap !== 0 &&
+  envelope.revisions.macro !== 0 &&
+  envelope.revisions.config !== 0;
 
-export async function queryStateSyncEnvelope(
+export async function queryStateSync(
   api: KeyboardAPI,
-): Promise<StateSyncEnvelope | null> {
+): Promise<StateSyncQueryResult> {
   const tag = nextStateSyncTag(api.kbAddr);
   const requestBytes = encodeStateSyncRequest(tag);
   const padded = new Array(33).fill(0);
@@ -110,25 +128,44 @@ export async function queryStateSyncEnvelope(
     padded[index + 1] = value;
   });
   try {
-    const response = (await api.getHID().exchange(padded, (message: Uint8Array) => {
-      if (message.length !== 32) {
-        return false;
-      }
-      if (message[0] === 0xff) {
-        return true;
-      }
-      return (
-        message[0] === ERA_STATE_SYNC_COMMAND &&
-        message[1] === ERA_STATE_SYNC_SELECTOR &&
-        message[4] === ((tag >> 8) & 0xff) &&
-        message[5] === (tag & 0xff)
-      );
-    })) as Uint8Array;
-    return parseStateSyncEnvelope(response);
+    const response = (await api.getHID().exchange(
+      padded,
+      (message: Uint8Array) => {
+        if (message.length !== 32) {
+          return false;
+        }
+        if (message[0] === 0xff) {
+          return (
+            message[1] === ERA_STATE_SYNC_SELECTOR &&
+            message[4] === ((tag >> 8) & 0xff) &&
+            message[5] === (tag & 0xff)
+          );
+        }
+        return (
+          message[0] === ERA_STATE_SYNC_COMMAND &&
+          message[1] === ERA_STATE_SYNC_SELECTOR &&
+          message[4] === ((tag >> 8) & 0xff) &&
+          message[5] === (tag & 0xff)
+        );
+      },
+      {timeoutBehavior: 'preserve-generation'},
+    )) as Uint8Array;
+    if (response[0] === 0xff) {
+      return {kind: 'unhandled'};
+    }
+    const envelope = parseStateSyncEnvelope(response, tag);
+    return envelope ? {kind: 'envelope', envelope} : {kind: 'malformed'};
   } catch (error) {
     if (error instanceof HIDTransportTimeoutError) {
-      return null;
+      return {kind: 'timeout'};
     }
-    return null;
+    return {kind: 'malformed'};
   }
+}
+
+export async function queryStateSyncEnvelope(
+  api: KeyboardAPI,
+): Promise<StateSyncEnvelope | null> {
+  const result = await queryStateSync(api);
+  return result.kind === 'envelope' ? result.envelope : null;
 }

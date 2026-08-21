@@ -16,6 +16,11 @@ import {
 } from './devicesSlice';
 import type {AppThunk, RootState} from './index';
 import {getKeycodesVersionMap} from './firmwareSlice';
+import {
+  commitStableMacroCandidate,
+  invalidateStateSyncDomain,
+  type StateSyncMacroCandidate,
+} from './stateSyncCandidateActions';
 
 type MacrosState = {
   ast: RawKeycodeSequence[];
@@ -46,6 +51,7 @@ const macrosSlice = createSlice({
       state.ast = action.payload.ast;
       state.macroBufferSize = action.payload.macroBufferSize;
       state.macroCount = action.payload.macroCount;
+      state.isFeatureSupported = true;
     },
     saveMacrosSuccess: (
       state,
@@ -57,12 +63,55 @@ const macrosSlice = createSlice({
       state.isFeatureSupported = false;
     },
   },
+  extraReducers: (builder) => {
+    builder.addCase(commitStableMacroCandidate, (state, action) => {
+      const {candidate} = action.payload;
+      state.ast = candidate.ast;
+      state.macroBufferSize = candidate.macroBufferSize;
+      state.macroCount = candidate.macroCount;
+      state.isFeatureSupported = candidate.isFeatureSupported;
+    });
+  },
 });
 
 export const {loadMacrosSuccess, saveMacrosSuccess, setMacrosNotSupported} =
   macrosSlice.actions;
 
 export default macrosSlice.reducer;
+
+export const readMacrosStateSyncCandidate = async (
+  connectedDevice: ConnectedDevice,
+  state: RootState,
+  connectionGeneration: number,
+): Promise<StateSyncMacroCandidate | null> => {
+  const api = new KeyboardAPI(connectedDevice.path);
+  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+  if (connectedDevice.protocol < 8) {
+    return {
+      ast: [],
+      macroBufferSize: 0,
+      macroCount: 0,
+      isFeatureSupported: false,
+    };
+  }
+
+  const keycodesVersion = getKeycodesVersionMap(state)[connectedDevice.path];
+  const macroApi = getMacroAPI(connectedDevice.protocol, keycodesVersion, api);
+  const ast = await macroApi.readRawKeycodeSequences();
+  const macroBufferSize = await api.getMacroBufferSize();
+  const macroCount = await api.getMacroCount();
+  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+  return {
+    ast,
+    macroBufferSize,
+    macroCount,
+    isFeatureSupported: true,
+  };
+};
 
 export const loadMacros =
   (connectedDevice: ConnectedDevice): AppThunk =>
@@ -134,6 +183,13 @@ export const saveMacros =
         )
       ) {
         dispatch(saveMacrosSuccess({ast: sequences}));
+        dispatch(
+          invalidateStateSyncDomain({
+            devicePath: connectedDevice.path,
+            connectionGeneration,
+            domain: 'macro',
+          }),
+        );
       }
     }
   };

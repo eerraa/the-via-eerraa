@@ -8,6 +8,9 @@ const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
 const MAX_DIAGNOSTIC_REPORTS = 32;
 
 type ResponseMatcher = (message: Uint8Array) => boolean;
+type HIDExchangeOptions = {
+  timeoutBehavior?: 'poison-generation' | 'preserve-generation';
+};
 type UnsolicitedReportHandler = {
   generation: number;
   matches: ResponseMatcher;
@@ -524,6 +527,7 @@ const ExtendedHID = {
     async exchange(
       report: number[],
       matches: ResponseMatcher,
+      options?: HIDExchangeOptions,
     ): Promise<Uint8Array> {
       const state = this.state;
       return enqueueTransportTask(state, async () => {
@@ -544,6 +548,12 @@ const ExtendedHID = {
             const error = new HIDTransportTimeoutError(
               `HID response timed out for ${state.path}`,
             );
+            if (options?.timeoutBehavior === 'preserve-generation') {
+              const pending = state.pending;
+              state.pending = undefined;
+              pending.reject(error);
+              return;
+            }
             replaceGeneration(
               state,
               'timed out',
@@ -579,7 +589,14 @@ const ExtendedHID = {
           );
           return await Promise.race([responsePromise, sendFailure]);
         } catch (error) {
-          if (state.generation === generation && !state.poisoned) {
+          const preservesTimedOutGeneration =
+            options?.timeoutBehavior === 'preserve-generation' &&
+            error instanceof HIDTransportTimeoutError;
+          if (
+            !preservesTimedOutGeneration &&
+            state.generation === generation &&
+            !state.poisoned
+          ) {
             replaceGeneration(state, 'failed during request', {
               poisoned: true,
               disconnected: false,

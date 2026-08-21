@@ -1,3 +1,5 @@
+import {isVIADefinitionV3} from '@the-via/reader';
+import type {ConnectedDevice} from '../types/types';
 import {KeyboardAPI} from '../utils/keyboard-api';
 import {
   getExactMsFamily,
@@ -8,36 +10,79 @@ import {
   ERA_STATE_SYNC_POLL_INTERVAL_MS,
   ERA_STATE_SYNC_REFRESH_RETRIES,
   isCapableStateSyncEnvelope,
-  queryStateSyncEnvelope,
-  type StateSyncRevisions,
+  queryStateSync,
+  type StateSyncEnvelope,
 } from '../utils/era-state-sync';
-import type {ConnectedDevice} from '../types/types';
-import type {AppThunk, RootState} from './index';
+import {
+  getDefinitionForDevice,
+  readLayoutOptionsStateSyncCandidate,
+} from './definitionsSlice';
 import {
   getIsSelectedDeviceReady,
   getSelectedConnectedDevice,
   getSelectedDevicePath,
+  getSelectionGeneration,
+  isSelectedDeviceOperationCurrent,
 } from './devicesSlice';
-import {loadKeymapFromDevice} from './keymapSlice';
-import {loadMacros} from './macrosSlice';
-import {isVIADefinitionV3} from '@the-via/reader';
-import {getDefinitionForDevice, loadLayoutOptions} from './definitionsSlice';
-import {updateV3MenuData} from './menusSlice';
+import type {AppThunk, RootState} from './index';
+import {readKeymapStateSyncCandidate} from './keymapSlice';
+import {readMacrosStateSyncCandidate} from './macrosSlice';
+import {readV3MenuStateSyncCandidate} from './menusSlice';
+import {
+  commitStableConfigCandidate,
+  commitStableKeymapCandidate,
+  commitStableMacroCandidate,
+  type StateSyncConfigCandidate,
+  type StateSyncKeymapCandidate,
+  type StateSyncMacroCandidate,
+} from './stateSyncCandidateActions';
 import {
   ensurePathSync,
   getConfigureVisible,
   getDocumentHidden,
   getPathSyncState,
+  markPathDirty,
+  observePathRevisions,
   setDomainStatus,
   setPathCapability,
-  setPathRevisions,
+  type StateSyncDomain,
 } from './stateSyncSlice';
 
-const inFlightPoll = new Set<string>();
-const inFlightRefresh = new Set<string>();
+type CoordinatorMode = 'poll' | 'full';
+type DomainCandidate =
+  StateSyncKeymapCandidate | StateSyncMacroCandidate | StateSyncConfigCandidate;
+
+type CoordinatorOwner = {
+  fullPending: Set<StateSyncDomain>;
+  selectionGeneration: number;
+  initialEnvelope?: StateSyncEnvelope;
+  promise: Promise<void>;
+};
+
+const domainOrder: StateSyncDomain[] = ['keymap', 'macro', 'config'];
+const coordinatorOwners = new Map<string, CoordinatorOwner>();
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 
-const pollKey = (path: string, generation: number) => `${path}:${generation}`;
+const ownerKey = (path: string, generation: number) => `${path}:${generation}`;
+
+const isSelectedContextCurrent = (
+  getState: () => RootState,
+  api: KeyboardAPI,
+  connectionGeneration: number,
+  selectionGeneration: number,
+) => {
+  const state = getState();
+  return (
+    api.isConnectionGenerationCurrent(connectionGeneration) &&
+    getIsSelectedDeviceReady(state) &&
+    isSelectedDeviceOperationCurrent(
+      state,
+      api.kbAddr,
+      connectionGeneration,
+      selectionGeneration,
+    )
+  );
+};
 
 const shouldPoll = (getState: () => RootState) => {
   const state = getState();
@@ -50,11 +95,354 @@ const shouldPoll = (getState: () => RootState) => {
     return false;
   }
   const sync = getPathSyncState(state, path);
-  return sync?.capability === 'capable' && sync.generation === new KeyboardAPI(path).getConnectionGeneration();
+  return (
+    sync?.capability === 'capable' &&
+    sync.generation === new KeyboardAPI(path).getConnectionGeneration()
+  );
+};
+
+const observeEnvelope = (
+  dispatch: (action: any) => any,
+  path: string,
+  generation: number,
+  envelope: StateSyncEnvelope,
+) => {
+  dispatch(
+    observePathRevisions({
+      path,
+      generation,
+      revisions: envelope.revisions,
+    }),
+  );
+};
+
+const queryCapableEnvelope = async (
+  dispatch: (action: any) => any,
+  getState: () => RootState,
+  api: KeyboardAPI,
+  generation: number,
+  selectionGeneration: number,
+): Promise<StateSyncEnvelope | null> => {
+  const result = await queryStateSync(api);
+  if (
+    !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+  ) {
+    return null;
+  }
+  if (
+    result.kind === 'envelope' &&
+    isCapableStateSyncEnvelope(result.envelope)
+  ) {
+    return result.envelope;
+  }
+
+  // Capability is a connection-level fact once confirmed. A later timeout,
+  // malformed reply, or isolated unhandled response invalidates freshness but
+  // does not permanently demote this generation to legacy mode.
+  dispatch(markPathDirty({path: api.kbAddr, generation}));
+  return null;
+};
+
+const readDomainCandidate = async (
+  domain: StateSyncDomain,
+  device: ConnectedDevice,
+  state: RootState,
+  generation: number,
+): Promise<DomainCandidate | null> => {
+  if (domain === 'keymap') {
+    return readKeymapStateSyncCandidate(device, state, generation);
+  }
+  if (domain === 'macro') {
+    return readMacrosStateSyncCandidate(device, state, generation);
+  }
+
+  const layoutCandidate = await readLayoutOptionsStateSyncCandidate(
+    device,
+    state,
+    generation,
+  );
+  if (layoutCandidate === null) {
+    return null;
+  }
+  const definition = getDefinitionForDevice(state, device);
+  if (!isVIADefinitionV3(definition)) {
+    return layoutCandidate;
+  }
+  const menuCandidate = await readV3MenuStateSyncCandidate(
+    device,
+    state,
+    generation,
+  );
+  return menuCandidate === null ? null : {...layoutCandidate, ...menuCandidate};
+};
+
+const commitStableCandidate = (
+  dispatch: (action: any) => any,
+  device: ConnectedDevice,
+  generation: number,
+  domain: StateSyncDomain,
+  revision: number,
+  candidate: DomainCandidate,
+) => {
+  const context = {
+    devicePath: device.path,
+    connectionGeneration: generation,
+    revision,
+  };
+  if (domain === 'keymap') {
+    dispatch(
+      commitStableKeymapCandidate({
+        ...context,
+        candidate: candidate as StateSyncKeymapCandidate,
+      }),
+    );
+  } else if (domain === 'macro') {
+    dispatch(
+      commitStableMacroCandidate({
+        ...context,
+        candidate: candidate as StateSyncMacroCandidate,
+      }),
+    );
+  } else {
+    dispatch(
+      commitStableConfigCandidate({
+        ...context,
+        candidate: candidate as StateSyncConfigCandidate,
+      }),
+    );
+  }
+};
+
+type RefreshResult = 'stable' | 'unstable' | 'abort';
+
+const refreshDomain = async (
+  dispatch: (action: any) => any,
+  getState: () => RootState,
+  device: ConnectedDevice,
+  domain: StateSyncDomain,
+  generation: number,
+  selectionGeneration: number,
+): Promise<RefreshResult> => {
+  const api = new KeyboardAPI(device.path);
+  for (let attempt = 0; attempt < ERA_STATE_SYNC_REFRESH_RETRIES; attempt++) {
+    const startEnvelope = await queryCapableEnvelope(
+      dispatch,
+      getState,
+      api,
+      generation,
+      selectionGeneration,
+    );
+    if (!startEnvelope) {
+      return 'abort';
+    }
+    observeEnvelope(dispatch, device.path, generation, startEnvelope);
+    const startRevision = startEnvelope.revisions[domain];
+    dispatch(
+      setDomainStatus({
+        path: device.path,
+        generation,
+        domain,
+        status: 'refreshing',
+        revision: startRevision,
+      }),
+    );
+
+    let candidate: DomainCandidate | null;
+    try {
+      candidate = await readDomainCandidate(
+        domain,
+        device,
+        getState(),
+        generation,
+      );
+    } catch {
+      if (
+        isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+      ) {
+        dispatch(
+          setDomainStatus({
+            path: device.path,
+            generation,
+            domain,
+            status: 'dirty',
+          }),
+        );
+      }
+      return 'abort';
+    }
+    if (
+      candidate === null ||
+      !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+    ) {
+      return 'abort';
+    }
+
+    const endEnvelope = await queryCapableEnvelope(
+      dispatch,
+      getState,
+      api,
+      generation,
+      selectionGeneration,
+    );
+    if (!endEnvelope) {
+      return 'abort';
+    }
+    observeEnvelope(dispatch, device.path, generation, endEnvelope);
+    const endRevision = endEnvelope.revisions[domain];
+    if (startRevision !== endRevision) {
+      continue;
+    }
+    if (
+      !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+    ) {
+      return 'abort';
+    }
+    commitStableCandidate(
+      dispatch,
+      device,
+      generation,
+      domain,
+      endRevision,
+      candidate,
+    );
+    return 'stable';
+  }
+
+  dispatch(
+    setDomainStatus({
+      path: device.path,
+      generation,
+      domain,
+      status: 'dirty',
+    }),
+  );
+  return 'unstable';
+};
+
+const runCoordinatorOwner = async (
+  owner: CoordinatorOwner,
+  dispatch: (action: any) => any,
+  getState: () => RootState,
+  device: ConnectedDevice,
+  generation: number,
+) => {
+  const api = new KeyboardAPI(device.path);
+  let envelope = owner.initialEnvelope;
+  owner.initialEnvelope = undefined;
+  if (!envelope) {
+    envelope =
+      (await queryCapableEnvelope(
+        dispatch,
+        getState,
+        api,
+        generation,
+        owner.selectionGeneration,
+      )) ?? undefined;
+  }
+  if (!envelope) {
+    return;
+  }
+  observeEnvelope(dispatch, device.path, generation, envelope);
+
+  const processedPollDomains = new Set<StateSyncDomain>();
+  while (
+    isSelectedContextCurrent(
+      getState,
+      api,
+      generation,
+      owner.selectionGeneration,
+    )
+  ) {
+    const sync = getPathSyncState(getState(), device.path);
+    if (!sync || sync.generation !== generation) {
+      return;
+    }
+    const fullDomain = domainOrder.find((candidateDomain) =>
+      owner.fullPending.has(candidateDomain),
+    );
+    const domain =
+      fullDomain ??
+      domainOrder.find(
+        (candidateDomain) =>
+          !processedPollDomains.has(candidateDomain) &&
+          (sync[candidateDomain].status !== 'fresh' ||
+            sync[candidateDomain].acceptedRevision !==
+              sync[candidateDomain].observedRevision),
+      );
+    if (!domain) {
+      return;
+    }
+    if (fullDomain) {
+      // Delete before the read. A lifecycle full refresh that arrives while
+      // this domain is in flight adds it again, forcing a post-boundary read.
+      owner.fullPending.delete(domain);
+    } else {
+      processedPollDomains.add(domain);
+    }
+    const result = await refreshDomain(
+      dispatch,
+      getState,
+      device,
+      domain,
+      generation,
+      owner.selectionGeneration,
+    );
+    if (result === 'abort') {
+      return;
+    }
+  }
+};
+
+const coordinate = async (
+  dispatch: (action: any) => any,
+  getState: () => RootState,
+  device: ConnectedDevice,
+  mode: CoordinatorMode,
+  initialEnvelope?: StateSyncEnvelope,
+): Promise<void> => {
+  const api = new KeyboardAPI(device.path);
+  const generation = api.getConnectionGeneration();
+  const selectionGeneration = getSelectionGeneration(getState());
+  if (
+    !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+  ) {
+    return;
+  }
+  const key = ownerKey(device.path, generation);
+  const existing = coordinatorOwners.get(key);
+  if (existing) {
+    if (existing.selectionGeneration === selectionGeneration) {
+      if (mode === 'full') {
+        domainOrder.forEach((domain) => existing.fullPending.add(domain));
+      }
+      await existing.promise;
+      return;
+    }
+    await existing.promise;
+    return coordinate(dispatch, getState, device, mode, initialEnvelope);
+  }
+
+  const owner: CoordinatorOwner = {
+    fullPending: new Set(mode === 'full' ? domainOrder : []),
+    selectionGeneration,
+    initialEnvelope,
+    promise: Promise.resolve(),
+  };
+  coordinatorOwners.set(key, owner);
+  owner.promise = Promise.resolve()
+    .then(() =>
+      runCoordinatorOwner(owner, dispatch, getState, device, generation),
+    )
+    .finally(() => {
+      if (coordinatorOwners.get(key) === owner) {
+        coordinatorOwners.delete(key);
+      }
+    });
+  await owner.promise;
 };
 
 export const probeStateSyncForDevice =
-  (connectedDevice: ConnectedDevice): AppThunk =>
+  (connectedDevice: ConnectedDevice): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     await loadEraAdvancedMetadata();
     if (!isStateSyncOptIn(connectedDevice.vendorProductId)) {
@@ -63,12 +451,31 @@ export const probeStateSyncForDevice =
     const api = new KeyboardAPI(connectedDevice.path);
     const generation = api.getConnectionGeneration();
     const existing = getPathSyncState(getState(), connectedDevice.path);
-    if (
-      existing?.generation === generation &&
-      (existing.capability === 'capable' || existing.capability === 'unsupported')
-    ) {
-      return;
+    if (existing?.generation === generation) {
+      if (existing.capability === 'unsupported') {
+        return;
+      }
+      if (existing.capability === 'capable') {
+        const selectionGeneration = getSelectionGeneration(getState());
+        if (
+          isSelectedContextCurrent(
+            getState,
+            api,
+            generation,
+            selectionGeneration,
+          )
+        ) {
+          dispatch(markPathDirty({path: connectedDevice.path, generation}));
+          await coordinate(dispatch, getState, connectedDevice, 'full');
+        }
+        dispatch(syncPolling());
+        return;
+      }
+      if (existing.capability === 'probing') {
+        return;
+      }
     }
+
     dispatch(ensurePathSync({path: connectedDevice.path, generation}));
     dispatch(
       setPathCapability({
@@ -77,11 +484,14 @@ export const probeStateSyncForDevice =
         capability: 'probing',
       }),
     );
-    const envelope = await queryStateSyncEnvelope(api);
+    const result = await queryStateSync(api);
     if (!api.isConnectionGenerationCurrent(generation)) {
       return;
     }
-    if (!isCapableStateSyncEnvelope(envelope)) {
+    if (
+      result.kind !== 'envelope' ||
+      !isCapableStateSyncEnvelope(result.envelope)
+    ) {
       dispatch(
         setPathCapability({
           path: connectedDevice.path,
@@ -91,6 +501,7 @@ export const probeStateSyncForDevice =
       );
       return;
     }
+
     dispatch(
       setPathCapability({
         path: connectedDevice.path,
@@ -98,196 +509,49 @@ export const probeStateSyncForDevice =
         capability: 'capable',
       }),
     );
-    dispatch(
-      setPathRevisions({
-        path: connectedDevice.path,
-        generation,
-        revisions: envelope!.revisions,
-      }),
+    observeEnvelope(
+      dispatch,
+      connectedDevice.path,
+      generation,
+      result.envelope,
     );
-    dispatch(
-      setDomainStatus({
-        path: connectedDevice.path,
-        generation,
-        domain: 'keymap',
-        status: 'fresh',
-        revision: envelope!.revisions.keymap,
-      }),
-    );
-    dispatch(
-      setDomainStatus({
-        path: connectedDevice.path,
-        generation,
-        domain: 'macro',
-        status: 'fresh',
-        revision: envelope!.revisions.macro,
-      }),
-    );
-    dispatch(
-      setDomainStatus({
-        path: connectedDevice.path,
-        generation,
-        domain: 'config',
-        status: 'fresh',
-        revision: envelope!.revisions.config,
-      }),
-    );
-    const definition = getDefinitionForDevice(getState(), connectedDevice);
-    if (isVIADefinitionV3(definition)) {
-      await dispatch(updateV3MenuData(connectedDevice));
+    const selectionGeneration = getSelectionGeneration(getState());
+    if (
+      isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+    ) {
+      await coordinate(
+        dispatch,
+        getState,
+        connectedDevice,
+        'full',
+        result.envelope,
+      );
     }
     dispatch(syncPolling());
   };
 
-const refreshDomain = async (
-  dispatch: (action: any) => any,
-  getState: () => RootState,
-  device: ConnectedDevice,
-  domain: 'keymap' | 'macro' | 'config',
-  before: number,
-) => {
-  const api = new KeyboardAPI(device.path);
-  const generation = api.getConnectionGeneration();
-  dispatch(
-    setDomainStatus({
-      path: device.path,
-      generation,
-      domain,
-      status: 'refreshing',
-      revision: before,
-    }),
-  );
-  for (let attempt = 0; attempt < ERA_STATE_SYNC_REFRESH_RETRIES; attempt++) {
-    if (!api.isConnectionGenerationCurrent(generation)) {
+export const pollStateSync =
+  (): AppThunk<Promise<void>> => async (dispatch, getState) => {
+    if (!shouldPoll(getState)) {
       return;
     }
-    if (domain === 'keymap') {
-      await dispatch(loadKeymapFromDevice(device, {force: true}));
-    } else if (domain === 'macro') {
-      await dispatch(loadMacros(device));
-    } else {
-      await dispatch(loadLayoutOptions(device));
-      const definition = getDefinitionForDevice(getState(), device);
-      if (isVIADefinitionV3(definition)) {
-        await dispatch(updateV3MenuData(device));
-      }
+    const device = getSelectedConnectedDevice(getState());
+    if (device) {
+      await coordinate(dispatch, getState, device, 'poll');
     }
-    const afterEnvelope = await queryStateSyncEnvelope(api);
-    if (!api.isConnectionGenerationCurrent(generation)) {
-      return;
-    }
-    if (!isCapableStateSyncEnvelope(afterEnvelope)) {
-      dispatch(
-        setDomainStatus({
-          path: device.path,
-          generation,
-          domain,
-          status: 'dirty',
-        }),
-      );
-      return;
-    }
-    const after = afterEnvelope!.revisions[domain];
-    if (after === before) {
-      dispatch(
-        setDomainStatus({
-          path: device.path,
-          generation,
-          domain,
-          status: 'fresh',
-          revision: after,
-        }),
-      );
-      dispatch(
-        setPathRevisions({
-          path: device.path,
-          generation,
-          revisions: afterEnvelope!.revisions,
-        }),
-      );
-      return;
-    }
-    before = after;
-  }
-  dispatch(
-    setDomainStatus({
-      path: device.path,
-      generation,
-      domain,
-      status: 'dirty',
-    }),
-  );
-};
-
-export const pollStateSync = (): AppThunk => async (dispatch, getState) => {
-  if (!shouldPoll(getState)) {
-    return;
-  }
-  const device = getSelectedConnectedDevice(getState());
-  if (!device) {
-    return;
-  }
-  const api = new KeyboardAPI(device.path);
-  const generation = api.getConnectionGeneration();
-  const key = pollKey(device.path, generation);
-  if (inFlightPoll.has(key)) {
-    return;
-  }
-  inFlightPoll.add(key);
-  try {
-    const envelope = await queryStateSyncEnvelope(api);
-    if (!api.isConnectionGenerationCurrent(generation)) {
-      return;
-    }
-    if (!isCapableStateSyncEnvelope(envelope)) {
-      dispatch(
-        setPathCapability({
-          path: device.path,
-          generation,
-          capability: 'unsupported',
-        }),
-      );
-      return;
-    }
-    const current = getPathSyncState(getState(), device.path);
-    const previous = current?.revisions ?? {keymap: 0, macro: 0, config: 0};
-    const next = envelope!.revisions;
-    dispatch(
-      setPathRevisions({path: device.path, generation, revisions: next}),
-    );
-    const domains: (keyof StateSyncRevisions)[] = ['keymap', 'macro', 'config'];
-    for (const domain of domains) {
-      if (previous[domain] !== next[domain]) {
-        await refreshDomain(dispatch, getState, device, domain, next[domain]);
-      }
-    }
-  } finally {
-    inFlightPoll.delete(key);
-  }
-};
+  };
 
 export const refreshAllDomains =
-  (device: ConnectedDevice): AppThunk =>
+  (device: ConnectedDevice): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const api = new KeyboardAPI(device.path);
     const generation = api.getConnectionGeneration();
-    const key = pollKey(device.path, generation);
-    if (inFlightRefresh.has(key)) {
+    const sync = getPathSyncState(getState(), device.path);
+    if (sync?.capability !== 'capable' || sync.generation !== generation) {
       return;
     }
-    inFlightRefresh.add(key);
-    try {
-      const envelope = await queryStateSyncEnvelope(api);
-      if (!isCapableStateSyncEnvelope(envelope) || !api.isConnectionGenerationCurrent(generation)) {
-        return;
-      }
-      const revisions = envelope!.revisions;
-      await refreshDomain(dispatch, getState, device, 'keymap', revisions.keymap);
-      await refreshDomain(dispatch, getState, device, 'macro', revisions.macro);
-      await refreshDomain(dispatch, getState, device, 'config', revisions.config);
-    } finally {
-      inFlightRefresh.delete(key);
-    }
+    dispatch(markPathDirty({path: device.path, generation}));
+    await coordinate(dispatch, getState, device, 'full');
   };
 
 export const syncPolling = (): AppThunk => (dispatch, getState) => {
@@ -312,8 +576,7 @@ export const stopStateSyncPollingForTesting = () => {
     clearInterval(pollTimer);
     pollTimer = undefined;
   }
-  inFlightPoll.clear();
-  inFlightRefresh.clear();
+  coordinatorOwners.clear();
 };
 
 export const getExactMsFamilyForDevice = (vendorProductId: number) =>

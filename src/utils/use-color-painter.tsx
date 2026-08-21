@@ -5,8 +5,9 @@ import {
   getSelectedConnectedDevice,
   getSelectedKeyboardAPI,
 } from 'src/store/devicesSlice';
-import {useAppSelector} from 'src/store/hooks';
+import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedCustomMenuData} from 'src/store/menusSlice';
+import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
 import {getHSVFrom256} from './color-math';
 
 export const useColorPainter = (
@@ -14,6 +15,7 @@ export const useColorPainter = (
   selectedPaletteColor: [number, number],
 ) => {
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
+  const dispatch = useAppDispatch();
   const api = useAppSelector(getSelectedKeyboardAPI);
   const customMenuData = useAppSelector(getSelectedCustomMenuData) || {
     __perKeyRGB: [],
@@ -42,16 +44,35 @@ export const useColorPainter = (
         const sat = Math.round(selectedPaletteColor[1] * 255);
         const ledIndex = keys[idx].li;
         if (ledIndex !== undefined) {
-          api.setPerKeyRGBMatrix(ledIndex, hue, sat);
-          api.commitCustomMenu(0);
           setKeyColors((colors) => {
             colors[idx] = selectedPaletteColor;
             return [...colors];
           });
+          const connectionGeneration = api.getConnectionGeneration();
+          void api
+            .setPerKeyRGBMatrix(ledIndex, hue, sat)
+            .then(() => api.commitCustomMenu(0))
+            .then(() => {
+              if (
+                selectedDevice &&
+                api.isConnectionGenerationCurrent(connectionGeneration)
+              ) {
+                dispatch(
+                  invalidateStateSyncDomain({
+                    devicePath: selectedDevice.path,
+                    connectionGeneration,
+                    domain: 'config',
+                  }),
+                );
+              }
+            })
+            .catch((error) =>
+              console.warn('Setting per-key RGB failed', error),
+            );
         }
       }
     },
-    [setKeyColors, selectedPaletteColor, keys, selectedDevice],
+    [api, dispatch, keys, selectedDevice, selectedPaletteColor],
   );
 
   return {

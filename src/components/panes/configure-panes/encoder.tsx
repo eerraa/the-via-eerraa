@@ -10,6 +10,8 @@ import {
   getSelectedKey,
   getSelectedKeymap,
   getSelectedLayerIndex,
+  getSelectedEncoderMap,
+  updateEncoderValue,
   updateKey,
 } from 'src/store/keymapSlice';
 import type {VIAKey} from '@the-via/reader';
@@ -49,8 +51,15 @@ export const Pane: FC = () => {
   const layer = useAppSelector(getSelectedLayerIndex);
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const api = useAppSelector(getSelectedKeyboardAPI);
+  const selectedEncoderMap = useAppSelector(getSelectedEncoderMap);
   const val = matrixKeycodes[selectedKey ?? -1];
   const encoderKey = keys[selectedKey ?? -1];
+  const encoderId =
+    encoderKey?.ei === undefined ? undefined : Number(encoderKey.ei);
+  const cachedEncoderValues =
+    encoderId === undefined
+      ? undefined
+      : selectedEncoderMap?.[encoderId]?.[layer];
   const canClick =
     !!encoderKey && encoderKey.col !== -1 && encoderKey.row !== -1;
 
@@ -64,13 +73,13 @@ export const Pane: FC = () => {
       const encoderId = +encoderKey.ei;
       switch (type) {
         case 'ccw': {
-          api.setEncoderValue(layer, encoderId, false, val);
           setCCWValue(val);
+          void dispatch(updateEncoderValue(layer, encoderId, false, val));
           break;
         }
         case 'cw': {
-          api.setEncoderValue(layer, encoderId, true, val);
           setCWValue(val);
+          void dispatch(updateEncoderValue(layer, encoderId, true, val));
           break;
         }
         case 'click': {
@@ -95,9 +104,21 @@ export const Pane: FC = () => {
       api
     ) {
       const encoderId = +encoderKey.ei;
-      loadValues(layer, encoderId, api);
+      if (cachedEncoderValues) {
+        setCCWValue(cachedEncoderValues[0]);
+        setCWValue(cachedEncoderValues[1]);
+      } else {
+        void loadValues(layer, encoderId, api);
+      }
     }
-  }, [encoderKey, selectedDevice, layer]);
+  }, [
+    api,
+    cachedEncoderValues?.[0],
+    cachedEncoderValues?.[1],
+    encoderKey,
+    layer,
+    selectedDevice,
+  ]);
 
   if (
     encoderKey === undefined ||

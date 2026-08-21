@@ -43,6 +43,8 @@ describe('GET 0x06 envelope', () => {
     expect(request[2]).toBe(ERA_STATE_SYNC_ENVELOPE_VERSION);
     expect(request[4]).toBe(0x01);
     expect(request[5]).toBe(0x02);
+    expect(request[3]).toBe(0);
+    expect(request.slice(6)).toEqual(new Array(26).fill(0));
 
     const parsed = parseStateSyncEnvelope(envelope());
     expect(isCapableStateSyncEnvelope(parsed)).toBe(true);
@@ -50,24 +52,48 @@ describe('GET 0x06 envelope', () => {
     expect(parsed?.tag).toBe(0xabcd);
   });
 
+  test('requires the echoed tag, exact known mask, v1 and nonzero equality tokens', () => {
+    expect(parseStateSyncEnvelope(envelope(), 0xabcd)?.tag).toBe(0xabcd);
+    expect(parseStateSyncEnvelope(envelope(), 0x1234)).toBeNull();
+    expect(parseStateSyncEnvelope(envelope({mask: 0x0f}))).toBeNull();
+
+    const unsupportedVersion = envelope();
+    unsupportedVersion[2] = 0x02;
+    expect(
+      isCapableStateSyncEnvelope(
+        parseStateSyncEnvelope(unsupportedVersion, 0xabcd),
+      ),
+    ).toBe(false);
+
+    const zeroRevision = envelope();
+    zeroRevision.fill(0, 8, 12);
+    expect(
+      isCapableStateSyncEnvelope(parseStateSyncEnvelope(zeroRevision, 0xabcd)),
+    ).toBe(false);
+  });
+
   test('unhandled 0xFF, bad reserved bytes and incomplete mask are not capable', () => {
     const unhandled = new Uint8Array(32);
     unhandled[0] = 0xff;
     expect(parseStateSyncEnvelope(unhandled)).toBeNull();
-    expect(isCapableStateSyncEnvelope(parseStateSyncEnvelope(envelope({reserved: 1})))).toBe(
-      false,
-    );
-    expect(isCapableStateSyncEnvelope(parseStateSyncEnvelope(envelope({tail: 1})))).toBe(
-      false,
-    );
     expect(
-      isCapableStateSyncEnvelope(parseStateSyncEnvelope(envelope({mask: 0x01}))),
+      isCapableStateSyncEnvelope(
+        parseStateSyncEnvelope(envelope({reserved: 1})),
+      ),
+    ).toBe(false);
+    expect(
+      isCapableStateSyncEnvelope(parseStateSyncEnvelope(envelope({tail: 1}))),
     ).toBe(false);
     expect(
       isCapableStateSyncEnvelope(
-        parseStateSyncEnvelope(envelope({status: 1})),
+        parseStateSyncEnvelope(envelope({mask: 0x01})),
       ),
     ).toBe(false);
+    expect(
+      isCapableStateSyncEnvelope(parseStateSyncEnvelope(envelope({status: 1}))),
+    ).toBe(false);
+    expect(parseStateSyncEnvelope(envelope().slice(0, 31))).toBeNull();
+    expect(parseStateSyncEnvelope([...envelope(), 0])).toBeNull();
   });
 });
 

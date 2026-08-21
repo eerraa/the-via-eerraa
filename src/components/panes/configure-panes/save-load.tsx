@@ -25,6 +25,7 @@ import {
 import {getExpressions, saveMacros} from 'src/store/macrosSlice';
 import {useTranslation} from 'react-i18next';
 import {getSelectedDefinitionName} from 'src/store/definitionNameSlice';
+import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
 
 type ViaSaveFile = {
   name: string;
@@ -216,6 +217,7 @@ export const Pane: FC = () => {
       await dispatch(saveRawKeymapToDevice(keymap, selectedDevice));
 
       if (saveFile.encoders) {
+        const connectionGeneration = api.getConnectionGeneration();
         await Promise.all(
           saveFile.encoders.map((encoder, id) =>
             Promise.all(
@@ -244,6 +246,15 @@ export const Pane: FC = () => {
             ),
           ),
         );
+        if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+          dispatch(
+            invalidateStateSyncDomain({
+              devicePath: selectedDevice.path,
+              connectionGeneration,
+              domain: 'keymap',
+            }),
+          );
+        }
       }
 
       setSuccessMessage(t('Successfully updated layout!'));
