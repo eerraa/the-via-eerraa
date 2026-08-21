@@ -4,17 +4,19 @@ import {useTranslation} from 'react-i18next';
 import {Button} from './button';
 import TextInput from './text-input';
 import {AccentButton, PrimaryAccentButton} from './accent-button';
+import {KeycodeModal} from './custom-keycode-modal';
 import type {IKeycode, IKeycodeMenu} from '../../utils/key';
 import {keycodeInMaster} from '../../utils/key';
 import {
   clearKeycodeValue,
   composeLayerTap,
   composeModTap,
-  composeModifier,
+  composeModifiers,
   filterKeycodeMenus,
   formatKeycodeLabel,
+  getComposeBaseKeycodes,
   isComposerCategory,
-  parseKeycodeInput,
+  keycodeMatchesQuery,
   resolveComposeBaseCode,
   selectKeycodeFromMenuCode,
 } from '../../utils/keycode-picker';
@@ -58,6 +60,12 @@ const KeycodeButton = styled(Button)<{disabled: boolean}>`
   ${(props) => props.disabled && `cursor:not-allowed;filter:opacity(50%);`}
 `;
 
+const AnyKeycodeButton = styled(KeycodeButton)`
+  background: var(--color_accent);
+  border-color: var(--color_inside-accent);
+  color: var(--color_inside-accent);
+`;
+
 const KeycodeContent = styled.div`
   text-overflow: ellipsis;
   overflow: hidden;
@@ -70,10 +78,54 @@ const Toolbar = styled.div`
   align-items: center;
 `;
 
-const ComposePanel = styled.div`
+const ComposePanel = styled.section`
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border-top: 1px solid var(--border_color_icon);
+  padding-top: 14px;
+`;
+
+const ComposeHeader = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+`;
+
+const ComposeIntro = styled.div`
+  min-width: 220px;
+  max-width: 420px;
+`;
+
+const ComposeTitle = styled.div`
+  color: var(--color_label-highlighted);
+  font-size: 16px;
+  line-height: 1.4;
+`;
+
+const ComposeActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+`;
+
+const ComposeActionButton = styled(AccentButton)<{$selected: boolean}>`
+  min-width: 112px;
+  font-size: 14px;
+  background: ${(props) =>
+    props.$selected ? 'var(--color_accent)' : 'var(--bg_outside-accent)'};
+  color: ${(props) =>
+    props.$selected ? 'var(--color_inside-accent)' : 'var(--color_accent)'};
+`;
+
+const ComposeEditor = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-left: 2px solid var(--color_accent);
+  padding: 4px 0 4px 14px;
 `;
 
 const Hint = styled.div`
@@ -85,15 +137,20 @@ const Hint = styled.div`
 const ActionRow = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   min-height: 40px;
 `;
 
 const RowLabel = styled.span`
-  width: 44px;
+  width: 58px;
   flex: none;
   color: var(--color_label-highlighted);
+  font-size: 13px;
+`;
+
+const InlineLabel = styled.span`
+  color: var(--color_label);
   font-size: 13px;
 `;
 
@@ -101,6 +158,7 @@ const ChipButton = styled.button<{$on: boolean}>`
   height: 40px;
   min-width: 56px;
   padding: 0 12px;
+  flex: none;
   box-sizing: border-box;
   border-radius: 5px;
   font-size: 14px;
@@ -117,6 +175,28 @@ const Resolved = styled.span`
   font-size: 13px;
 `;
 
+const ComposeFooter = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+`;
+
+const Preview = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 220px;
+  color: var(--color_label);
+  font-size: 13px;
+
+  code {
+    color: var(--color_accent);
+    font-size: 13px;
+  }
+`;
+
 const CategoryNav = styled.div`
   padding: 15px 20px 20px 10px;
 `;
@@ -128,9 +208,7 @@ const CategoryButton = styled.button<{$selected: boolean}>`
   background: none;
   border: none;
   color: ${(props) =>
-    props.$selected
-      ? 'var(--color_label-highlighted)'
-      : 'var(--color_label)'};
+    props.$selected ? 'var(--color_label-highlighted)' : 'var(--color_label)'};
   padding: 8px 12px;
   margin-bottom: 11px;
   cursor: pointer;
@@ -144,7 +222,7 @@ const CompactInput = styled(TextInput)`
   height: 40px;
   line-height: 40px;
   font-size: 16px;
-  width: 180px;
+  width: 200px;
   flex: none;
   box-sizing: border-box;
 `;
@@ -156,8 +234,20 @@ const SearchInput = styled(CompactInput)`
 `;
 
 const LayerInput = styled(CompactInput)`
-  width: 56px;
+  width: 64px;
   text-align: center;
+`;
+
+const CompactAccentButton = styled(AccentButton)`
+  min-width: 100px;
+  flex: none;
+  font-size: 14px;
+`;
+
+const CompactPrimaryAccentButton = styled(PrimaryAccentButton)`
+  min-width: 100px;
+  flex: none;
+  font-size: 14px;
 `;
 
 const Status = styled.div`
@@ -178,6 +268,15 @@ export type KeycodePickerProps = {
 };
 
 const MODIFIERS = ['LCTL', 'LSFT', 'LALT', 'LGUI'] as const;
+const ADVANCED_KEYCODE: IKeycode = {name: 'Any', code: 'text'};
+type Modifier = (typeof MODIFIERS)[number];
+type ComposeKind = 'layerTap' | 'modTap' | 'modifier';
+
+const nestModifiers = (modifiers: readonly string[], keycode: string) =>
+  modifiers.reduceRight(
+    (current, modifier) => `${modifier}(${current})`,
+    keycode,
+  );
 
 export const KeycodePicker = ({
   menus,
@@ -192,6 +291,7 @@ export const KeycodePicker = ({
 }: KeycodePickerProps) => {
   const {t} = useTranslation();
   const [query, setQuery] = useState('');
+  const [baseQuery, setBaseQuery] = useState('');
   const [uncontrolledCategory, setUncontrolledCategory] = useState(
     menus[0]?.id ?? '',
   );
@@ -202,27 +302,46 @@ export const KeycodePicker = ({
       setUncontrolledCategory(id);
     }
   };
+  const [composeKind, setComposeKind] = useState<ComposeKind | null>(null);
   const [composeDraft, setComposeDraft] = useState('');
   const [pickingBase, setPickingBase] = useState(false);
   const [layer, setLayer] = useState(0);
-  const [activeMods, setActiveMods] = useState<string[]>([]);
-  const [advanced, setAdvanced] = useState('');
+  const [activeMods, setActiveMods] = useState<Modifier[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const showComposer = isComposerCategory(selectedCategory);
 
   useEffect(() => {
     if (!showComposer) {
+      setComposeKind(null);
       setPickingBase(false);
     }
   }, [showComposer]);
 
+  const menusWithAdvanced = useMemo(
+    () =>
+      menus.map((menu) =>
+        menu.id === 'special' &&
+        !menu.keycodes.some((keycode) => keycode.code === 'text')
+          ? {...menu, keycodes: [...menu.keycodes, ADVANCED_KEYCODE]}
+          : menu,
+      ),
+    [menus],
+  );
   const filteredMenus = useMemo(
-    () => filterKeycodeMenus(menus, query),
-    [menus, query],
+    () => filterKeycodeMenus(menusWithAdvanced, query),
+    [menusWithAdvanced, query],
   );
   const currentMenu =
     filteredMenus.find((menu) => menu.id === selectedCategory) ??
     filteredMenus[0];
+  const composeBaseKeycodes = useMemo(
+    () =>
+      getComposeBaseKeycodes(menus, basicKeyToByte).filter((keycode) =>
+        keycodeMatchesQuery(keycode, baseQuery),
+      ),
+    [menus, basicKeyToByte, baseQuery],
+  );
 
   const currentLabel =
     value === undefined
@@ -230,42 +349,108 @@ export const KeycodePicker = ({
       : formatKeycodeLabel(value, basicKeyToByte, byteToKey);
   const composeBaseCode = useMemo(
     () =>
-      resolveComposeBaseCode(
-        composeDraft,
-        menus,
-        basicKeyToByte,
-        byteToKey,
-      ),
+      resolveComposeBaseCode(composeDraft, menus, basicKeyToByte, byteToKey),
     [composeDraft, menus, basicKeyToByte, byteToKey],
   );
+  const orderedActiveMods = MODIFIERS.filter((modifier) =>
+    activeMods.includes(modifier),
+  );
+  const hasValidLayer = Number.isInteger(layer) && layer >= 0 && layer <= 15;
   const canCompose = composeBaseCode !== null;
-  const canUseModifiers = canCompose && activeMods.length > 0;
+  const canApply =
+    canCompose &&
+    (composeKind === 'layerTap' ? hasValidLayer : orderedActiveMods.length > 0);
+  const previewBase = composeBaseCode ?? 'kc';
+  const composePreview =
+    composeKind === 'layerTap'
+      ? `LT(${layer},${previewBase})`
+      : composeKind === 'modTap'
+        ? `MT(${
+            orderedActiveMods
+              .map((modifier) => `MOD_${modifier}`)
+              .join(' | ') || 'mods'
+          },${previewBase})`
+        : nestModifiers(
+            orderedActiveMods.length ? orderedActiveMods : ['modifier'],
+            previewBase,
+          );
+  const composeHint =
+    composeKind === 'layerTap'
+      ? t('Tap sends the chosen key. Hold activates the layer.')
+      : composeKind === 'modTap'
+        ? t('Tap sends the chosen key. Hold applies the selected modifiers.')
+        : t('Send the chosen key with the selected modifiers.');
 
   const emit = (next: number | null) => {
     if (next === null) {
       setError('Unrecognized keycode');
-      return;
+      return false;
     }
     setError(null);
     onSelect(next);
+    return true;
+  };
+
+  const openComposer = (kind: ComposeKind) => {
+    setComposeKind(kind);
+    setPickingBase(false);
+    setError(null);
+  };
+
+  const applyCompose = () => {
+    if (!composeKind || !composeBaseCode) {
+      setError('Unrecognized keycode');
+      return;
+    }
+
+    const next =
+      composeKind === 'layerTap'
+        ? composeLayerTap(layer, composeBaseCode, basicKeyToByte)
+        : composeKind === 'modTap'
+          ? composeModTap(
+              orderedActiveMods.map((modifier) => `MOD_${modifier}`).join('|'),
+              composeBaseCode,
+              basicKeyToByte,
+            )
+          : composeModifiers(
+              orderedActiveMods,
+              composeBaseCode,
+              basicKeyToByte,
+            );
+
+    if (emit(next)) {
+      setComposeKind(null);
+      setPickingBase(false);
+    }
+  };
+
+  const openAdvanced = () => {
+    setShowAdvanced(true);
   };
 
   const renderKeycode = (keycode: IKeycode) => {
     const {code} = keycode;
     if (code === 'text') {
-      return null;
+      return (
+        <AnyKeycodeButton
+          key={code}
+          disabled={false}
+          onClick={openAdvanced}
+          title={t('Advanced keycode')}
+        >
+          <KeycodeContent>{t('Any')}</KeycodeContent>
+        </AnyKeycodeButton>
+      );
     }
     return (
       <KeycodeButton
         key={code}
-        disabled={
-          !(showComposer && pickingBase) &&
-          !keycodeInMaster(code, basicKeyToByte)
-        }
+        disabled={!pickingBase && !keycodeInMaster(code, basicKeyToByte)}
         onClick={() => {
-          if (showComposer && pickingBase) {
+          if (pickingBase) {
             setComposeDraft(code);
             setPickingBase(false);
+            setBaseQuery('');
             setError(null);
             return;
           }
@@ -277,31 +462,57 @@ export const KeycodePicker = ({
     );
   };
 
-  const selectedKeycodes = currentMenu?.keycodes ?? [];
-  const isMacroCategory = currentMenu?.id === 'macro';
+  const selectedKeycodes = pickingBase
+    ? composeBaseKeycodes
+    : (currentMenu?.keycodes ?? []);
+  const isMacroCategory = !pickingBase && currentMenu?.id === 'macro';
 
   return (
     <PickerRoot>
-      <Toolbar>
-        <SearchInput
-          aria-label={t('Search keycodes')}
-          placeholder={t('Search')}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <AccentButton
-          onClick={() => {
-            setQuery('');
-            emit(clearKeycodeValue(basicKeyToByte));
-          }}
-        >
-          {t('Clear')}
-        </AccentButton>
-      </Toolbar>
+      {pickingBase ? (
+        <Toolbar>
+          <SearchInput
+            aria-label={t('Search keycodes')}
+            placeholder={t('Search')}
+            value={baseQuery}
+            onChange={(event) => setBaseQuery(event.target.value)}
+          />
+          <CompactAccentButton
+            onClick={() => {
+              setPickingBase(false);
+              setBaseQuery('');
+            }}
+          >
+            {t('Back to Layers')}
+          </CompactAccentButton>
+        </Toolbar>
+      ) : (
+        <Toolbar>
+          <SearchInput
+            aria-label={t('Search keycodes')}
+            placeholder={t('Search')}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <CompactAccentButton
+            onClick={() => {
+              setQuery('');
+              emit(clearKeycodeValue(basicKeyToByte));
+            }}
+          >
+            {t('Clear')}
+          </CompactAccentButton>
+        </Toolbar>
+      )}
       <Status>
         {t('Current')}: {currentLabel || '—'}
       </Status>
-      {renderCategoryNav ? (
+      {pickingBase ? (
+        <Hint role="status">
+          {t('Choose a tap key from the grid. It will not be assigned yet.')}
+        </Hint>
+      ) : null}
+      {renderCategoryNav && !pickingBase ? (
         <CategoryNav>
           {filteredMenus.map((menu) => (
             <CategoryButton
@@ -321,153 +532,153 @@ export const KeycodePicker = ({
           )}
         </Status>
       ) : (
-        <KeycodeList $picking={showComposer && pickingBase}>
+        <KeycodeList $picking={pickingBase}>
           {selectedKeycodes.map(renderKeycode)}
         </KeycodeList>
       )}
-      {showComposer ? (
-        <ComposePanel>
-          <Hint>
-            {pickingBase
-              ? t(
-                  'Click a keycode card to set the base. It will not be assigned yet.',
-                )
-              : t(
-                  'Grid clicks assign the selected key. Compose uses the base keycode.',
-                )}
-          </Hint>
-          <ActionRow>
-            <RowLabel>{t('Tap')}</RowLabel>
-            <CompactInput
-              aria-label={t('Base keycode')}
-              placeholder={t('KC_A, A, Esc')}
-              value={composeDraft}
-              onChange={(event) => setComposeDraft(event.target.value)}
-            />
-            {pickingBase ? (
-              <PrimaryAccentButton
-                aria-pressed={true}
-                onClick={() => setPickingBase(false)}
+      {showComposer && !pickingBase ? (
+        <ComposePanel aria-label={t('Compose')}>
+          <ComposeHeader>
+            <ComposeIntro>
+              <ComposeTitle>{t('Compose')}</ComposeTitle>
+              <Hint>
+                {t('Choose a behavior, then set its key and hold action.')}
+              </Hint>
+            </ComposeIntro>
+            <ComposeActions>
+              <ComposeActionButton
+                $selected={composeKind === 'layerTap'}
+                aria-pressed={composeKind === 'layerTap'}
+                onClick={() => openComposer('layerTap')}
               >
-                {t('Pick from grid')}
-              </PrimaryAccentButton>
-            ) : (
-              <AccentButton
-                aria-pressed={false}
-                onClick={() => setPickingBase(true)}
+                {t('Layer-Tap')}
+              </ComposeActionButton>
+              <ComposeActionButton
+                $selected={composeKind === 'modTap'}
+                aria-pressed={composeKind === 'modTap'}
+                onClick={() => openComposer('modTap')}
               >
-                {t('Pick from grid')}
-              </AccentButton>
-            )}
-            <Resolved>
-              {composeBaseCode
-                ? composeBaseCode
-                : composeDraft.trim()
-                  ? t('Unrecognized keycode')
-                  : t('Choose a base keycode first')}
-            </Resolved>
-          </ActionRow>
-          <ActionRow>
-            <RowLabel>{t('Hold')}</RowLabel>
-            {MODIFIERS.map((mod) => (
-              <ChipButton
-                key={mod}
-                type="button"
-                $on={activeMods.includes(mod)}
-                aria-pressed={activeMods.includes(mod)}
-                onClick={() =>
-                  setActiveMods((current) =>
-                    current.includes(mod)
-                      ? current.filter((item) => item !== mod)
-                      : [...current, mod],
-                  )
-                }
+                {t('Mod-Tap')}
+              </ComposeActionButton>
+              <ComposeActionButton
+                $selected={composeKind === 'modifier'}
+                aria-pressed={composeKind === 'modifier'}
+                onClick={() => openComposer('modifier')}
               >
-                {mod}
-              </ChipButton>
-            ))}
-            <AccentButton
-              disabled={!canUseModifiers}
-              title={
-                !canCompose
-                  ? t('Choose a base keycode first')
-                  : t('Choose at least one modifier')
-              }
-              onClick={() => {
-                const modifier = activeMods[0];
-                if (!composeBaseCode || !modifier) {
-                  return;
-                }
-                emit(
-                  composeModifier(modifier, composeBaseCode, basicKeyToByte),
-                );
-              }}
-            >
-              {t('Modifier')}
-            </AccentButton>
-            <AccentButton
-              disabled={!canUseModifiers}
-              title={
-                !canCompose
-                  ? t('Choose a base keycode first')
-                  : t('Choose at least one modifier')
-              }
-              onClick={() =>
-                emit(
-                  composeModTap(
-                    activeMods.map((mod) => `MOD_${mod}`).join('|'),
-                    composeBaseCode ?? '',
-                    basicKeyToByte,
-                  ),
-                )
-              }
-            >
-              {t('Mod-Tap')}
-            </AccentButton>
-          </ActionRow>
-          <ActionRow>
-            <RowLabel>{t('Layer')}</RowLabel>
-            <LayerInput
-              type="number"
-              min={0}
-              max={15}
-              aria-label={t('Layer')}
-              value={layer}
-              onChange={(event) => setLayer(Number(event.target.value))}
-            />
-            <AccentButton
-              disabled={!canCompose}
-              title={t('Choose a base keycode first')}
-              onClick={() =>
-                emit(
-                  composeLayerTap(
-                    layer,
-                    composeBaseCode ?? '',
-                    basicKeyToByte,
-                  ),
-                )
-              }
-            >
-              {t('Layer-Tap')}
-            </AccentButton>
-          </ActionRow>
-          <ActionRow>
-            <RowLabel>{t('Any')}</RowLabel>
-            <CompactInput
-              aria-label={t('Advanced keycode')}
-              placeholder={t('MT(...), LT(...), 0xNNNN')}
-              value={advanced}
-              onChange={(event) => setAdvanced(event.target.value)}
-            />
-            <PrimaryAccentButton
-              onClick={() => emit(parseKeycodeInput(advanced, basicKeyToByte))}
-            >
-              {t('Apply')}
-            </PrimaryAccentButton>
-          </ActionRow>
+                {t('Modifier')}
+              </ComposeActionButton>
+            </ComposeActions>
+          </ComposeHeader>
+          {composeKind ? (
+            <ComposeEditor>
+              <Hint>{composeHint}</Hint>
+              <ActionRow>
+                <RowLabel>
+                  {composeKind === 'modifier' ? t('Key') : t('Tap')}
+                </RowLabel>
+                <CompactInput
+                  aria-label={t('Base keycode')}
+                  placeholder={t('KC_A, A, Esc')}
+                  value={composeDraft}
+                  onChange={(event) => setComposeDraft(event.target.value)}
+                />
+                <CompactAccentButton
+                  onClick={() => {
+                    setBaseQuery('');
+                    setPickingBase(true);
+                  }}
+                >
+                  {t('Pick from grid')}
+                </CompactAccentButton>
+                <Resolved>
+                  {composeBaseCode
+                    ? composeBaseCode
+                    : composeDraft.trim()
+                      ? t('Unrecognized keycode')
+                      : t('Choose a base keycode first')}
+                </Resolved>
+              </ActionRow>
+              {composeKind === 'layerTap' ? (
+                <ActionRow>
+                  <RowLabel>{t('Hold')}</RowLabel>
+                  <InlineLabel>{t('Layer')}</InlineLabel>
+                  <LayerInput
+                    type="number"
+                    min={0}
+                    max={15}
+                    aria-label={t('Layer')}
+                    value={layer}
+                    onChange={(event) => setLayer(Number(event.target.value))}
+                  />
+                </ActionRow>
+              ) : (
+                <ActionRow>
+                  <RowLabel>
+                    {composeKind === 'modifier' ? t('Modifier') : t('Hold')}
+                  </RowLabel>
+                  {MODIFIERS.map((modifier) => (
+                    <ChipButton
+                      key={modifier}
+                      type="button"
+                      $on={activeMods.includes(modifier)}
+                      aria-pressed={activeMods.includes(modifier)}
+                      onClick={() =>
+                        setActiveMods((current) =>
+                          current.includes(modifier)
+                            ? current.filter((item) => item !== modifier)
+                            : [...current, modifier],
+                        )
+                      }
+                    >
+                      {modifier}
+                    </ChipButton>
+                  ))}
+                </ActionRow>
+              )}
+              <ComposeFooter>
+                <Preview>
+                  <span>{t('Preview')}:</span>
+                  <code>{composePreview}</code>
+                </Preview>
+                <CompactAccentButton
+                  onClick={() => {
+                    setComposeKind(null);
+                    setPickingBase(false);
+                  }}
+                >
+                  {t('Cancel')}
+                </CompactAccentButton>
+                <CompactPrimaryAccentButton
+                  disabled={!canApply}
+                  title={
+                    !canCompose
+                      ? t('Choose a base keycode first')
+                      : orderedActiveMods.length === 0 &&
+                          composeKind !== 'layerTap'
+                        ? t('Choose at least one modifier')
+                        : ''
+                  }
+                  onClick={applyCompose}
+                >
+                  {t('Apply')}
+                </CompactPrimaryAccentButton>
+              </ComposeFooter>
+            </ComposeEditor>
+          ) : null}
         </ComposePanel>
       ) : null}
       {error ? <Status role="alert">{t(error)}</Status> : null}
+      {showAdvanced ? (
+        <KeycodeModal
+          defaultValue={value}
+          onExit={() => setShowAdvanced(false)}
+          onConfirm={(next) => {
+            setError(null);
+            setShowAdvanced(false);
+            onSelect(next);
+          }}
+        />
+      ) : null}
     </PickerRoot>
   );
 };

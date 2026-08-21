@@ -4,9 +4,11 @@ import {
   composeLayerTap,
   composeModTap,
   composeModifier,
+  composeModifiers,
   filterKeycodeMenus,
   formatKeycodeHex,
   formatKeycodeLabel,
+  getComposeBaseKeycodes,
   isComposerCategory,
   parseKeycodeInput,
   resolveComposeBaseCode,
@@ -47,6 +49,14 @@ const menus: IKeycodeMenu[] = [
     ],
   },
   {
+    id: 'layers',
+    label: 'Layers',
+    keycodes: [
+      {name: 'MO(1)', code: 'MO(1)'},
+      {name: 'Space Fn1', code: 'LT(1,KC_SPC)'},
+    ],
+  },
+  {
     id: 'special',
     label: 'Special',
     keycodes: [{name: 'Any', code: 'text'}],
@@ -66,6 +76,9 @@ describe('keycode picker codec', () => {
     expect(clearKeycodeValue(basicKeyToByte)).toBe(0);
     expect(selectKeycodeFromMenuCode('KC_A', basicKeyToByte)).toBe(0x0004);
     expect(composeModifier('LCTL', 'KC_A', basicKeyToByte)).toBe(0x0104);
+    expect(composeModifiers(['LCTL', 'LSFT'], 'KC_A', basicKeyToByte)).toBe(
+      0x0304,
+    );
     expect(composeModTap('MOD_LSFT', 'KC_A', basicKeyToByte)).toBe(
       0x2000 | (0x0002 << 8) | 0x0004,
     );
@@ -74,6 +87,7 @@ describe('keycode picker codec', () => {
     );
     expect(parseKeycodeInput('MACRO(3)', basicKeyToByte)).toBe(0x7703);
     expect(parseKeycodeInput('CUSTOM(1)', basicKeyToByte)).toBe(0x7e01);
+    expect(parseKeycodeInput('not-a-keycode', basicKeyToByte)).toBeNull();
   });
 
   test('search filters categories without dropping unmatched-empty noise', () => {
@@ -96,15 +110,29 @@ describe('keycode picker codec', () => {
     expect(
       resolveComposeBaseCode('', menus, basicKeyToByte, byteToKey),
     ).toBeNull();
-    expect(
-      resolveComposeBaseCode('A', menus, basicKeyToByte, byteToKey),
-    ).toBe('KC_A');
+    expect(resolveComposeBaseCode('A', menus, basicKeyToByte, byteToKey)).toBe(
+      'KC_A',
+    );
     expect(
       resolveComposeBaseCode('kc_b', menus, basicKeyToByte, byteToKey),
     ).toBe('KC_B');
     expect(
       resolveComposeBaseCode('nope', menus, basicKeyToByte, byteToKey),
     ).toBeNull();
+    expect(
+      resolveComposeBaseCode('MO(1)', menus, basicKeyToByte, byteToKey),
+    ).toBeNull();
+    expect(
+      resolveComposeBaseCode('0x1234', menus, basicKeyToByte, byteToKey),
+    ).toBeNull();
+  });
+
+  test('grid base picking exposes only explicit Basic tap keycodes', () => {
+    expect(
+      getComposeBaseKeycodes(menus, basicKeyToByte).map(
+        (keycode) => keycode.code,
+      ),
+    ).toEqual(['KC_A', 'KC_B']);
   });
 });
 
@@ -132,13 +160,12 @@ describe('tapdance keycode category', () => {
       'custom',
     ]);
     expect(split[1].label).toBe('TAPDANCE');
-    expect(split[1].keycodes.map((keycode: {code: string}) => keycode.code)).toEqual([
-      'CUSTOM(0)',
-      'CUSTOM(7)',
-    ]);
-    expect(split[2].keycodes.map((keycode: {name: string}) => keycode.name)).toEqual([
-      'USER1',
-    ]);
+    expect(
+      split[1].keycodes.map((keycode: {code: string}) => keycode.code),
+    ).toEqual(['CUSTOM(0)', 'CUSTOM(7)']);
+    expect(
+      split[2].keycodes.map((keycode: {name: string}) => keycode.name),
+    ).toEqual(['USER1']);
   });
 
   test('drops Custom when every custom keycode is TD0-TD7', () => {

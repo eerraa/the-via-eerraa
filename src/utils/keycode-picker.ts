@@ -1,11 +1,14 @@
-import {
-  advancedStringToKeycode,
-  anyKeycodeToString,
-} from './advanced-keys';
+import {advancedStringToKeycode, anyKeycodeToString} from './advanced-keys';
 import type {IKeycode, IKeycodeMenu} from './key';
 import {getByteForCode, keycodeInMaster} from './key';
 
 const KC_NO_ALIASES = new Set(['KC_NO', 'KC_TRNS', 'KC_TRANSPARENT']);
+
+const isExplicitClearInput = (input: string) =>
+  KC_NO_ALIASES.has(input.toUpperCase()) || input.toUpperCase() === 'NO';
+
+const isComposeBaseValue = (value: number) =>
+  Number.isInteger(value) && value >= 0 && value <= 0xff;
 
 export function formatKeycodeHex(value: number): string {
   const clamped = value & 0xffff;
@@ -41,6 +44,9 @@ export function resolveComposeBaseCode(
   }
   const needle = trimmed.toLowerCase();
   for (const menu of menus) {
+    if (menu.id !== 'basic') {
+      continue;
+    }
     for (const keycode of menu.keycodes) {
       if (!keycode.code || keycode.code === 'text') {
         continue;
@@ -50,26 +56,52 @@ export function resolveComposeBaseCode(
         keycode.name.toLowerCase() === needle ||
         keycode.shortName?.toLowerCase() === needle
       ) {
-        return keycode.code;
+        const parsed = basicKeyToByte[keycode.code];
+        return parsed !== undefined && isComposeBaseValue(parsed)
+          ? keycode.code
+          : null;
       }
     }
   }
+  // A compose base is a tap key, never another wrapper such as MO(), MT(), or
+  // LT(). Menu-name matches above still allow descriptive Basic-key labels.
+  if (/[()]/.test(trimmed)) {
+    return null;
+  }
   const parsed = parseKeycodeInput(trimmed, basicKeyToByte);
-  if (parsed === null) {
+  if (parsed === null || !isComposeBaseValue(parsed)) {
     return null;
   }
   const kcNo = basicKeyToByte.KC_NO ?? 0;
   if (parsed === kcNo) {
-    const explicitNo =
-      needle === 'kc_no' ||
-      needle === 'kc_trns' ||
-      needle === 'kc_transparent' ||
-      needle === 'no';
-    if (!explicitNo) {
+    if (!isExplicitClearInput(needle)) {
       return null;
     }
   }
   return byteToKey[parsed] ?? formatKeycodeHex(parsed);
+}
+
+export function getComposeBaseKeycodes(
+  menus: IKeycodeMenu[],
+  basicKeyToByte: Record<string, number>,
+): IKeycode[] {
+  const basicMenu = menus.find((menu) => menu.id === 'basic');
+  if (!basicMenu) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  return basicMenu.keycodes.filter((keycode) => {
+    if (!keycode.code || keycode.code === 'text' || seen.has(keycode.code)) {
+      return false;
+    }
+    const parsed = parseKeycodeInput(keycode.code, basicKeyToByte);
+    if (parsed === null || !isComposeBaseValue(parsed)) {
+      return false;
+    }
+    seen.add(keycode.code);
+    return true;
+  });
 }
 
 export function parseKeycodeInput(
@@ -84,7 +116,7 @@ export function parseKeycodeInput(
     trimmed.toUpperCase(),
     basicKeyToByte,
   );
-  if (fromAdvanced) {
+  if (Number.isInteger(fromAdvanced) && fromAdvanced !== 0) {
     return fromAdvanced & 0xffff;
   }
   if (/^0x[0-9a-f]{1,4}$/i.test(trimmed)) {
@@ -93,8 +125,15 @@ export function parseKeycodeInput(
   if (/^[0-9a-f]{4}$/i.test(trimmed) && /[a-f]/i.test(trimmed)) {
     return Number.parseInt(trimmed, 16) & 0xffff;
   }
+  const normalized = trimmed.toUpperCase();
+  const fromBasic = basicKeyToByte[normalized];
+  if (fromBasic !== undefined) {
+    return fromBasic & 0xffff;
+  }
   try {
-    return getByteForCode(trimmed.toUpperCase(), basicKeyToByte) & 0xffff;
+    const parsed = getByteForCode(normalized, basicKeyToByte) & 0xffff;
+    const kcNo = basicKeyToByte.KC_NO ?? 0;
+    return parsed === kcNo && !isExplicitClearInput(normalized) ? null : parsed;
   } catch {
     return null;
   }
@@ -128,7 +167,12 @@ export function keycodeMatchesQuery(keycode: IKeycode, query: string): boolean {
   if (!needle) {
     return true;
   }
-  const haystack = [keycode.name, keycode.code, keycode.title, keycode.shortName]
+  const haystack = [
+    keycode.name,
+    keycode.code,
+    keycode.title,
+    keycode.shortName,
+  ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -177,7 +221,22 @@ export function composeModifier(
   tapCode: string,
   basicKeyToByte: Record<string, number>,
 ): number | null {
-  return parseKeycodeInput(`${modifierMacro}(${tapCode})`, basicKeyToByte);
+  return composeModifiers([modifierMacro], tapCode, basicKeyToByte);
+}
+
+export function composeModifiers(
+  modifierMacros: string[],
+  tapCode: string,
+  basicKeyToByte: Record<string, number>,
+): number | null {
+  if (modifierMacros.length === 0) {
+    return null;
+  }
+  const expression = modifierMacros.reduceRight(
+    (keycode, modifier) => `${modifier}(${keycode})`,
+    tapCode,
+  );
+  return parseKeycodeInput(expression, basicKeyToByte);
 }
 
 export function isClearKeycode(
@@ -188,7 +247,5 @@ export function isClearKeycode(
   if (value === kcNo) {
     return true;
   }
-  return [...KC_NO_ALIASES].some(
-    (alias) => basicKeyToByte[alias] === value,
-  );
+  return [...KC_NO_ALIASES].some((alias) => basicKeyToByte[alias] === value);
 }

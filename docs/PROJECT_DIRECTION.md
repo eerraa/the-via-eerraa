@@ -39,6 +39,13 @@ TOMAK firmware and VIA V3 JSON already implement TD0–TD7, their four action sl
 - support search, clear, modifiers, layers, Mod-Tap and Layer-Tap composition;
 - preserve unknown 16-bit values as hex and retain text/hex input as an advanced escape hatch.
 
+Keycode composition is a Layers-only, progressive flow. The user first chooses Layer-Tap,
+Mod-Tap, or Modifier, then explicitly selects a compatible Basic tap key and the required hold
+action. Picking that tap key from the grid only fills the composer; it never assigns the selected
+keyboard key. The Special-category Any card remains the advanced QMK/hex escape hatch. Do not
+infer a compose base from the previously assigned grid card or expose a permanent compose form in
+ordinary categories.
+
 Tapping-family time values must also be directly editable as integer milliseconds. The first
 scope is the global TAPPING term and the TD0–TD7 terms; boolean tapping options and unrelated
 debounce or anti-ghosting timings are not silently included. A representative non-step value
