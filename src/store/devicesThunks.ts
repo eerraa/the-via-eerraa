@@ -50,6 +50,8 @@ import {extractDeviceInfo, logAppError} from './errorsSlice';
 import {tryForgetDevice} from 'src/shims/node-hid';
 import {isAuthorizedDeviceConnected} from 'src/utils/type-predicates';
 import {loadFirmwareVersion, loadKeycodesVersion} from './firmwareSlice';
+import {probeStateSyncForDevice} from './stateSyncThunks';
+import {loadEraAdvancedMetadata} from '../utils/era-advanced-metadata';
 import {loadDefinitionName} from './definitionNameSlice';
 import {KeycodesVersionProtocolError} from 'src/utils/keycodes-version';
 
@@ -126,6 +128,7 @@ const selectConnectedDevice =
           selectionGeneration,
         }),
       );
+      await dispatch(probeStateSyncForDevice(connectedDevice));
       selectConnectedDeviceRetry.clear();
     } catch (e) {
       if (!isCurrentSelection()) {
@@ -304,6 +307,7 @@ export const reloadConnectedDevices =
   };
 
 export const loadSupportedIds = (): AppThunk => async (dispatch) => {
+  await loadEraAdvancedMetadata();
   await syncStore();
   dispatch(updateSupportedIds(getSupportedIdsFromStore()));
   // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks

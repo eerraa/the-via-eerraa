@@ -44,6 +44,11 @@ const keymapSlice = createSlice({
   name: 'keymap',
   initialState,
   reducers: {
+    resetKeymapCache: (state, action: PayloadAction<string>) => {
+      delete state.rawDeviceMap[action.payload];
+      delete state.numberOfLayersMap[action.payload];
+      delete state.loadGenerationMap[action.payload];
+    },
     setSelectedPaletteColor: (
       state,
       action: PayloadAction<[number, number]>,
@@ -155,12 +160,16 @@ export const {
   saveKeymapSuccess,
   setConfigureKeyboardIsSelectable,
   setSelectedPaletteColor,
+  resetKeymapCache,
 } = keymapSlice.actions;
 
 export default keymapSlice.reducer;
 
 export const loadKeymapFromDevice =
-  (connectedDevice: ConnectedDevice): AppThunk =>
+  (
+    connectedDevice: ConnectedDevice,
+    options?: {force?: boolean},
+  ): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
     const {path} = connectedDevice;
@@ -174,12 +183,17 @@ export const loadKeymapFromDevice =
     const cachedLayerCount = state.keymap.numberOfLayersMap[path];
     const cachedLayers = state.keymap.rawDeviceMap[path];
     if (
+      !options?.force &&
       state.keymap.loadGenerationMap[path] === connectionGeneration &&
       cachedLayerCount !== undefined &&
       cachedLayers?.length >= cachedLayerCount &&
       cachedLayers?.slice(0, cachedLayerCount).every((layer) => layer.isLoaded)
     ) {
       return;
+    }
+
+    if (options?.force) {
+      dispatch(resetKeymapCache(path));
     }
 
     const numberOfLayers = await api.getLayerCount();

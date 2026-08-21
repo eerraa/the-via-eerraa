@@ -1,6 +1,13 @@
 # 0001 — State Sync revision validation protocol
 
-Status: Proposed
+Status: Accepted (G1 2026-08-21)
+
+Selector `GET_KEYBOARD_VALUE` **`0x06`**, envelope version `0x01`. Exact-ms IDs:
+global channel 15 value 5; QMK TD terms channel 0 values 72–79; H7S TD terms
+channel 16 values 41–48. Exact wire is 2-byte big-endian `uint16` ms, range
+100–500; out-of-range exact SET is rejected. Legacy GET projects floor-to-20 ms
+and does not rewrite the exact store. Selected-visible-capable poll starts at
+500 ms.
 
 ## Context
 
@@ -165,10 +172,8 @@ transcript로 승인 전에 확인한다.
 
 ## Recommended 32-byte wire candidate
 
-새 top-level command 대신 기존 read-only `GET_KEYBOARD_VALUE (0x02)`에 한 selector를
-추가하는 후보를 권고한다. Selector 값은 이 Proposed ADR에서 할당하지 않으며
-`<STATE_SYNC_VALUE>`로 표기한다. Upstream value-id 충돌 검토와 사용자 승인이
-끝날 때까지 protocol ID로 확정하지 않는다.
+새 top-level command 대신 기존 read-only `GET_KEYBOARD_VALUE (0x02)`에 selector
+**`0x06`** 을 쓴다. G1에서 확정했다.
 
 WebHID report id `0`을 제외한 32-byte VIA payload 기준이다. Multi-byte integer는
 기존 VIA와 같이 big-endian이고 모든 reserved byte는 zero여야 한다.
@@ -178,7 +183,7 @@ WebHID report id `0`을 제외한 32-byte VIA payload 기준이다. Multi-byte i
 | Byte | Meaning |
 | ---: | --- |
 | `0` | existing `GET_KEYBOARD_VALUE (0x02)` |
-| `1` | unassigned `<STATE_SYNC_VALUE>` selector |
+| `1` | `0x06` state-sync selector |
 | `2` | candidate envelope version `0x01` |
 | `3` | zero |
 | `4..5` | host request tag |

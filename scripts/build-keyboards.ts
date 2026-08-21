@@ -28,6 +28,8 @@ type JSONPathCheck = {
 
 type FirmwareCheck = CMacroCheck | JSONPathCheck;
 
+type ExactMsFamily = 'qmk' | 'h7s';
+
 type DefinitionEntry = {
   id: string;
   path: string;
@@ -37,6 +39,8 @@ type DefinitionEntry = {
   pair?: string;
   firmwareSource: string;
   firmwareChecks: FirmwareCheck[];
+  stateSync?: boolean;
+  exactMsFamily?: ExactMsFamily;
 };
 
 type DefinitionManifest = {
@@ -414,6 +418,23 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
     );
     definition.firmwareChecks.forEach((check, index) =>
       validateFirmwareCheck(check, definitionId, index),
+    );
+    invariant(
+      definition.stateSync === undefined ||
+        typeof definition.stateSync === 'boolean',
+      `${definition.id}.stateSync must be a boolean.`,
+    );
+    invariant(
+      definition.exactMsFamily === undefined ||
+        definition.exactMsFamily === 'qmk' ||
+        definition.exactMsFamily === 'h7s',
+      `${definition.id}.exactMsFamily must be qmk or h7s.`,
+    );
+    invariant(
+      !definition.stateSync ||
+        definition.exactMsFamily === 'qmk' ||
+        definition.exactMsFamily === 'h7s',
+      `${definition.id}: stateSync opt-in requires exactMsFamily.`,
     );
   }
 }
@@ -818,6 +839,18 @@ const writeEraOverlay = async (
     JSON.stringify({
       schemaVersion: manifest.schemaVersion,
       definitions: eraSourceMetadata,
+    }),
+  );
+  await writeFile(
+    path.join(definitionsOutputPath, 'era_advanced.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      definitions: definitions.map(({entry, via}) => ({
+        id: entry.id,
+        vendorProductId: via.vendorProductId,
+        stateSync: entry.stateSync === true,
+        exactMsFamily: entry.exactMsFamily ?? null,
+      })),
     }),
   );
 
