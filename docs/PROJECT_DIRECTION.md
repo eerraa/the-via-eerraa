@@ -84,7 +84,10 @@ L keymap change
   -> stale keymap remains until F5
 ```
 
-The app also contains selected-device coupling in keymap/menu thunks and a global, rather than per-device, HID write timestamp. These are core correctness issues to fix before layering more notifications on top.
+The original freshness coordinator conflated firmware-observed revisions with revisions whose
+VIA GET snapshots had actually been accepted. It also let loaders publish candidates before the
+end bracket and gave poll and lifecycle refresh separate in-flight ownership. The implemented
+coordinator separates those responsibilities and uses a single path/generation owner.
 
 ### Consistency contract
 
@@ -112,7 +115,7 @@ Reconnect, tab resume, or uncertain connection lifecycle
 ```
 
 Firmware remains the only value authority. Revision tokens indicate that an existing GET
-domain changed; they never carry setting values. The initial candidate domains are:
+domain changed; they never carry setting values. The accepted domains are:
 
 - `KEYMAP`: dynamic keymap and encoder reads;
 - `MACRO`: dynamic macro reads;
@@ -128,46 +131,44 @@ journals, and a second snapshot/value protocol are not part of the approved work
 direction. They may be reconsidered only if polling and refresh measurements demonstrate
 a concrete unmet requirement.
 
-### Reliability boundary and staged implementation
+### Reliability boundary and implemented architecture
 
-State Sync work is split so transport correctness does not depend on an unapproved wire
-allocation.
+The transport layer owns one listener, serialized request/response queue, pending matcher,
+write timestamp, and connection generation per WebHID path. Strict `0x16 v1`
+demultiplexing and explicit-device async operations remain independent of State Sync.
+Untagged legacy-command timeout is fail-closed for that transport generation; the tagged
+State Sync query can reject one timed-out request without discarding an otherwise confirmed
+connection because a late response cannot match a later request tag.
 
-**App Transport/Cache Phase 1** establishes per-device HID ownership, one listener and one
-serialized request/response queue per path, strict `0x16 v1` demultiplexing, connection
-generations, fail-closed legacy timeout handling, explicit-device async operations, and
-generation-guarded cache completeness. It sends no new command and adds no revision or
-freshness protocol.
+State Sync adds canonical definition/build opt-in, runtime capability confirmation through
+`GET_KEYBOARD_VALUE` selector `0x06`, three RAM-only revision tokens, a 500 ms recovery poll,
+and revision-bracketed domain refresh. The freshness coordinator has one owner per
+path/connection generation across poll, selection, reconnect, and resume work. It keeps
+firmware-observed revision separate from the revision of the snapshot actually accepted into
+Redux. A revision observed for one domain may dirty another domain, but only that other
+domain's own stable GET bracket may advance its accepted revision.
 
-**Phase 2** adds opt-in definition/build metadata, runtime capability confirmation via
-`GET_KEYBOARD_VALUE` selector `0x06`, three RAM-only revision tokens, selected-visible
-polling at 500 ms, and revision-bracketed atomic domain refresh. G1 froze the selector,
-exact-ms IDs, and 32-byte envelope in ADR 0001.
+Capability confirmation never blesses data loaded before the probe. It is followed by a full
+bracketed refresh before any implemented domain becomes fresh. After capability is confirmed,
+one malformed response or timeout keeps the connection capable, marks freshness dirty, and is
+retried by the next eligible poll. Only an initial probe failure in a new generation selects
+quiet legacy fallback.
 
-**Phase 2A** is the evidence and measurement-design gate before any production Phase 2 wire
-or firmware implementation. Start with static call-path/ownership analysis, deterministic fake
-WebHID timing and stale-report scenarios, transcript fixtures, and host-native or unit-level
-firmware fault injection where the selected firmware base supports it. The Phase 2A app agent
-must inspect the live QMK codebase read-only and produce a codebase-specific implementation
-prompt for a separate firmware agent; it must not edit the reference worktree itself. The
-firmware agent must work only in a separately approved clean branch/worktree and keep any
-measurement hook compile-time gated and absent from production builds.
+The poll is a recovery mechanism, not high-rate full polling. It runs only while the device is
+selected and ready, Configure is visible, the document is visible, and that connection is
+capable. Hidden pages send no periodic traffic, ordinary keyboards receive no capability
+probe, and reconnect/resume perform full authoritative refresh without trusting revision
+equality.
 
 Physical-device validation is deferred until software-only evidence leaves a concrete question
 that cannot be answered by deterministic simulation, host tests, captured transcript replay, or
-static ownership proof. When it is unavoidable, report the exact remaining hypothesis and the
-smallest manual action required before asking for hardware access. Lack of hardware data must
-remain an explicit uncertainty and must not be replaced by assumptions about browser close/open,
-USB endpoint flushing, response latency, or 8 kHz performance.
-
-The poll is a recovery mechanism, not high-rate full polling. Hidden pages send no periodic
-traffic, ordinary keyboards receive no capability probe, and timing values are chosen from
-browser/QMK/H7S measurements instead of hard-coded guesses scattered through the app.
+static ownership proof. Lack of hardware data must remain an explicit uncertainty and must not
+be replaced by assumptions about browser close/open, USB endpoint flushing, response latency,
+or 8 kHz performance.
 
 ### App responsibility
 
-The app should provide a small generic state-sync layer rather than scattered ERA component
-hooks. Phase 1 first makes the existing transport and cache ownership deterministic:
+The app provides a small generic state-sync layer rather than scattered ERA component hooks:
 
 - each WebHID path owns its timestamp, listener, input diagnostics, pending matcher,
   serialized command queue, and connection generation;
@@ -175,15 +176,22 @@ hooks. Phase 1 first makes the existing transport and cache ownership determinis
   consuming the current command response;
 - malformed or unknown reports use a bounded diagnostic/drop path and never become a future
   response;
-- a legacy timeout poisons that transport generation because an untagged late response
-  cannot safely be attributed to a retry;
+- an untagged legacy timeout poisons that transport generation because a late response cannot
+  safely be attributed to a retry, while the tagged State Sync query uses request-local timeout;
 - async keymap/menu operations capture an explicit path, API/transport, definition, and
   generation, then revalidate them before committing Redux state;
 - previous-device completions may update only a still-valid cache for that same
-  path/generation and never the newly selected device's ready/current state.
+  path/generation and never the newly selected device's ready/current state;
+- each domain has `unknown | dirty | refreshing | fresh` status plus distinct observed and
+  accepted revisions;
+- keymap including encoders, macros, and CONFIG layout/menu values are read into isolated
+  candidates and committed once only after a stable start/end revision bracket;
+- a churned domain retries immediately three times, remains dirty after that bound, and is
+  retried even when the next observed revision number equals the last observation;
+- a successful SET may update the visible value optimistically but invalidates advanced
+  freshness until a later query and authoritative GET verify it.
 
-Per-domain `dirty | refreshing | fresh(revision)` coordination and revision-bracketed refresh
-belong to Phase 2. Refactor broader Redux state only where these contracts require it.
+Refactor broader Redux state only where these contracts require it.
 
 Important code areas:
 
@@ -198,7 +206,7 @@ src/store/devicesThunks.ts
 
 ### Firmware and split responsibility
 
-Increment a future domain revision only after the new value is readable through the
+Increment a domain revision only after the new value is readable through the
 corresponding VIA GET path. Firmware sends no unsolicited advanced State Sync packet.
 
 For a local runtime change, this is after the semantic setter completes. For a split peer change:
@@ -215,12 +223,12 @@ source change
 
 The app must not infer peer success from the source half's intent. Existing firmware remains responsible for split replication and conflict handling.
 
-Start future peer revision bookkeeping at domain precision if the receiver no longer knows
-the exact key. The initial app refresh remains atomic at full-domain precision. Add a finer
+Peer revision bookkeeping is domain-precise when the receiver no longer knows the exact key.
+The app refresh remains atomic at full-domain precision. Add a finer
 domain or changed-range optimization only if measurement shows full-domain recovery is a
 real bottleneck.
 
-Any future QMK revision bookkeeping belongs at semantic commit boundaries and must keep
+QMK revision bookkeeping belongs at semantic commit boundaries and must keep
 configurator control traffic out of scan and interrupt hot paths.
 
 Polling-first does not require an H7S unsolicited-event TX path. A future selector response
@@ -252,29 +260,16 @@ queue ownership still require read-only trace and hardware measurement before H7
 
 Treat timeout and rate values as measured parameters rather than permanent guesses.
 
-## Development sequence and decision gates
+## Remaining decision gates
 
-Natural next sequence:
-
-1. Preserve the completed App Transport/Cache Phase 1 baseline and its ordinary-device
-   transcript/fake-device regression suite.
-2. Start QMK production work from the user's current checked-out firmware branch and create a
-   dedicated VIA campaign branch at that exact HEAD. The retired Phase 2A worktree, branch,
-   tests, artifacts, and measurements are not implementation inputs and must not be merged,
-   cherry-picked, or used as acceptance evidence.
-3. At one production protocol gate, decide the `GET_KEYBOARD_VALUE` selector,
-   KEYMAP/MACRO/CONFIG model, selected-visible polling policy, reconnect/resume full refresh,
-   revision-bracketed atomic refresh, polling interval, CONFIG read cost, and collision-free
-   exact-millisecond value IDs and wire representation.
-4. Build the reusable keycode picker, visible millisecond input, fake definitions, and transport
-   simulations while the protocol decision is pending; these must not require physical hardware.
-5. Implement and fault-test the matching QMK production behavior first, then the app
-   capability/revision handling and exact-millisecond definitions, while proving ordinary VIA,
-   legacy JSON, legacy value-ID, and `0x16 v1` compatibility.
-6. Reconsider semantic/range events, ACK, or extra domains only if measured polling latency or
-   refresh cost fails the acceptance criteria.
-7. Finish with one combined TOMAK split session and, when H7S production support is present, one
-   BRICK60 H7S session. All other acceptance evidence should be automated before those sessions.
+1. Preserve the accepted `0x02`/`0x06`/v1 wire envelope, three-domain model, 500 ms eligibility
+   policy, existing VIA value authority, and exact-millisecond identifiers.
+2. Complete physical TOMAK split convergence and official-client transcript checks without
+   treating the automated firmware builds as a substitute for flashing or device observation.
+3. Keep H7S read-only until its response ownership and 8 kHz poll-off/on evidence support a
+   separately approved implementation plan.
+4. Reconsider semantic/range events, ACK, extra domains, or a second value protocol only through
+   a new ADR after measured polling latency or refresh cost demonstrates a concrete failure.
 
 Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.
 
