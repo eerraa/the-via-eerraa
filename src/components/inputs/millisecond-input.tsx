@@ -1,5 +1,6 @@
 import {useEffect, useId, useRef, useState} from 'react';
 import styled from 'styled-components';
+import {useTranslation} from 'react-i18next';
 import {
   commitMillisecondDraft,
   parseFailureMessage,
@@ -60,6 +61,7 @@ type Props = {
 };
 
 export const MillisecondInput = ({adapter, id, ariaLabel}: Props) => {
+  const {t} = useTranslation();
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const errorId = `${fieldId}-error`;
@@ -102,10 +104,10 @@ export const MillisecondInput = ({adapter, id, ariaLabel}: Props) => {
 
   const capabilityHint =
     adapter.capability === 'legacy'
-      ? `Legacy step ${adapter.legacyStepMs ?? 20} ms`
+      ? t('Legacy step {{step}} ms', {step: adapter.legacyStepMs ?? 20})
       : adapter.capability === 'unsupported'
-        ? 'Firmware update required for exact millisecond input'
-        : 'Exact milliseconds';
+        ? t('Firmware update required for exact millisecond input')
+        : t('Exact milliseconds');
 
   return (
     <Root>
@@ -113,7 +115,7 @@ export const MillisecondInput = ({adapter, id, ariaLabel}: Props) => {
         <NumberBox
           id={fieldId}
           inputMode="numeric"
-          aria-label={ariaLabel ?? 'milliseconds'}
+          aria-label={ariaLabel ?? t('milliseconds')}
           aria-invalid={parsed.ok ? undefined : true}
           aria-describedby={`${hintId}${state.error ? ` ${errorId}` : ''}`}
           value={state.draft}
@@ -142,11 +144,11 @@ export const MillisecondInput = ({adapter, id, ariaLabel}: Props) => {
       <Hint id={hintId}>{capabilityHint}</Hint>
       {state.error ? (
         <ErrorText id={errorId} role="alert">
-          {state.error}
+          {t(state.error)}
         </ErrorText>
       ) : !parsed.ok && state.draft !== String(state.authoritativeMs) ? (
         <ErrorText id={errorId} role="alert">
-          {parseFailureMessage(parsed.reason)}
+          {t(parseFailureMessage(parsed.reason))}
         </ErrorText>
       ) : null}
     </Root>

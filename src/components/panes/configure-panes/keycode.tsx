@@ -1,6 +1,7 @@
 import {FC, useEffect, useMemo, useState} from 'react';
 import {title, component} from '../../icons/keyboard';
 import * as EncoderPane from './encoder';
+import styled from 'styled-components';
 import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../grid';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
@@ -21,6 +22,10 @@ import {getNextKey} from 'src/utils/keyboard-rendering';
 import {useTranslation} from 'react-i18next';
 import {KeycodePicker} from '../../inputs/keycode-picker';
 import {buildEnabledKeycodeMenus} from 'src/utils/keycode-menus';
+
+const MenuContainer = styled.div`
+  padding: 15px 20px 20px 10px;
+`;
 
 export const Pane: FC = () => {
   const selectedKey = useAppSelector(getSelectedKey);
@@ -86,15 +91,17 @@ export const KeycodePane: FC = () => {
   return (
     <>
       <SubmenuOverflowCell>
-        {menus.map(({id, label}) => (
-          <SubmenuRow
-            $selected={id === selectedCategory}
-            onClick={() => setSelectedCategory(id)}
-            key={id}
-          >
-            {t(label)}
-          </SubmenuRow>
-        ))}
+        <MenuContainer>
+          {menus.map(({id, label}) => (
+            <SubmenuRow
+              $selected={id === selectedCategory}
+              onClick={() => setSelectedCategory(id)}
+              key={id}
+            >
+              {t(label)}
+            </SubmenuRow>
+          ))}
+        </MenuContainer>
       </SubmenuOverflowCell>
       <OverflowCell>
         <KeycodePicker
