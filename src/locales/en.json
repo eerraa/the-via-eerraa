@@ -396,5 +396,13 @@
   "BOOT": "Boot",
   "EEPROM SYNC": "EEPROM Sync",
   "INPUT SYNC": "Input Sync",
-  "RGB SYNC": "RGB Sync"
+  "RGB SYNC": "RGB Sync",
+  "Compose": "Compose",
+  "Base keycode": "Base keycode",
+  "Pick from grid": "Pick from grid",
+  "KC_A, A, Esc": "KC_A, A, Esc",
+  "Click a keycode card to set the base. It will not be assigned yet.": "Click a keycode card to set the base. It will not be assigned yet.",
+  "Choose a base keycode first": "Choose a base keycode first",
+  "Grid clicks assign the selected key. Compose uses the base keycode.": "Grid clicks assign the selected key. Compose uses the base keycode.",
+  "Choose at least one modifier": "Choose at least one modifier"
 }

@@ -396,5 +396,13 @@
   "BOOT": "Boot",
   "EEPROM SYNC": "EEPROM-Sync",
   "INPUT SYNC": "Eingabe-Sync",
-  "RGB SYNC": "RGB-Sync"
+  "RGB SYNC": "RGB-Sync",
+  "Compose": "Zusammensetzen",
+  "Base keycode": "Basis-Tastencode",
+  "Pick from grid": "Aus Raster wählen",
+  "KC_A, A, Esc": "KC_A, A, Esc",
+  "Click a keycode card to set the base. It will not be assigned yet.": "Ein Klick auf eine Tastencode-Karte setzt nur die Basis, noch nicht die Tastatur.",
+  "Choose a base keycode first": "Zuerst einen Basis-Tastencode wählen",
+  "Grid clicks assign the selected key. Compose uses the base keycode.": "Rasterklicks belegen die ausgewählte Taste. Zusammensetzen verwendet den Basis-Tastencode.",
+  "Choose at least one modifier": "Mindestens einen Modifikator wählen"
 }

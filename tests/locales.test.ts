@@ -53,6 +53,9 @@ describe('VIA locale coverage', () => {
       'FEATURE',
       'TAPDANCE',
       'SYSTEM',
+      'Compose',
+      'Base keycode',
+      'Pick from grid',
     ];
     for (const key of required) {
       expect(locales.en[key]).toBeTruthy();

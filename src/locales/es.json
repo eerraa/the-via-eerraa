@@ -396,5 +396,13 @@
   "BOOT": "Arranque",
   "EEPROM SYNC": "Sincronización EEPROM",
   "INPUT SYNC": "Sincronización de entrada",
-  "RGB SYNC": "Sincronización RGB"
+  "RGB SYNC": "Sincronización RGB",
+  "Compose": "Componer",
+  "Base keycode": "Código base",
+  "Pick from grid": "Elegir de la cuadrícula",
+  "KC_A, A, Esc": "KC_A, A, Esc",
+  "Click a keycode card to set the base. It will not be assigned yet.": "Al pulsar una tarjeta solo se fija la base; aún no se asigna al teclado.",
+  "Choose a base keycode first": "Elija primero un código base",
+  "Grid clicks assign the selected key. Compose uses the base keycode.": "Un clic en la cuadrícula asigna la tecla seleccionada. La composición usa el código base.",
+  "Choose at least one modifier": "Elija al menos un modificador"
 }
