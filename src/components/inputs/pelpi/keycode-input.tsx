@@ -29,7 +29,7 @@ const KeycodePickerDialog = styled(ModalContainer)`
 const DialogTitle = styled.h2`
   margin: 0;
   color: var(--color_label-highlighted);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
   line-height: 1.4;
 `;

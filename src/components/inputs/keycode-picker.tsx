@@ -116,7 +116,7 @@ const ComposeIntro = styled.div`
 
 const ComposeTitle = styled.div`
   color: var(--color_label-highlighted);
-  font-size: 16px;
+  font-size: 20px;
   line-height: 1.4;
 `;
 
@@ -129,7 +129,6 @@ const ComposeActions = styled.div`
 
 const ComposeActionButton = styled(AccentButton)<{$selected: boolean}>`
   min-width: 112px;
-  font-size: 14px;
   background: ${(props) =>
     props.$selected ? 'var(--color_accent)' : 'var(--bg_outside-accent)'};
   color: ${(props) =>
@@ -145,7 +144,7 @@ const ComposeEditor = styled.div`
 `;
 
 const Hint = styled.div`
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--color_label);
 `;
@@ -159,15 +158,15 @@ const ActionRow = styled.div`
 `;
 
 const RowLabel = styled.span`
-  width: 58px;
+  width: 100px;
   flex: none;
   color: var(--color_label-highlighted);
-  font-size: 13px;
+  font-size: 18px;
 `;
 
 const InlineLabel = styled.span`
   color: var(--color_label);
-  font-size: 13px;
+  font-size: 18px;
 `;
 
 const ChipButton = styled.button<{$on: boolean}>`
@@ -177,7 +176,7 @@ const ChipButton = styled.button<{$on: boolean}>`
   flex: none;
   box-sizing: border-box;
   border-radius: 5px;
-  font-size: 14px;
+  font-size: 20px;
   cursor: pointer;
   border: 1px solid var(--color_accent);
   background: ${(props) =>
@@ -188,7 +187,7 @@ const ChipButton = styled.button<{$on: boolean}>`
 
 const Resolved = styled.span`
   color: var(--color_accent);
-  font-size: 13px;
+  font-size: 14px;
 `;
 
 const ComposeFooter = styled.div`
@@ -205,11 +204,11 @@ const Preview = styled.div`
   align-items: center;
   min-width: 220px;
   color: var(--color_label);
-  font-size: 13px;
+  font-size: 14px;
 
   code {
     color: var(--color_accent);
-    font-size: 13px;
+    font-size: 14px;
   }
 `;
 
@@ -243,7 +242,7 @@ const CategoryButton = styled.button<{$selected: boolean}>`
   padding: 8px 12px;
   margin-bottom: 11px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 20px;
   border-radius: 12px;
 
   @media (max-width: 760px) {
@@ -257,7 +256,6 @@ const CompactInput = styled(TextInput)`
   padding: 0 10px;
   height: 40px;
   line-height: 40px;
-  font-size: 16px;
   width: 200px;
   flex: none;
   box-sizing: border-box;
@@ -277,18 +275,16 @@ const LayerInput = styled(CompactInput)`
 const CompactAccentButton = styled(AccentButton)`
   min-width: 100px;
   flex: none;
-  font-size: 14px;
 `;
 
 const CompactPrimaryAccentButton = styled(PrimaryAccentButton)`
   min-width: 100px;
   flex: none;
-  font-size: 14px;
 `;
 
 const Status = styled.div`
   color: var(--color_label-highlighted);
-  font-size: 13px;
+  font-size: 18px;
 `;
 
 export type KeycodePickerProps = {
