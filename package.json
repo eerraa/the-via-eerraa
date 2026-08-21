@@ -12,6 +12,7 @@
     "verify:firmware-contracts": "node --import tsx scripts/build-keyboards.ts --verify-firmware-contracts",
     "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts",
     "test:firmware-contracts": "bun test tests/firmware-contracts.test.ts",
+    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts",
     "find-deadcode": "ts-prune"
   },
   "engines": {
