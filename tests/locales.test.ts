@@ -50,6 +50,9 @@ describe('VIA locale coverage', () => {
       'Apply',
       'Close',
       'Exact milliseconds',
+      'FEATURE',
+      'TAPDANCE',
+      'SYSTEM',
     ];
     for (const key of required) {
       expect(locales.en[key]).toBeTruthy();

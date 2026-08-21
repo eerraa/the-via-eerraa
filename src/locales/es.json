@@ -384,5 +384,17 @@
   "Legacy step {{step}} ms": "Paso heredado {{step}} ms",
   "Firmware update required for exact millisecond input": "La entrada exacta en milisegundos requiere actualizar el firmware",
   "Exact milliseconds": "Milisegundos exactos",
-  "milliseconds": "milisegundos"
+  "milliseconds": "milisegundos",
+  "FEATURE": "Funciones",
+  "TAPDANCE": "Tap Dance",
+  "SYSTEM": "Sistema",
+  "TAPPING": "Pulsación",
+  "DEBOUNCE": "Anti-rebote",
+  "MOUSE": "Ratón",
+  "SYNC": "Sincronización",
+  "LINK": "Enlace",
+  "BOOT": "Arranque",
+  "EEPROM SYNC": "Sincronización EEPROM",
+  "INPUT SYNC": "Sincronización de entrada",
+  "RGB SYNC": "Sincronización RGB"
 }

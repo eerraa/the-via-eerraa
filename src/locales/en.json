@@ -384,5 +384,17 @@
   "Legacy step {{step}} ms": "Legacy step {{step}} ms",
   "Firmware update required for exact millisecond input": "Firmware update required for exact millisecond input",
   "Exact milliseconds": "Exact milliseconds",
-  "milliseconds": "milliseconds"
+  "milliseconds": "milliseconds",
+  "FEATURE": "Features",
+  "TAPDANCE": "Tap Dance",
+  "SYSTEM": "System",
+  "TAPPING": "Tapping",
+  "DEBOUNCE": "Debounce",
+  "MOUSE": "Mouse",
+  "SYNC": "Sync",
+  "LINK": "Link",
+  "BOOT": "Boot",
+  "EEPROM SYNC": "EEPROM Sync",
+  "INPUT SYNC": "Input Sync",
+  "RGB SYNC": "RGB Sync"
 }

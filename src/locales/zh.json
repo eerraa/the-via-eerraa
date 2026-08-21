@@ -384,5 +384,17 @@
   "Legacy step {{step}} ms": "旧版步进 {{step}} ms",
   "Firmware update required for exact millisecond input": "精确毫秒输入需要更新固件",
   "Exact milliseconds": "精确毫秒",
-  "milliseconds": "毫秒"
+  "milliseconds": "毫秒",
+  "FEATURE": "功能",
+  "TAPDANCE": "点按舞",
+  "SYSTEM": "系统",
+  "TAPPING": "点按",
+  "DEBOUNCE": "去抖动",
+  "MOUSE": "鼠标",
+  "SYNC": "同步",
+  "LINK": "连接",
+  "BOOT": "启动",
+  "EEPROM SYNC": "EEPROM 同步",
+  "INPUT SYNC": "输入同步",
+  "RGB SYNC": "RGB 同步"
 }
