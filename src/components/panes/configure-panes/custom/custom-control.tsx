@@ -16,6 +16,15 @@ import {
   getRangeBounds,
   type RangeControlMap,
 } from 'src/utils/range-constraints';
+import {isExactTermCommand} from 'src/utils/era-exact-ms';
+import {MillisecondInput} from '../../../inputs/millisecond-input';
+import {
+  DEFAULT_TAPPING_TERM_BOUNDS,
+  type MillisecondAdapter,
+} from 'src/utils/millisecond-field';
+import {useAppDispatch, useAppSelector} from 'src/store/hooks';
+import {getSelectedKeyboardAPI, getSelectedDevicePath} from 'src/store/devicesSlice';
+import {getCustomMenuDataMap, updateSelectedCustomMenuData} from 'src/store/menusSlice';
 
 type Props = {
   lightingData: LightingData;
@@ -79,6 +88,51 @@ const getRangeValue = (value: number[], max: number) => {
   }
 };
 
+const ExactMillisecondControl = ({
+  name,
+  command,
+  value,
+}: {
+  name: string;
+  command: number[];
+  value: number[];
+}) => {
+  const dispatch = useAppDispatch();
+  const api = useAppSelector(getSelectedKeyboardAPI);
+  const devicePath = useAppSelector(getSelectedDevicePath);
+  const menuData = useAppSelector(getCustomMenuDataMap);
+  const channel = command[0];
+  const id = command[1];
+  const adapter: MillisecondAdapter = {
+    capability: 'exact',
+    minMs: DEFAULT_TAPPING_TERM_BOUNDS.minMs,
+    maxMs: DEFAULT_TAPPING_TERM_BOUNDS.maxMs,
+    async read() {
+      return getRangeValue(value ?? [0, 0], 500);
+    },
+    async write(candidateMs: number) {
+      if (!api || !devicePath) {
+        return getRangeValue(value ?? [0, 0], 500);
+      }
+      await api.setCustomMenuValue(channel, id, ...shiftFrom16Bit(candidateMs));
+      await api.commitCustomMenu(channel);
+      const raw = await api.getCustomMenuValue([channel, id]);
+      const bytes = raw.slice(1);
+      dispatch(
+        updateSelectedCustomMenuData({
+          devicePath,
+          menuData: {
+            ...(menuData[devicePath] || {}),
+            [name]: bytes,
+          },
+        }),
+      );
+      return shiftTo16Bit([bytes[0] ?? 0, bytes[1] ?? 0]);
+    },
+  };
+  return <MillisecondInput adapter={adapter} ariaLabel={name} />;
+};
+
 const decodeNullTerminatedUTF8 = (value?: number[]) => {
   if (!value || value.length === 0) {
     return '';
@@ -117,6 +171,9 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       );
     }
     case 'range': {
+      if (isExactTermCommand(name)) {
+        return <ExactMillisecondControl name={name} command={command} value={props.value} />;
+      }
       const logicalValues = Object.entries(props.rangeControls).reduce<
         Record<string, number>
       >((values, [id, range]) => {

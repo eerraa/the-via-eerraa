@@ -40,6 +40,7 @@ import {useTranslation} from 'react-i18next';
 import {MessageDialog} from './inputs/message-dialog';
 import {formatNumberAsHex} from 'src/utils/format';
 import {addHIDTransportGenerationListener} from 'src/shims/node-hid';
+import {StateSyncRuntime} from './state-sync-runtime';
 
 const ErrorHome = styled.div`
   background: var(--bg_gradient);
@@ -274,6 +275,7 @@ export const Home: React.FC<HomeProps> = (props) => {
           )}
         </MessageDialog>
       )}
+      <StateSyncRuntime />
       {props.children}
     </>
   );

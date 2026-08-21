@@ -38,6 +38,9 @@ import {
   getFirmwareVersionMap,
   getSelectedFirmwareVersion,
 } from './firmwareSlice';
+import {getSelectedStateSyncCapability, getPathSyncState} from './stateSyncSlice';
+import {filterMenuTree} from 'src/utils/era-menu-filter';
+import type {StateSyncCapability} from 'src/utils/era-state-sync';
 
 type CustomMenuData = {
   [commandName: string]: number[] | number[][];
@@ -246,9 +249,11 @@ export const syncCustomMenuValues =
       return;
     }
     const firmwareVersion = getFirmwareVersionMap(state)[devicePath];
+    const capability = getPathSyncState(state, devicePath)?.capability;
     const commands = getCustomCommandsForDefinition(
       definition,
       firmwareVersion,
+      capability,
     );
     const menuData = state.menus.customMenuDataMap[devicePath] || {};
 
@@ -360,6 +365,7 @@ export const syncCustomMenuValuesFromRequest =
     const commands = getCustomCommandsForDefinition(
       definition,
       getFirmwareVersionMap(state)[devicePath],
+      getPathSyncState(state, devicePath)?.capability,
     );
     const ids = getUISyncCommandIds(request, commands);
     if (ids === undefined || ids.length) {
@@ -392,8 +398,9 @@ export const updateV3MenuData =
     if (!isVIADefinitionV3(definition)) {
       throw new Error('V3 menus are only compatible with V3 VIA definitions.');
     }
-    const menus = getV3MenusForDefinition(definition);
     const firmwareVersion = getFirmwareVersionMap(state)[connectedDevice.path];
+    const capability = getPathSyncState(state, connectedDevice.path)?.capability;
+    const menus = getV3MenusForDefinition(definition, capability);
     const commands = menus.flatMap((menu) =>
       extractCommands(menu, firmwareVersion),
     );
@@ -500,7 +507,10 @@ const extractCommands = (
 
 type MenuDefinition = NonNullable<ReturnType<typeof getDefinitionForDevice>>;
 
-const getV3MenusForDefinition = (definition: MenuDefinition): V3Menu[] => {
+const getV3MenusForDefinition = (
+  definition: MenuDefinition,
+  capability?: StateSyncCapability,
+): V3Menu[] => {
   if (!isVIADefinitionV3(definition)) {
     return [];
   }
@@ -508,16 +518,18 @@ const getV3MenusForDefinition = (definition: MenuDefinition): V3Menu[] => {
     .flatMap(tryResolveCommonMenu)
     .map((menu, idx) =>
       isVIAMenu(menu) ? compileMenu('custom_menu', 3, menu, idx) : menu,
-    );
+    )
+    .map((menu) => filterMenuTree(menu, capability));
 };
 
 export const getCustomCommandsForDefinition = (
   definition: MenuDefinition,
   firmwareVersion?: number,
+  capability?: StateSyncCapability,
 ): Record<string, number[]> => {
   const menus = isVIADefinitionV2(definition)
-    ? definition.customMenus
-    : getV3MenusForDefinition(definition);
+    ? filterMenuTree(definition.customMenus, capability)
+    : getV3MenusForDefinition(definition, capability);
 
   if (!menus) {
     return {};
@@ -548,34 +560,36 @@ export const getSelectedCustomMenuData = createSelector(
   (map, path) => path && map[path],
 );
 
-export const getV3Menus = createSelector(getSelectedDefinition, (definition) =>
-  definition ? getV3MenusForDefinition(definition) : [],
+export const getV3Menus = createSelector(
+  getSelectedDefinition,
+  getSelectedStateSyncCapability,
+  (definition, capability) =>
+    definition ? getV3MenusForDefinition(definition, capability) : [],
 );
 
 export const getV3MenuComponents = createSelector(
   getSelectedDefinition,
-  (definition) => {
+  getSelectedStateSyncCapability,
+  (definition, capability) => {
     if (!definition || !isVIADefinitionV3(definition)) {
       return [];
     }
 
-    // TODO: handle Common menus (built ins in here too?)
-    return (definition.menus || [])
-      .flatMap(tryResolveCommonMenu)
-      .map((menu: any, idx) =>
-        isVIAMenu(menu)
-          ? makeCustomMenu(compileMenu('custom_menu', 3, menu, idx), idx)
-          : menu,
-      ) as ReturnType<typeof makeCustomMenus>;
+    return getV3MenusForDefinition(definition, capability).map((menu: any, idx) =>
+      isVIAMenu(menu)
+        ? makeCustomMenu(menu, idx)
+        : menu,
+    ) as ReturnType<typeof makeCustomMenus>;
   },
 );
 
 export const getCustomCommands = createSelector(
   getSelectedDefinition,
   getSelectedFirmwareVersion,
-  (definition, firmwareVersion) =>
+  getSelectedStateSyncCapability,
+  (definition, firmwareVersion, capability) =>
     definition
-      ? getCustomCommandsForDefinition(definition, firmwareVersion)
+      ? getCustomCommandsForDefinition(definition, firmwareVersion, capability)
       : {},
 );
 

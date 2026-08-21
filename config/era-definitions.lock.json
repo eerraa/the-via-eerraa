@@ -31,6 +31,8 @@
       "productId": "0xA002",
       "pair": "tomak79h",
       "firmwareSource": "qmk-eerraa",
+      "stateSync": true,
+      "exactMsFamily": "qmk",
       "firmwareChecks": [
         {
           "type": "jsonPath",
@@ -54,6 +56,8 @@
       "productId": "0xB002",
       "pair": "tomak79h",
       "firmwareSource": "qmk-eerraa",
+      "stateSync": true,
+      "exactMsFamily": "qmk",
       "firmwareChecks": [
         {
           "type": "jsonPath",
@@ -76,6 +80,8 @@
       "vendorId": "0x4552",
       "productId": "0x0022",
       "firmwareSource": "h7s",
+      "stateSync": true,
+      "exactMsFamily": "h7s",
       "firmwareChecks": [
         {
           "type": "cMacro",
