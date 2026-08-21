@@ -34,6 +34,11 @@ import {del, entries, setMany, update} from 'idb-keyval';
 import {isFulfilledPromise} from 'src/utils/type-predicates';
 import {extractDeviceInfo, logAppError} from './errorsSlice';
 import {getSelectedKeycodesVersion} from './firmwareSlice';
+import {
+  commitStableConfigCandidate,
+  invalidateStateSyncDomain,
+  type StateSyncConfigCandidate,
+} from './stateSyncCandidateActions';
 
 type LayoutOption = number;
 type LayoutOptionsMap = {[devicePath: string]: LayoutOption[] | null}; // TODO: is this null valid?
@@ -107,6 +112,14 @@ const definitionsSlice = createSlice({
     updateLayoutOptions: (state, action: PayloadAction<LayoutOptionsMap>) => {
       state.layoutOptionsMap = {...state.layoutOptionsMap, ...action.payload};
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(commitStableConfigCandidate, (state, action) => {
+      const {devicePath, candidate} = action.payload;
+      if (candidate.layoutOptions !== undefined) {
+        state.layoutOptionsMap[devicePath] = candidate.layoutOptions;
+      }
+    });
   },
 });
 
@@ -235,8 +248,10 @@ export const updateLayoutOption =
       packBits(options.map((option, idx) => [option, optionsNums[idx]])),
     );
 
+    let writeSucceeded = false;
     try {
       await api.setKeyboardValue(KeyboardValue.LAYOUT_OPTIONS, ...bytes);
+      writeSucceeded = true;
     } catch {
       console.warn('Setting layout option command not working');
     }
@@ -250,6 +265,15 @@ export const updateLayoutOption =
         [path]: options,
       }),
     );
+    if (writeSucceeded) {
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: path,
+          connectionGeneration,
+          domain: 'config',
+        }),
+      );
+    }
   };
 
 export const storeCustomDefinitions =
@@ -350,6 +374,37 @@ export const loadLayoutOptions =
       console.warn('Getting layout options command not working');
     }
   };
+
+export const readLayoutOptionsStateSyncCandidate = async (
+  connectedDevice: ConnectedDevice,
+  state: RootState,
+  connectionGeneration: number,
+): Promise<StateSyncConfigCandidate | null> => {
+  const definition = getDefinitionForDevice(state, connectedDevice);
+  const api = new KeyboardAPI(connectedDevice.path);
+  if (!definition || !api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+  if (!definition.layouts.labels) {
+    return {};
+  }
+
+  const response = await api.getKeyboardValue(
+    KeyboardValue.LAYOUT_OPTIONS,
+    [],
+    4,
+  );
+  const layoutOptions = unpackBits(
+    bytesIntoNum(response),
+    definition.layouts.labels.map((layoutLabel: string[] | string) =>
+      Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
+    ),
+  );
+  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+  return {layoutOptions};
+};
 
 // Take a list of authorized devices and attempt to resolve any missing definitions
 export const reloadDefinitions =

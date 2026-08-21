@@ -19,9 +19,16 @@ import {
   selectDevice,
 } from './devicesSlice';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
+import {
+  commitStableKeymapCandidate,
+  invalidateStateSyncDomain,
+  type StateSyncEncoderMap,
+  type StateSyncKeymapCandidate,
+} from './stateSyncCandidateActions';
 
 type KeymapState = {
   rawDeviceMap: DeviceLayerMap;
+  encoderDeviceMap: Record<string, StateSyncEncoderMap>;
   numberOfLayersMap: Record<string, number>;
   loadGenerationMap: Record<string, number>;
   selectedLayerIndex: number;
@@ -32,6 +39,7 @@ type KeymapState = {
 
 const initialState: KeymapState = {
   rawDeviceMap: {},
+  encoderDeviceMap: {},
   numberOfLayersMap: {},
   loadGenerationMap: {},
   selectedLayerIndex: 0,
@@ -46,6 +54,7 @@ const keymapSlice = createSlice({
   reducers: {
     resetKeymapCache: (state, action: PayloadAction<string>) => {
       delete state.rawDeviceMap[action.payload];
+      delete state.encoderDeviceMap[action.payload];
       delete state.numberOfLayersMap[action.payload];
       delete state.loadGenerationMap[action.payload];
     },
@@ -144,9 +153,17 @@ const keymapSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    builder.addCase(selectDevice, (state) => {
-      state.selectedKey = null;
-    });
+    builder
+      .addCase(selectDevice, (state) => {
+        state.selectedKey = null;
+      })
+      .addCase(commitStableKeymapCandidate, (state, action) => {
+        const {devicePath, connectionGeneration, candidate} = action.payload;
+        state.rawDeviceMap[devicePath] = candidate.layers;
+        state.encoderDeviceMap[devicePath] = candidate.encoders;
+        state.numberOfLayersMap[devicePath] = candidate.layers.length;
+        state.loadGenerationMap[devicePath] = connectionGeneration;
+      });
   },
 });
 
@@ -165,11 +182,59 @@ export const {
 
 export default keymapSlice.reducer;
 
+export const readKeymapStateSyncCandidate = async (
+  connectedDevice: ConnectedDevice,
+  state: RootState,
+  connectionGeneration: number,
+): Promise<StateSyncKeymapCandidate | null> => {
+  const {path} = connectedDevice;
+  const api = new KeyboardAPI(path);
+  const definition = getDefinitionForDevice(state, connectedDevice);
+  if (!definition || !api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+
+  const numberOfLayers = await api.getLayerCount();
+  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+  const layers: Layer[] = [];
+  for (let layerIndex = 0; layerIndex < numberOfLayers; layerIndex++) {
+    const keymap = await api.readRawMatrix(definition.matrix, layerIndex);
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return null;
+    }
+    layers.push({keymap, isLoaded: true});
+  }
+
+  const encoderIds = Array.from(
+    new Set(
+      definition.layouts.keys
+        .map((key) => Number((key as {ei?: number}).ei))
+        .filter((encoderId) => Number.isInteger(encoderId) && encoderId >= 0),
+    ),
+  ).sort((left, right) => left - right);
+  const encoders: StateSyncEncoderMap = {};
+  if (connectedDevice.protocol >= 10) {
+    for (const encoderId of encoderIds) {
+      encoders[encoderId] = [];
+      for (let layerIndex = 0; layerIndex < numberOfLayers; layerIndex++) {
+        const [counterclockwise, clockwise] = await Promise.all([
+          api.getEncoderValue(layerIndex, encoderId, false),
+          api.getEncoderValue(layerIndex, encoderId, true),
+        ]);
+        if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+          return null;
+        }
+        encoders[encoderId].push([counterclockwise, clockwise]);
+      }
+    }
+  }
+  return {layers, encoders};
+};
+
 export const loadKeymapFromDevice =
-  (
-    connectedDevice: ConnectedDevice,
-    options?: {force?: boolean},
-  ): AppThunk =>
+  (connectedDevice: ConnectedDevice, options?: {force?: boolean}): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
     const {path} = connectedDevice;
@@ -257,6 +322,13 @@ export const saveRawKeymapToDevice =
         connectionGeneration,
       }),
     );
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: path,
+        connectionGeneration,
+        domain: 'keymap',
+      }),
+    );
   };
 
 export const updateKey =
@@ -291,12 +363,53 @@ export const updateKey =
         layerIndex: selectedLayerIndex,
       }),
     );
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: path,
+        connectionGeneration,
+        domain: 'keymap',
+      }),
+    );
+  };
+
+export const updateEncoderValue =
+  (
+    layerIndex: number,
+    encoderId: number,
+    isClockwise: boolean,
+    value: number,
+  ): AppThunk =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    const api = getSelectedKeyboardAPI(state);
+    if (!connectedDevice || !api) {
+      return;
+    }
+    const connectionGeneration = api.getConnectionGeneration();
+    await api.setEncoderValue(layerIndex, encoderId, isClockwise, value);
+    if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: connectedDevice.path,
+          connectionGeneration,
+          domain: 'keymap',
+        }),
+      );
+    }
   };
 
 export const getConfigureKeyboardIsSelectable = (state: RootState) =>
   state.keymap.configureKeyboardIsSelectable;
 export const getSelectedKey = (state: RootState) => state.keymap.selectedKey;
 export const getRawDeviceMap = (state: RootState) => state.keymap.rawDeviceMap;
+export const getEncoderDeviceMap = (state: RootState) =>
+  state.keymap.encoderDeviceMap;
+export const getSelectedEncoderMap = createSelector(
+  getEncoderDeviceMap,
+  getSelectedDevicePath,
+  (map, path) => (path ? map[path] : undefined),
+);
 export const getNumberOfLayersMap = (state: RootState) =>
   state.keymap.numberOfLayersMap;
 export const getKeymapLoadGenerationMap = (state: RootState) =>

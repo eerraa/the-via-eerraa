@@ -23,8 +23,15 @@ import {
   type MillisecondAdapter,
 } from 'src/utils/millisecond-field';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
-import {getSelectedKeyboardAPI, getSelectedDevicePath} from 'src/store/devicesSlice';
-import {getCustomMenuDataMap, updateSelectedCustomMenuData} from 'src/store/menusSlice';
+import {
+  getSelectedKeyboardAPI,
+  getSelectedDevicePath,
+} from 'src/store/devicesSlice';
+import {
+  getCustomMenuDataMap,
+  updateSelectedCustomMenuData,
+} from 'src/store/menusSlice';
+import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
 
 type Props = {
   lightingData: LightingData;
@@ -114,10 +121,24 @@ const ExactMillisecondControl = ({
       if (!api || !devicePath) {
         return getRangeValue(value ?? [0, 0], 500);
       }
+      const connectionGeneration = api.getConnectionGeneration();
       await api.setCustomMenuValue(channel, id, ...shiftFrom16Bit(candidateMs));
       await api.commitCustomMenu(channel);
+      if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+        return candidateMs;
+      }
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath,
+          connectionGeneration,
+          domain: 'config',
+        }),
+      );
       const raw = await api.getCustomMenuValue([channel, id]);
       const bytes = raw.slice(1);
+      if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+        return candidateMs;
+      }
       dispatch(
         updateSelectedCustomMenuData({
           devicePath,
@@ -172,7 +193,13 @@ const VIACustomControl = (props: VIACustomControlProps) => {
     }
     case 'range': {
       if (isExactTermCommand(name)) {
-        return <ExactMillisecondControl name={name} command={command} value={props.value} />;
+        return (
+          <ExactMillisecondControl
+            name={name}
+            command={command}
+            value={props.value}
+          />
+        );
       }
       const logicalValues = Object.entries(props.rangeControls).reduce<
         Record<string, number>
