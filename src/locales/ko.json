@@ -385,18 +385,6 @@
   "Firmware update required for exact millisecond input": "정확한 밀리초 입력에는 펌웨어 업데이트가 필요합니다",
   "Exact milliseconds": "정확한 밀리초",
   "milliseconds": "밀리초",
-  "FEATURE": "기능",
-  "TAPDANCE": "탭 댄스",
-  "SYSTEM": "시스템",
-  "TAPPING": "태핑",
-  "DEBOUNCE": "디바운스",
-  "MOUSE": "마우스",
-  "SYNC": "동기화",
-  "LINK": "링크",
-  "BOOT": "부트",
-  "EEPROM SYNC": "EEPROM 동기화",
-  "INPUT SYNC": "입력 동기화",
-  "RGB SYNC": "RGB 동기화",
   "Compose": "조합",
   "Base keycode": "기반 키코드",
   "Pick from grid": "격자에서 선택",
@@ -404,5 +392,8 @@
   "Click a keycode card to set the base. It will not be assigned yet.": "키코드 칸을 누르면 기반으로만 지정됩니다. 키보드에는 아직 들어가지 않습니다.",
   "Choose a base keycode first": "기반 키코드를 먼저 고르세요",
   "Grid clicks assign the selected key. Compose uses the base keycode.": "격자 클릭은 선택된 키에 바로 넣습니다. 조합은 아래 기반 키코드를 씁니다.",
-  "Choose at least one modifier": "수식 키를 하나 이상 고르세요"
+  "Choose at least one modifier": "수식 키를 하나 이상 고르세요",
+  "Tap": "탭",
+  "Hold": "홀드",
+  "Any": "임의"
 }

@@ -7,6 +7,7 @@ import {
   filterKeycodeMenus,
   formatKeycodeHex,
   formatKeycodeLabel,
+  isComposerCategory,
   parseKeycodeInput,
   resolveComposeBaseCode,
   selectKeycodeFromMenuCode,
@@ -82,6 +83,13 @@ describe('keycode picker codec', () => {
       'KC_A',
     ]);
     expect(filterKeycodeMenus(menus, 'nope')).toEqual([]);
+  });
+
+  test('composer is only attached to the Layers category', () => {
+    expect(isComposerCategory('layers')).toBe(true);
+    expect(isComposerCategory('basic')).toBe(false);
+    expect(isComposerCategory('special')).toBe(false);
+    expect(isComposerCategory(undefined)).toBe(false);
   });
 
   test('compose base is resolved only from explicit input, not a side effect', () => {

@@ -385,18 +385,6 @@
   "Firmware update required for exact millisecond input": "La entrada exacta en milisegundos requiere actualizar el firmware",
   "Exact milliseconds": "Milisegundos exactos",
   "milliseconds": "milisegundos",
-  "FEATURE": "Funciones",
-  "TAPDANCE": "Tap Dance",
-  "SYSTEM": "Sistema",
-  "TAPPING": "Pulsación",
-  "DEBOUNCE": "Anti-rebote",
-  "MOUSE": "Ratón",
-  "SYNC": "Sincronización",
-  "LINK": "Enlace",
-  "BOOT": "Arranque",
-  "EEPROM SYNC": "Sincronización EEPROM",
-  "INPUT SYNC": "Sincronización de entrada",
-  "RGB SYNC": "Sincronización RGB",
   "Compose": "Componer",
   "Base keycode": "Código base",
   "Pick from grid": "Elegir de la cuadrícula",
@@ -404,5 +392,8 @@
   "Click a keycode card to set the base. It will not be assigned yet.": "Al pulsar una tarjeta solo se fija la base; aún no se asigna al teclado.",
   "Choose a base keycode first": "Elija primero un código base",
   "Grid clicks assign the selected key. Compose uses the base keycode.": "Un clic en la cuadrícula asigna la tecla seleccionada. La composición usa el código base.",
-  "Choose at least one modifier": "Elija al menos un modificador"
+  "Choose at least one modifier": "Elija al menos un modificador",
+  "Tap": "Toque",
+  "Hold": "Mantener",
+  "Any": "Cualquiera"
 }
