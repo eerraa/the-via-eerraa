@@ -39,6 +39,19 @@ TOMAK firmware and VIA V3 JSON already implement TD0–TD7, their four action sl
 - support search, clear, modifiers, layers, Mod-Tap and Layer-Tap composition;
 - preserve unknown 16-bit values as hex and retain text/hex input as an advanced escape hatch.
 
+Tapping-family time values must also be directly editable as integer milliseconds. The first
+scope is the global TAPPING term and the TD0–TD7 terms; boolean tapping options and unrelated
+debounce or anti-ghosting timings are not silently included. A representative non-step value
+such as `137 ms` must round-trip, persist, and drive runtime behavior without being snapped to
+the legacy 20 ms grid.
+
+This is an app-and-firmware compatibility change, not a cosmetic replacement of the existing
+dropdown. Preserve every legacy value ID and existing JSON behavior for stock
+`www.usevia.app`, add an exact-millisecond path only after the identifier/protocol audit, and
+express the new definition with standard VIA V3 controls rather than a fork-only JSON schema.
+The custom app should show a numeric `ms` input by default for these controls. Reuse that input
+for future TAPPING time fields only after their storage and wire semantics have been audited.
+
 Use Vial only to study interaction design. Implement independently in VIA React code and do not copy license-incompatible or unclear source.
 
 ## State synchronization
@@ -233,24 +246,23 @@ Natural next sequence:
 
 1. Preserve the completed App Transport/Cache Phase 1 baseline and its ordinary-device
    transcript/fake-device regression suite.
-2. In approved Phase 2A, inspect current app/QMK/H7S ownership paths read-only, review the
-   unassigned selector namespace, and exhaust software-only measurement options. Produce a
-   codebase-specific QMK measurement/fault-injection prompt, but do not modify a reference
-   firmware worktree or allocate a selector. The resulting ownership and test boundary is
-   recorded in [`PHASE2A_QMK_MEASUREMENT_EVIDENCE.md`](PHASE2A_QMK_MEASUREMENT_EVIDENCE.md).
-3. Have a separately authorized firmware agent implement only the compile-time-gated
-   measurement support in a clean worktree/branch. Prefer host-native tests and deterministic
-   delayed-response/reconnect simulation; keep ordinary response bytes and production builds
-   unchanged.
-4. Review the resulting evidence and report any hypothesis that still requires physical hardware.
-   Run only the smallest separately approved device experiment needed to close that gap.
-5. At the production Phase 2 gate, decide the `GET_KEYBOARD_VALUE` selector, KEYMAP/MACRO/CONFIG
-   model, selected-visible polling policy, reconnect/resume full refresh, revision-bracketed
-   atomic refresh, polling interval, and CONFIG read cost.
-6. After separate approval, implement and fault-test app capability/revision handling and the
-   matching QMK/H7S production changes while proving ordinary VIA and `0x16 v1` compatibility.
-7. Reconsider semantic/range events, ACK, or extra domains only if measured polling latency or
+2. Start QMK production work from the user's current checked-out firmware branch and create a
+   dedicated VIA campaign branch at that exact HEAD. The retired Phase 2A worktree, branch,
+   tests, artifacts, and measurements are not implementation inputs and must not be merged,
+   cherry-picked, or used as acceptance evidence.
+3. At one production protocol gate, decide the `GET_KEYBOARD_VALUE` selector,
+   KEYMAP/MACRO/CONFIG model, selected-visible polling policy, reconnect/resume full refresh,
+   revision-bracketed atomic refresh, polling interval, CONFIG read cost, and collision-free
+   exact-millisecond value IDs and wire representation.
+4. Build the reusable keycode picker, visible millisecond input, fake definitions, and transport
+   simulations while the protocol decision is pending; these must not require physical hardware.
+5. Implement and fault-test the matching QMK production behavior first, then the app
+   capability/revision handling and exact-millisecond definitions, while proving ordinary VIA,
+   legacy JSON, legacy value-ID, and `0x16 v1` compatibility.
+6. Reconsider semantic/range events, ACK, or extra domains only if measured polling latency or
    refresh cost fails the acceptance criteria.
+7. Finish with one combined TOMAK split session and, when H7S production support is present, one
+   BRICK60 H7S session. All other acceptance evidence should be automated before those sessions.
 
 Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.
 
