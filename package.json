@@ -11,6 +11,7 @@
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "verify:firmware-contracts": "node --import tsx scripts/build-keyboards.ts --verify-firmware-contracts",
     "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts",
+    "test:firmware-contracts": "bun test tests/firmware-contracts.test.ts",
     "find-deadcode": "ts-prune"
   },
   "engines": {

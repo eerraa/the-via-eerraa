@@ -40,4 +40,6 @@ bun run build
 bun run dev -- --host 127.0.0.1
 ```
 
+`bun run verify:firmware-contracts` checks lock `repository` + full commit SHA + path against immutable bytes. It never uses a dirty working tree. Local clones are selected with `ERA_FIRMWARE_LOCAL_ROOTS` JSON, `ERA_FIRMWARE_<SOURCE_ID>_ROOT`, or gitignored `config/era-firmware-sources.local.json`; the clone must contain that commit object and a remote that names the lock repository. Otherwise it fetches GitHub raw, using `GITHUB_TOKEN`/`GH_TOKEN` when the repository is private. Do not "fix" a 404 by pointing the lock at a different commit.
+
 `bun run dev` rebuilds keyboard definitions before starting Vite. Do not treat a successful app build with empty or stale definition output as valid.

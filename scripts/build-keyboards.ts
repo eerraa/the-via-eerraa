@@ -87,6 +87,165 @@ const officialBunTagPath = path.join(
 );
 
 const firmwareFilePromises = new Map<string, Promise<string>>();
+const localFirmwareRootsPath = path.join(
+  projectRoot,
+  'config',
+  'era-firmware-sources.local.json',
+);
+
+const parseLocalRootMap = (value: unknown, label: string) => {
+  invariant(isRecord(value), `${label} must be an object.`);
+  const roots: Record<string, string> = {};
+  for (const [sourceId, root] of Object.entries(value)) {
+    invariant(
+      typeof root === 'string' && root.length > 0,
+      `${label}.${sourceId} must be a directory path.`,
+    );
+    roots[sourceId] = root;
+  }
+  return roots;
+};
+
+let localFirmwareRootsPromise: Promise<Record<string, string>> | undefined;
+
+const loadLocalFirmwareRoots = () => {
+  if (!localFirmwareRootsPromise) {
+    localFirmwareRootsPromise = (async () => {
+      const roots: Record<string, string> = {};
+      const envJson = process.env.ERA_FIRMWARE_LOCAL_ROOTS;
+      if (envJson && envJson.trim()) {
+        Object.assign(
+          roots,
+          parseLocalRootMap(JSON.parse(envJson), 'ERA_FIRMWARE_LOCAL_ROOTS'),
+        );
+      }
+      try {
+        const fileRoots = parseLocalRootMap(
+          JSON.parse(await readFile(localFirmwareRootsPath, 'utf8')),
+          'config/era-firmware-sources.local.json',
+        );
+        for (const [sourceId, root] of Object.entries(fileRoots)) {
+          if (!(sourceId in roots)) {
+            roots[sourceId] = root;
+          }
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      }
+      return roots;
+    })();
+  }
+  return localFirmwareRootsPromise;
+};
+
+const localRootForSource = async (sourceId: string) => {
+  const envName = `ERA_FIRMWARE_${sourceId
+    .replace(/-/g, '_')
+    .toUpperCase()}_ROOT`;
+  const envRoot = process.env[envName];
+  if (envRoot && envRoot.trim()) {
+    return envRoot.trim();
+  }
+  const roots = await loadLocalFirmwareRoots();
+  return roots[sourceId];
+};
+
+const runGit = (repoRoot: string, args: string[]) =>
+  new Promise<string>((resolve, reject) => {
+    const child = spawn('git', args, {
+      cwd: repoRoot,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on('data', (chunk) => stdout.push(chunk as Buffer));
+    child.stderr.on('data', (chunk) => stderr.push(chunk as Buffer));
+    child.once('error', reject);
+    child.once('close', (code) => {
+      const out = Buffer.concat(stdout).toString('utf8');
+      const err = Buffer.concat(stderr).toString('utf8').trim();
+      if (code === 0) {
+        resolve(out);
+        return;
+      }
+      reject(
+        new Error(
+          `git ${args.join(' ')} failed in ${repoRoot} (${code})${
+            err ? `: ${err}` : ''
+          }.`,
+        ),
+      );
+    });
+  });
+
+const normalizeGitRemoteUrl = (url: string) =>
+  url
+    .trim()
+    .toLowerCase()
+    .replace(/\\/g, '/')
+    .replace(/:/g, '/')
+    .replace(/\.git$/u, '');
+
+const assertLocalRepoMatchesLock = async (
+  sourceId: string,
+  source: FirmwareSource,
+  repoRoot: string,
+) => {
+  const objectType = (await runGit(repoRoot, ['cat-file', '-t', source.commit]))
+    .trim();
+  invariant(
+    objectType === 'commit',
+    `${sourceId}: ${repoRoot} does not contain immutable commit ${source.commit}.`,
+  );
+
+  const remotes = await runGit(repoRoot, ['remote', '-v']);
+  const expected = source.repository.toLowerCase();
+  const matchesLockRepo = remotes.split(/\r?\n/).some((line) => {
+    const url = line.trim().split(/\s+/)[1] ?? '';
+    const normalized = normalizeGitRemoteUrl(url);
+    return (
+      normalized.includes(`/${expected}`) ||
+      normalized.endsWith(`/${expected}`) ||
+      normalized.endsWith(expected)
+    );
+  });
+  invariant(
+    matchesLockRepo,
+    `${sourceId}: ${repoRoot} remotes do not identify ${source.repository}.`,
+  );
+};
+
+const readFirmwareGitObject = async (
+  sourceId: string,
+  source: FirmwareSource,
+  sourcePath: string,
+  repoRoot: string,
+) => {
+  await assertLocalRepoMatchesLock(sourceId, source, repoRoot);
+  const contents = await runGit(repoRoot, [
+    'cat-file',
+    '-p',
+    `${source.commit}:${sourcePath}`,
+  ]);
+  console.log(
+    `Firmware contract ${sourceId}: git object ${source.commit} ${sourcePath}`,
+  );
+  return contents.replace(/^\uFEFF/, '');
+};
+
+const githubFirmwareHeaders = () => {
+  const headers: Record<string, string> = {
+    'User-Agent': 'eerraa-the-via-definition-build',
+  };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+};
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -285,13 +444,21 @@ const readFirmwareFile = (
   }
 
   const request = (async () => {
+    const localRoot = await localRootForSource(sourceId);
+    if (localRoot) {
+      return readFirmwareGitObject(sourceId, source, sourcePath, localRoot);
+    }
+
     const response = await fetch(firmwareSourceUrl(source, sourcePath), {
-      headers: {'User-Agent': 'eerraa-the-via-definition-build'},
+      headers: githubFirmwareHeaders(),
       signal: AbortSignal.timeout(30_000),
     });
     invariant(
       response.ok,
-      `Failed to fetch ${sourceId}:${sourcePath} (${response.status} ${response.statusText}).`,
+      `Failed to fetch ${sourceId}:${sourcePath} (${response.status} ${response.statusText}). Provide GITHUB_TOKEN for private GitHub raw access, or set ERA_FIRMWARE_LOCAL_ROOTS / config/era-firmware-sources.local.json to a clone that contains lock commit ${source.commit}.`,
+    );
+    console.log(
+      `Firmware contract ${sourceId}: GitHub ${source.repository}@${source.commit} ${sourcePath}`,
     );
     return (await response.text()).replace(/^\uFEFF/, '');
   })();
