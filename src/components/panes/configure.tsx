@@ -9,10 +9,10 @@ import {
   CustomFeaturesV2,
   getLightingDefinition,
   isVIADefinitionV2,
-  isVIADefinitionV3,
   VIADefinitionV2,
   VIADefinitionV3,
 } from '@the-via/reader';
+import {isEraVIADefinitionV3} from 'src/utils/era-definition';
 import {Grid, Row, IconContainer, MenuCell, ConfigureFlexCell} from './grid';
 import * as Keycode from './configure-panes/keycode';
 import * as Lighting from './configure-panes/lighting';
@@ -76,7 +76,7 @@ const getRowsForKeyboard = (): typeof Rows => {
     return [];
   } else if (isVIADefinitionV2(selectedDefinition)) {
     return getRowsForKeyboardV2(selectedDefinition, showMacros, numberOfLayers);
-  } else if (isVIADefinitionV3(selectedDefinition)) {
+  } else if (isEraVIADefinitionV3(selectedDefinition)) {
     return [
       ...filterInferredRows(selectedDefinition, showMacros, numberOfLayers, [
         Keycode,

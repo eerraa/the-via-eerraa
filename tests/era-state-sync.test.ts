@@ -10,6 +10,7 @@ import {
   ERA_STATE_SYNC_DOMAIN_MASK_INITIAL,
 } from '../src/utils/era-state-sync';
 import {
+  getExactMsFamily,
   isStateSyncOptIn,
   setEraAdvancedMetadataForTesting,
 } from '../src/utils/era-advanced-metadata';
@@ -98,7 +99,7 @@ describe('GET 0x06 envelope', () => {
 });
 
 describe('definition opt-in', () => {
-  test('only lock-listed vendorProductIds are probe candidates', () => {
+  test('only manifest-listed vendorProductIds are probe candidates', () => {
     setEraAdvancedMetadataForTesting({
       schemaVersion: 1,
       definitions: [
@@ -108,10 +109,18 @@ describe('definition opt-in', () => {
           stateSync: true,
           exactMsFamily: 'qmk',
         },
+        {
+          id: 'exact-without-state-sync',
+          vendorProductId: 2,
+          stateSync: false,
+          exactMsFamily: 'qmk',
+        },
       ],
     });
     expect(isStateSyncOptIn(1163042818)).toBe(true);
     expect(isStateSyncOptIn(1)).toBe(false);
+    expect(isStateSyncOptIn(2)).toBe(false);
+    expect(getExactMsFamily(2)).toBe('qmk');
     setEraAdvancedMetadataForTesting(null);
   });
 });

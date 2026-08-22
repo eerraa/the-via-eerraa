@@ -146,7 +146,11 @@ export function selectKeycodeFromMenuCode(
   if (code === 'text') {
     return null;
   }
-  if (!keycodeInMaster(code, basicKeyToByte) && !code.startsWith('CUSTOM(')) {
+  if (
+    !keycodeInMaster(code, basicKeyToByte) &&
+    !code.startsWith('CUSTOM(') &&
+    !code.startsWith('TD(')
+  ) {
     return null;
   }
   try {
@@ -216,14 +220,6 @@ export function composeLayerTap(
   return parseKeycodeInput(`LT(${layer},${tapCode})`, basicKeyToByte);
 }
 
-export function composeModifier(
-  modifierMacro: string,
-  tapCode: string,
-  basicKeyToByte: Record<string, number>,
-): number | null {
-  return composeModifiers([modifierMacro], tapCode, basicKeyToByte);
-}
-
 export function composeModifiers(
   modifierMacros: string[],
   tapCode: string,
@@ -237,15 +233,4 @@ export function composeModifiers(
     tapCode,
   );
   return parseKeycodeInput(expression, basicKeyToByte);
-}
-
-export function isClearKeycode(
-  value: number,
-  basicKeyToByte: Record<string, number>,
-): boolean {
-  const kcNo = basicKeyToByte.KC_NO ?? 0;
-  if (value === kcNo) {
-    return true;
-  }
-  return [...KC_NO_ALIASES].some((alias) => basicKeyToByte[alias] === value);
 }

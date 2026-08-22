@@ -73,13 +73,23 @@ export const Pane: FC = () => {
       const encoderId = +encoderKey.ei;
       switch (type) {
         case 'ccw': {
+          const previous = ccwValue;
           setCCWValue(val);
-          void dispatch(updateEncoderValue(layer, encoderId, false, val));
+          void dispatch(updateEncoderValue(layer, encoderId, false, val)).catch(
+            () => {
+              setCCWValue(previous);
+            },
+          );
           break;
         }
         case 'cw': {
+          const previous = cwValue;
           setCWValue(val);
-          void dispatch(updateEncoderValue(layer, encoderId, true, val));
+          void dispatch(updateEncoderValue(layer, encoderId, true, val)).catch(
+            () => {
+              setCWValue(previous);
+            },
+          );
           break;
         }
         case 'click': {

@@ -1,6 +1,6 @@
-export const UI_SYNC_REQUEST_COMMAND = 0x16;
-export const UI_SYNC_REQUEST_VERSION = 0x01;
-export const VIA_PAYLOAD_LENGTH = 32;
+const UI_SYNC_REQUEST_COMMAND = 0x16;
+const UI_SYNC_REQUEST_VERSION = 0x01;
+const VIA_PAYLOAD_LENGTH = 32;
 
 export enum UISyncRequestType {
   CUSTOM_MENU_ALL = 0x00,

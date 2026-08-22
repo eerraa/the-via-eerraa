@@ -5,17 +5,13 @@ export const ERA_STATE_SYNC_COMMAND = 0x02;
 export const ERA_STATE_SYNC_SELECTOR = 0x06;
 export const ERA_STATE_SYNC_ENVELOPE_VERSION = 0x01;
 export const ERA_STATE_SYNC_STATUS_OK = 0x00;
-export const ERA_STATE_SYNC_STATUS_UNSUPPORTED_VERSION = 0x01;
 export const ERA_STATE_SYNC_POLL_INTERVAL_MS = 500;
 export const ERA_STATE_SYNC_REFRESH_RETRIES = 3;
 
-export const ERA_STATE_SYNC_DOMAIN_KEYMAP = 0x01;
-export const ERA_STATE_SYNC_DOMAIN_MACRO = 0x02;
-export const ERA_STATE_SYNC_DOMAIN_CONFIG = 0x04;
 export const ERA_STATE_SYNC_DOMAIN_MASK_INITIAL = 0x07;
 
 export type StateSyncCapability =
-  'unknown' | 'probing' | 'capable' | 'unsupported';
+  'unknown' | 'probing' | 'capable' | 'unverified';
 
 export type StateSyncRevisions = {
   keymap: number;
@@ -31,13 +27,13 @@ export type StateSyncEnvelope = {
   revisions: StateSyncRevisions;
 };
 
-export type StateSyncQueryResult =
+type StateSyncQueryResult =
   | {kind: 'envelope'; envelope: StateSyncEnvelope}
   | {kind: 'unhandled' | 'timeout' | 'malformed'};
 
 const tags = new Map<string, number>();
 
-export const nextStateSyncTag = (path: string) => {
+const nextStateSyncTag = (path: string) => {
   const next = ((tags.get(path) ?? 0) + 1) & 0xffff;
   const tag = next === 0 ? 1 : next;
   tags.set(path, tag);
@@ -161,11 +157,4 @@ export async function queryStateSync(
     }
     return {kind: 'malformed'};
   }
-}
-
-export async function queryStateSyncEnvelope(
-  api: KeyboardAPI,
-): Promise<StateSyncEnvelope | null> {
-  const result = await queryStateSync(api);
-  return result.kind === 'envelope' ? result.envelope : null;
 }

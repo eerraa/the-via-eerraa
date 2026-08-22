@@ -13,16 +13,15 @@ import {
 } from './stateSyncCandidateActions';
 
 export type StateSyncDomain = keyof StateSyncRevisions;
-export type DomainFreshness = 'unknown' | 'dirty' | 'refreshing' | 'fresh';
+type DomainFreshness = 'unknown' | 'dirty' | 'refreshing' | 'fresh';
 
-export type DomainState = {
+type DomainState = {
   status: DomainFreshness;
   observedRevision: number;
   acceptedRevision: number;
-  generation: number;
 };
 
-export type PathSyncState = {
+type PathSyncState = {
   capability: StateSyncCapability;
   generation: number;
   keymap: DomainState;
@@ -38,19 +37,18 @@ type StateSyncState = {
 
 const domains: StateSyncDomain[] = ['keymap', 'macro', 'config'];
 
-const initialDomain = (generation: number): DomainState => ({
+const initialDomain = (): DomainState => ({
   status: 'unknown',
   observedRevision: 0,
   acceptedRevision: 0,
-  generation,
 });
 
-export const initialPathSyncState = (generation: number): PathSyncState => ({
+const initialPathSyncState = (generation: number): PathSyncState => ({
   capability: 'unknown',
   generation,
-  keymap: initialDomain(generation),
-  macro: initialDomain(generation),
-  config: initialDomain(generation),
+  keymap: initialDomain(),
+  macro: initialDomain(),
+  config: initialDomain(),
 });
 
 const initialState: StateSyncState = {
@@ -77,7 +75,6 @@ const acceptStableRevision = (
     status: 'fresh',
     observedRevision: revision,
     acceptedRevision: revision,
-    generation: connectionGeneration,
   };
 };
 
@@ -170,9 +167,6 @@ const stateSyncSlice = createSlice({
         current[domain].observedRevision = revision;
       }
     },
-    clearPathSync: (state, action: PayloadAction<string>) => {
-      delete state.byPath[action.payload];
-    },
   },
   extraReducers: (builder) => {
     builder
@@ -203,12 +197,11 @@ export const {
   observePathRevisions,
   markPathDirty,
   setDomainStatus,
-  clearPathSync,
 } = stateSyncSlice.actions;
 
 export default stateSyncSlice.reducer;
 
-export const getStateSyncState = (state: RootState) => state.stateSync;
+const getStateSyncState = (state: RootState) => state.stateSync;
 export const getConfigureVisible = (state: RootState) =>
   state.stateSync?.configureVisible ?? false;
 export const getDocumentHidden = (state: RootState) =>

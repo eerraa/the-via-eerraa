@@ -8,6 +8,7 @@ import {useAppDispatch, useAppSelector} from '../../../store/hooks';
 import {getSelectedConnectedDevice} from '../../../store/devicesSlice';
 import {
   getExpressions,
+  getIsMacrosReady,
   getMacroCount,
   saveMacros,
 } from '../../../store/macrosSlice';
@@ -32,6 +33,7 @@ const MenuContainer = styled.div`
 export const Pane: FC = () => {
   const dispatch = useAppDispatch();
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
+  const macrosReady = useAppSelector(getIsMacrosReady);
   const macroExpressions = useAppSelector(getExpressions);
   const macroCount = useAppSelector(getMacroCount);
 
@@ -39,7 +41,7 @@ export const Pane: FC = () => {
 
   const saveMacro = useCallback(
     async (macro: string) => {
-      if (!selectedDevice) {
+      if (!selectedDevice || !macrosReady) {
         return;
       }
 
@@ -49,7 +51,14 @@ export const Pane: FC = () => {
 
       dispatch(saveMacros(selectedDevice, newMacros));
     },
-    [macroExpressions, saveMacros, dispatch, selectedDevice, selectedMacro],
+    [
+      macroExpressions,
+      saveMacros,
+      dispatch,
+      selectedDevice,
+      selectedMacro,
+      macrosReady,
+    ],
   );
 
   const macroMenus = useMemo(

@@ -1,8 +1,8 @@
-import {isVIADefinitionV3} from '@the-via/reader';
+import {isEraVIADefinitionV3} from '../utils/era-definition';
+import type {DefinitionVersion} from '@the-via/reader';
 import type {ConnectedDevice} from '../types/types';
 import {KeyboardAPI} from '../utils/keyboard-api';
 import {
-  getExactMsFamily,
   isStateSyncOptIn,
   loadEraAdvancedMetadata,
 } from '../utils/era-advanced-metadata';
@@ -15,7 +15,10 @@ import {
 } from '../utils/era-state-sync';
 import {
   getDefinitionForDevice,
+  getDefinitionSourceForDevice,
+  getDefinitionSyncIdentity,
   readLayoutOptionsStateSyncCandidate,
+  unloadCustomDefinition,
 } from './definitionsSlice';
 import {
   getIsSelectedDeviceReady,
@@ -55,6 +58,7 @@ type DomainCandidate =
 type CoordinatorOwner = {
   fullPending: Set<StateSyncDomain>;
   selectionGeneration: number;
+  definitionIdentity: string;
   initialEnvelope?: StateSyncEnvelope;
   promise: Promise<void>;
 };
@@ -70,8 +74,10 @@ const isSelectedContextCurrent = (
   api: KeyboardAPI,
   connectionGeneration: number,
   selectionGeneration: number,
+  definitionIdentity?: string | null,
 ) => {
   const state = getState();
+  const device = getSelectedConnectedDevice(state);
   return (
     api.isConnectionGenerationCurrent(connectionGeneration) &&
     getIsSelectedDeviceReady(state) &&
@@ -80,7 +86,10 @@ const isSelectedContextCurrent = (
       api.kbAddr,
       connectionGeneration,
       selectionGeneration,
-    )
+    ) &&
+    (definitionIdentity === undefined ||
+      (!!device &&
+        getDefinitionSyncIdentity(state, device) === definitionIdentity))
   );
 };
 
@@ -165,7 +174,7 @@ const readDomainCandidate = async (
     return null;
   }
   const definition = getDefinitionForDevice(state, device);
-  if (!isVIADefinitionV3(definition)) {
+  if (!isEraVIADefinitionV3(definition)) {
     return layoutCandidate;
   }
   const menuCandidate = await readV3MenuStateSyncCandidate(
@@ -180,6 +189,7 @@ const commitStableCandidate = (
   dispatch: (action: any) => any,
   device: ConnectedDevice,
   generation: number,
+  selectionGeneration: number,
   domain: StateSyncDomain,
   revision: number,
   candidate: DomainCandidate,
@@ -187,6 +197,7 @@ const commitStableCandidate = (
   const context = {
     devicePath: device.path,
     connectionGeneration: generation,
+    selectionGeneration,
     revision,
   };
   if (domain === 'keymap') {
@@ -224,7 +235,30 @@ const refreshDomain = async (
   selectionGeneration: number,
 ): Promise<RefreshResult> => {
   const api = new KeyboardAPI(device.path);
+  const definitionIdentity = getDefinitionSyncIdentity(getState(), device);
+  if (definitionIdentity === null) {
+    dispatch(
+      setDomainStatus({
+        path: device.path,
+        generation,
+        domain,
+        status: 'dirty',
+      }),
+    );
+    return 'abort';
+  }
   for (let attempt = 0; attempt < ERA_STATE_SYNC_REFRESH_RETRIES; attempt++) {
+    if (getDefinitionSyncIdentity(getState(), device) !== definitionIdentity) {
+      dispatch(
+        setDomainStatus({
+          path: device.path,
+          generation,
+          domain,
+          status: 'dirty',
+        }),
+      );
+      return 'abort';
+    }
     const startEnvelope = await queryCapableEnvelope(
       dispatch,
       getState,
@@ -257,7 +291,13 @@ const refreshDomain = async (
       );
     } catch {
       if (
-        isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+        isSelectedContextCurrent(
+          getState,
+          api,
+          generation,
+          selectionGeneration,
+          definitionIdentity,
+        )
       ) {
         dispatch(
           setDomainStatus({
@@ -272,7 +312,13 @@ const refreshDomain = async (
     }
     if (
       candidate === null ||
-      !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+      !isSelectedContextCurrent(
+        getState,
+        api,
+        generation,
+        selectionGeneration,
+        definitionIdentity,
+      )
     ) {
       return 'abort';
     }
@@ -293,7 +339,13 @@ const refreshDomain = async (
       continue;
     }
     if (
-      !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+      !isSelectedContextCurrent(
+        getState,
+        api,
+        generation,
+        selectionGeneration,
+        definitionIdentity,
+      )
     ) {
       return 'abort';
     }
@@ -301,6 +353,7 @@ const refreshDomain = async (
       dispatch,
       device,
       generation,
+      selectionGeneration,
       domain,
       endRevision,
       candidate,
@@ -345,6 +398,7 @@ const runCoordinatorOwner = async (
   observeEnvelope(dispatch, device.path, generation, envelope);
 
   const processedPollDomains = new Set<StateSyncDomain>();
+  const exhaustedDomains = new Set<StateSyncDomain>();
   while (
     isSelectedContextCurrent(
       getState,
@@ -365,6 +419,7 @@ const runCoordinatorOwner = async (
       domainOrder.find(
         (candidateDomain) =>
           !processedPollDomains.has(candidateDomain) &&
+          !exhaustedDomains.has(candidateDomain) &&
           (sync[candidateDomain].status !== 'fresh' ||
             sync[candidateDomain].acceptedRevision !==
               sync[candidateDomain].observedRevision),
@@ -390,6 +445,9 @@ const runCoordinatorOwner = async (
     if (result === 'abort') {
       return;
     }
+    if (result === 'unstable') {
+      exhaustedDomains.add(domain);
+    }
   }
 };
 
@@ -403,7 +461,9 @@ const coordinate = async (
   const api = new KeyboardAPI(device.path);
   const generation = api.getConnectionGeneration();
   const selectionGeneration = getSelectionGeneration(getState());
+  const definitionIdentity = getDefinitionSyncIdentity(getState(), device);
   if (
+    !definitionIdentity ||
     !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
   ) {
     return;
@@ -411,7 +471,10 @@ const coordinate = async (
   const key = ownerKey(device.path, generation);
   const existing = coordinatorOwners.get(key);
   if (existing) {
-    if (existing.selectionGeneration === selectionGeneration) {
+    if (
+      existing.selectionGeneration === selectionGeneration &&
+      existing.definitionIdentity === definitionIdentity
+    ) {
       if (mode === 'full') {
         domainOrder.forEach((domain) => existing.fullPending.add(domain));
       }
@@ -425,6 +488,7 @@ const coordinate = async (
   const owner: CoordinatorOwner = {
     fullPending: new Set(mode === 'full' ? domainOrder : []),
     selectionGeneration,
+    definitionIdentity,
     initialEnvelope,
     promise: Promise.resolve(),
   };
@@ -445,14 +509,17 @@ export const probeStateSyncForDevice =
   (connectedDevice: ConnectedDevice): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     await loadEraAdvancedMetadata();
-    if (!isStateSyncOptIn(connectedDevice.vendorProductId)) {
+    if (
+      !isStateSyncOptIn(connectedDevice.vendorProductId) ||
+      getDefinitionSourceForDevice(getState(), connectedDevice) !== 'era'
+    ) {
       return;
     }
     const api = new KeyboardAPI(connectedDevice.path);
     const generation = api.getConnectionGeneration();
     const existing = getPathSyncState(getState(), connectedDevice.path);
     if (existing?.generation === generation) {
-      if (existing.capability === 'unsupported') {
+      if (existing.capability === 'unverified') {
         return;
       }
       if (existing.capability === 'capable') {
@@ -496,7 +563,7 @@ export const probeStateSyncForDevice =
         setPathCapability({
           path: connectedDevice.path,
           generation,
-          capability: 'unsupported',
+          capability: 'unverified',
         }),
       );
       return;
@@ -541,6 +608,43 @@ export const pollStateSync =
     }
   };
 
+export const refreshAfterDefinitionChange =
+  (vendorProductId: number): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const device = getSelectedConnectedDevice(getState());
+    if (!device || device.vendorProductId !== vendorProductId) {
+      return;
+    }
+    const api = new KeyboardAPI(device.path);
+    const generation = api.getConnectionGeneration();
+    const sync = getPathSyncState(getState(), device.path);
+    dispatch(markPathDirty({path: device.path, generation}));
+    if (sync?.capability === 'capable' && sync.generation === generation) {
+      await dispatch(refreshAllDomains(device));
+    }
+  };
+
+export const unloadCustomDefinitionWithRefresh =
+  (payload: {
+    id: number;
+    version: DefinitionVersion;
+  }): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const selected = getSelectedConnectedDevice(getState());
+    const before =
+      selected?.vendorProductId === payload.id
+        ? getDefinitionSyncIdentity(getState(), selected)
+        : null;
+    dispatch(unloadCustomDefinition(payload));
+    const after =
+      selected?.vendorProductId === payload.id
+        ? getDefinitionSyncIdentity(getState(), selected)
+        : null;
+    if (before !== after) {
+      await dispatch(refreshAfterDefinitionChange(payload.id));
+    }
+  };
+
 export const refreshAllDomains =
   (device: ConnectedDevice): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
@@ -578,6 +682,3 @@ export const stopStateSyncPollingForTesting = () => {
   }
   coordinatorOwners.clear();
 };
-
-export const getExactMsFamilyForDevice = (vendorProductId: number) =>
-  getExactMsFamily(vendorProductId);

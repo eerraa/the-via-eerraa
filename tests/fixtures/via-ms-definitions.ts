@@ -21,6 +21,11 @@ export const exactGlobalTermControl = {
   options: [100, 500],
 };
 
+export const customExactGlobalTermControl = {
+  ...exactGlobalTermControl,
+  options: [1, 65535],
+};
+
 export const exactTapDanceTermControl = (slot: number, valueId: number) => ({
   label: 'Term',
   type: 'range' as const,

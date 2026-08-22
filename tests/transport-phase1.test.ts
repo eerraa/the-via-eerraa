@@ -356,7 +356,7 @@ describe('explicit device and cache generation ownership', () => {
   test('a keymap read continues on its captured API and cannot complete the newly selected device cache', async () => {
     const vendorProductId = 1163042818;
     const generatedDefinition = await Bun.file(
-      'public/definitions/v3/1163042818.json',
+      'public/definitions/era/v3/1163042818.json',
     ).json();
     const definition = {
       ...generatedDefinition,
@@ -419,7 +419,7 @@ describe('explicit device and cache generation ownership', () => {
   test('0x16 refresh uses the reporting device definition/API even after selection switches', async () => {
     const vendorProductId = 1163042818;
     const definition = await Bun.file(
-      'public/definitions/v3/1163042818.json',
+      'public/definitions/era/v3/1163042818.json',
     ).json();
     const commands = getCustomCommandsForDefinition(definition);
     const [id, [channelId, commandId]] = Object.entries(commands)[0];

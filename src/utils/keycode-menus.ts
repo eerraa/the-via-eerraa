@@ -1,10 +1,16 @@
 import {
   KeycodeType,
   getLightingDefinition,
-  isVIADefinitionV3,
   type VIADefinitionV2,
   type VIADefinitionV3,
 } from '@the-via/reader';
+import {
+  customKeycodeWireIndex,
+  getTapDanceKeycodes,
+  hasCustomKeycodeTab,
+  isEraVIADefinitionV3,
+  type EraVIADefinitionV3,
+} from './era-definition';
 import {
   categoriesForKeycodeModule,
   getKeycodes,
@@ -16,7 +22,7 @@ import {
 const maybeFilter = <M extends Function>(maybe: boolean, filter: M) =>
   maybe ? () => true : filter;
 
-export const generateKeycodeCategories = (
+const generateKeycodeCategories = (
   basicKeyToByte: Record<string, number>,
   numMacros: number = 16,
 ) => getKeycodes(numMacros).concat(getOtherMenu(basicKeyToByte));
@@ -39,19 +45,19 @@ export function buildEnabledKeycodeMenus(args: {
   );
 
   let menus: IKeycodeMenu[];
-  if (isVIADefinitionV3(definition)) {
+  if (isEraVIADefinitionV3(definition)) {
     const keycodes = ['default' as const, ...(definition.keycodes || [])];
     const allowedKeycodes = keycodes.flatMap((keycodeName) =>
       categoriesForKeycodeModule(keycodeName),
     );
-    if ((definition.customKeycodes || []).length !== 0) {
+    if (hasCustomKeycodeTab(definition)) {
       allowedKeycodes.push('custom');
     }
     menus = categories.filter((category) =>
       allowedKeycodes.includes(category.id),
     );
   } else {
-    const {lighting, customKeycodes} = definition;
+    const {lighting, customKeycodes} = definition as VIADefinitionV2;
     const {keycodes} = getLightingDefinition(lighting);
     menus = categories
       .filter(
@@ -74,46 +80,48 @@ export function buildEnabledKeycodeMenus(args: {
       );
   }
 
+  const tapdanceKeycodes = getTapDanceKeycodes(
+    definition as EraVIADefinitionV3,
+  );
   const withCustomValues = menus.map((menu) => {
-    if (menu.id !== 'custom' || !definition.customKeycodes) {
+    if (menu.id !== 'custom' || !hasCustomKeycodeTab(definition)) {
       return menu;
     }
+    const customKeycodes = definition.customKeycodes;
     return {
       ...menu,
-      keycodes: definition.customKeycodes.map((keycode, idx) => ({
+      keycodes: customKeycodes.map((keycode, idx) => ({
         ...keycode,
-        code: `CUSTOM(${idx})`,
+        code: `CUSTOM(${customKeycodeWireIndex(idx, tapdanceKeycodes.length)})`,
       })),
     };
   });
-  return menusWithTapDanceSplit(withCustomValues);
+  return menusWithTapDanceKeycodes(withCustomValues, tapdanceKeycodes);
 }
 
-export const isTapDanceCustomKeycode = (keycode: {name: string}) =>
-  /^TD[0-7]$/.test(keycode.name);
-
-export function menusWithTapDanceSplit(menus: IKeycodeMenu[]): IKeycodeMenu[] {
-  const next: IKeycodeMenu[] = [];
-  for (const menu of menus) {
-    if (menu.id !== 'custom') {
-      next.push(menu);
-      continue;
-    }
-    const tapdance = menu.keycodes.filter(isTapDanceCustomKeycode);
-    const custom = menu.keycodes.filter(
-      (keycode) => !isTapDanceCustomKeycode(keycode),
-    );
-    if (tapdance.length) {
-      next.push({
-        id: 'tapdance',
-        label: 'TAPDANCE',
-        width: 'label',
-        keycodes: tapdance,
-      });
-    }
-    if (custom.length) {
-      next.push({...menu, keycodes: custom});
-    }
+export function menusWithTapDanceKeycodes(
+  menus: IKeycodeMenu[],
+  tapdanceKeycodes: {name: string; title?: string; shortName?: string}[] = [],
+): IKeycodeMenu[] {
+  if (!tapdanceKeycodes.length) {
+    return menus;
   }
-  return next;
+  const tapdanceMenu: IKeycodeMenu = {
+    id: 'tapdance',
+    label: 'TAPDANCE',
+    width: 'label',
+    keycodes: tapdanceKeycodes.map((keycode, idx) => ({
+      ...keycode,
+      code: `TD(${idx})`,
+    })),
+  };
+  const customIndex = menus.findIndex((menu) => menu.id === 'custom');
+  if (customIndex === -1) {
+    return [...menus, tapdanceMenu];
+  }
+  return [
+    ...menus.slice(0, customIndex),
+    tapdanceMenu,
+    ...menus.slice(customIndex),
+  ];
 }

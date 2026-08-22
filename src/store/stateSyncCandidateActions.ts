@@ -5,6 +5,7 @@ import type {RawKeycodeSequence} from '../utils/macro-api/types';
 type StableCandidateContext = {
   devicePath: string;
   connectionGeneration: number;
+  selectionGeneration?: number;
   revision: number;
 };
 
@@ -22,7 +23,7 @@ export type StateSyncMacroCandidate = {
   isFeatureSupported: boolean;
 };
 
-export type StateSyncCustomMenuData = Record<string, number[] | number[][]>;
+type StateSyncCustomMenuData = Record<string, number[] | number[][]>;
 
 export type StateSyncConfigCandidate = {
   layoutOptions?: number[];

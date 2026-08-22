@@ -1,13 +1,13 @@
 export type ExactMsFamily = 'qmk' | 'h7s';
 
-export type EraAdvancedEntry = {
+type EraAdvancedEntry = {
   id: string;
   vendorProductId: number;
   stateSync: boolean;
   exactMsFamily: ExactMsFamily | null;
 };
 
-export type EraAdvancedMetadata = {
+type EraAdvancedMetadata = {
   schemaVersion: number;
   definitions: EraAdvancedEntry[];
 };
@@ -28,7 +28,7 @@ export const setEraAdvancedMetadataForTesting = (
   loaded = metadata;
 };
 
-export const getEraAdvancedMetadataSync = () => injected ?? loaded;
+const getEraAdvancedMetadataSync = () => injected ?? loaded;
 
 export const isStateSyncOptIn = (vendorProductId: number) => {
   const metadata = getEraAdvancedMetadataSync();
@@ -45,9 +45,19 @@ export const getExactMsFamily = (
 ): ExactMsFamily | null => {
   const metadata = getEraAdvancedMetadataSync();
   const entry = metadata?.definitions.find(
-    (item) => item.vendorProductId === vendorProductId && item.stateSync,
+    (item) => item.vendorProductId === vendorProductId,
   );
   return entry?.exactMsFamily ?? null;
+};
+
+export const isEraBundledDefinition = (vendorProductId: number) => {
+  const metadata = getEraAdvancedMetadataSync();
+  if (!metadata) {
+    return false;
+  }
+  return metadata.definitions.some(
+    (entry) => entry.vendorProductId === vendorProductId,
+  );
 };
 
 export const loadEraAdvancedMetadata = async () => {
