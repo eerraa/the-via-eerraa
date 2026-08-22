@@ -124,7 +124,46 @@ bun run build
 
 이 조건이 깨지면 업로드가 일어나지 않는다.
 
-## 6. 롤백
+## 6. 배포 후 검증
+
+`$H`를 공개 호스트(`https://the-via.pages.dev`)로 두고 아래를 확인한다. 로컬 dist에서
+동일한 결과가 나오는 것을 이미 확인했으므로, 여기서 차이가 나면 호스팅 설정 문제다.
+
+```powershell
+$H = 'https://the-via.pages.dev'
+
+# 1. 앱 라우트는 200, 미지정 경로는 404여야 한다.
+'/', '/test', '/design', '/settings', '/debug', '/console', '/errors', '/zzz' | ForEach-Object {
+  $c = try { (Invoke-WebRequest "$H$_" -Method Head -SkipHttpErrorCheck).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }
+  '{0,-12} {1}' -f $_, $c
+}
+
+# 2. 정의 JSON은 존재하면 200, 없으면 반드시 404여야 한다.
+#    없는 vpid가 200(HTML)으로 오면 blanket SPA fallback이 켜진 것이고,
+#    일반 VIA 키보드의 정의 부재 판정이 깨진다.
+'/definitions/supported_kbs.json', '/definitions/era_advanced.json',
+'/definitions/era/v3/1163042818.json', '/definitions/v3/999999.json' | ForEach-Object {
+  $c = try { (Invoke-WebRequest "$H$_" -Method Head -SkipHttpErrorCheck).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }
+  '{0,-42} {1}' -f $_, $c
+}
+
+# 3. 배포된 정의 수가 canonical source와 일치하는지 확인한다.
+$adv = Invoke-RestMethod "$H/definitions/era_advanced.json"
+"ERA overlay 선언 수: $($adv.definitions.Count) (로컬 canonical source: $((Get-ChildItem era-definitions/custom/v3 -Recurse -Filter *.json).Count))"
+
+# 4. index.html의 definition hash가 배포된 hash.json과 같아야 한다.
+$page = (Invoke-WebRequest "$H/").Content
+$embedded = [regex]::Match($page, 'data-hash="([0-9a-f]+)"').Groups[1].Value
+$served = (Invoke-RestMethod "$H/definitions/hash.json")
+"index.html: $embedded"
+"hash.json : $served"
+```
+
+브라우저 검증은 Chromium 계열에서 `$H`를 열고 개발자 도구 Console/Network에 오류가
+없는지 본다. 실제 키보드 연결·Tap Dance·exact-ms·State Sync 동작은 사용자의 장치와
+WebHID 권한이 있어야 확인되며, 위 검증으로 대체되지 않는다.
+
+## 7. 롤백
 
 Cloudflare Pages는 배포 이력을 보관하며 이전 배포를 production으로 되돌릴 수 있다.
 
@@ -139,7 +178,7 @@ Cloudflare Pages는 배포 이력을 보관하며 이전 배포를 production으
 각 배포는 커밋 단위로 고유 preview URL을 가지므로, production alias를 바꾸기 전에 해당
 URL에서 먼저 확인할 수 있다.
 
-## 7. 남은 위험
+## 8. 남은 위험
 
 - **실기기 검증은 배포로 대체되지 않는다.** WebHID 연결, EEPROM 지속성, split peer 수렴,
   Tap Dance/exact-ms 실동작은 실제 키보드와 사용자의 브라우저 권한이 있어야 확인된다.
