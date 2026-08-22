@@ -41,12 +41,19 @@ Direct Upload 단일 경로를 유지한다.
 
 | 항목 | 위치 | 값 |
 | --- | --- | --- |
-| Pages 프로젝트 생성 | Cloudflare 대시보드 → Workers & Pages → Create → Pages → Direct Upload | 프로젝트명 `the-via` |
+| Pages 프로젝트 생성 | Cloudflare 대시보드 → Workers & Pages → Create → Pages → Direct Upload | 프로젝트명 `the-via`, **production branch `main`** |
 | `CLOUDFLARE_API_TOKEN` | GitHub repo → Settings → Secrets and variables → Actions → **Secrets** | Cloudflare API 토큰. 권한은 `Account / Cloudflare Pages / Edit` 하나면 충분하다 |
 | `CLOUDFLARE_ACCOUNT_ID` | 같은 화면의 **Secrets** | Cloudflare 계정 ID |
 | `CLOUDFLARE_PROJECT_NAME` | 같은 화면의 **Variables** | `the-via`. 이 값이 비어 있는 동안 deploy job은 skip된다 |
 
 토큰은 저장소 파일이나 로그에 남기지 않는다. 값 입력은 GitHub 웹 UI에서 직접 한다.
+
+**production branch가 `main`이어야 한다.** Cloudflare Pages는 배포에 붙은 branch 이름이
+프로젝트의 production branch와 같을 때만 production 배포로 처리하고, 그때만
+`the-via.pages.dev` alias가 갱신된다. 워크플로는 `--branch=${{ github.ref_name }}`를
+넘기므로 `main` push는 production, 다른 branch의 수동 실행은 preview가 된다. 프로젝트
+생성 시 production branch가 `main`이 아니면 Settings → Builds & deployments에서 고친다.
+잘못 설정하면 배포는 성공하지만 `the-via.pages.dev`는 404로 남는다.
 
 Custom domain, DNS 변경, 유료 플랜은 이 문서 범위 밖이며 별도 승인 대상이다.
 
