@@ -16,7 +16,7 @@
         "@react-three/fiber": "^8.17.9",
         "@reduxjs/toolkit": "^2.3.0",
         "@the-via/pelpi": "^0.0.3",
-        "@the-via/reader": "^1.14.3",
+        "@the-via/reader": "^1.14.4",
         "@webscopeio/react-textarea-autocomplete": "^4.9.2",
         "downshift": "^7.2.1",
         "i18next": "^23.10.1",
@@ -463,7 +463,7 @@
 
     "@the-via/pelpi": ["@the-via/pelpi@0.0.3", "", { "dependencies": { "chalk": "^4.1.0" } }, "sha512-an6Flsgza6BuvuN+hcD+clefZDc7ncQT1iyEJOLcQc8VunRMwXy+1jsoxAuJLJKZGcGh17EKuKjQK4a6zUgUAg=="],
 
-    "@the-via/reader": ["@the-via/reader@1.14.3", "", { "dependencies": { "ajv": "^8.18.0", "ajv-formats": "^3.0.1", "invariant": "^2.2.4" } }, "sha512-dDjmq8TcaGkPWFC98NGJ1Gs+JDVOBOnpfUBjCWQP/w4CURWzkBq+EL6eNWDwrW+y/5eOOI5unsEsD2lqS3BNYA=="],
+    "@the-via/reader": ["@the-via/reader@1.14.4", "", { "dependencies": { "ajv": "^8.18.0", "ajv-formats": "^3.0.1", "invariant": "^2.2.4" } }, "sha512-EwXBypt+4ng8KN19UQzuEz906IpbK6q87YYr8DY/9Z4bHbAKFYuoQyZo8H+S792c2wNv3EjBTwuIbCgKYq8wrg=="],
 
     "@ts-morph/common": ["@ts-morph/common@0.12.3", "", { "dependencies": { "fast-glob": "^3.2.7", "minimatch": "^3.0.4", "mkdirp": "^1.0.4", "path-browserify": "^1.0.1" } }, "sha512-4tUmeLyXJnJWvTFOKtcNJ1yh0a3SsTLi2MUoyj8iUNznFRN1ZquaNe7Oukqrnki2FzZkm0J9adCNLDZxUzvj+w=="],
 
@@ -1162,6 +1162,8 @@
     "three-stdlib/fflate": ["fflate@0.6.10", "", {}, "sha512-IQrh3lEPM93wVCEczc9SaAOvkmcoQn/G8Bo1e8ZPlY3X3bnAxWaBdvTdvM1hP62iZp0BXWDy4vTAy4fF0+Dlpg=="],
 
     "tunnel-rat/zustand": ["zustand@4.5.5", "", { "dependencies": { "use-sync-external-store": "1.2.2" }, "peerDependencies": { "@types/react": ">=16.8", "immer": ">=9.0.6", "react": ">=16.8" }, "optionalPeers": ["@types/react", "immer", "react"] }, "sha512-+0PALYNJNgK6hldkgDq2vLrw5f6g/jCInz52n9RTpropGgeAf/ioFUCdtsjCqu4gNhW9D01rUQBROoRjdzyn2Q=="],
+
+    "via-keyboards/@the-via/reader": ["@the-via/reader@1.14.3", "", { "dependencies": { "ajv": "^8.18.0", "ajv-formats": "^3.0.1", "invariant": "^2.2.4" } }, "sha512-dDjmq8TcaGkPWFC98NGJ1Gs+JDVOBOnpfUBjCWQP/w4CURWzkBq+EL6eNWDwrW+y/5eOOI5unsEsD2lqS3BNYA=="],
 
     "via-keyboards/fs-extra": ["fs-extra@11.3.6", "", { "dependencies": { "graceful-fs": "^4.2.0", "jsonfile": "^6.0.1", "universalify": "^2.0.0" } }, "sha512-w8ZNZr2mKIc7qeNaQ9AVPT1+iFaI+Avd4xudVOvdDJ8VytREi1Ft5Ih7hd9jjehod8vAM5GMsfQ/TpPf4EyoEA=="],
 
