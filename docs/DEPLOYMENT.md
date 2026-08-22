@@ -35,16 +35,27 @@ Direct Upload 단일 경로를 유지한다.
 에이전트는 아래를 대신 수행하지 않는다. 모두 완료되기 전까지 deploy job은
 `if: vars.CLOUDFLARE_PROJECT_NAME != ''` 조건에서 **skip**되므로 push마다 실패가 쌓이지 않는다.
 
+확정된 프로젝트명은 **`the-via`**이며 공개 호스트는 `https://the-via.pages.dev`가 된다.
+`*.pages.dev` 서브도메인은 Cloudflare 전체에서 고유하므로 프로젝트명은 나중에 바꿀 수
+없다. 바꾸려면 프로젝트를 새로 만들어야 한다.
+
 | 항목 | 위치 | 값 |
 | --- | --- | --- |
-| Pages 프로젝트 생성 | Cloudflare 대시보드 → Workers & Pages → Create → Pages → Direct Upload | 프로젝트명이 곧 `<이름>.pages.dev` 호스트가 된다 |
-| `CLOUDFLARE_PROJECT_NAME` | GitHub repo → Settings → Secrets and variables → Actions → **Variables** | 위 프로젝트명 |
-| `CLOUDFLARE_API_TOKEN` | 같은 화면의 **Secrets** | Cloudflare API 토큰, 권한은 `Account / Cloudflare Pages / Edit` 하나면 충분 |
+| Pages 프로젝트 생성 | Cloudflare 대시보드 → Workers & Pages → Create → Pages → Direct Upload | 프로젝트명 `the-via` |
+| `CLOUDFLARE_API_TOKEN` | GitHub repo → Settings → Secrets and variables → Actions → **Secrets** | Cloudflare API 토큰. 권한은 `Account / Cloudflare Pages / Edit` 하나면 충분하다 |
 | `CLOUDFLARE_ACCOUNT_ID` | 같은 화면의 **Secrets** | Cloudflare 계정 ID |
+| `CLOUDFLARE_PROJECT_NAME` | 같은 화면의 **Variables** | `the-via`. 이 값이 비어 있는 동안 deploy job은 skip된다 |
 
 토큰은 저장소 파일이나 로그에 남기지 않는다. 값 입력은 GitHub 웹 UI에서 직접 한다.
 
 Custom domain, DNS 변경, 유료 플랜은 이 문서 범위 밖이며 별도 승인 대상이다.
+
+### 이름에 대한 참고
+
+`the-via`는 upstream VIA의 GitHub organization 이름과 같다. 이 저장소는
+`the-via/app`의 비공식 fork이므로, 공개 호스트명만 보고 공식 프로젝트로 오해할 여지가
+있다. 사용자가 이 이름을 선택했고 앱 자체는 upstream VIA의 표기를 유지하므로 그대로
+진행하되, 오해를 줄이려면 README나 앱 안내 문구에 비공식 fork임을 명시하는 편이 좋다.
 
 ## 3. 재현 가능한 빌드
 
