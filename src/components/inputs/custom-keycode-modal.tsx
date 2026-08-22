@@ -6,6 +6,7 @@ import {
   anyKeycodeToString,
   advancedStringToKeycode,
 } from '../../utils/advanced-keys';
+import {formatKeycodeHex} from '../../utils/keycode-picker';
 import {useCombobox} from 'downshift';
 import TextInput from './text-input';
 import {getKeycodesForKeyboard, IKeycode} from '../../utils/key';
@@ -50,9 +51,7 @@ type KeycodeModalProps = {
 };
 
 function isHex(input: string): boolean {
-  const lowercased = input.toLowerCase();
-  const parsed = parseInt(lowercased, 16);
-  return `0x${parsed.toString(16).toLowerCase()}` === lowercased;
+  return /^0x[0-9a-f]{1,4}$/i.test(input.trim());
 }
 
 // This is hella basic 💁‍♀️💁‍♂️
@@ -77,7 +76,8 @@ function inputIsAdvancedKeyCode(
   basicKeyToByte: Record<string, number>,
 ): boolean {
   const keyCode = input.trim().toUpperCase();
-  return advancedStringToKeycode(keyCode, basicKeyToByte) !== 0;
+  const value = advancedStringToKeycode(keyCode, basicKeyToByte);
+  return Number.isInteger(value) && value !== 0;
 }
 
 function advancedKeyCodeFromInput(
@@ -93,8 +93,7 @@ function inputIsHex(input: string): boolean {
 }
 
 function hexFromInput(input: string): number {
-  const lowercased = input.toLowerCase();
-  return parseInt(lowercased, 16);
+  return parseInt(input.trim(), 16) & 0xffff;
 }
 
 function inputIsValid(
@@ -146,11 +145,11 @@ export const KeycodeModal: React.FC<KeycodeModalProps> = (props) => {
     getKeycodesForKeyboard(selectedDefinition, selectedDevice.protocol),
   );
   const [inputItems, setInputItems] = useState(supportedInputItems);
-  const defaultInput = anyKeycodeToString(
-    props.defaultValue as number,
-    basicKeyToByte,
-    byteToKey,
-  );
+  const defaultInput =
+    props.defaultValue === undefined
+      ? ''
+      : anyKeycodeToString(props.defaultValue, basicKeyToByte, byteToKey) ||
+        formatKeycodeHex(props.defaultValue);
 
   const {
     getMenuProps,

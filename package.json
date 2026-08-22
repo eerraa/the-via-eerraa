@@ -1,14 +1,16 @@
 {
   "license": "GPL-3.0",
   "scripts": {
-    "dev": "node scripts/build-definitions.js && vite --force",
-    "build": "bun run build:kbs && tsc && vite build",
+    "dev": "bun run typecheck:scripts && bun run build:kbs && vite --force",
+    "build": "bun run typecheck:scripts && bun run build:kbs && tsc && vite build",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "lint": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "refresh-kbs": "bun update --force via-keyboards",
-    "build:azure": "bun run refresh-kbs && bun run build",
+    "build:azure": "bun run build",
     "preview": "vite preview",
-    "build:kbs": "node --import tsx node_modules/via-keyboards/scripts/build-all.ts public/definitions",
+    "build:kbs": "node --import tsx scripts/build-keyboards.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts tests/era-state-sync.test.ts tests/state-sync-transport.test.ts tests/era-exact-ms.test.ts",
+    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/locales.test.ts tests/era-definition.test.ts",
     "find-deadcode": "ts-prune"
   },
   "engines": {
@@ -16,6 +18,9 @@
   },
   "overrides": {
     "typescript": "^5.6.2"
+  },
+  "patchedDependencies": {
+    "via-keyboards@github:the-via/keyboards#79ae8d2": "patches/via-keyboards-windows-paths.patch"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.3.0",
@@ -51,12 +56,13 @@
     "styled-components": "^6.0.0-beta.5",
     "three": "^0.169.0",
     "use-resize-observer": "^9.1.0",
-    "via-keyboards": "github:the-via/keyboards",
+    "via-keyboards": "github:the-via/keyboards#79ae8d2f8799fb526afe38a1400f0ecc0712aed2",
     "wouter": "^2.10.0"
   },
   "devDependencies": {
     "@types/lodash.defaultsdeep": "^4.6.7",
     "@types/lodash.partition": "^4.6.7",
+    "@types/node": "^18.11.9",
     "@types/raf-schd": "^4.0.1",
     "@types/react": "^18.0.28",
     "@types/react-dom": "^18.0.11",
@@ -67,6 +73,8 @@
     "@vitejs/plugin-react": "^3.1.0",
     "concurrently": "^7.6.0",
     "husky": "^8.0.3",
+    "ts-prune": "0.10.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.2",
     "vite": "^4.1.4",
     "vite-plugin-html": "^3.2.0"

@@ -1,11 +1,11 @@
 import React, {createRef, useEffect} from 'react';
 import styled from 'styled-components';
 import {getByteForCode} from '../utils/key';
+import {isEraVIADefinitionV3} from '../utils/era-definition';
 import {startMonitoring, usbDetect} from '../utils/usb-hid';
 import {
   getLightingDefinition,
   isVIADefinitionV2,
-  isVIADefinitionV3,
   LightingValue,
 } from '@the-via/reader';
 import {
@@ -15,6 +15,7 @@ import {
   getInvalidProtocolDeviceWarning,
   getSelectedKeyboardAPI,
   getUnresolvedDefinitionDeviceWarning,
+  invalidateDeviceConnection,
 } from 'src/store/devicesSlice';
 import {
   loadSupportedIds,
@@ -34,10 +35,12 @@ import {
 } from 'src/store/definitionsSlice';
 import {syncCustomMenuValuesFromRequest} from 'src/store/menusSlice';
 import {OVERRIDE_HID_CHECK} from 'src/utils/override';
-import {KeyboardValue} from 'src/utils/keyboard-api';
+import {KeyboardAPI, KeyboardValue} from 'src/utils/keyboard-api';
 import {useTranslation} from 'react-i18next';
 import {MessageDialog} from './inputs/message-dialog';
 import {formatNumberAsHex} from 'src/utils/format';
+import {addHIDTransportGenerationListener} from 'src/shims/node-hid';
+import {StateSyncRuntime} from './state-sync-runtime';
 
 const ErrorHome = styled.div`
   background: var(--bg_gradient);
@@ -103,9 +106,7 @@ export const Home: React.FC<HomeProps> = (props) => {
   const selectedKey = useAppSelector(getSelectedKey);
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const connectedDevices = useAppSelector(getConnectedDevices);
-  const invalidProtocolDevice = useAppSelector(
-    getInvalidProtocolDeviceWarning,
-  );
+  const invalidProtocolDevice = useAppSelector(getInvalidProtocolDeviceWarning);
   const unresolvedDefinitionDevice = useAppSelector(
     getUnresolvedDefinitionDeviceWarning,
   );
@@ -146,7 +147,7 @@ export const Home: React.FC<HomeProps> = (props) => {
       }
     }
 
-    if (isVIADefinitionV3(selectedDefinition)) {
+    if (isEraVIADefinitionV3(selectedDefinition)) {
       for (let i = 0; i < 6; i++) {
         api.timeout(i === 0 ? 0 : delay);
         await api.setKeyboardValue(KeyboardValue.DEVICE_INDICATION, i);
@@ -166,12 +167,23 @@ export const Home: React.FC<HomeProps> = (props) => {
     }
 
     startMonitoring();
+    const removeGenerationListener = addHIDTransportGenerationListener(
+      ({path, generation}) => {
+        dispatch(
+          invalidateDeviceConnection({
+            devicePath: path,
+            connectionGeneration: generation,
+          }),
+        );
+      },
+    );
     usbDetect.on('change', updateDevicesRepeat);
     dispatch(loadSupportedIds());
 
     return () => {
       // Cleanup function equiv to componentWillUnmount
       usbDetect.off('change', updateDevicesRepeat);
+      removeGenerationListener();
     };
   }, []); // Passing an empty array as the second arg makes the body of the function equiv to componentDidMount (not including the cleanup func)
 
@@ -185,14 +197,22 @@ export const Home: React.FC<HomeProps> = (props) => {
   }, [api]);
 
   useEffect(() => {
-    if (!api) {
-      return;
-    }
-
-    return api.addUISyncRequestHandler((request) => {
-      dispatch(syncCustomMenuValuesFromRequest(request));
+    const removeHandlers = Object.keys(connectedDevices).map((devicePath) => {
+      const deviceAPI = new KeyboardAPI(devicePath);
+      const connectionGeneration = deviceAPI.getConnectionGeneration();
+      return deviceAPI.addUISyncRequestHandler((request) => {
+        dispatch(
+          syncCustomMenuValuesFromRequest({
+            devicePath,
+            connectionGeneration,
+            request,
+          }),
+        );
+      });
     });
-  }, [api]);
+
+    return () => removeHandlers.forEach((removeHandler) => removeHandler());
+  }, [connectedDevices, dispatch]);
 
   return !hasHIDSupport && !OVERRIDE_HID_CHECK ? (
     <ErrorHome ref={homeElem} tabIndex={0}>
@@ -255,6 +275,7 @@ export const Home: React.FC<HomeProps> = (props) => {
           )}
         </MessageDialog>
       )}
+      <StateSyncRuntime />
       {props.children}
     </>
   );

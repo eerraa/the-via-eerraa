@@ -18,8 +18,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install
         run: bun install --frozen-lockfile
-      - name: Refresh Deps
-        run: bun run refresh-kbs
       - name: Build
         run: bun run build
       - name: Deploy

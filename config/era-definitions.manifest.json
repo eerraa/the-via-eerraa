@@ -1,0 +1,225 @@
+{
+  "definitions": [
+    {
+      "id": "tomak79h-left",
+      "path": "era-definitions/custom/v3/tomak79h/TOMAK79H-L-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0xA002",
+      "pair": "tomak79h",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "tomak79h-right",
+      "path": "era-definitions/custom/v3/tomak79h/TOMAK79H-R-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0xB002",
+      "pair": "tomak79h",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "tomak-tkl-left",
+      "path": "era-definitions/custom/v3/tomak/TOMAK-TKL-L-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0xA001",
+      "pair": "tomak-tkl",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "tomak-tkl-right",
+      "path": "era-definitions/custom/v3/tomak/TOMAK-TKL-R-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0xB001",
+      "pair": "tomak-tkl",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "classicd-a1",
+      "path": "era-definitions/custom/v3/classicd_a1/CLASSICD_A1-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0025",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "classicd-a1-ug",
+      "path": "era-definitions/custom/v3/classicd_a1_ug/CLASSICD_A1_UG-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0029",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "classicd-core",
+      "path": "era-definitions/custom/v3/classicd_core/CLASSICD_CORE-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0017",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "classicd-coreless",
+      "path": "era-definitions/custom/v3/classicd_coreless/CLASSICD_CORELESS-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0018",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "et-tkl",
+      "path": "era-definitions/custom/v3/et_tkl/ET_TKL-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0021",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "divine",
+      "path": "era-definitions/custom/v3/divine/DIVINE-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0002",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "era65",
+      "path": "era-definitions/custom/v3/era65/ERA65-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0001",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "fave65s",
+      "path": "era-definitions/custom/v3/fave65s/FAVE65S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0011",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "n86",
+      "path": "era-definitions/custom/v3/n86/N86-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0008",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "n87",
+      "path": "era-definitions/custom/v3/n87/N87-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0009",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "n8x",
+      "path": "era-definitions/custom/v3/n8x/N8X-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0007",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "newone-a1",
+      "path": "era-definitions/custom/v3/a1/NEWONE_A1-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0026",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "newone-h1",
+      "path": "era-definitions/custom/v3/h1/NEWONE_H1-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0027",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "newone-odessey60h",
+      "path": "era-definitions/custom/v3/odessey60h/ODESSEY60H-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0033",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "newone-odessey60s",
+      "path": "era-definitions/custom/v3/odessey60s/ODESSEY60S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0032",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "brick65",
+      "path": "era-definitions/custom/v3/brick65/BRICK65-VIA.json",
+      "vendorId": "0x5943",
+      "productId": "0x0005",
+      "stateSync": false
+    },
+    {
+      "id": "brick65s",
+      "path": "era-definitions/custom/v3/brick65s/BRICK65S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0012",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "chickpad",
+      "path": "era-definitions/custom/v3/chickpad/CHICKPAD-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0015",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "klein-hs",
+      "path": "era-definitions/custom/v3/klein_hs/KLEIN_HS-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0004",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "klein-sd",
+      "path": "era-definitions/custom/v3/klein_sd/KLEIN_SD-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0005",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "tomak79s-left",
+      "path": "era-definitions/custom/v3/tomak79s/TOMAK79S-L-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0xA003",
+      "pair": "tomak79s",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "tomak79s-right",
+      "path": "era-definitions/custom/v3/tomak79s/TOMAK79S-R-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0xB003",
+      "pair": "tomak79s",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "brick60-h7s",
+      "path": "era-definitions/custom/v3/brick60/BRICK60-H7S-VIA.JSON",
+      "vendorId": "0x4552",
+      "productId": "0x0022",
+      "stateSync": true,
+      "exactMsFamily": "h7s"
+    }
+  ]
+}

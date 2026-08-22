@@ -11,6 +11,7 @@ import errorsReducer from './errorsSlice';
 import {errorsListenerMiddleware} from './errorsListener';
 import firmwareReducer from './firmwareSlice';
 import definitionNameReducer from './definitionNameSlice';
+import stateSyncReducer from './stateSyncSlice';
 
 export const store = configureStore({
   reducer: {
@@ -25,6 +26,7 @@ export const store = configureStore({
     errors: errorsReducer,
     firmware: firmwareReducer,
     definitionName: definitionNameReducer,
+    stateSync: stateSyncReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().prepend(errorsListenerMiddleware.middleware),
