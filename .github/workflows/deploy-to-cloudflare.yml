@@ -71,6 +71,22 @@ jobs:
           echo "total files: $file_count (Cloudflare Pages limit: 20000)"
           test "$file_count" -lt 20000
 
+      # Creates the Pages project on first run so the project's production
+      # branch is definitely `main`. The dashboard's Direct Upload flow requires
+      # dragging the whole build output in at creation time and can leave a
+      # different production branch, in which case deployments succeed but the
+      # <project>.pages.dev alias never updates. Re-running is a no-op: creating
+      # an existing project fails and is tolerated, and the Deploy step below is
+      # what actually surfaces a bad token or account id.
+      - name: Ensure Pages project exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME }}
+        run: |
+          npx --yes wrangler pages project create "$PROJECT_NAME" --production-branch=main \
+            || echo "Project creation skipped (it most likely already exists)."
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
