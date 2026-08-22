@@ -9,10 +9,8 @@
     "preview": "vite preview",
     "build:kbs": "node --import tsx scripts/build-keyboards.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
-    "verify:firmware-contracts": "node --import tsx scripts/build-keyboards.ts --verify-firmware-contracts",
-    "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts tests/era-state-sync.test.ts tests/state-sync-transport.test.ts tests/era-menu-filter.test.ts",
-    "test:firmware-contracts": "bun test tests/firmware-contracts.test.ts",
-    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/locales.test.ts",
+    "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts tests/era-state-sync.test.ts tests/state-sync-transport.test.ts tests/era-exact-ms.test.ts",
+    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/locales.test.ts tests/era-definition.test.ts",
     "find-deadcode": "ts-prune"
   },
   "engines": {
@@ -75,6 +73,7 @@
     "@vitejs/plugin-react": "^3.1.0",
     "concurrently": "^7.6.0",
     "husky": "^8.0.3",
+    "ts-prune": "0.10.3",
     "tsx": "^4.21.0",
     "typescript": "^5.6.2",
     "vite": "^4.1.4",

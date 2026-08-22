@@ -1,15 +1,8 @@
 {
-  "name": "BRICK60",
+  "name": "Tomak_R",
+  "productId": "0xB001",
   "vendorId": "0x4552",
-  "productId": "0x0022",
-  "matrix": {
-    "rows": 5,
-    "cols": 15
-  },
-  "keycodes": [
-    "qmk_lighting"
-  ],
-  "customKeycodes": [
+  "tapdanceKeycodes": [
     {
       "name": "TD0",
       "title": "Tap Dance 0",
@@ -51,14 +44,18 @@
       "shortName": "TD7"
     }
   ],
+  "keycodes": [
+    "qmk_lighting"
+  ],
   "menus": [
     {
       "label": "Lighting",
       "content": [
         {
-          "label": "RGB ROW",
+          "label": "RGB Matrix",
           "content": [
             {
+              "showIf": "{id_qmk_rgb_matrix_effect} != 0",
               "label": "Brightness",
               "type": "range",
               "options": [
@@ -66,18 +63,17 @@
                 255
               ],
               "content": [
-                "id_qmk_rgblight_brightness",
-                2,
+                "id_qmk_rgb_matrix_brightness",
+                3,
                 1
-              ],
-              "showIf": "{id_qmk_rgblight_effect} != 0 && {id_qmk_rgblight_effect} != 2 && {id_qmk_rgblight_effect} != 3 && {id_qmk_rgblight_effect} != 4 && {id_qmk_rgblight_effect} != 5 && {id_qmk_rgblight_effect} != 24 && {id_qmk_rgblight_effect} != 35"
+              ]
             },
             {
               "label": "Effect",
               "type": "dropdown",
               "content": [
-                "id_qmk_rgblight_effect",
-                2,
+                "id_qmk_rgb_matrix_effect",
+                3,
                 2
               ],
               "options": [
@@ -86,193 +82,209 @@
                   0
                 ],
                 [
-                  "Pulse On Press",
-                  43
-                ],
-                [
-                  "Pulse Off Press",
-                  44
-                ],
-                [
-                  "Pulse On Press (Hold)",
-                  45
-                ],
-                [
-                  "Pulse Off Press (Hold)",
-                  46
-                ],
-                [
                   "Solid Color",
                   1
                 ],
                 [
-                  "Breathing 1",
+                  "Alphas Mods",
                   2
                 ],
                 [
-                  "Breathing 2",
+                  "Gradient Up/Down",
                   3
                 ],
                 [
-                  "Breathing 3",
+                  "Gradient Left/Right",
                   4
                 ],
                 [
-                  "Breathing 4",
+                  "Breathing",
                   5
                 ],
                 [
-                  "Rainbow Mood 1",
+                  "Band Sat.",
                   6
                 ],
                 [
-                  "Rainbow Mood 2",
+                  "Band Val.",
                   7
                 ],
                 [
-                  "Rainbow Mood 3",
+                  "Pinwheel Sat.",
                   8
                 ],
                 [
-                  "Rainbow Swirl 1",
+                  "Pinwheel Val.",
                   9
                 ],
                 [
-                  "Rainbow Swirl 2",
+                  "Spiral Sat.",
                   10
                 ],
                 [
-                  "Rainbow Swirl 3",
+                  "Spiral Val.",
                   11
                 ],
                 [
-                  "Rainbow Swirl 4",
+                  "Cycle All",
                   12
                 ],
                 [
-                  "Rainbow Swirl 5",
+                  "Cycle Left/Right",
                   13
                 ],
                 [
-                  "Rainbow Swirl 6",
+                  "Cycle Up/Down",
                   14
                 ],
                 [
-                  "Snake 1",
+                  "Rainbow Moving Chevron",
                   15
                 ],
                 [
-                  "Snake 2",
+                  "Cycle Out/In",
                   16
                 ],
                 [
-                  "Snake 3",
+                  "Cycle Out/In Dual",
                   17
                 ],
                 [
-                  "Snake 4",
+                  "Cycle Pinwheel",
                   18
                 ],
                 [
-                  "Snake 5",
+                  "Cycle Spiral",
                   19
                 ],
                 [
-                  "Snake 6",
+                  "Dual Beacon",
                   20
                 ],
                 [
-                  "Knight 1",
+                  "Rainbow Beacon",
                   21
                 ],
                 [
-                  "Knight 2",
+                  "Rainbow Pinwheels",
                   22
                 ],
                 [
-                  "Knight 3",
+                  "Flower Blooming",
                   23
                 ],
                 [
-                  "Christmas",
+                  "Raindrops",
                   24
                 ],
                 [
-                  "Gradient 1",
+                  "Jellybean Raindrops",
                   25
                 ],
                 [
-                  "Gradient 2",
+                  "Hue Breathing",
                   26
                 ],
                 [
-                  "Gradient 3",
+                  "Hue Pendulum",
                   27
                 ],
                 [
-                  "Gradient 4",
+                  "Hue Wave",
                   28
                 ],
                 [
-                  "Gradient 5",
+                  "Pixel Rain",
                   29
                 ],
                 [
-                  "Gradient 6",
+                  "Pixel Flow",
                   30
                 ],
                 [
-                  "Gradient 7",
+                  "Pixel Fractal",
                   31
                 ],
                 [
-                  "Gradient 8",
+                  "Typing Heatmap",
                   32
                 ],
                 [
-                  "Gradient 9",
+                  "Digital Rain",
                   33
                 ],
                 [
-                  "Gradient 10",
+                  "Solid Reactive Simple",
                   34
                 ],
                 [
-                  "RGB Test",
+                  "Solid Reactive",
                   35
                 ],
                 [
-                  "Alternating",
+                  "Solid Reactive Wide",
                   36
                 ],
                 [
-                  "Twinkle 1",
+                  "Solid Reactive Multi Wide",
                   37
                 ],
                 [
-                  "Twinkle 2",
+                  "Solid Reactive Cross",
                   38
                 ],
                 [
-                  "Twinkle 3",
+                  "Solid Reactive Multi Cross",
                   39
                 ],
                 [
-                  "Twinkle 4",
+                  "Solid Reactive Nexus",
                   40
                 ],
                 [
-                  "Twinkle 5",
+                  "Solid Reactive Multi Nexus",
                   41
                 ],
                 [
-                  "Twinkle 6",
+                  "Splash",
                   42
+                ],
+                [
+                  "Multi Splash",
+                  43
+                ],
+                [
+                  "Solid Splash",
+                  44
+                ],
+                [
+                  "Solid Multi Splash",
+                  45
+                ],
+                [
+                  "Starlight Smooth",
+                  46
+                ],
+                [
+                  "Starlight",
+                  47
+                ],
+                [
+                  "Starlight Dual Sat.",
+                  48
+                ],
+                [
+                  "Starlight Dual Hue.",
+                  49
+                ],
+                [
+                  "Riverflow",
+                  50
                 ]
               ]
             },
             {
-              "showIf": "{id_qmk_rgblight_effect} >= 43 && {id_qmk_rgblight_effect} <= 46",
+              "showIf": "{id_qmk_rgb_matrix_effect} != 0",
               "label": "Effect Speed",
               "type": "range",
               "options": [
@@ -280,43 +292,42 @@
                 255
               ],
               "content": [
-                "id_qmk_rgblight_effect_speed",
-                2,
+                "id_qmk_rgb_matrix_effect_speed",
+                3,
                 3
               ]
             },
             {
-              "showIf": "{id_qmk_rgblight_effect} != 0 && {id_qmk_rgblight_effect} != 35",
+              "showIf": "{id_qmk_rgb_matrix_effect} != 0 && {id_qmk_rgb_matrix_effect} != 24 && {id_qmk_rgb_matrix_effect} != 25 && {id_qmk_rgb_matrix_effect} != 29 && {id_qmk_rgb_matrix_effect} != 30",
               "label": "Color",
               "type": "color",
               "content": [
-                "id_qmk_rgblight_color",
-                2,
+                "id_qmk_rgb_matrix_color",
+                3,
                 4
-              ]
-            },
-            {
-              "showIf": "({id_qmk_rgblight_effect} >= 2 && {id_qmk_rgblight_effect} <= 23) || ({id_qmk_rgblight_effect} >= 37 && {id_qmk_rgblight_effect} <= 42)",
-              "label": "Velocikey",
-              "type": "toggle",
-              "content": [
-                "id_qmk_velocikey_toggle",
-                2,
-                5
               ]
             }
           ]
         },
         {
-          "label": "INDICATOR",
+          "label": "Badge Lighting",
           "content": [
             {
-              "label": "Indicator Select",
+              "label": "Badge-Only RGB",
+              "type": "toggle",
+              "content": [
+                "id_custom_badge_only",
+                0,
+                4
+              ]
+            },
+            {
+              "label": "Lock Indicator",
               "type": "dropdown",
               "content": [
-                "id_qmk_custom_ind_selec",
+                "id_custom_indicator_toggle",
                 0,
-                1
+                0
               ],
               "options": [
                 [
@@ -338,7 +349,17 @@
               ]
             },
             {
-              "showIf": "{id_qmk_custom_ind_selec} != 0",
+              "showIf": "{id_custom_indicator_toggle} != 0",
+              "label": "Indicator Priority",
+              "type": "toggle",
+              "content": [
+                "id_custom_indicator_override",
+                0,
+                1
+              ]
+            },
+            {
+              "showIf": "{id_custom_indicator_toggle} != 0",
               "label": "Indicator Brightness",
               "type": "range",
               "options": [
@@ -346,17 +367,17 @@
                 255
               ],
               "content": [
-                "id_qmk_custom_ind_brightness",
+                "id_custom_indicator_brightness",
                 0,
                 2
               ]
             },
             {
-              "showIf": "{id_qmk_custom_ind_selec} != 0",
+              "showIf": "{id_custom_indicator_toggle} != 0",
               "label": "Indicator Color",
               "type": "color",
               "content": [
-                "id_qmk_custom_ind_color",
+                "id_custom_indicator_color",
                 0,
                 3
               ]
@@ -372,59 +393,91 @@
           "label": "SOCD",
           "content": [
             {
-              "label": "KEY BIND 1",
+              "label": "Left/Right Enable",
               "type": "toggle",
               "content": [
-                "id_qmk_kill_switch_enable_lr",
+                "id_qmk_socd_lr_enable",
                 10,
                 1
               ]
             },
             {
-              "showIf": "{id_qmk_kill_switch_enable_lr} == 1",
-              "label": "- KEY 1",
+              "showIf": "{id_qmk_socd_lr_enable} == 1",
+              "label": "Left/Right Mode",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_socd_lr_mode",
+                10,
+                4
+              ],
+              "options": [
+                [
+                  "Last Input Wins",
+                  1
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_socd_lr_enable} == 1",
+              "label": "Left Key",
               "type": "keycode",
               "content": [
-                "id_qmk_kill_switch_left",
+                "id_qmk_socd_left",
                 10,
                 2
               ]
             },
             {
-              "showIf": "{id_qmk_kill_switch_enable_lr} == 1",
-              "label": "- KEY 2",
+              "showIf": "{id_qmk_socd_lr_enable} == 1",
+              "label": "Right Key",
               "type": "keycode",
               "content": [
-                "id_qmk_kill_switch_right",
+                "id_qmk_socd_right",
                 10,
                 3
               ]
             },
             {
-              "label": "KEY BIND 2",
+              "label": "Up/Down Enable",
               "type": "toggle",
               "content": [
-                "id_qmk_kill_switch_enable_ud",
+                "id_qmk_socd_ud_enable",
                 11,
                 1
               ]
             },
             {
-              "showIf": "{id_qmk_kill_switch_enable_ud} == 1",
-              "label": "- KEY 1",
+              "showIf": "{id_qmk_socd_ud_enable} == 1",
+              "label": "Up/Down Mode",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_socd_ud_mode",
+                11,
+                4
+              ],
+              "options": [
+                [
+                  "Last Input Wins",
+                  1
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_socd_ud_enable} == 1",
+              "label": "Up Key",
               "type": "keycode",
               "content": [
-                "id_qmk_kill_switch_up",
+                "id_qmk_socd_up",
                 11,
                 2
               ]
             },
             {
-              "showIf": "{id_qmk_kill_switch_enable_ud} == 1",
-              "label": "- KEY 2",
+              "showIf": "{id_qmk_socd_ud_enable} == 1",
+              "label": "Down Key",
               "type": "keycode",
               "content": [
-                "id_qmk_kill_switch_down",
+                "id_qmk_socd_down",
                 11,
                 3
               ]
@@ -445,44 +498,29 @@
             },
             {
               "showIf": "{id_qmk_kkuk_enable} == 1",
-              "label": "First Delay Time",
+              "label": "Mode",
               "type": "dropdown",
+              "content": [
+                "id_qmk_kkuk_mode",
+                12,
+                4
+              ],
               "options": [
                 [
-                  "50 ms",
-                  5
-                ],
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "150 ms",
-                  15
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "250 ms",
-                  25
-                ],
-                [
-                  "300 ms",
-                  30
+                  "Report Pulse",
+                  1
                 ]
-              ],
-              "content": [
-                "id_qmk_kkuk_delay_time",
-                12,
-                2
               ]
             },
             {
               "showIf": "{id_qmk_kkuk_enable} == 1",
               "label": "Repeat Time",
               "type": "dropdown",
+              "content": [
+                "id_qmk_kkuk_repeat_time",
+                12,
+                3
+              ],
               "options": [
                 [
                   "50 ms",
@@ -512,11 +550,42 @@
                   "200 ms",
                   20
                 ]
-              ],
+              ]
+            },
+            {
+              "showIf": "{id_qmk_kkuk_enable} == 1",
+              "label": "First Delay Time",
+              "type": "dropdown",
               "content": [
-                "id_qmk_kkuk_repeat_time",
+                "id_qmk_kkuk_delay_time",
                 12,
-                3
+                2
+              ],
+              "options": [
+                [
+                  "50 ms",
+                  5
+                ],
+                [
+                  "100 ms",
+                  10
+                ],
+                [
+                  "150 ms",
+                  15
+                ],
+                [
+                  "200 ms",
+                  20
+                ],
+                [
+                  "250 ms",
+                  25
+                ],
+                [
+                  "300 ms",
+                  30
+                ]
               ]
             }
           ]
@@ -549,7 +618,7 @@
             },
             {
               "showIf": "{id_qmk_debounce_mode} == 0",
-              "label": "Press & Release - delay before and after (same value)",
+              "label": "Press & Release Delay",
               "type": "dropdown",
               "content": [
                 "id_qmk_debounce_time_single",
@@ -681,7 +750,7 @@
             },
             {
               "showIf": "{id_qmk_debounce_mode} == 2",
-              "label": "Press - delay after press (post-only cooldown)",
+              "label": "Press Delay",
               "type": "dropdown",
               "content": [
                 "id_qmk_debounce_time_pre",
@@ -813,7 +882,7 @@
             },
             {
               "showIf": "{id_qmk_debounce_mode} == 1",
-              "label": "Press & Release - delay after change (post-only)",
+              "label": "Press & Release Cooldown",
               "type": "dropdown",
               "content": [
                 "id_qmk_debounce_time_post",
@@ -945,7 +1014,7 @@
             },
             {
               "showIf": "{id_qmk_debounce_mode} == 2",
-              "label": "Release - delay before and after release (pre+post window)",
+              "label": "Release Delay",
               "type": "dropdown",
               "content": [
                 "id_qmk_debounce_time_post",
@@ -1081,101 +1150,6 @@
           "label": "TAPPING",
           "content": [
             {
-              "label": "Global Tapping Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapping_global_term",
-                15,
-                1
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
-              ]
-            },
-            {
               "label": "Global Tapping Term (ms)",
               "type": "range",
               "content": [
@@ -1184,17 +1158,8 @@
                 5
               ],
               "options": [
-                100,
-                500
-              ]
-            },
-            {
-              "label": "Permissive Hold",
-              "type": "toggle",
-              "content": [
-                "id_qmk_tapping_permissive_hold",
-                15,
-                2
+                1,
+                65535
               ]
             },
             {
@@ -1207,12 +1172,269 @@
               ]
             },
             {
-              "label": "Retro Tapping (Tap if unused)",
+              "showIf": "{id_qmk_tapping_hold_on_other_key_press} == 0",
+              "label": "Permissive Hold",
+              "type": "toggle",
+              "content": [
+                "id_qmk_tapping_permissive_hold",
+                15,
+                2
+              ]
+            },
+            {
+              "label": "Retro Tapping",
               "type": "toggle",
               "content": [
                 "id_qmk_tapping_retro_tapping",
                 15,
                 4
+              ]
+            }
+          ]
+        },
+        {
+          "label": "MOUSE",
+          "content": [
+            {
+              "label": "Cursor Acceleration",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_acceleration",
+                13,
+                3
+              ],
+              "options": [
+                [
+                  "Off (constant speed)",
+                  0
+                ],
+                [
+                  "0.5 s",
+                  10
+                ],
+                [
+                  "0.75 s",
+                  15
+                ],
+                [
+                  "1.0 s",
+                  20
+                ],
+                [
+                  "1.25 s",
+                  25
+                ],
+                [
+                  "1.5 s",
+                  30
+                ],
+                [
+                  "2.0 s",
+                  40
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_mousekey_cursor_acceleration} == 0",
+              "label": "Cursor Speed",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_min_speed",
+                13,
+                1
+              ],
+              "options": [
+                [
+                  "2 px",
+                  2
+                ],
+                [
+                  "4 px",
+                  4
+                ],
+                [
+                  "6 px",
+                  6
+                ],
+                [
+                  "8 px",
+                  8
+                ],
+                [
+                  "10 px",
+                  10
+                ],
+                [
+                  "12 px",
+                  12
+                ],
+                [
+                  "16 px",
+                  16
+                ],
+                [
+                  "24 px",
+                  24
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_mousekey_cursor_acceleration} != 0",
+              "label": "Cursor Start Speed",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_min_speed",
+                13,
+                1
+              ],
+              "options": [
+                [
+                  "1 px",
+                  1
+                ],
+                [
+                  "2 px",
+                  2
+                ],
+                [
+                  "4 px",
+                  4
+                ],
+                [
+                  "8 px",
+                  8
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_mousekey_cursor_acceleration} != 0",
+              "label": "Cursor Top Speed",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_max_speed",
+                13,
+                2
+              ],
+              "options": [
+                [
+                  "8 px",
+                  8
+                ],
+                [
+                  "16 px",
+                  16
+                ],
+                [
+                  "24 px",
+                  24
+                ],
+                [
+                  "32 px",
+                  32
+                ],
+                [
+                  "48 px",
+                  48
+                ],
+                [
+                  "64 px",
+                  64
+                ]
+              ]
+            },
+            {
+              "label": "Cursor Steps Per Second",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_interval",
+                13,
+                4
+              ],
+              "options": [
+                [
+                  "200 /s (5 ms)",
+                  5
+                ],
+                [
+                  "125 /s (8 ms)",
+                  8
+                ],
+                [
+                  "100 /s (10 ms)",
+                  10
+                ],
+                [
+                  "63 /s (16 ms)",
+                  16
+                ],
+                [
+                  "50 /s (20 ms)",
+                  20
+                ]
+              ]
+            },
+            {
+              "label": "Wheel Rate",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_wheel_interval",
+                13,
+                5
+              ],
+              "options": [
+                [
+                  "50 /s (20 ms)",
+                  20
+                ],
+                [
+                  "25 /s (40 ms)",
+                  40
+                ],
+                [
+                  "13 /s (80 ms)",
+                  80
+                ],
+                [
+                  "6 /s (160 ms)",
+                  160
+                ]
+              ]
+            },
+            {
+              "label": "Wheel Acceleration",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_wheel_acceleration",
+                13,
+                6
+              ],
+              "options": [
+                [
+                  "Off (constant speed)",
+                  0
+                ],
+                [
+                  "Mild",
+                  1
+                ],
+                [
+                  "Strong",
+                  2
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "label": "NKRO",
+          "content": [
+            {
+              "label": "Enable",
+              "type": "toggle",
+              "content": [
+                "id_qmk_custom_nkro_enable",
+                0,
+                5
               ]
             }
           ]
@@ -1230,8 +1452,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_1_tap",
-                16,
-                1
+                0,
+                32
               ]
             },
             {
@@ -1239,8 +1461,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_1_hold",
-                16,
-                2
+                0,
+                33
               ]
             },
             {
@@ -1248,8 +1470,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_1_dtap",
-                16,
-                3
+                0,
+                34
               ]
             },
             {
@@ -1257,103 +1479,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_1_thold",
-                16,
-                4
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_1_term",
-                16,
-                5
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                35
               ]
             },
             {
@@ -1361,12 +1488,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_1_term_exact",
-                16,
-                41
+                0,
+                72
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -1379,8 +1506,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_2_tap",
-                16,
-                6
+                0,
+                37
               ]
             },
             {
@@ -1388,8 +1515,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_2_hold",
-                16,
-                7
+                0,
+                38
               ]
             },
             {
@@ -1397,8 +1524,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_2_dtap",
-                16,
-                8
+                0,
+                39
               ]
             },
             {
@@ -1406,103 +1533,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_2_thold",
-                16,
-                9
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_2_term",
-                16,
-                10
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                40
               ]
             },
             {
@@ -1510,12 +1542,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_2_term_exact",
-                16,
-                42
+                0,
+                73
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -1528,8 +1560,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_3_tap",
-                16,
-                11
+                0,
+                42
               ]
             },
             {
@@ -1537,8 +1569,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_3_hold",
-                16,
-                12
+                0,
+                43
               ]
             },
             {
@@ -1546,8 +1578,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_3_dtap",
-                16,
-                13
+                0,
+                44
               ]
             },
             {
@@ -1555,103 +1587,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_3_thold",
-                16,
-                14
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_3_term",
-                16,
-                15
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                45
               ]
             },
             {
@@ -1659,12 +1596,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_3_term_exact",
-                16,
-                43
+                0,
+                74
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -1677,8 +1614,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_4_tap",
-                16,
-                16
+                0,
+                47
               ]
             },
             {
@@ -1686,8 +1623,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_4_hold",
-                16,
-                17
+                0,
+                48
               ]
             },
             {
@@ -1695,8 +1632,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_4_dtap",
-                16,
-                18
+                0,
+                49
               ]
             },
             {
@@ -1704,103 +1641,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_4_thold",
-                16,
-                19
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_4_term",
-                16,
-                20
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                50
               ]
             },
             {
@@ -1808,12 +1650,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_4_term_exact",
-                16,
-                44
+                0,
+                75
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -1826,8 +1668,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_5_tap",
-                16,
-                21
+                0,
+                52
               ]
             },
             {
@@ -1835,8 +1677,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_5_hold",
-                16,
-                22
+                0,
+                53
               ]
             },
             {
@@ -1844,8 +1686,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_5_dtap",
-                16,
-                23
+                0,
+                54
               ]
             },
             {
@@ -1853,103 +1695,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_5_thold",
-                16,
-                24
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_5_term",
-                16,
-                25
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                55
               ]
             },
             {
@@ -1957,12 +1704,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_5_term_exact",
-                16,
-                45
+                0,
+                76
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -1975,8 +1722,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_6_tap",
-                16,
-                26
+                0,
+                57
               ]
             },
             {
@@ -1984,8 +1731,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_6_hold",
-                16,
-                27
+                0,
+                58
               ]
             },
             {
@@ -1993,8 +1740,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_6_dtap",
-                16,
-                28
+                0,
+                59
               ]
             },
             {
@@ -2002,103 +1749,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_6_thold",
-                16,
-                29
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_6_term",
-                16,
-                30
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                60
               ]
             },
             {
@@ -2106,12 +1758,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_6_term_exact",
-                16,
-                46
+                0,
+                77
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -2124,8 +1776,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_7_tap",
-                16,
-                31
+                0,
+                62
               ]
             },
             {
@@ -2133,8 +1785,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_7_hold",
-                16,
-                32
+                0,
+                63
               ]
             },
             {
@@ -2142,8 +1794,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_7_dtap",
-                16,
-                33
+                0,
+                64
               ]
             },
             {
@@ -2151,103 +1803,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_7_thold",
-                16,
-                34
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_7_term",
-                16,
-                35
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                65
               ]
             },
             {
@@ -2255,12 +1812,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_7_term_exact",
-                16,
-                47
+                0,
+                78
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -2273,8 +1830,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_8_tap",
-                16,
-                36
+                0,
+                67
               ]
             },
             {
@@ -2282,8 +1839,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_8_hold",
-                16,
-                37
+                0,
+                68
               ]
             },
             {
@@ -2291,8 +1848,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_8_dtap",
-                16,
-                38
+                0,
+                69
               ]
             },
             {
@@ -2300,103 +1857,8 @@
               "type": "keycode",
               "content": [
                 "id_qmk_tapdance_8_thold",
-                16,
-                39
-              ]
-            },
-            {
-              "label": "Term",
-              "type": "dropdown",
-              "content": [
-                "id_qmk_tapdance_8_term",
-                16,
-                40
-              ],
-              "options": [
-                [
-                  "100 ms",
-                  10
-                ],
-                [
-                  "120 ms",
-                  12
-                ],
-                [
-                  "140 ms",
-                  14
-                ],
-                [
-                  "160 ms",
-                  16
-                ],
-                [
-                  "180 ms",
-                  18
-                ],
-                [
-                  "200 ms",
-                  20
-                ],
-                [
-                  "220 ms",
-                  22
-                ],
-                [
-                  "240 ms",
-                  24
-                ],
-                [
-                  "260 ms",
-                  26
-                ],
-                [
-                  "280 ms",
-                  28
-                ],
-                [
-                  "300 ms",
-                  30
-                ],
-                [
-                  "320 ms",
-                  32
-                ],
-                [
-                  "340 ms",
-                  34
-                ],
-                [
-                  "360 ms",
-                  36
-                ],
-                [
-                  "380 ms",
-                  38
-                ],
-                [
-                  "400 ms",
-                  40
-                ],
-                [
-                  "420 ms",
-                  42
-                ],
-                [
-                  "440 ms",
-                  44
-                ],
-                [
-                  "460 ms",
-                  46
-                ],
-                [
-                  "480 ms",
-                  48
-                ],
-                [
-                  "500 ms",
-                  50
-                ]
+                0,
+                70
               ]
             },
             {
@@ -2404,12 +1866,12 @@
               "type": "range",
               "content": [
                 "id_qmk_tapdance_8_term_exact",
-                16,
-                48
+                0,
+                79
               ],
               "options": [
-                100,
-                500
+                1,
+                65535
               ]
             }
           ]
@@ -2420,162 +1882,70 @@
       "label": "SYSTEM",
       "content": [
         {
-          "label": "VERSION",
+          "label": "SYNC",
           "content": [
             {
-              "label": "Year",
-              "type": "dropdown",
-              "options": [
-                "24",
-                "25",
-                "26",
-                "27",
-                "28",
-                "29",
-                "30",
-                "31",
-                "32",
-                "33"
-              ],
+              "label": "EEPROM SYNC",
+              "type": "toggle",
               "content": [
-                "id_qmk_ver_yy",
-                8,
-                1
+                "id_qmk_eeprom_sync_requested",
+                9,
+                5
               ]
             },
             {
-              "label": "Month",
-              "type": "dropdown",
-              "options": [
-                "01",
-                "02",
-                "03",
-                "04",
-                "05",
-                "06",
-                "07",
-                "08",
-                "09",
-                "10",
-                "11",
-                "12"
-              ],
+              "label": "INPUT SYNC",
+              "type": "toggle",
               "content": [
-                "id_qmk_ver_mm",
-                8,
-                2
+                "id_qmk_input_sync_requested",
+                9,
+                6
               ]
             },
             {
-              "label": "Day",
-              "type": "dropdown",
-              "options": [
-                "01",
-                "02",
-                "03",
-                "04",
-                "05",
-                "06",
-                "07",
-                "08",
-                "09",
-                "10",
-                "11",
-                "12",
-                "13",
-                "14",
-                "15",
-                "16",
-                "17",
-                "18",
-                "19",
-                "20",
-                "21",
-                "22",
-                "23",
-                "24",
-                "25",
-                "26",
-                "27",
-                "28",
-                "29",
-                "30",
-                "31"
-              ],
+              "label": "RGB SYNC",
+              "type": "toggle",
               "content": [
-                "id_qmk_ver_dd",
-                8,
-                3
-              ]
-            },
-            {
-              "label": "Rev.",
-              "type": "dropdown",
-              "options": [
-                "R1",
-                "R2",
-                "R3",
-                "R4",
-                "R5",
-                "R6",
-                "R7",
-                "R8",
-                "R9"
-              ],
-              "content": [
-                "id_qmk_ver_rv",
-                8,
-                4
+                "id_qmk_rgb_sync_requested",
+                9,
+                7
               ]
             }
           ]
         },
         {
-          "label": "USB POLLING",
+          "label": "LINK",
           "content": [
             {
-              "label": "Boot Polling Mode",
+              "label": "Split Link Speed",
               "type": "dropdown",
-              "content": [
-                "id_qmk_usb_bootmode",
-                13,
-                1
-              ],
               "options": [
                 [
-                  "8 kHz (HS)",
+                  "High - 460800 bps, 1 ms poll",
                   0
                 ],
                 [
-                  "4 kHz (HS)",
+                  "Medium - 230400 bps, 2 ms poll",
                   1
                 ],
                 [
-                  "2 kHz (HS)",
+                  "Low - 115200 bps, 4 ms poll",
                   2
-                ],
-                [
-                  "1 kHz (FS)",
-                  3
                 ]
+              ],
+              "content": [
+                "id_qmk_split_link_level",
+                9,
+                8
               ]
             },
             {
-              "label": "Apply Selected Mode",
+              "label": "Apply",
               "type": "toggle",
               "content": [
-                "id_qmk_usb_bootmode_apply",
-                13,
-                2
-              ]
-            },
-            {
-              "label": "Auto downgrade on USB unstable [BETA]",
-              "type": "toggle",
-              "content": [
-                "id_qmk_usb_autodg_beta",
-                13,
-                3
+                "id_qmk_split_link_apply",
+                9,
+                9
               ]
             }
           ]
@@ -2595,7 +1965,7 @@
           ]
         },
         {
-          "label": "CLEAN",
+          "label": "EEPROM",
           "content": [
             {
               "label": "EEPROM Clean Confirm 1",
@@ -2629,18 +1999,15 @@
       ]
     }
   ],
+  "matrix": {
+    "rows": 12,
+    "cols": 11
+  },
   "layouts": {
     "labels": [
-      [
-        "Backspace",
-        "Unified",
-        "Split"
-      ],
-      [
-        "Left Shift",
-        "Unified",
-        "Split"
-      ]
+      "Split Backspace",
+      "Split Right shift",
+      "Split Right space"
     ],
     "keymap": [
       [
@@ -2649,41 +2016,46 @@
         },
         "0,0",
         {
+          "x": 0.5,
           "c": "#cccccc"
         },
-        "0,1",
         "0,2",
         "0,3",
         "0,4",
         "0,5",
+        {
+          "x": 0.5
+        },
         "0,6",
         "0,7",
-        "0,8",
-        "0,9",
-        "0,10",
-        "0,11",
-        "0,12",
         {
-          "c": "#aaaaaa",
-          "w": 2
+          "x": 1.5
         },
-        "0,14\n\n\n0,0",
+        "6,0",
+        "6,1",
         {
-          "x": 0.5,
-          "c": "#cccccc"
+          "x": 0.5
         },
-        "0,13\n\n\n0,1",
-        "0,14\n\n\n0,1"
+        "6,2",
+        "6,3",
+        "6,4",
+        "6,5",
+        {
+          "x": 0.5
+        },
+        "6,7",
+        {
+          "x": 0.25
+        },
+        "6,8",
+        "6,9",
+        "6,10"
       ],
       [
         {
-          "c": "#aaaaaa",
-          "w": 1.5
+          "y": 0.5
         },
         "1,0",
-        {
-          "c": "#cccccc"
-        },
         "1,1",
         "1,2",
         "1,3",
@@ -2691,20 +2063,37 @@
         "1,5",
         "1,6",
         "1,7",
-        "1,8",
-        "1,9",
-        "1,10",
-        "1,11",
-        "1,12",
         {
-          "w": 1.5
+          "x": 1.5
         },
-        "1,14"
+        "7,0",
+        "7,1",
+        "7,2",
+        "7,3",
+        "7,4",
+        "7,5",
+        {
+          "c": "#aaaaaa",
+          "w": 2
+        },
+        "7,7\n\n\n0,0",
+        {
+          "x": 0.25,
+          "c": "#cccccc"
+        },
+        "7,8",
+        "7,9",
+        "7,10",
+        {
+          "x": 1,
+          "c": "#aaaaaa"
+        },
+        "7,6\n\n\n0,1",
+        "7,7\n\n\n0,1"
       ],
       [
         {
-          "c": "#aaaaaa",
-          "w": 1.75
+          "w": 1.5
         },
         "2,0",
         {
@@ -2716,73 +2105,157 @@
         "2,4",
         "2,5",
         "2,6",
-        "2,7",
-        "2,8",
-        "2,9",
-        "2,10",
-        "2,11",
         {
-          "c": "#777777",
-          "w": 2.25
+          "x": 1.5
         },
-        "2,14"
+        "8,0",
+        "8,1",
+        "8,2",
+        "8,3",
+        "8,4",
+        "8,5",
+        "8,6",
+        {
+          "w": 1.5
+        },
+        "8,7",
+        {
+          "x": 0.25
+        },
+        "8,8",
+        "8,9",
+        "8,10"
       ],
       [
         {
           "c": "#aaaaaa",
-          "w": 2.25
+          "w": 1.75
         },
         "3,0",
         {
           "c": "#cccccc"
         },
+        "3,1",
         "3,2",
         "3,3",
         "3,4",
         "3,5",
         "3,6",
-        "3,7",
-        "3,8",
-        "3,9",
-        "3,10",
-        "3,11",
+        {
+          "x": 1.5
+        },
+        "9,0",
+        "9,1",
+        "9,2",
+        "9,3",
+        "9,4",
+        "9,5",
+        {
+          "c": "#777777",
+          "w": 2.25
+        },
+        "9,7"
+      ],
+      [
+        {
+          "c": "#aaaaaa",
+          "w": 2.25
+        },
+        "4,0",
+        {
+          "c": "#cccccc"
+        },
+        "4,1",
+        "4,2",
+        "4,3",
+        "4,4",
+        "4,5",
+        {
+          "x": 1.5
+        },
+        "10,0",
+        "10,1",
+        "10,2",
+        "10,3",
+        "10,4",
+        "10,5",
         {
           "c": "#aaaaaa",
           "w": 2.75
         },
-        "3,12\n\n\n1,0",
+        "10,6\n\n\n1,0",
         {
-          "x": 0.5,
+          "x": 1.25,
+          "c": "#777777"
+        },
+        "10,9",
+        {
+          "x": 2,
+          "c": "#aaaaaa",
           "w": 1.75
         },
-        "3,12\n\n\n1,1",
-        "3,14\n\n\n1,1"
+        "10,6\n\n\n1,1",
+        "10,7\n\n\n1,1"
       ],
       [
         {
           "w": 1.5
         },
-        "4,0",
-        "4,1",
+        "5,0",
+        "5,1",
         {
           "w": 1.5
         },
-        "4,2",
+        "5,2",
         {
           "c": "#cccccc",
-          "w": 7
+          "w": 2.75
         },
-        "4,7",
+        "5,4",
+        {
+          "c": "#aaaaaa"
+        },
+        "5,5",
+        {
+          "x": 1.5,
+          "c": "#cccccc",
+          "w": 3.25
+        },
+        "11,2\n\n\n2,0",
         {
           "c": "#aaaaaa",
-          "w": 1.5
+          "w": 1.25
         },
-        "4,12",
-        "4,13",
+        "11,4",
         {
-          "w": 1.5
+          "w": 1.25
         },
-        "4,14"
+        "11,5",
+        {
+          "w": 1.25
+        },
+        "11,6",
+        {
+          "w": 1.25
+        },
+        "11,7",
+        {
+          "x": 0.25,
+          "c": "#777777"
+        },
+        "11,8",
+        "11,9",
+        "11,10",
+        {
+          "x": 1,
+          "c": "#aaaaaa"
+        },
+        "11,1\n\n\n2,1",
+        {
+          "c": "#cccccc",
+          "w": 2.25
+        },
+        "11,2\n\n\n2,1"
       ]
     ]
   }

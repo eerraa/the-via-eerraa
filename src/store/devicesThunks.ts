@@ -13,6 +13,7 @@ import {
   loadLayoutOptions,
   updateDefinitions,
   getDefinitions,
+  getDefinitionSourceForDevice,
   loadStoredCustomDefinitions,
 } from './definitionsSlice';
 import {loadKeymapFromDevice} from './keymapSlice';
@@ -51,9 +52,16 @@ import {tryForgetDevice} from 'src/shims/node-hid';
 import {isAuthorizedDeviceConnected} from 'src/utils/type-predicates';
 import {loadFirmwareVersion, loadKeycodesVersion} from './firmwareSlice';
 import {probeStateSyncForDevice} from './stateSyncThunks';
-import {loadEraAdvancedMetadata} from '../utils/era-advanced-metadata';
-import {loadDefinitionName} from './definitionNameSlice';
+import {
+  isStateSyncOptIn,
+  loadEraAdvancedMetadata,
+} from '../utils/era-advanced-metadata';
+import {
+  clearDefinitionNameOption,
+  loadDefinitionName,
+} from './definitionNameSlice';
 import {KeycodesVersionProtocolError} from 'src/utils/keycodes-version';
+import {getPathSyncState} from './stateSyncSlice';
 
 const selectConnectedDeviceRetry = createRetry(8, 100);
 
@@ -87,6 +95,16 @@ const selectConnectedDevice =
         selectionGeneration,
       );
     try {
+      await loadEraAdvancedMetadata();
+      if (!isCurrentSelection()) return;
+      const requiresCustomMenuVerification =
+        getDefinitionSourceForDevice(getState(), connectedDevice) === 'era' &&
+        isStateSyncOptIn(connectedDevice.vendorProductId);
+      if (requiresCustomMenuVerification) {
+        await dispatch(probeStateSyncForDevice(connectedDevice));
+        if (!isCurrentSelection()) return;
+      }
+
       await dispatch(loadKeycodesVersion(connectedDevice));
       if (!isCurrentSelection()) return;
       // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
@@ -101,12 +119,24 @@ const selectConnectedDevice =
           // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
           await dispatch(updateLightingData(connectedDevice));
         } else if (protocol >= 11) {
-          await dispatch(loadDefinitionName(connectedDevice));
-          if (!isCurrentSelection()) return;
-          await dispatch(loadFirmwareVersion(connectedDevice));
-          if (!isCurrentSelection()) return;
-          // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-          await dispatch(updateV3MenuData(connectedDevice));
+          const advancedCommandsVerified =
+            !requiresCustomMenuVerification ||
+            getPathSyncState(getState(), connectedDevice.path)?.capability ===
+              'capable';
+          if (advancedCommandsVerified) {
+            await dispatch(loadDefinitionName(connectedDevice));
+            if (!isCurrentSelection()) return;
+            await dispatch(loadFirmwareVersion(connectedDevice));
+            if (!isCurrentSelection()) return;
+          } else {
+            dispatch(
+              clearDefinitionNameOption({devicePath: connectedDevice.path}),
+            );
+          }
+          if (!requiresCustomMenuVerification) {
+            // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
+            await dispatch(updateV3MenuData(connectedDevice));
+          }
         }
       } catch (e) {
         dispatch(
@@ -128,7 +158,9 @@ const selectConnectedDevice =
           selectionGeneration,
         }),
       );
-      await dispatch(probeStateSyncForDevice(connectedDevice));
+      if (requiresCustomMenuVerification) {
+        await dispatch(probeStateSyncForDevice(connectedDevice));
+      }
       selectConnectedDeviceRetry.clear();
     } catch (e) {
       if (!isCurrentSelection()) {

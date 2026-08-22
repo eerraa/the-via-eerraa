@@ -1,31 +1,28 @@
-export type MillisecondCapability = 'exact' | 'legacy' | 'unsupported';
-
 export type MillisecondAdapter = {
-  capability: MillisecondCapability;
   minMs: number;
   maxMs: number;
-  /** Legacy dropdown step in milliseconds. Ignored for exact/unsupported. */
-  legacyStepMs?: number;
-  read(): Promise<number>;
   write(candidateMs: number): Promise<number>;
 };
 
-export type MillisecondParseFailure =
-  | 'empty'
-  | 'decimal'
-  | 'nan'
-  | 'out_of_range';
+type MillisecondParseFailure = 'empty' | 'decimal' | 'nan' | 'out_of_range';
 
-export type MillisecondParseResult =
-  | {ok: true; valueMs: number}
-  | {ok: false; reason: MillisecondParseFailure};
+type MillisecondParseResult =
+  {ok: true; valueMs: number} | {ok: false; reason: MillisecondParseFailure};
 
+/** Official VIA + stock JSON range. Legacy GET/SET stay on this 20 ms grid. */
 export const DEFAULT_TAPPING_TERM_BOUNDS = {
   minMs: 100,
   maxMs: 500,
 } as const;
 
-export const ERA_LEGACY_TAPPING_STEP_MS = 20;
+/**
+ * Custom VIA JSON QMK exact-ms field. Existing 2-byte big-endian uint16 wire.
+ * Stock JSON `options` stay [100, 500] for official VIA.
+ */
+export const QMK_EXACT_TAPPING_TERM_BOUNDS = {
+  minMs: 1,
+  maxMs: 65535,
+} as const;
 
 export function parseMillisecondDraft(
   draft: string,
@@ -52,28 +49,30 @@ export function parseMillisecondDraft(
   return {ok: true, valueMs};
 }
 
+export function canApplyMillisecondDraft(
+  draft: string,
+  authoritativeMs: number,
+  adapter: Pick<MillisecondAdapter, 'minMs' | 'maxMs'>,
+  inFlight: boolean,
+): boolean {
+  if (inFlight) {
+    return false;
+  }
+  const parsed = parseMillisecondDraft(draft, adapter.minMs, adapter.maxMs);
+  return parsed.ok && parsed.valueMs !== authoritativeMs;
+}
+
 export function parseFailureMessage(reason: MillisecondParseFailure): string {
   switch (reason) {
     case 'empty':
-      return 'Enter an integer millisecond value.';
+      return 'Enter an integer';
     case 'decimal':
       return 'Fractional milliseconds are not accepted.';
     case 'nan':
       return 'Value is not an integer.';
     case 'out_of_range':
-      return 'Value is outside the allowed millisecond range.';
+      return 'Out of range';
   }
-}
-
-/** Floor to the legacy dropdown grid without mutating an exact store. */
-export function projectLegacyMs(
-  valueMs: number,
-  minMs: number,
-  maxMs: number,
-  stepMs: number,
-): number {
-  const clamped = Math.min(Math.max(valueMs, minMs), maxMs);
-  return minMs + Math.floor((clamped - minMs) / stepMs) * stepMs;
 }
 
 export type MillisecondCommitState = {
@@ -93,16 +92,6 @@ export async function commitMillisecondDraft(
 }> {
   if (state.inFlight) {
     return {next: state, wrote: false};
-  }
-  if (adapter.capability === 'unsupported') {
-    return {
-      next: {
-        ...state,
-        draft: String(state.authoritativeMs),
-        error: 'This firmware does not support millisecond term edits.',
-      },
-      wrote: false,
-    };
   }
 
   const parsed = parseMillisecondDraft(draft, adapter.minMs, adapter.maxMs);
@@ -140,19 +129,6 @@ export function revertMillisecondDraft(
   return {
     ...state,
     draft: String(state.authoritativeMs),
-    error: null,
-  };
-}
-
-export async function refreshMillisecondValue(
-  state: MillisecondCommitState,
-  adapter: MillisecondAdapter,
-): Promise<MillisecondCommitState> {
-  const authoritativeMs = await adapter.read();
-  return {
-    ...state,
-    authoritativeMs,
-    draft: state.inFlight ? state.draft : String(authoritativeMs),
     error: null,
   };
 }

@@ -1,7 +1,8 @@
-import {useEffect, useId, useRef, useState} from 'react';
+import {useCallback, useEffect, useId, useRef, useState} from 'react';
 import styled from 'styled-components';
 import {useTranslation} from 'react-i18next';
 import {
+  canApplyMillisecondDraft,
   commitMillisecondDraft,
   parseFailureMessage,
   parseMillisecondDraft,
@@ -9,6 +10,7 @@ import {
   type MillisecondAdapter,
   type MillisecondCommitState,
 } from '../../utils/millisecond-field';
+import {useDeferredApplyRegistration} from '../panes/configure-panes/custom/deferred-apply';
 
 const Root = styled.span`
   display: inline-flex;
@@ -18,6 +20,7 @@ const Root = styled.span`
 
 const Field = styled.span`
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
   border-bottom: 1px solid var(--color_accent);
@@ -25,11 +28,11 @@ const Field = styled.span`
 `;
 
 const NumberBox = styled.input`
-  width: 72px;
+  width: 88px;
   background: none;
   border: none;
   color: var(--color_label-highlighted);
-  font-size: 16px;
+  font-size: inherit;
   text-align: right;
   &:focus {
     outline: none;
@@ -41,85 +44,106 @@ const NumberBox = styled.input`
 
 const Suffix = styled.span`
   color: var(--color_label-highlighted);
-  font-size: 16px;
-`;
-
-const Hint = styled.span`
-  color: var(--color_label);
-  font-size: 12px;
 `;
 
 const ErrorText = styled.span`
   color: var(--color_error, #c44848);
-  font-size: 12px;
+  font-size: 16px;
+  white-space: nowrap;
 `;
 
 type Props = {
   adapter: MillisecondAdapter;
   id?: string;
   ariaLabel?: string;
+  savedMs: number;
 };
 
-export const MillisecondInput = ({adapter, id, ariaLabel}: Props) => {
+export const MillisecondInput = ({adapter, id, ariaLabel, savedMs}: Props) => {
   const {t} = useTranslation();
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const errorId = `${fieldId}-error`;
-  const hintId = `${fieldId}-hint`;
   const [state, setState] = useState<MillisecondCommitState>({
-    authoritativeMs: adapter.minMs,
-    draft: String(adapter.minMs),
+    authoritativeMs: savedMs,
+    draft: String(savedMs),
     inFlight: false,
     error: null,
   });
-  const cancelDraft = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
-    let cancelled = false;
-    adapter.read().then((valueMs) => {
-      if (!cancelled) {
-        setState({
-          authoritativeMs: valueMs,
-          draft: String(valueMs),
-          inFlight: false,
-          error: null,
-        });
+    setState((current) => {
+      if (
+        canApplyMillisecondDraft(
+          current.draft,
+          current.authoritativeMs,
+          adapter,
+          current.inFlight,
+        )
+      ) {
+        return current;
       }
+      if (
+        current.authoritativeMs === savedMs &&
+        current.draft === String(savedMs)
+      ) {
+        return current;
+      }
+      return {
+        authoritativeMs: savedMs,
+        draft: String(savedMs),
+        inFlight: false,
+        error: null,
+      };
     });
-    return () => {
-      cancelled = true;
-    };
+  }, [adapter, savedMs]);
+
+  const parsed = parseMillisecondDraft(
+    state.draft,
+    adapter.minMs,
+    adapter.maxMs,
+  );
+  const canApply = canApplyMillisecondDraft(
+    state.draft,
+    state.authoritativeMs,
+    adapter,
+    state.inFlight,
+  );
+  const validationMessage = state.error
+    ? state.error
+    : !parsed.ok && state.draft !== String(state.authoritativeMs)
+      ? parseFailureMessage(parsed.reason)
+      : null;
+
+  const apply = useCallback(async () => {
+    const result = await commitMillisecondDraft(
+      stateRef.current.draft,
+      stateRef.current,
+      adapter,
+    );
+    setState(result.next);
   }, [adapter]);
 
-  const parsed = parseMillisecondDraft(state.draft, adapter.minMs, adapter.maxMs);
-  const commit = async () => {
-    if (cancelDraft.current) {
-      cancelDraft.current = false;
-      setState((current) => revertMillisecondDraft(current));
-      return;
-    }
-    const result = await commitMillisecondDraft(state.draft, state, adapter);
-    setState(result.next);
-  };
-
-  const capabilityHint =
-    adapter.capability === 'legacy'
-      ? t('Legacy step {{step}} ms', {step: adapter.legacyStepMs ?? 20})
-      : adapter.capability === 'unsupported'
-        ? t('Firmware update required for exact millisecond input')
-        : t('Exact milliseconds');
+  useDeferredApplyRegistration(fieldId, canApply, apply);
 
   return (
     <Root>
+      {validationMessage ? (
+        <ErrorText id={errorId} role="alert">
+          {t(validationMessage)}
+        </ErrorText>
+      ) : null}
       <Field>
         <NumberBox
           id={fieldId}
           inputMode="numeric"
           aria-label={ariaLabel ?? t('milliseconds')}
           aria-invalid={parsed.ok ? undefined : true}
-          aria-describedby={`${hintId}${state.error ? ` ${errorId}` : ''}`}
+          aria-describedby={validationMessage ? errorId : undefined}
           value={state.draft}
-          disabled={state.inFlight || adapter.capability === 'unsupported'}
+          disabled={state.inFlight}
           onChange={(event) =>
             setState((current) => ({
               ...current,
@@ -127,30 +151,14 @@ export const MillisecondInput = ({adapter, id, ariaLabel}: Props) => {
               error: null,
             }))
           }
-          onBlur={() => {
-            void commit();
-          }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.currentTarget.blur();
-            } else if (event.key === 'Escape') {
-              cancelDraft.current = true;
-              event.currentTarget.blur();
+            if (event.key === 'Escape') {
+              setState((current) => revertMillisecondDraft(current));
             }
           }}
         />
         <Suffix>ms</Suffix>
       </Field>
-      <Hint id={hintId}>{capabilityHint}</Hint>
-      {state.error ? (
-        <ErrorText id={errorId} role="alert">
-          {t(state.error)}
-        </ErrorText>
-      ) : !parsed.ok && state.draft !== String(state.authoritativeMs) ? (
-        <ErrorText id={errorId} role="alert">
-          {t(parseFailureMessage(parsed.reason))}
-        </ErrorText>
-      ) : null}
     </Root>
   );
 };

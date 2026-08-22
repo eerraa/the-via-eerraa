@@ -4,10 +4,20 @@ Status: Accepted (G1 2026-08-21)
 
 Selector `GET_KEYBOARD_VALUE` **`0x06`**, envelope version `0x01`. Exact-ms IDs:
 global channel 15 value 5; QMK TD terms channel 0 values 72–79; H7S TD terms
-channel 16 values 41–48. Exact wire is 2-byte big-endian `uint16` ms, range
-100–500; out-of-range exact SET is rejected. Legacy GET projects floor-to-20 ms
-and does not rewrite the exact store. Selected-visible-capable poll starts at
-500 ms.
+channel 16 values 41–48. Exact wire is 2-byte big-endian `uint16` ms. QMK exact SET
+range is 1–65535 (the uint16 maximum; 99999 does not fit this encoding). That
+range is additive on the exact IDs. Official VIA + its canonical definition remain required:
+legacy IDs stay 1-byte × 10 ms on the 100–500 / 20 ms grid, and official exact
+`options` stay `[100, 500]`. Widening official JSON options to the custom-app range is an
+error. H7S exact SET remains 100–500 until that firmware is separately approved.
+Out-of-range exact SET is rejected. Legacy GET projects floor-to-20 ms and does
+not rewrite the exact store. Selected-visible-capable poll starts at 500 ms.
+
+Definition ownership is independent of this wire decision: ERA custom JSON is owned by
+this app's `era-definitions/custom/v3`; official JSON is owned by
+`the-via/keyboards/v3`, with installed `via-keyboards` serving only as a pinned build
+snapshot. Firmware-local QMK/H7S JSON is not an app lookup source. Effective lookup is
+ERA, then official, then Design upload only when both built-in sources are absent.
 
 ## Context
 
@@ -35,7 +45,7 @@ definition과 command transcript, 공식 VIA client, 기존 `0x16` v1 Custom Men
   관측한 CONFIG 변경을 CONFIG GET 없이 삼켰다.
 - 초기 lifecycle GET과 capability probe 사이 변경이 발생하면 probe의 새 revision을
   probe 이전 데이터에 붙여 fresh로 표시했다.
-- Capability가 확인된 뒤의 단일 timeout/malformed도 unsupported로 영구 강등했다.
+- Capability가 확인된 뒤의 단일 timeout/malformed도 확인 불가 상태로 영구 강등했다.
 - Refresh 전에 revision을 저장해 두어 candidate read가 실패한 dirty domain도 다음
   poll의 숫자 equality 때문에 건너뛰었다.
 - Keymap layer/encoder, macro, layout/menu loader가 end revision 검증 전에 Redux를
@@ -74,7 +84,7 @@ semantic event를 후속 ADR로 다시 제안한다.
 | Mechanism                                                                            | 판정             | 1. 해결하는 실제 실패                                                                                     | 2. 기존 GET/lifecycle만으로 부족한 이유                                                                                                              | 3. 지금/후속                                                                          | 4. 추가 상태 복잡성                                                                                            | 5. 유실·중복 시 수렴                                                                                                                                                   |
 | ------------------------------------------------------------------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Canonical definition/build metadata opt-in                                           | **유지**         | 일반 keyboard나 임의 sideload definition에 extension probe가 나가는 것을 막는다.                          | GET은 어떤 장치에 probe해도 안전한지 알려주기 전에 이미 전송돼야 하므로 단독으로 해결할 수 없다.                                                     | 지금 필요하다.                                                                        | App build에 opt-in boolean과 생성된 trusted identity 목록만 추가한다. Firmware 상태는 없다.                    | Opt-in이 없으면 advanced 경로 자체가 없고 기존 VIA로 남는다.                                                                                                           |
-| Runtime capability confirmation                                                      | **단순화**       | Opt-in VID/PID에 구형·비지원 firmware가 연결된 경우를 구분한다.                                           | Build metadata는 실제 flash된 firmware 기능을 증명하지 못한다.                                                                                       | 별도 CAPABILITIES command 없이 첫 revision query의 정상 응답이 confirmation을 겸한다. | Connection generation별 `unknown \| probing \| unsupported \| capable` 한 값이다.                              | 새 generation의 초기 unhandled/malformed/timeout만 조용한 legacy fallback이다. 이미 capable이면 transient failure가 capability를 내리지 않고 freshness만 dirty로 둔다. |
+| Runtime capability confirmation                                                      | **단순화**       | Opt-in ERA VPID에 실제로 State Sync가 응답하는지를 연결 세대별로 확인한다.                                | Build metadata는 실제 flash된 firmware 기능을 증명하지 못하고, 무응답만으로 구형 firmware와 통신 오류를 구분할 수도 없다.                             | 별도 CAPABILITIES command 없이 첫 revision query의 정상 응답이 confirmation을 겸한다. | Connection generation별 `unknown \| probing \| unverified \| capable` 한 값이다.                               | 새 generation의 초기 unhandled/malformed/timeout은 확인 불가 안내와 Custom I/O 차단으로 끝낸다. 이미 capable이면 transient failure가 capability를 내리지 않고 freshness만 dirty로 둔다. |
 | 기존 `GET_KEYBOARD_VALUE (0x02)`의 새 read-only selector                             | **유지**         | 하나의 작은 request/response로 capability와 domain revision을 얻는다.                                     | 모든 값을 매 poll마다 GET하면 큰 keymap/macro를 불필요하게 읽는다.                                                                                   | 채택한 유일한 wire extension이다.                                                     | Firmware의 세 RAM token과 app의 observed/accepted token이다.                                                   | Query 실패는 cache를 dirty로 남긴다. 다음 visible poll/lifecycle refresh가 재시도한다.                                                                                 |
 | 별도 새 top-level command                                                            | **제거**         | 원안에서는 event/request/response를 분리하려 했다.                                                        | Event를 제거하면 기존 read-only Keyboard Value selector가 같은 일을 하며 새 command namespace가 필요 없다.                                           | 불필요하다. G1은 기존 namespace의 selector `0x06`을 확정했다.                         | 새 command classifier와 message-type table을 없앤다.                                                           | 해당 없음. 기존 `0x02` response 경로를 사용한다.                                                                                                                       |
 | 16-bit request tag (새 selector 내부)                                                | **유지**         | Query timeout 뒤 늦은 query response가 새 query로 귀속되는 것을 막는다.                                   | 기존 echoed prefix만으로 같은 query 세대를 구분할 수 없다.                                                                                           | 지금 필요하다.                                                                        | App의 connection별 증가 tag 하나, firmware는 echo만 한다.                                                      | 중복·늦은 tag는 pending matcher와 맞지 않아 drop된다. Wrap 전 stale buffer를 generation reset으로 비운다는 전제가 필요하다.                                            |
@@ -138,7 +148,10 @@ Keyboard Value는 CONFIG refresh에 포함하지 않는다. Firmware는 지원 m
 거짓 표시하지 않는다.
 
 각 token은 nonzero 32-bit RAM equality token이다. Corresponding GET이 새 값을
-반환할 수 있는 commit boundary 뒤에 증가하고 wrap 시 zero를 건너뛴다. 숫자
+반환할 수 있는 commit boundary 뒤에 증가하고 wrap 시 zero를 건너뛴다. CONFIG의
+RAM-first VIA setter는 값이 실제로 바뀐 semantic SET에서 바로 증가하고, 그
+이미 공개된 runtime을 EEPROM에 쓰는 SAVE는 같은 전이를 다시 증가시키지 않는다.
+setter를 거치지 않는 직접 EEPROM/firmware 변경은 기존 changed-run 탐지를 유지한다. 숫자
 대소가 아니라 equality만 비교한다. Counter increment는 wrap 시 zero를 건너뛴다.
 32-bit 전체가 두 관측 사이에 정확히 한 바퀴 도는 경우는 이론적 alias 반례지만,
 500 ms poll 사이에 nonzero token 공간을 소진하려면 초당 약 86억 번의 semantic
@@ -153,17 +166,18 @@ domain을 추가한다. Domain 수 변경은 envelope version 변경 없이 rese
 
 두 gate는 역할이 다르므로 둘 다 유지한다.
 
-1. `config/era-definitions.lock.json`의 canonical entry가 State Sync probe를 명시적으로
+1. `config/era-definitions.manifest.json`의 canonical entry가 State Sync probe를 명시적으로
    opt in하고 build가 trusted runtime metadata를 생성한다. VIA V3 JSON schema나
    arbitrary sideload JSON에는 transport flag를 추가하지 않는다.
 2. 그 metadata로 opt in된 연결만 아래 revision selector를 한 번 읽는다. 정상
    version/status/mask/tag/reserved-byte response만 capability confirmation이다.
 
 이 구조의 구현 invariant는 **generic device scan, protocol-version check, ordinary
-definition load에서는 probe 함수를 호출할 수 없고, canonical opt-in branch만 호출할
-수 있다**는 것이다. Non-opt-in fake device의 command transcript가 upstream과
-byte-for-byte 같다는 자동 test를 acceptance gate로 둔다. App은 canonical opt-in
-metadata를 확인한 경로에서만 probe를 호출한다.
+definition load에서는 probe 함수를 호출할 수 없고, effective source가 ERA overlay인
+canonical opt-in branch만 호출할 수 있다**는 것이다. 같은 VPID의 official snapshot이나
+Design upload가 effective source인 경우도 probe하지 않는다. Non-opt-in fake device의
+command transcript가 upstream과 byte-for-byte 같다는 자동 test를 acceptance gate로
+둔다.
 
 Opt-in identity의 구형 firmware에는 probe 한 건이 갈 수 있다. 현재 QMK
 `quantum/via.c:360-365,471-481`과 H7S
@@ -171,10 +185,13 @@ Opt-in identity의 구형 firmware에는 probe 한 건이 갈 수 있다. 현재
 `id_unhandled (0xFF)`로 돌려보내는 기존 pattern을 가진다. TOMAK79H와 BRICK60은
 top-level `via_command_kb()`를 override하지 않아 구형 image에서도 이 default 경로가
 적용된다. 새 generation의 첫 selector query에서 unhandled, malformed response,
-timeout은 예상 가능한 fallback으로 처리하여 error banner나 반복 probe를 만들지
-않는다. Capability가 이미 확인된 generation의 같은 오류는 transient poll failure로
-처리하여 capability를 유지하고 다음 poll에서 dirty domain을 재시도한다. 실제 배포
-firmware의 transcript는 실기기에서 별도로 확인한다.
+timeout은 구형 firmware와 통신 오류를 구분할 증거가 아니므로 `unverified`로 처리하고
+반복 probe를 만들지 않는다. Raw Custom menu는 유지하되 모든 Custom GET/SET/SAVE와
+per-key RGB I/O를 막고, 각 pane에 “지원 여부를 확인할 수 없습니다. 키보드를
+재연결하세요. 문제가 지속되면 최신 펌웨어로 업데이트하세요.”를 표시한다. Capability가
+이미 확인된 generation의 같은 오류는 transient poll failure로 처리하여 capability를
+유지하고 다음 poll에서 dirty domain을 재시도한다. 실제 배포 firmware의 transcript는
+실기기에서 별도로 확인한다.
 
 ## Accepted 32-byte wire contract
 
@@ -241,7 +258,8 @@ pipe를 확실히 flush하는지 browser와 hardware로 증명되기 전에는 �
 State Sync query는 예외적으로 16-bit request tag를 matcher에 포함한다. Timeout된
 tag의 late response는 다음 tag를 resolve할 수 없으므로 그 pending request만 reject하고
 transport generation과 이미 확인된 capability는 유지한다. 초기 probe timeout은
-capability가 아직 없으므로 그 generation에서만 legacy unsupported로 확정한다.
+capability가 아직 없으므로 그 generation에서만 `unverified`로 기록하며, firmware
+미지원인지 통신 오류인지는 단정하지 않는다.
 
 모든 thunk와 adapter는 explicit device path/API/definition과 시작 generation을
 capture한다. Redux commit 직전에 path와 generation을 다시 확인한다. 이는 필요한
@@ -255,9 +273,9 @@ Domain refresh는 다음 순서다. Poll, initial confirmation, selection, recon
 2. 대상 domain을 `refreshing`으로 만들고 기존 VIA GET 결과를 Redux 밖의 isolated
    candidate에 모두 읽는다.
 3. Domain end query를 읽고 세 observed token을 다시 기록한다.
-4. 대상의 start/end revision이 같고 connection/selection generation과 path가 유지된
-   경우에만 candidate 전체를 Redux action 하나로 commit하고
-   `fresh(endRevision, generation)`로 둔다.
+4. 대상의 start/end revision이 같고 connection/selection generation, path, 그리고
+   candidate를 해석한 definition identity/epoch가 유지된 경우에만 candidate 전체를
+   Redux action 하나로 commit하고 `fresh(endRevision, generation)`로 둔다.
 5. 다르면 candidate를 버리고 즉시 세 번까지 같은 bracket을 재시도한다. 세 번 모두
    churn이거나 GET/query가 실패하면 accepted snapshot은 그대로 두고 `dirty`를 유지해
    다음 visible poll 또는 lifecycle에서 다시 읽는다. Dirty domain은 observed 숫자가
@@ -399,7 +417,7 @@ VIA latency/timeout을 측정한다.
 | Target                                       | Conclusion and invariant                                                                                                                                                             |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 일반 VIA keyboard                            | Canonical opt-in metadata가 없으므로 capability selector를 포함한 새 command가 단 한 건도 나가지 않는다. 기존 V3 definition load와 `0x01..0x15` transcript가 upstream과 같아야 한다. |
-| ERA opt-in definition + 구형/비지원 firmware | Read-only selector probe 한 건의 `0xFF` unhandled/malformed/timeout을 예상 fallback으로 처리하고 ARM/poll을 시작하지 않는다. 이후 기존 VIA와 `0x16` v1 경로만 쓴다.                  |
+| ERA opt-in definition + 확인 불가 firmware    | Read-only selector probe 한 건의 `0xFF` unhandled/malformed/timeout을 `unverified`로 처리하고 ARM/poll 및 Custom I/O를 시작하지 않는다. Raw Custom 메뉴와 재연결/최신 firmware 안내는 유지한다. |
 | Official VIA client + advanced ERA firmware  | Firmware는 unsolicited advanced packet을 보내지 않는다. Official client가 새 selector를 요청하지 않으므로 기존 command 의미와 response는 그대로다.                                   |
 | `0x16` v1                                    | Advanced capability와 무관하게 기존 packet grammar와 Custom Menu GET adapter를 유지한다. Suppression, v2 reinterpretation, ARM 의존성을 추가하지 않는다.                             |
 | Protocol versions 7–13                       | Version 숫자를 State Sync capability로 재해석하지 않는다. 오직 canonical opt-in 뒤 selector response만 capability다.                                                                 |
@@ -446,10 +464,12 @@ advanced traffic이 없다는 구조적 성질이 된다. 그 대가로 selected
 변경 표시 latency는 poll interval만큼 생기며, CONFIG domain을 합친 refresh 비용과
 H7S control-plane 영향은 실측해야 한다.
 
-Legacy v1-only device는 기존보다 나빠지지 않지만 마지막 `0x16` 유실을 자동 복구하지
-못한다. Advanced-capable device만 bounded automatic convergence를 얻는다. 이 계약은
-app과 QMK TOMAK 구현 및 자동 회귀 검증에 반영됐다. 실제 split 양쪽 플래시, 공식 VIA
-client transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 실기기 증거로 둔다.
+State Sync opt-in이 아닌 legacy v1-only device는 기존 동작을 유지하지만 마지막 `0x16`
+유실을 자동 복구하지 못한다. Opt-in ERA overlay에서 capability를 확인하지 못한 연결은
+일반 VIA keymap 흐름을 유지하되 Custom I/O를 의도적으로 차단하고 안내문을 표시한다.
+Advanced-capable device만 bounded automatic convergence를 얻는다. 이 계약은 app과 QMK
+TOMAK 구현 및 자동 회귀 검증에 반영됐다. 실제 split 양쪽 플래시, 공식 VIA client
+transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 실기기 증거로 둔다.
 
 ## Verification
 
@@ -458,7 +478,8 @@ client transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 
 1. Non-opt-in ordinary keyboard transcript에는 selector `0x06`이 없고 기존 VIA 흐름이
    유지된다.
 2. Opt-in old firmware의 tagged `0xFF`, malformed response, initial timeout은 한 번만
-   조용히 legacy fallback하며, 늦은 응답이 다음 command를 소비하지 않는다.
+   probe하고 `unverified` 안내 상태가 되며, Custom GET/SET/SAVE는 0건이고 늦은 응답이
+   다음 command를 소비하지 않는다.
 3. Envelope version, status, tag, mask, reserved bytes와 nonzero big-endian revision을
    strict하게 검사한다.
 4. Initial lifecycle GET과 probe 사이 race에서 probe revision을 stale snapshot에
@@ -475,8 +496,8 @@ client transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 
    lifecycle 요청이 in-flight domain 뒤 재검증을 보장한다.
 10. Device A/B, selection generation, reconnect generation이 격리되며 hidden traffic은
     계속 0이고 resume은 full refresh한다.
-11. Strict `0x16 v1` all/channel-command/command-id semantics와 exact-ms/legacy menu
-    filtering을 그대로 검증한다.
+11. Strict `0x16 v1` all/channel-command/command-id semantics, raw Custom menu 유지,
+    초기 확인 실패 후 Custom GET/SET/SAVE 0건을 검증한다.
 
 ### QMK automated evidence
 
@@ -491,12 +512,17 @@ client transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 
    유지한다. 전체 split fault-injection seam은 이 계약만을 위해 새로 만들지 않는다.
 5. Host tests와 각 TOMAK VIA release build에는 document/source-map/knowledge-graph gate와
    copy-to-RAM residency gate를 적용한다.
+6. Official VIA + official JSON 경로: legacy 1-byte SET/GET(10/14/50 → 100/140/500 ms),
+   exact range SET 100–500, custom exact store 1/65535에 대한 legacy GET clamp,
+   그리고 GET가 exact store를 다시 쓰지 않음을 검증한다. JSON `options`를 커스텀
+   앱 범위로 넓히는 것은 회귀다.
 
 ## Implementation status and remaining physical evidence
 
 이 ADR은 `Accepted`이며 app과 QMK TOMAK에 구현됐다. Selector `0x06`, envelope v1,
 세 domain, 500 ms eligibility, 기존 VIA GET authority는 더 이상 후보나 Phase 2A
-결정사항이 아니다. H7S에는 이 selector를 구현하지 않았으며 별도 승인 전까지
+결정사항이 아니다. H7S에는 이 selector를 구현하지 않았으므로 현재 ERA 앱에서는
+해당 장치의 Custom 메뉴가 확인 불가 안내 상태가 된다. H7S 저장소는 별도 승인 전까지
 read-only reference로 남는다.
 
 자동 검증은 실기기 증거를 대신하지 않는다. 남은 항목은 실제 TOMAK 좌·우 플래시 후

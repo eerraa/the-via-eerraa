@@ -1,11 +1,11 @@
 import React, {createRef, useEffect} from 'react';
 import styled from 'styled-components';
 import {getByteForCode} from '../utils/key';
+import {isEraVIADefinitionV3} from '../utils/era-definition';
 import {startMonitoring, usbDetect} from '../utils/usb-hid';
 import {
   getLightingDefinition,
   isVIADefinitionV2,
-  isVIADefinitionV3,
   LightingValue,
 } from '@the-via/reader';
 import {
@@ -147,7 +147,7 @@ export const Home: React.FC<HomeProps> = (props) => {
       }
     }
 
-    if (isVIADefinitionV3(selectedDefinition)) {
+    if (isEraVIADefinitionV3(selectedDefinition)) {
       for (let i = 0; i < 6; i++) {
         api.timeout(i === 0 ? 0 : delay);
         await api.setKeyboardValue(KeyboardValue.DEVICE_INDICATION, i);

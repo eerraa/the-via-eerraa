@@ -20,11 +20,42 @@ Upstream diff minimization is useful but no longer an end in itself. A well-test
 
 ### Definitions
 
-`era-definitions/v3` is the canonical configurator-definition source. The build combines pinned official VIA definitions with explicit ERA definitions, validates schema and identity contracts, and emits the same decimal VID/PID index consumed by the existing VIA loader.
+Definition ownership is explicit:
 
-TOMAK79H Left/Right and H7S BRICK60 have been confirmed on hardware to auto-load without manual JSON upload. Do not introduce a parallel runtime loader, external definition service, or second manually maintained keyboard-definition repository.
+- `era-definitions/custom/v3` in this app repository is the canonical ERA custom source. Tap Dance slots live in `tapdanceKeycodes`; `customKeycodes` remains the ordinary Custom tab and is omitted when empty. TD names must not be listed in `customKeycodes`.
+- `the-via/keyboards` `v3/` is the canonical official VIA source. The installed `via-keyboards` package is a pinned build snapshot, not a second source of truth.
+- QMK `keymaps/via` and H7S board-local `json` files are firmware-local compatibility, test, or release material. They are not app lookup sources and do not define official JSON ownership.
+- Design uploads are a last-resort local source. They are retained for the existing UX but cannot override a bundled ERA or official definition.
 
-Firmware repositories remain authoritative for USB identity and protocol implementation. The app verifies those contracts against explicit paths and commits without treating firmware-side JSON copies as a second configurator source.
+Do not generate one canonical source from the other or maintain `era-definitions/v3` as a stock clone. VID/PID, command addresses, layout, and TD slot identity still require release-time compatibility review when app and firmware change together. The app manifest records only custom path, identity, split pair, and independent runtime capabilities. Normal app build and PR CI read the installed official snapshot and the ERA custom source; they do not fetch GitHub or inspect firmware repositories and do not emit remote-verifier provenance.
+
+This fork's definition lookup order is:
+
+1. Bundled `era-definitions/custom` (`/definitions/era/v3/{vpid}.json`).
+2. Installed official VIA snapshot (`/definitions/v3/{vpid}.json`).
+3. JSON the user uploaded in Design, only if neither built-in source has that version/VPID.
+
+No definition means unresolved. Stored uploads are re-evaluated through the same priority after app updates, upload replacement/unload, device selection changes, and reconnects.
+
+Firmware accepts both presentations: official VIA writes TD0–TD7 as `CUSTOM(n)` / `QK_KB_n`, and the custom app writes the same `QK_KB_n` bytes from `tapdanceKeycodes` via `TD(n)`.
+
+The app manifest currently contains 26 QMK ERA custom variants:
+
+| Family    | VIA definitions                                                                                                             |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `comm`    | `classicd_a1`, `classicd_a1_ug`, `classicd_core`, `classicd_coreless`, `et_tkl`                                             |
+| top-level | `divine`, `era65`                                                                                                           |
+| `linx3`   | `fave65s`, `n86`, `n87`, `n8x`                                                                                              |
+| `newone`  | `a1`, `h1`, `odessey60h`, `odessey60s`                                                                                      |
+| `sirind`  | `brick65`, `brick65s`, `chickpad`, `klein_hs`, `klein_sd`, `tomak` Left/Right, `tomak79h` Left/Right, `tomak79s` Left/Right |
+
+Twenty-five RP2040 variants opt into the common tapping, Tap Dance, exact-ms, and State Sync units. `sirind/brick65` is the permanent ATmega32U4 exception: its 28,672-byte flash budget keeps stock VIA only and does not claim the common ERA tapping, Tap Dance, exact-ms, or State Sync capabilities. Its custom-tree definition therefore remains a separate stored file but exposes only what that firmware actually supports.
+
+`build:kbs` packages the installed official snapshot under `/definitions/v3` and emits the ERA overlay to `/definitions/era/v3/{vpid}.json`. It must preserve official files even when both sources contain the same VPID, and the merged V3 index is the unique union of the two namespaces. Generated output never replaces either canonical source and no provenance or app stock-source tree is produced.
+
+TOMAK79H Left/Right and H7S BRICK60 have been confirmed on hardware to auto-load without manual JSON upload. Do not introduce a parallel runtime loader or external definition service.
+
+Firmware repositories remain authoritative for USB identity and protocol implementation, but not for official definition ownership. The app validates its custom overlay and installed official snapshot without duplicating firmware JSON or coupling ordinary builds to firmware Git history.
 
 ### Identity UI
 
@@ -32,7 +63,7 @@ The approved global UI keeps VIA's visual language. The upper-right area contain
 
 ### Tap Dance
 
-TOMAK firmware and VIA V3 JSON already implement TD0–TD7, their four action slots, tapping term, storage, and the engine. The remaining work is UI quality:
+TOMAK firmware and VIA V3 JSON implement TD0–TD7, their four action slots, tapping term, storage, and the engine. The custom-app UI contract is:
 
 - extract/reuse VIA's existing category/card keycode picker;
 - make V3 `keycode` controls open that picker;
@@ -59,12 +90,21 @@ debounce or anti-ghosting timings are not silently included. A representative no
 such as `137 ms` must round-trip, persist, and drive runtime behavior without being snapped to
 the legacy 20 ms grid.
 
-This is an app-and-firmware compatibility change, not a cosmetic replacement of the existing
-dropdown. Preserve every legacy value ID and existing JSON behavior for stock
-`www.usevia.app`, add an exact-millisecond path only after the identifier/protocol audit, and
-express the new definition with standard VIA V3 controls rather than a fork-only JSON schema.
-The custom app should show a numeric `ms` input by default for these controls. Reuse that input
-for future TAPPING time fields only after their storage and wire semantics have been audited.
+Firmware must keep working with the official VIA app (`www.usevia.app`) plus
+the official V3 definition. A path that only the custom app can speak is an error.
+Official VIA continues to use the existing legacy 1-byte dropdown (100–500 ms /
+20 ms grid) and the official exact range `options: [100, 500]`. Custom VIA JSON
+for QMK boards uses exact `options: [1, 65535]` (the uint16 maximum; 99999 does
+not fit) on the same 2-byte exact IDs. H7S stays on 100–500 in the official
+definition and app-owned custom JSON until its firmware is approved to match.
+
+This is an additive exact-millisecond wire path, not removal of firmware legacy
+compatibility. Preserve every legacy value ID and official VIA behavior, while ERA custom
+JSON exposes only the nine exact controls and does not duplicate their legacy dropdowns.
+Generic official or uploaded definitions may still contain legacy controls. Custom JSON may add
+`tapdanceKeycodes` as an additional field; official JSON must not. The custom app should show a numeric `ms` input by default
+for these controls. Reuse that input for future TAPPING time fields only after
+their storage and wire semantics have been audited.
 
 Use Vial only to study interaction design. Implement independently in VIA React code and do not copy license-incompatible or unclear source.
 
@@ -151,8 +191,18 @@ domain's own stable GET bracket may advance its accepted revision.
 Capability confirmation never blesses data loaded before the probe. It is followed by a full
 bracketed refresh before any implemented domain becomes fresh. After capability is confirmed,
 one malformed response or timeout keeps the connection capable, marks freshness dirty, and is
-retried by the next eligible poll. Only an initial probe failure in a new generation selects
-quiet legacy fallback.
+retried by the next eligible poll. An initial unhandled, malformed, or timed-out probe cannot
+distinguish old firmware from a communication failure, so it marks only that connection
+generation as unverified rather than unsupported.
+
+For the effective State-Sync ERA overlay, the tagged probe runs before any Custom Value GET.
+While confirmation is pending, raw Custom menu navigation remains visible and its panes show a
+loading state. If confirmation is unverified, the same panes remain visible and show “Unable to
+verify feature support. Reconnect the keyboard. If the problem persists, update to the latest
+firmware.” All Custom Menu GET/SET/SAVE, dynamic-name reads, and per-key RGB operations are
+blocked for that generation. A successful probe enables controls only after the first stable
+CONFIG candidate is accepted. Official definitions and Design uploads retain ordinary VIA
+behavior and are not put behind this ERA gate.
 
 The poll is a recovery mechanism, not high-rate full polling. It runs only while the device is
 selected and ready, Configure is visible, the document is visible, and that connection is
@@ -186,10 +236,16 @@ The app provides a small generic state-sync layer rather than scattered ERA comp
   accepted revisions;
 - keymap including encoders, macros, and CONFIG layout/menu values are read into isolated
   candidates and committed once only after a stable start/end revision bracket;
-- a churned domain retries immediately three times, remains dirty after that bound, and is
-  retried even when the next observed revision number equals the last observation;
+- each candidate also owns the definition identity/epoch used to interpret it, and a
+  sideload replace or unload that changes the selected device's effective definition
+  invalidates freshness and requests a full authoritative refresh;
+- a churned domain retries immediately three times in that owner/request, remains dirty
+  after that bound, and is retried by the next poll or a new lifecycle/full request even
+  when the next observed revision number equals the last observation;
 - a successful SET may update the visible value optimistically but invalidates advanced
-  freshness until a later query and authoritative GET verify it.
+  freshness until a later query and authoritative GET verify it. Failed SET/SAVE rolls
+  back or keeps the domain dirty for readback rather than leaving intended values as
+  current.
 
 Refactor broader Redux state only where these contracts require it.
 
@@ -242,6 +298,8 @@ queue ownership still require read-only trace and hardware measurement before H7
 - v1-capable firmware retains Custom Menu synchronization.
 - Advanced ERA firmware sends no unsolicited State Sync traffic.
 - Official VIA clients continue using existing commands and never need an arm/subscription flow.
+- Current firmware remains a valid device for official VIA + the official definition. Custom-app-only
+  value IDs, ranges, or encodings are not acceptable substitutes.
 - Revision counters remain in RAM and never increase EEPROM wear.
 - No synchronization send occurs in scan/ISR paths.
 - Hidden pages stop revision-poll traffic.

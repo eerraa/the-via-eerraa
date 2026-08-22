@@ -51,7 +51,6 @@ describe('VIA locale coverage', () => {
       'Layer-Tap',
       'Apply',
       'Close',
-      'Exact milliseconds',
       'Compose',
       'Base keycode',
       'Pick from grid',
@@ -63,6 +62,10 @@ describe('VIA locale coverage', () => {
       'Back to Layers',
       'Key',
       'Preview',
+      'Unable to verify feature support. Reconnect the keyboard. If the problem persists, update to the latest firmware.',
+      'Unable to load feature settings. Reconnect the keyboard and try again.',
+      'Enter an integer',
+      'Out of range',
     ];
     for (const key of required) {
       expect(locales.en[key]).toBeTruthy();

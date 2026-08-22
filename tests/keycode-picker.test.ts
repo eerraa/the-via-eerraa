@@ -3,7 +3,6 @@ import {
   clearKeycodeValue,
   composeLayerTap,
   composeModTap,
-  composeModifier,
   composeModifiers,
   filterKeycodeMenus,
   formatKeycodeHex,
@@ -14,7 +13,7 @@ import {
   resolveComposeBaseCode,
   selectKeycodeFromMenuCode,
 } from '../src/utils/keycode-picker';
-import {menusWithTapDanceSplit} from '../src/utils/keycode-menus';
+import {menusWithTapDanceKeycodes} from '../src/utils/keycode-menus';
 import {getKeycodes, type IKeycodeMenu} from '../src/utils/key';
 
 const basicKeyToByte: Record<string, number> = {
@@ -78,7 +77,7 @@ describe('keycode picker codec', () => {
   test('selects KC_NO, basic, modifier, MT, LT, macro and custom encodings', () => {
     expect(clearKeycodeValue(basicKeyToByte)).toBe(0);
     expect(selectKeycodeFromMenuCode('KC_A', basicKeyToByte)).toBe(0x0004);
-    expect(composeModifier('LCTL', 'KC_A', basicKeyToByte)).toBe(0x0104);
+    expect(composeModifiers(['LCTL'], 'KC_A', basicKeyToByte)).toBe(0x0104);
     expect(composeModifiers(['LCTL', 'LSFT'], 'KC_A', basicKeyToByte)).toBe(
       0x0304,
     );
@@ -152,23 +151,25 @@ describe('tapdance keycode category', () => {
     );
   });
 
-  test('lifts TD0-TD7 out of Custom and places TAPDANCE immediately above it', () => {
-    const split = menusWithTapDanceSplit([
-      {
-        id: 'special',
-        label: 'Special',
-        keycodes: [{name: 'Any', code: 'text'}],
-      },
-      {
-        id: 'custom',
-        label: 'Custom',
-        keycodes: [
-          {name: 'TD0', title: 'Tap Dance 0', code: 'CUSTOM(0)'},
-          {name: 'TD7', title: 'Tap Dance 7', code: 'CUSTOM(7)'},
-          {name: 'USER1', title: 'User 1', code: 'CUSTOM(8)'},
-        ],
-      },
-    ]);
+  test('places TAPDANCE from tapdanceKeycodes and leaves Custom untouched', () => {
+    const split = menusWithTapDanceKeycodes(
+      [
+        {
+          id: 'special',
+          label: 'Special',
+          keycodes: [{name: 'Any', code: 'text'}],
+        },
+        {
+          id: 'custom',
+          label: 'Custom',
+          keycodes: [{name: 'USER1', title: 'User 1', code: 'CUSTOM(0)'}],
+        },
+      ],
+      [
+        {name: 'TD0', title: 'Tap Dance 0'},
+        {name: 'TD7', title: 'Tap Dance 7'},
+      ],
+    );
     expect(split.map((menu: {id: string}) => menu.id)).toEqual([
       'special',
       'tapdance',
@@ -177,24 +178,40 @@ describe('tapdance keycode category', () => {
     expect(split[1].label).toBe('TAPDANCE');
     expect(
       split[1].keycodes.map((keycode: {code: string}) => keycode.code),
-    ).toEqual(['CUSTOM(0)', 'CUSTOM(7)']);
+    ).toEqual(['TD(0)', 'TD(1)']);
     expect(
       split[2].keycodes.map((keycode: {name: string}) => keycode.name),
     ).toEqual(['USER1']);
   });
 
-  test('drops Custom when every custom keycode is TD0-TD7', () => {
-    const split = menusWithTapDanceSplit([
+  test('omits TAPDANCE when tapdanceKeycodes is empty and keeps Custom', () => {
+    const menus = [
+      {
+        id: 'custom',
+        label: 'Custom',
+        keycodes: [{name: 'USER1', code: 'CUSTOM(0)'}],
+      },
+    ];
+    expect(menusWithTapDanceKeycodes(menus, [])).toEqual(menus);
+  });
+
+  test('TD(n) and CUSTOM(n) both encode to QK_KB_n for firmware', () => {
+    expect(selectKeycodeFromMenuCode('TD(0)', basicKeyToByte)).toBe(0x7e00);
+    expect(selectKeycodeFromMenuCode('CUSTOM(0)', basicKeyToByte)).toBe(0x7e00);
+    expect(selectKeycodeFromMenuCode('TD(7)', basicKeyToByte)).toBe(0x7e07);
+  });
+
+  test('does not steal Custom entries named TD0 when tapdanceKeycodes is absent', () => {
+    const menus = [
       {
         id: 'custom',
         label: 'Custom',
         keycodes: [
           {name: 'TD0', code: 'CUSTOM(0)'},
-          {name: 'TD1', code: 'CUSTOM(1)'},
+          {name: 'USER1', code: 'CUSTOM(1)'},
         ],
       },
-    ]);
-    expect(split).toHaveLength(1);
-    expect(split[0].id).toBe('tapdance');
+    ];
+    expect(menusWithTapDanceKeycodes(menus)).toEqual(menus);
   });
 });

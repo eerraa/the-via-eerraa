@@ -17,7 +17,7 @@ Verify the live branch, HEAD, working tree, remotes, development server, and ref
 
 ## Repository boundaries
 
-- ERA definition source: `era-definitions/v3` in this repository. Generated `public/definitions` and `dist` output are not canonical source.
+- ERA custom definition source is `era-definitions/custom/v3` (`tapdanceKeycodes` and optional `customKeycodes`). Official VIA JSON is canonically owned by `the-via/keyboards` under `v3/`; the installed `via-keyboards` package is this app's pinned build snapshot. QMK/H7S firmware-local JSON is not an app lookup source. Lookup is ERA overlay, then official snapshot, then Design upload only when neither built-in source supports the VPID. Do not maintain an app-side stock clone. Generated `public/definitions` and `dist` output are not canonical source.
 - `D:\Engineering\qmk_firmware_eerraa` and `D:\Engineering\eerraa-qmk-h7s-fw` are reference repositories until the user approves a reported firmware change plan. Never modify an existing dirty firmware worktree; use an approved branch/worktree.
 - When working in H7S, read and follow that repository's own `AGENTS.md` before inspection or modification.
 - Do not connect Cloudflare, change DNS, purchase domains, push reference firmware, copy Vial code, or freeze a new wire protocol without explicit user approval.
@@ -35,11 +35,8 @@ Verify the live branch, HEAD, working tree, remotes, development server, and ref
 
 ```powershell
 bun install --frozen-lockfile
-bun run verify:firmware-contracts
 bun run build
 bun run dev -- --host 127.0.0.1
 ```
-
-`bun run verify:firmware-contracts` checks lock `repository` + full commit SHA + path against immutable bytes. It never uses a dirty working tree. Local clones are selected with `ERA_FIRMWARE_LOCAL_ROOTS` JSON, `ERA_FIRMWARE_<SOURCE_ID>_ROOT`, or gitignored `config/era-firmware-sources.local.json`; the clone must contain that commit object and a remote that names the lock repository. Otherwise it fetches GitHub raw, using `GITHUB_TOKEN`/`GH_TOKEN` when the repository is private. Do not "fix" a 404 by pointing the lock at a different commit.
 
 `bun run dev` rebuilds keyboard definitions before starting Vite. Do not treat a successful app build with empty or stale definition output as valid.

@@ -19,8 +19,6 @@ jobs:
         uses: oven-sh/setup-bun@v1
       - name: Install
         run: bun install --frozen-lockfile
-      - name: Verify ERA firmware contracts
-        run: bun run verify:firmware-contracts
       - name: Build
         run: |
           bun run build

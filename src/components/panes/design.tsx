@@ -23,6 +23,10 @@ import {
 import type {DefinitionVersion} from '@the-via/reader';
 import {resolveDefinitionName} from 'src/utils/definition-name';
 import {
+  attachTapDanceKeycodes,
+  splitTapDanceKeycodesFromRaw,
+} from 'src/utils/era-definition';
+import {
   ControlRow,
   Label,
   SubLabel,
@@ -35,15 +39,14 @@ import {
   Row,
   IconContainer,
 } from './grid';
-import {useDispatch} from 'react-redux';
 import {selectDevice, ensureSupportedIds} from 'src/store/devicesSlice';
 import {reloadConnectedDevices} from 'src/store/devicesThunks';
-import {useAppSelector} from 'src/store/hooks';
+import {unloadCustomDefinitionWithRefresh} from 'src/store/stateSyncThunks';
+import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getCustomDefinitions,
   loadCustomDefinitions,
   storeCustomDefinitions,
-  unloadCustomDefinition,
 } from 'src/store/definitionsSlice';
 import {
   getSelectedDefinitionIndex,
@@ -139,7 +142,16 @@ const makeReaderPromise = (file: File): Promise<[string, string]> => {
 const isVIADefinition = (
   definition: VIADefinitionV2 | VIADefinitionV3 | null | undefined,
 ): definition is VIADefinitionV2 | VIADefinitionV3 => {
-  return isVIADefinitionV2(definition) || isVIADefinitionV3(definition);
+  if (!definition) {
+    return false;
+  }
+  if (isVIADefinitionV2(definition) || isVIADefinitionV3(definition)) {
+    return true;
+  }
+  const {tapdanceKeycodes: _omit, ...rest} = definition as VIADefinitionV3 & {
+    tapdanceKeycodes?: unknown;
+  };
+  return isVIADefinitionV3(rest);
 };
 
 const formatDefinitionError = (
@@ -232,30 +244,48 @@ function importDefinitions(
         }
         try {
           const res = JSON.parse(result.toString());
-          const isValid =
-            version === 'v2'
-              ? isKeyboardDefinitionV2(res) || isVIADefinitionV2(res)
-              : isKeyboardDefinitionV3(res) || isVIADefinitionV3(res);
-          if (isValid) {
-            const definition =
-              version === 'v2'
-                ? isVIADefinitionV2(res)
-                  ? res
-                  : keyboardDefinitionV2ToVIADefinitionV2(res)
-                : isVIADefinitionV3(res)
-                  ? res
-                  : keyboardDefinitionV3ToVIADefinitionV3(res);
-            return definition;
-          } else {
+          if (version === 'v2') {
+            const isValid =
+              isKeyboardDefinitionV2(res) || isVIADefinitionV2(res);
+            if (isValid) {
+              return isVIADefinitionV2(res)
+                ? res
+                : keyboardDefinitionV2ToVIADefinitionV2(res);
+            }
             errors = (
-              version === 'v2'
-                ? isKeyboardDefinitionV2.errors ||
-                  isVIADefinitionV2.errors ||
-                  []
-                : isKeyboardDefinitionV3.errors ||
-                  isVIADefinitionV3.errors ||
-                  []
+              isKeyboardDefinitionV2.errors ||
+              isVIADefinitionV2.errors ||
+              []
             ).map((e) => formatDefinitionError(fileName, e));
+          } else {
+            const raw =
+              res && typeof res === 'object' && !Array.isArray(res)
+                ? (res as Record<string, unknown>)
+                : null;
+            if (!raw) {
+              errors = [
+                formatDefinitionError(fileName, {
+                  message: 'Definition must be an object.',
+                }),
+              ];
+            } else {
+              const {definitionRaw, tapdanceKeycodes} =
+                splitTapDanceKeycodesFromRaw(raw);
+              const isValid =
+                isKeyboardDefinitionV3(definitionRaw) ||
+                isVIADefinitionV3(definitionRaw);
+              if (isValid) {
+                const definition = isVIADefinitionV3(definitionRaw)
+                  ? definitionRaw
+                  : keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+                return attachTapDanceKeycodes(definition, tapdanceKeycodes);
+              }
+              errors = (
+                isKeyboardDefinitionV3.errors ||
+                isVIADefinitionV3.errors ||
+                []
+              ).map((e) => formatDefinitionError(fileName, e));
+            }
           }
         } catch (err: any) {
           if (err.name) {
@@ -307,7 +337,7 @@ function onDrop(
 
 export const DesignTab: FC = () => {
   const {t} = useTranslation();
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const [, setLocation] = useLocation();
   const localDefinitions = Object.values(useAppSelector(getCustomDefinitions));
   const definitionVersion = useAppSelector(getDesignDefinitionVersion);
@@ -502,9 +532,11 @@ export const DesignTab: FC = () => {
                     )}
                     <IconButtonUnfilledContainer
                       onClick={() => {
+                        const vendorProductId =
+                          definition[definitionVersion].vendorProductId;
                         dispatch(
-                          unloadCustomDefinition({
-                            id: definition[definitionVersion].vendorProductId,
+                          unloadCustomDefinitionWithRefresh({
+                            id: vendorProductId,
                             version: definitionVersion,
                           }),
                         );

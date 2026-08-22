@@ -463,19 +463,23 @@ export const getLabel = (
 
   // Full name
   let tooltipLabel: string = '';
-  if (
-    isCustomKeycodeByte(keycodeByte, basicKeyToByte) &&
-    selectedDefinition?.customKeycodes &&
-    selectedDefinition.customKeycodes[
-      getCustomKeycodeIndex(keycodeByte, basicKeyToByte)
-    ] !== undefined
-  ) {
-    const customKeycodeIdx = getCustomKeycodeIndex(keycodeByte, basicKeyToByte);
-    label = getShortNameForKeycode(
-      selectedDefinition.customKeycodes[customKeycodeIdx] as IKeycode,
-    );
+  const customKeycodeIdx = isCustomKeycodeByte(keycodeByte, basicKeyToByte)
+    ? getCustomKeycodeIndex(keycodeByte, basicKeyToByte)
+    : -1;
+  const tapdanceKeycodes = (
+    selectedDefinition as {tapdanceKeycodes?: IKeycode[]} | null
+  )?.tapdanceKeycodes ?? [];
+  const customKeycodes = selectedDefinition?.customKeycodes ?? [];
+  const namedCustomKeycode =
+    customKeycodeIdx < 0
+      ? undefined
+      : customKeycodeIdx < tapdanceKeycodes.length
+        ? tapdanceKeycodes[customKeycodeIdx]
+        : customKeycodes[customKeycodeIdx - tapdanceKeycodes.length];
+  if (namedCustomKeycode) {
+    label = getShortNameForKeycode(namedCustomKeycode as IKeycode);
     tooltipLabel = getShortNameForKeycode(
-      selectedDefinition.customKeycodes[customKeycodeIdx] as IKeycode,
+      namedCustomKeycode as IKeycode,
       700,
     );
   } else if (keycodeByte) {

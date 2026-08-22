@@ -11,6 +11,7 @@ import {
   getSelectedDefinition,
   getSelectedKeyDefinitions,
 } from './definitionsSlice';
+import {collectUniqueEncoderIds} from '../utils/via-definition-keys';
 import {
   getSelectedConnectionGeneration,
   getSelectedConnectedDevice,
@@ -151,6 +152,40 @@ const keymapSlice = createSlice({
       const {keymapIndex, value, devicePath, layerIndex} = action.payload;
       state.rawDeviceMap[devicePath][layerIndex].keymap[keymapIndex] = value;
     },
+    setEncoderValue: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        encoderId: number;
+        layerIndex: number;
+        isClockwise: boolean;
+        value: number;
+      }>,
+    ) => {
+      const {devicePath, encoderId, layerIndex, isClockwise, value} =
+        action.payload;
+      const current = state.encoderDeviceMap[devicePath] ?? {};
+      const layers = current[encoderId] ? [...current[encoderId]] : [];
+      const pair: [number, number] = layers[layerIndex]
+        ? [...layers[layerIndex]]
+        : [0, 0];
+      pair[isClockwise ? 1 : 0] = value;
+      layers[layerIndex] = pair;
+      state.encoderDeviceMap[devicePath] = {
+        ...current,
+        [encoderId]: layers,
+      };
+    },
+    replaceEncoderMap: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        encoders: StateSyncEncoderMap;
+      }>,
+    ) => {
+      state.encoderDeviceMap[action.payload.devicePath] =
+        action.payload.encoders;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -178,6 +213,8 @@ export const {
   setConfigureKeyboardIsSelectable,
   setSelectedPaletteColor,
   resetKeymapCache,
+  setEncoderValue,
+  replaceEncoderMap,
 } = keymapSlice.actions;
 
 export default keymapSlice.reducer;
@@ -207,13 +244,7 @@ export const readKeymapStateSyncCandidate = async (
     layers.push({keymap, isLoaded: true});
   }
 
-  const encoderIds = Array.from(
-    new Set(
-      definition.layouts.keys
-        .map((key) => Number((key as {ei?: number}).ei))
-        .filter((encoderId) => Number.isInteger(encoderId) && encoderId >= 0),
-    ),
-  ).sort((left, right) => left - right);
+  const encoderIds = collectUniqueEncoderIds(definition);
   const encoders: StateSyncEncoderMap = {};
   if (connectedDevice.protocol >= 10) {
     for (const encoderId of encoderIds) {
@@ -378,7 +409,7 @@ export const updateEncoderValue =
     encoderId: number,
     isClockwise: boolean,
     value: number,
-  ): AppThunk =>
+  ): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
@@ -387,8 +418,28 @@ export const updateEncoderValue =
       return;
     }
     const connectionGeneration = api.getConnectionGeneration();
-    await api.setEncoderValue(layerIndex, encoderId, isClockwise, value);
+    try {
+      await api.setEncoderValue(layerIndex, encoderId, isClockwise, value);
+    } catch (error) {
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: connectedDevice.path,
+          connectionGeneration,
+          domain: 'keymap',
+        }),
+      );
+      throw error;
+    }
     if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+      dispatch(
+        setEncoderValue({
+          devicePath: connectedDevice.path,
+          encoderId,
+          layerIndex,
+          isClockwise,
+          value,
+        }),
+      );
       dispatch(
         invalidateStateSyncDomain({
           devicePath: connectedDevice.path,

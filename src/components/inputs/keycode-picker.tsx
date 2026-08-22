@@ -287,7 +287,7 @@ const Status = styled.div`
   font-size: 18px;
 `;
 
-export type KeycodePickerProps = {
+type KeycodePickerProps = {
   menus: IKeycodeMenu[];
   basicKeyToByte: Record<string, number>;
   byteToKey: Record<number, string>;

@@ -1,57 +1,31 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {access, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import type {KeyboardDefinitionV3, VIADefinitionV3} from '@the-via/reader';
-
-type DefinitionVersion = 'v3';
-type IdentityField = 'vendorId' | 'productId';
-
-type FirmwareSource = {
-  repository: string;
-  commit: string;
-};
-
-type CMacroCheck = {
-  type: 'cMacro';
-  path: string;
-  macro: string;
-  matches: IdentityField;
-};
-
-type JSONPathCheck = {
-  type: 'jsonPath';
-  path: string;
-  jsonPath: string[];
-  matches: IdentityField;
-};
-
-type FirmwareCheck = CMacroCheck | JSONPathCheck;
+import type {KeyboardDefinitionV3} from '@the-via/reader';
+import {
+  isTapDanceKeycodeName,
+  parseEraV3Definition,
+  type EraVIADefinitionV3,
+} from '../src/utils/era-definition';
+import {
+  isExactTermCommand,
+  isLegacyTermCommand,
+} from '../src/utils/era-exact-ms';
 
 type ExactMsFamily = 'qmk' | 'h7s';
 
 type DefinitionEntry = {
   id: string;
   path: string;
-  definitionVersion: DefinitionVersion;
   vendorId: string;
   productId: string;
   pair?: string;
-  firmwareSource: string;
-  firmwareChecks: FirmwareCheck[];
-  stateSync?: boolean;
+  stateSync: boolean;
   exactMsFamily?: ExactMsFamily;
 };
 
 type DefinitionManifest = {
-  schemaVersion: number;
-  definitionSource: 'app-repository';
-  officialDefinitions: {
-    bunTag: string;
-    outputCounts: Record<'v2' | 'v3', number>;
-    indexCounts: Record<'v2' | 'v3', number>;
-  };
-  firmwareSources: Record<string, FirmwareSource>;
   definitions: DefinitionEntry[];
 };
 
@@ -65,17 +39,18 @@ type DefinitionIndex = {
 type CompiledDefinition = {
   entry: DefinitionEntry;
   raw: KeyboardDefinitionV3;
-  via: VIADefinitionV3;
+  via: EraVIADefinitionV3;
 };
 
 const projectRoot = process.cwd();
 const manifestPath = path.join(
   projectRoot,
   'config',
-  'era-definitions.lock.json',
+  'era-definitions.manifest.json',
 );
 const definitionsOutputPath = path.join(projectRoot, 'public', 'definitions');
-const eraDefinitionsRoot = path.join(projectRoot, 'era-definitions', 'v3');
+const eraDefinitionsRoot = path.join(projectRoot, 'era-definitions');
+const customDefinitionsRoot = path.join(eraDefinitionsRoot, 'custom', 'v3');
 const officialBuilderPath = path.join(
   projectRoot,
   'node_modules',
@@ -83,173 +58,6 @@ const officialBuilderPath = path.join(
   'scripts',
   'build-all.ts',
 );
-const officialBunTagPath = path.join(
-  projectRoot,
-  'node_modules',
-  'via-keyboards',
-  '.bun-tag',
-);
-
-const firmwareFilePromises = new Map<string, Promise<string>>();
-const localFirmwareRootsPath = path.join(
-  projectRoot,
-  'config',
-  'era-firmware-sources.local.json',
-);
-
-const parseLocalRootMap = (value: unknown, label: string) => {
-  invariant(isRecord(value), `${label} must be an object.`);
-  const roots: Record<string, string> = {};
-  for (const [sourceId, root] of Object.entries(value)) {
-    invariant(
-      typeof root === 'string' && root.length > 0,
-      `${label}.${sourceId} must be a directory path.`,
-    );
-    roots[sourceId] = root;
-  }
-  return roots;
-};
-
-let localFirmwareRootsPromise: Promise<Record<string, string>> | undefined;
-
-const loadLocalFirmwareRoots = () => {
-  if (!localFirmwareRootsPromise) {
-    localFirmwareRootsPromise = (async () => {
-      const roots: Record<string, string> = {};
-      const envJson = process.env.ERA_FIRMWARE_LOCAL_ROOTS;
-      if (envJson && envJson.trim()) {
-        Object.assign(
-          roots,
-          parseLocalRootMap(JSON.parse(envJson), 'ERA_FIRMWARE_LOCAL_ROOTS'),
-        );
-      }
-      try {
-        const fileRoots = parseLocalRootMap(
-          JSON.parse(await readFile(localFirmwareRootsPath, 'utf8')),
-          'config/era-firmware-sources.local.json',
-        );
-        for (const [sourceId, root] of Object.entries(fileRoots)) {
-          if (!(sourceId in roots)) {
-            roots[sourceId] = root;
-          }
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw error;
-        }
-      }
-      return roots;
-    })();
-  }
-  return localFirmwareRootsPromise;
-};
-
-const localRootForSource = async (sourceId: string) => {
-  const envName = `ERA_FIRMWARE_${sourceId
-    .replace(/-/g, '_')
-    .toUpperCase()}_ROOT`;
-  const envRoot = process.env[envName];
-  if (envRoot && envRoot.trim()) {
-    return envRoot.trim();
-  }
-  const roots = await loadLocalFirmwareRoots();
-  return roots[sourceId];
-};
-
-const runGit = (repoRoot: string, args: string[]) =>
-  new Promise<string>((resolve, reject) => {
-    const child = spawn('git', args, {
-      cwd: repoRoot,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    child.stdout.on('data', (chunk) => stdout.push(chunk as Buffer));
-    child.stderr.on('data', (chunk) => stderr.push(chunk as Buffer));
-    child.once('error', reject);
-    child.once('close', (code) => {
-      const out = Buffer.concat(stdout).toString('utf8');
-      const err = Buffer.concat(stderr).toString('utf8').trim();
-      if (code === 0) {
-        resolve(out);
-        return;
-      }
-      reject(
-        new Error(
-          `git ${args.join(' ')} failed in ${repoRoot} (${code})${
-            err ? `: ${err}` : ''
-          }.`,
-        ),
-      );
-    });
-  });
-
-const normalizeGitRemoteUrl = (url: string) =>
-  url
-    .trim()
-    .toLowerCase()
-    .replace(/\\/g, '/')
-    .replace(/:/g, '/')
-    .replace(/\.git$/u, '');
-
-const assertLocalRepoMatchesLock = async (
-  sourceId: string,
-  source: FirmwareSource,
-  repoRoot: string,
-) => {
-  const objectType = (await runGit(repoRoot, ['cat-file', '-t', source.commit]))
-    .trim();
-  invariant(
-    objectType === 'commit',
-    `${sourceId}: ${repoRoot} does not contain immutable commit ${source.commit}.`,
-  );
-
-  const remotes = await runGit(repoRoot, ['remote', '-v']);
-  const expected = source.repository.toLowerCase();
-  const matchesLockRepo = remotes.split(/\r?\n/).some((line) => {
-    const url = line.trim().split(/\s+/)[1] ?? '';
-    const normalized = normalizeGitRemoteUrl(url);
-    return (
-      normalized.includes(`/${expected}`) ||
-      normalized.endsWith(`/${expected}`) ||
-      normalized.endsWith(expected)
-    );
-  });
-  invariant(
-    matchesLockRepo,
-    `${sourceId}: ${repoRoot} remotes do not identify ${source.repository}.`,
-  );
-};
-
-const readFirmwareGitObject = async (
-  sourceId: string,
-  source: FirmwareSource,
-  sourcePath: string,
-  repoRoot: string,
-) => {
-  await assertLocalRepoMatchesLock(sourceId, source, repoRoot);
-  const contents = await runGit(repoRoot, [
-    'cat-file',
-    '-p',
-    `${source.commit}:${sourcePath}`,
-  ]);
-  console.log(
-    `Firmware contract ${sourceId}: git object ${source.commit} ${sourcePath}`,
-  );
-  return contents.replace(/^\uFEFF/, '');
-};
-
-const githubFirmwareHeaders = () => {
-  const headers: Record<string, string> = {
-    'User-Agent': 'eerraa-the-via-definition-build',
-  };
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-};
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -259,9 +67,6 @@ function invariant(condition: unknown, message: string): asserts condition {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isPositiveInteger = (value: unknown): value is number =>
-  Number.isInteger(value) && Number(value) > 0;
 
 const isHexId = (value: unknown): value is string =>
   typeof value === 'string' && /^0x[0-9a-f]{4}$/i.test(value);
@@ -287,87 +92,8 @@ function validateRelativePath(
   );
 }
 
-function validateFirmwareCheck(
-  check: unknown,
-  definitionId: string,
-  index: number,
-): asserts check is FirmwareCheck {
-  const label = `${definitionId}.firmwareChecks[${index}]`;
-  invariant(isRecord(check), `${label} must be an object.`);
-  invariant(
-    check.matches === 'vendorId' || check.matches === 'productId',
-    `${label}.matches is invalid.`,
-  );
-  validateRelativePath(check.path, `${label}.path`);
-
-  if (check.type === 'cMacro') {
-    invariant(
-      typeof check.macro === 'string' && /^[A-Z0-9_]+$/.test(check.macro),
-      `${label}.macro is invalid.`,
-    );
-    return;
-  }
-
-  invariant(check.type === 'jsonPath', `${label}.type is invalid.`);
-  invariant(
-    Array.isArray(check.jsonPath) &&
-      check.jsonPath.length > 0 &&
-      check.jsonPath.every((segment) =>
-        Boolean(typeof segment === 'string' && segment.length),
-      ),
-    `${label}.jsonPath is invalid.`,
-  );
-}
-
 function validateManifest(value: unknown): asserts value is DefinitionManifest {
   invariant(isRecord(value), 'Definition manifest must be an object.');
-  invariant(value.schemaVersion === 2, 'Unsupported manifest schemaVersion.');
-  invariant(
-    value.definitionSource === 'app-repository',
-    'definitionSource must be app-repository.',
-  );
-  invariant(
-    isRecord(value.officialDefinitions),
-    'officialDefinitions must be an object.',
-  );
-  invariant(
-    typeof value.officialDefinitions.bunTag === 'string' &&
-      value.officialDefinitions.bunTag.length > 0,
-    'officialDefinitions.bunTag is invalid.',
-  );
-
-  for (const countGroup of ['outputCounts', 'indexCounts'] as const) {
-    const counts = value.officialDefinitions[countGroup];
-    invariant(
-      isRecord(counts) &&
-        isPositiveInteger(counts.v2) &&
-        isPositiveInteger(counts.v3),
-      `officialDefinitions.${countGroup} is invalid.`,
-    );
-  }
-
-  invariant(
-    isRecord(value.firmwareSources),
-    'firmwareSources must be an object.',
-  );
-  invariant(
-    Object.keys(value.firmwareSources).length > 0,
-    'firmwareSources must not be empty.',
-  );
-  for (const [sourceId, source] of Object.entries(value.firmwareSources)) {
-    invariant(isRecord(source), `${sourceId} source must be an object.`);
-    invariant(
-      typeof source.repository === 'string' &&
-        /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(source.repository),
-      `${sourceId}.repository is invalid.`,
-    );
-    invariant(
-      typeof source.commit === 'string' &&
-        /^[0-9a-f]{40}$/i.test(source.commit),
-      `${sourceId}.commit must be a full Git commit SHA.`,
-    );
-  }
-
   invariant(Array.isArray(value.definitions), 'definitions must be an array.');
   invariant(value.definitions.length > 0, 'definitions must not be empty.');
   const definitionIds = new Set<string>();
@@ -385,13 +111,9 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
     definitionIds.add(definition.id);
     validateRelativePath(definition.path, `${definition.id}.path`);
     invariant(
-      definition.path.startsWith('era-definitions/v3/') &&
+      definition.path.startsWith('era-definitions/custom/v3/') &&
         /\.json$/i.test(definition.path),
-      `${definition.id}.path must point to a JSON file under era-definitions/v3.`,
-    );
-    invariant(
-      definition.definitionVersion === 'v3',
-      `${definition.id} must use a V3 definition.`,
+      `${definition.id}.path must point to a JSON file under era-definitions/custom/v3.`,
     );
     invariant(
       isHexId(definition.vendorId),
@@ -407,21 +129,7 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
       `${definition.id}.pair is invalid.`,
     );
     invariant(
-      typeof definition.firmwareSource === 'string' &&
-        definition.firmwareSource in value.firmwareSources,
-      `${definition.id}.firmwareSource is unknown.`,
-    );
-    invariant(
-      Array.isArray(definition.firmwareChecks) &&
-        definition.firmwareChecks.length > 0,
-      `${definition.id}.firmwareChecks must be a non-empty array.`,
-    );
-    definition.firmwareChecks.forEach((check, index) =>
-      validateFirmwareCheck(check, definitionId, index),
-    );
-    invariant(
-      definition.stateSync === undefined ||
-        typeof definition.stateSync === 'boolean',
+      typeof definition.stateSync === 'boolean',
       `${definition.id}.stateSync must be a boolean.`,
     );
     invariant(
@@ -429,12 +137,6 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
         definition.exactMsFamily === 'qmk' ||
         definition.exactMsFamily === 'h7s',
       `${definition.id}.exactMsFamily must be qmk or h7s.`,
-    );
-    invariant(
-      !definition.stateSync ||
-        definition.exactMsFamily === 'qmk' ||
-        definition.exactMsFamily === 'h7s',
-      `${definition.id}: stateSync opt-in requires exactMsFamily.`,
     );
   }
 }
@@ -445,148 +147,270 @@ const loadManifest = async () => {
   return value;
 };
 
-const firmwareSourceUrl = (source: FirmwareSource, sourcePath: string) => {
-  const encodedPath = sourcePath
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
-  return `https://raw.githubusercontent.com/${source.repository}/${source.commit}/${encodedPath}`;
+type TermControlRef = {
+  name: string;
+  type: string;
+  channel: number;
+  id: number;
+  options: unknown;
 };
 
-const readFirmwareFile = (
-  sourceId: string,
-  source: FirmwareSource,
-  sourcePath: string,
-) => {
-  const cacheKey = `${sourceId}:${source.commit}:${sourcePath}`;
-  const pending = firmwareFilePromises.get(cacheKey);
-  if (pending) {
-    return pending;
+const collectMenuControls = (
+  value: unknown,
+  into: TermControlRef[] = [],
+): TermControlRef[] => {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectMenuControls(item, into));
+    return into;
   }
-
-  const request = (async () => {
-    const localRoot = await localRootForSource(sourceId);
-    if (localRoot) {
-      return readFirmwareGitObject(sourceId, source, sourcePath, localRoot);
-    }
-
-    const response = await fetch(firmwareSourceUrl(source, sourcePath), {
-      headers: githubFirmwareHeaders(),
-      signal: AbortSignal.timeout(30_000),
+  if (!isRecord(value)) {
+    return into;
+  }
+  const {content, options, type} = value;
+  if (
+    typeof type === 'string' &&
+    Array.isArray(content) &&
+    typeof content[0] === 'string' &&
+    typeof content[1] === 'number' &&
+    typeof content[2] === 'number'
+  ) {
+    into.push({
+      name: content[0],
+      type,
+      channel: content[1],
+      id: content[2],
+      options,
     });
-    invariant(
-      response.ok,
-      `Failed to fetch ${sourceId}:${sourcePath} (${response.status} ${response.statusText}). Provide GITHUB_TOKEN for private GitHub raw access, or set ERA_FIRMWARE_LOCAL_ROOTS / config/era-firmware-sources.local.json to a clone that contains lock commit ${source.commit}.`,
-    );
-    console.log(
-      `Firmware contract ${sourceId}: GitHub ${source.repository}@${source.commit} ${sourcePath}`,
-    );
-    return (await response.text()).replace(/^\uFEFF/, '');
-  })();
-  firmwareFilePromises.set(cacheKey, request);
-  return request;
-};
-
-const parseNumericValue = (value: unknown, label: string) => {
-  invariant(
-    typeof value === 'string' || typeof value === 'number',
-    `${label} must be numeric.`,
-  );
-  const match = String(value).match(/0x[0-9a-f]+|\d+/i);
-  invariant(match, `${label} does not contain a numeric value.`);
-  return Number.parseInt(
-    match[0],
-    match[0].toLowerCase().startsWith('0x') ? 16 : 10,
-  );
-};
-
-const resolveJSONPath = (value: unknown, segments: string[], label: string) => {
-  let current = value;
-  for (const segment of segments) {
-    invariant(isRecord(current) && segment in current, `${label} is missing.`);
-    current = current[segment];
+    return into;
   }
-  return current;
+  if (Array.isArray(content)) {
+    collectMenuControls(content, into);
+  }
+  return into;
 };
 
-const validateFirmwareIdentity = async (
-  manifest: DefinitionManifest,
-  entry: DefinitionEntry,
+const assertUnderRoot = (
+  filePath: string,
+  root: string,
+  label: string,
+  expectedPrefix: string,
 ) => {
-  const source = manifest.firmwareSources[entry.firmwareSource];
-  for (const check of entry.firmwareChecks) {
-    const contents = await readFirmwareFile(
-      entry.firmwareSource,
-      source,
-      check.path,
-    );
-    const expected = parseId(entry[check.matches]);
-    let actual: number;
-
-    if (check.type === 'cMacro') {
-      const escapedMacro = check.macro.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const match = contents.match(
-        new RegExp(`^\\s*#\\s*define\\s+${escapedMacro}\\s+([^\\r\\n]+)`, 'm'),
-      );
-      invariant(match, `${entry.id}: macro ${check.macro} was not found.`);
-      actual = parseNumericValue(match[1], `${entry.id}:${check.macro}`);
-    } else {
-      const json: unknown = JSON.parse(contents);
-      actual = parseNumericValue(
-        resolveJSONPath(
-          json,
-          check.jsonPath,
-          `${entry.id}:${check.jsonPath.join('.')}`,
-        ),
-        `${entry.id}:${check.jsonPath.join('.')}`,
-      );
-    }
-
-    invariant(
-      actual === expected,
-      `${entry.id}: firmware ${check.matches} 0x${actual
-        .toString(16)
-        .padStart(4, '0')} does not match manifest ${entry[check.matches]}.`,
-    );
-  }
+  const relativeToRoot = path.relative(root, filePath);
+  invariant(
+    relativeToRoot.length > 0 &&
+      !relativeToRoot.startsWith(`..${path.sep}`) &&
+      relativeToRoot !== '..' &&
+      !path.isAbsolute(relativeToRoot),
+    `${label}: local definition must stay under ${expectedPrefix}.`,
+  );
 };
 
-const resolveLocalDefinitionPath = async (entry: DefinitionEntry) => {
-  const relativePath = entry.path.split('/');
+const resolveRepoPath = async (relativePath: string, label: string) => {
+  const segments = relativePath.split('/');
   let currentPath = projectRoot;
-  for (const segment of relativePath) {
+  for (const segment of segments) {
     const entries = await readdir(currentPath);
     invariant(
       entries.includes(segment),
-      `${entry.id}: local definition path is missing or has incorrect casing: ${entry.path}`,
+      `${label}: local definition path is missing or has incorrect casing: ${relativePath}`,
     );
     currentPath = path.join(currentPath, segment);
   }
+  return currentPath;
+};
 
-  const relativeToDefinitionsRoot = path.relative(
-    eraDefinitionsRoot,
+const resolveCustomDefinitionPath = async (entry: DefinitionEntry) => {
+  const currentPath = await resolveRepoPath(entry.path, `${entry.id}.path`);
+  assertUnderRoot(
     currentPath,
-  );
-  invariant(
-    relativeToDefinitionsRoot.length > 0 &&
-      !relativeToDefinitionsRoot.startsWith(`..${path.sep}`) &&
-      relativeToDefinitionsRoot !== '..' &&
-      !path.isAbsolute(relativeToDefinitionsRoot),
-    `${entry.id}: local definition must stay under era-definitions/v3.`,
+    customDefinitionsRoot,
+    `${entry.id}.path`,
+    'era-definitions/custom/v3',
   );
   return currentPath;
+};
+
+const readDefinitionJSON = async (filePath: string, label: string) => {
+  const contents = (await readFile(filePath, 'utf8')).replace(/^\uFEFF/, '');
+  const raw: unknown = JSON.parse(contents);
+  invariant(isRecord(raw), `${label}: definition must be an object.`);
+  return raw;
+};
+
+const termKey = (control: TermControlRef) =>
+  `${control.name}:${control.channel}:${control.id}`;
+
+const expectedTermKeys = (family: ExactMsFamily) => {
+  const tapDanceChannel = family === 'qmk' ? 0 : 16;
+  const exactBase = family === 'qmk' ? 72 : 41;
+  return [
+    'id_qmk_tapping_global_term_exact:15:5',
+    ...Array.from(
+      {length: 8},
+      (_, index) =>
+        `id_qmk_tapdance_${index + 1}_term_exact:${tapDanceChannel}:${
+          exactBase + index
+        }`,
+    ),
+  ].sort();
+};
+
+const tapDanceActionNames = ['tap', 'hold', 'dtap', 'thold'] as const;
+const expectedTapDanceActionKeys = (family: ExactMsFamily) =>
+  Array.from({length: 8}, (_, index) =>
+    tapDanceActionNames.map((action, offset) =>
+      [
+        `id_qmk_tapdance_${index + 1}_${action}`,
+        family === 'qmk' ? 0 : 16,
+        (family === 'qmk' ? 32 : 1) + index * 5 + offset,
+      ].join(':'),
+    ),
+  )
+    .flat()
+    .sort();
+
+const keycodeName = (item: unknown) =>
+  item && typeof item === 'object' && 'name' in item
+    ? String((item as {name: unknown}).name)
+    : '';
+
+const validateCustomDefinitionContract = (
+  entry: DefinitionEntry,
+  customRaw: Record<string, unknown>,
+) => {
+  const menuControls = collectMenuControls(customRaw.menus);
+  const customTerms = menuControls.filter(
+    ({name}) => isExactTermCommand(name) || isLegacyTermCommand(name),
+  );
+  const customLegacy = customTerms.filter(({name}) =>
+    isLegacyTermCommand(name),
+  );
+  invariant(
+    customLegacy.length === 0,
+    `${entry.id}: custom definitions must not expose legacy tapping-term dropdowns.`,
+  );
+
+  if (entry.exactMsFamily) {
+    const expected = expectedTermKeys(entry.exactMsFamily);
+    const customExactKeys = customTerms
+      .filter((control) => isExactTermCommand(control.name))
+      .map(termKey)
+      .sort();
+    invariant(
+      customExactKeys.join('|') === expected.join('|'),
+      `${entry.id}: ${entry.exactMsFamily} exact-ms command addresses are invalid.`,
+    );
+  } else {
+    invariant(
+      customTerms.length === 0,
+      `${entry.id}: term controls require an exactMsFamily contract.`,
+    );
+  }
+
+  const expectedExactOptions =
+    entry.exactMsFamily === 'qmk' ? [1, 65535] : [100, 500];
+  for (const control of customTerms) {
+    if (isExactTermCommand(control.name)) {
+      invariant(
+        control.type === 'range',
+        `${entry.id}: custom ${control.name} must be a range control.`,
+      );
+      invariant(
+        Array.isArray(control.options) &&
+          control.options[0] === expectedExactOptions[0] &&
+          control.options[1] === expectedExactOptions[1],
+        `${entry.id}: custom ${control.name} options must be [${expectedExactOptions.join(', ')}].`,
+      );
+    }
+  }
+
+  const tapDanceControls = menuControls.filter(({name}) =>
+    name.startsWith('id_qmk_tapdance_'),
+  );
+  invariant(
+    entry.exactMsFamily || tapDanceControls.length === 0,
+    `${entry.id}: Tap Dance controls require an exactMsFamily contract.`,
+  );
+  const tapDanceActions = tapDanceControls.filter(({name}) =>
+    /^id_qmk_tapdance_[1-8]_(?:tap|hold|dtap|thold)$/.test(name),
+  );
+  const expectedTapDanceActions = entry.exactMsFamily
+    ? expectedTapDanceActionKeys(entry.exactMsFamily)
+    : [];
+  invariant(
+    tapDanceActions.map(termKey).sort().join('|') ===
+      expectedTapDanceActions.join('|') &&
+      tapDanceActions.every(({type}) => type === 'keycode'),
+    `${entry.id}: Tap Dance action controls or command addresses are invalid.`,
+  );
+  const tappingToggles = menuControls.filter(({name}) =>
+      [
+        'id_qmk_tapping_permissive_hold',
+        'id_qmk_tapping_hold_on_other_key_press',
+        'id_qmk_tapping_retro_tapping',
+      ].includes(name),
+    );
+  const tappingToggleKeys = tappingToggles.map(termKey).sort();
+  const expectedTappingToggleKeys = entry.exactMsFamily
+    ? [
+        'id_qmk_tapping_permissive_hold:15:2',
+        'id_qmk_tapping_hold_on_other_key_press:15:3',
+        'id_qmk_tapping_retro_tapping:15:4',
+      ].sort()
+    : [];
+  invariant(
+    tappingToggleKeys.join('|') === expectedTappingToggleKeys.join('|') &&
+      tappingToggles.every(({type}) => type === 'toggle'),
+    `${entry.id}: non-term tapping toggles or command addresses are invalid.`,
+  );
+
+  invariant(
+    customRaw.customKeycodes === undefined ||
+      (Array.isArray(customRaw.customKeycodes) &&
+        customRaw.customKeycodes.length > 0),
+    `${entry.id}: customKeycodes must be omitted when empty.`,
+  );
+  invariant(
+    customRaw.tapdanceKeycodes === undefined ||
+      (Array.isArray(customRaw.tapdanceKeycodes) &&
+        customRaw.tapdanceKeycodes.length > 0),
+    `${entry.id}: tapdanceKeycodes must be omitted when empty.`,
+  );
+  const customCustom = Array.isArray(customRaw.customKeycodes)
+    ? customRaw.customKeycodes
+    : [];
+  const customTapdance = Array.isArray(customRaw.tapdanceKeycodes)
+    ? customRaw.tapdanceKeycodes
+    : [];
+  const customTdNames = customTapdance
+    .map(keycodeName)
+    .filter(isTapDanceKeycodeName)
+    .sort();
+  invariant(
+    customTdNames.length === customTapdance.length,
+    `${entry.id}: tapdanceKeycodes may contain only TD0-TD7 entries.`,
+  );
+  const leakedTd = customCustom.map(keycodeName).filter(isTapDanceKeycodeName);
+  invariant(
+    leakedTd.length === 0,
+    `${entry.id}: custom JSON must put tap dance keycodes in tapdanceKeycodes, not customKeycodes.`,
+  );
+  const expectedTapDanceNames = entry.exactMsFamily
+    ? Array.from({length: 8}, (_, index) => `TD${index}`)
+    : [];
+  invariant(
+    customTdNames.join('|') === expectedTapDanceNames.join('|'),
+    `${entry.id}: tap dance slot identity must be ${
+      entry.exactMsFamily ? 'TD0-TD7' : 'empty'
+    }.`,
+  );
 };
 
 const compileDefinition = async (
   entry: DefinitionEntry,
 ): Promise<CompiledDefinition> => {
-  const definitionPath = await resolveLocalDefinitionPath(entry);
-  const contents = (await readFile(definitionPath, 'utf8')).replace(
-    /^\uFEFF/,
-    '',
-  );
-  const raw: unknown = JSON.parse(contents);
-  invariant(isRecord(raw), `${entry.id}: definition must be an object.`);
+  const definitionPath = await resolveCustomDefinitionPath(entry);
+  const raw = await readDefinitionJSON(definitionPath, `${entry.id}.path`);
   invariant(
     String(raw.vendorId).toLowerCase() === entry.vendorId.toLowerCase(),
     `${entry.id}: vendorId does not match the manifest.`,
@@ -595,12 +419,11 @@ const compileDefinition = async (
     String(raw.productId).toLowerCase() === entry.productId.toLowerCase(),
     `${entry.id}: productId does not match the manifest.`,
   );
+  validateCustomDefinitionContract(entry, raw);
 
-  let via: VIADefinitionV3;
+  let via: EraVIADefinitionV3;
   try {
-    const {keyboardDefinitionV3ToVIADefinitionV3} =
-      await import('@the-via/reader');
-    via = keyboardDefinitionV3ToVIADefinitionV3(raw as KeyboardDefinitionV3);
+    via = parseEraV3Definition(raw);
   } catch (error) {
     throw new Error(`${entry.id}: VIA V3 validation failed.`, {cause: error});
   }
@@ -689,55 +512,54 @@ const countJSONFiles = async (directory: string) =>
     (entry) => entry.isFile() && entry.name.endsWith('.json'),
   ).length;
 
+type DirectorySnapshot = {count: number; digest: string};
+type OfficialSnapshot = Record<'v2' | 'v3', DirectorySnapshot>;
+
+const snapshotJSONDirectory = async (
+  directory: string,
+): Promise<DirectorySnapshot> => {
+  const names = (await readdir(directory, {withFileTypes: true}))
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+    .map(({name}) => name)
+    .sort();
+  const digest = createHash('sha256');
+  for (const name of names) {
+    digest.update(name);
+    digest.update(await readFile(path.join(directory, name)));
+  }
+  return {count: names.length, digest: digest.digest('hex')};
+};
+
+const snapshotOfficialOutput = async (): Promise<OfficialSnapshot> => ({
+  v2: await snapshotJSONDirectory(path.join(definitionsOutputPath, 'v2')),
+  v3: await snapshotJSONDirectory(path.join(definitionsOutputPath, 'v3')),
+});
+
 const readJSON = async <T>(filePath: string): Promise<T> =>
   JSON.parse(await readFile(filePath, 'utf8')) as T;
 
-const validateOfficialOutput = async (manifest: DefinitionManifest) => {
-  const bunTag = (await readFile(officialBunTagPath, 'utf8')).trim();
+const validateOfficialOutput = async () => {
+  const snapshot = await snapshotOfficialOutput();
   invariant(
-    bunTag === manifest.officialDefinitions.bunTag,
-    `via-keyboards changed from ${manifest.officialDefinitions.bunTag} to ${bunTag}; update the lock manifest and patch deliberately.`,
+    snapshot.v2.count > 0 && snapshot.v3.count > 0,
+    'Installed via-keyboards snapshot produced an empty official bundle.',
   );
-
-  const outputCounts = {
-    v2: await countJSONFiles(path.join(definitionsOutputPath, 'v2')),
-    v3: await countJSONFiles(path.join(definitionsOutputPath, 'v3')),
-  };
-  invariant(
-    outputCounts.v2 === manifest.officialDefinitions.outputCounts.v2 &&
-      outputCounts.v3 === manifest.officialDefinitions.outputCounts.v3,
-    `Official definition output count mismatch: expected ${JSON.stringify(
-      manifest.officialDefinitions.outputCounts,
-    )}, received ${JSON.stringify(outputCounts)}.`,
-  );
-
   const index = await readJSON<DefinitionIndex>(
     path.join(definitionsOutputPath, 'supported_kbs.json'),
   );
-  const indexCounts = {
-    v2: index.vendorProductIds.v2.length,
-    v3: index.vendorProductIds.v3.length,
-  };
-  invariant(
-    indexCounts.v2 === manifest.officialDefinitions.indexCounts.v2 &&
-      indexCounts.v3 === manifest.officialDefinitions.indexCounts.v3,
-    `Official definition index count mismatch: expected ${JSON.stringify(
-      manifest.officialDefinitions.indexCounts,
-    )}, received ${JSON.stringify(indexCounts)}.`,
-  );
-  return index;
+  for (const version of ['v2', 'v3'] as const) {
+    const ids = index.vendorProductIds[version];
+    invariant(
+      Array.isArray(ids) && ids.length > 0,
+      `Installed via-keyboards ${version} index is empty.`,
+    );
+    invariant(
+      new Set(ids).size === ids.length,
+      `Installed via-keyboards ${version} index contains duplicate VPIDs.`,
+    );
+  }
+  return {index, snapshot};
 };
-
-const outputDefinitionIds = async (version: 'v2' | 'v3') =>
-  new Set(
-    (
-      await readdir(path.join(definitionsOutputPath, version), {
-        withFileTypes: true,
-      })
-    )
-      .filter((entry) => entry.isFile() && /^\d+\.json$/.test(entry.name))
-      .map((entry) => Number.parseInt(entry.name.slice(0, -5), 10)),
-  );
 
 const writeEraOverlay = async (
   manifest: DefinitionManifest,
@@ -748,8 +570,6 @@ const writeEraOverlay = async (
   );
   validatePairs(definitions);
 
-  const officialV2Ids = await outputDefinitionIds('v2');
-  const officialV3Ids = await outputDefinitionIds('v3');
   const eraIds = new Set<number>();
   for (const definition of definitions) {
     const id = definition.via.vendorProductId;
@@ -757,33 +577,28 @@ const writeEraOverlay = async (
       !eraIds.has(id),
       `${definition.entry.id}: duplicate ERA VPID ${id}.`,
     );
-    invariant(
-      !officialV2Ids.has(id) && !officialV3Ids.has(id),
-      `${definition.entry.id}: VPID ${id} conflicts with an official VIA definition.`,
-    );
     eraIds.add(id);
   }
 
+  const eraOutputDir = path.join(definitionsOutputPath, 'era', 'v3');
+  await mkdir(eraOutputDir, {recursive: true});
   await Promise.all(
-    definitions.map((definition) =>
-      writeFile(
-        path.join(
-          definitionsOutputPath,
-          'v3',
-          `${definition.via.vendorProductId}.json`,
-        ),
+    definitions.map(async (definition) => {
+      const vpid = definition.via.vendorProductId;
+      await writeFile(
+        path.join(eraOutputDir, `${vpid}.json`),
         JSON.stringify(definition.via),
-      ),
-    ),
+      );
+    }),
   );
 
   const mergedIndex: DefinitionIndex = {
     ...officialIndex,
     vendorProductIds: {
       v2: officialIndex.vendorProductIds.v2,
-      v3: [...officialIndex.vendorProductIds.v3, ...eraIds].sort(
-        (a, b) => a - b,
-      ),
+      v3: Array.from(
+        new Set([...officialIndex.vendorProductIds.v3, ...eraIds]),
+      ).sort((a, b) => a - b),
     },
   };
   await writeFile(
@@ -811,16 +626,6 @@ const writeEraOverlay = async (
     path.join(definitionsOutputPath, 'hash.json'),
   );
   const {generatedAt: _generatedAt, ...stableIndex} = mergedIndex;
-  const eraSourceMetadata = definitions.map(({entry, via}) => ({
-    id: entry.id,
-    path: entry.path,
-    firmwareSource: entry.firmwareSource,
-    firmwareRepository:
-      manifest.firmwareSources[entry.firmwareSource].repository,
-    firmwareCommit: manifest.firmwareSources[entry.firmwareSource].commit,
-    vendorProductId: via.vendorProductId,
-    name: via.name,
-  }));
   const combinedHash = createHash('sha256')
     .update(
       canonicalJSON({
@@ -833,13 +638,6 @@ const writeEraOverlay = async (
   await writeFile(
     path.join(definitionsOutputPath, 'hash.json'),
     JSON.stringify(combinedHash),
-  );
-  await writeFile(
-    path.join(definitionsOutputPath, 'era_definition_sources.json'),
-    JSON.stringify({
-      schemaVersion: manifest.schemaVersion,
-      definitions: eraSourceMetadata,
-    }),
   );
   await writeFile(
     path.join(definitionsOutputPath, 'era_advanced.json'),
@@ -862,96 +660,147 @@ const writeEraOverlay = async (
   return {definitions, mergedIndex};
 };
 
-const verifyFirmwareContracts = async (manifest: DefinitionManifest) => {
-  await Promise.all(
-    manifest.definitions.map((entry) =>
-      validateFirmwareIdentity(manifest, entry),
-    ),
-  );
-  console.log(
-    `Firmware contract verification complete: ${manifest.definitions.length} ERA definitions.`,
-  );
-};
-
 const validateFinalOutput = async (
-  manifest: DefinitionManifest,
   definitions: CompiledDefinition[],
   mergedIndex: DefinitionIndex,
+  officialIndex: DefinitionIndex,
+  officialSnapshot: OfficialSnapshot,
 ) => {
-  const expectedOutputCounts = {
-    v2: manifest.officialDefinitions.outputCounts.v2,
-    v3: manifest.officialDefinitions.outputCounts.v3 + definitions.length,
-  };
-  const actualOutputCounts = {
-    v2: await countJSONFiles(path.join(definitionsOutputPath, 'v2')),
-    v3: await countJSONFiles(path.join(definitionsOutputPath, 'v3')),
-  };
+  const finalOfficialSnapshot = await snapshotOfficialOutput();
   invariant(
-    actualOutputCounts.v2 === expectedOutputCounts.v2 &&
-      actualOutputCounts.v3 === expectedOutputCounts.v3,
-    `Final definition output count mismatch: expected ${JSON.stringify(
-      expectedOutputCounts,
-    )}, received ${JSON.stringify(actualOutputCounts)}.`,
+    canonicalJSON(finalOfficialSnapshot) === canonicalJSON(officialSnapshot),
+    'ERA overlay changed, removed, or added an official definition file.',
   );
 
-  const expectedIndexCounts = {
-    v2: manifest.officialDefinitions.indexCounts.v2,
-    v3: manifest.officialDefinitions.indexCounts.v3 + definitions.length,
+  const expectedIndex = {
+    v2: officialIndex.vendorProductIds.v2,
+    v3: Array.from(
+      new Set([
+        ...officialIndex.vendorProductIds.v3,
+        ...definitions.map(({via}) => via.vendorProductId),
+      ]),
+    ).sort((a, b) => a - b),
   };
-  const actualIndexCounts = {
-    v2: mergedIndex.vendorProductIds.v2.length,
-    v3: mergedIndex.vendorProductIds.v3.length,
-  };
+  const outputIndex = await readJSON<DefinitionIndex>(
+    path.join(definitionsOutputPath, 'supported_kbs.json'),
+  );
   invariant(
-    actualIndexCounts.v2 === expectedIndexCounts.v2 &&
-      actualIndexCounts.v3 === expectedIndexCounts.v3,
-    `Final definition index count mismatch: expected ${JSON.stringify(
-      expectedIndexCounts,
-    )}, received ${JSON.stringify(actualIndexCounts)}.`,
+    canonicalJSON(outputIndex.vendorProductIds) === canonicalJSON(expectedIndex) &&
+      canonicalJSON(mergedIndex.vendorProductIds) === canonicalJSON(expectedIndex),
+    'Final definition index is not the unique official/ERA VPID union.',
+  );
+
+  const eraOutputCount = await countJSONFiles(
+    path.join(definitionsOutputPath, 'era', 'v3'),
+  );
+  invariant(
+    eraOutputCount === definitions.length,
+    `ERA definition output count mismatch: expected ${definitions.length}, received ${eraOutputCount}.`,
   );
 
   for (const definition of definitions) {
     const outputPath = path.join(
       definitionsOutputPath,
+      'era',
       'v3',
       `${definition.via.vendorProductId}.json`,
     );
-    const output = await readJSON<VIADefinitionV3>(outputPath);
+    const output = await readJSON<EraVIADefinitionV3>(outputPath);
     invariant(
       output.vendorProductId === definition.via.vendorProductId &&
         output.name === definition.via.name,
       `${definition.entry.id}: generated output identity is invalid.`,
     );
+    validateCustomDefinitionContract(
+      definition.entry,
+      output as unknown as Record<string, unknown>,
+    );
+    const expectedTapDanceCount = definition.entry.exactMsFamily ? 8 : 0;
+    invariant(
+      (output.tapdanceKeycodes?.length ?? 0) === expectedTapDanceCount,
+      `${definition.entry.id}: custom output tapdanceKeycodes count must be ${expectedTapDanceCount}.`,
+    );
   }
+};
+
+const pathExists = async (filePath: string) => {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const listJSONFilesRecursively = async (directory: string): Promise<string[]> => {
+  const entries = await readdir(directory, {withFileTypes: true});
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return listJSONFilesRecursively(entryPath);
+      }
+      return entry.isFile() && /\.json$/i.test(entry.name) ? [entryPath] : [];
+    }),
+  );
+  return nested.flat();
+};
+
+const validateSourceInventory = async (manifest: DefinitionManifest) => {
+  const expected = manifest.definitions.map(({path: definitionPath}) =>
+    definitionPath.replaceAll('\\', '/'),
+  );
+  const actual = (await listJSONFilesRecursively(customDefinitionsRoot)).map(
+    (filePath) => path.relative(projectRoot, filePath).replaceAll('\\', '/'),
+  );
+  expected.sort();
+  actual.sort();
+  invariant(
+    expected.join('|') === actual.join('|'),
+    `Custom definition manifest/source inventory differs: expected ${expected.length}, found ${actual.length}.`,
+  );
+};
+
+const validateForbiddenOutputsAbsent = async () => {
+  invariant(
+    !(await pathExists(path.join(eraDefinitionsRoot, 'v3'))),
+    'era-definitions/v3 must not exist; official definitions come from via-keyboards.',
+  );
+  invariant(
+    !(await pathExists(
+      path.join(definitionsOutputPath, 'era_definition_sources.json'),
+    )),
+    'Unused definition provenance output must not be generated.',
+  );
 };
 
 const main = async () => {
   const args = process.argv.slice(2);
-  invariant(
-    args.every((arg) => arg === '--verify-firmware-contracts'),
-    `Unknown argument: ${args.find(
-      (arg) => arg !== '--verify-firmware-contracts',
-    )}`,
-  );
+  invariant(args.length === 0, `Unknown argument: ${args[0]}`);
   invariant(
     path.resolve(definitionsOutputPath) ===
       path.resolve(projectRoot, 'public', 'definitions'),
     'Refusing to remove an unexpected definitions output directory.',
   );
   const manifest = await loadManifest();
-  if (args.includes('--verify-firmware-contracts')) {
-    await verifyFirmwareContracts(manifest);
-    return;
-  }
+  await validateSourceInventory(manifest);
+  await validateForbiddenOutputsAbsent();
   await rm(definitionsOutputPath, {recursive: true, force: true});
   await mkdir(definitionsOutputPath, {recursive: true});
   await runOfficialBuilder();
-  const officialIndex = await validateOfficialOutput(manifest);
+  const {index: officialIndex, snapshot: officialSnapshot} =
+    await validateOfficialOutput();
   const {definitions, mergedIndex} = await writeEraOverlay(
     manifest,
     officialIndex,
   );
-  await validateFinalOutput(manifest, definitions, mergedIndex);
+  await validateFinalOutput(
+    definitions,
+    mergedIndex,
+    officialIndex,
+    officialSnapshot,
+  );
+  await validateForbiddenOutputsAbsent();
   console.log(
     `Definition build complete: ${mergedIndex.vendorProductIds.v2.length} V2 index entries, ${mergedIndex.vendorProductIds.v3.length} V3-only index entries, ${definitions.length} ERA definitions.`,
   );

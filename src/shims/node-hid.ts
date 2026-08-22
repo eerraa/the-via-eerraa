@@ -51,15 +51,15 @@ type TransportState = {
   lastWriteTimestamp: number;
   diagnostics: DiagnosticReport[];
 };
-export type HIDTransportGenerationChange = {
+type HIDTransportGenerationChange = {
   path: string;
   generation: number;
   reason: string;
 };
 
-export class HIDTransportError extends Error {}
+class HIDTransportError extends Error {}
 export class HIDTransportTimeoutError extends HIDTransportError {}
-export class HIDTransportGenerationError extends HIDTransportError {}
+class HIDTransportGenerationError extends HIDTransportError {}
 
 const transportStates = new Map<string, TransportState>();
 const generationChangeListeners = new Set<
