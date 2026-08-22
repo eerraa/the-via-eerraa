@@ -1,0 +1,27 @@
+# ERA VIA fork - Cloudflare Pages / Netlify response headers.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Vite emits content-hashed file names under /assets.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/*
+  Cache-Control: public, max-age=604800
+
+/images/*
+  Cache-Control: public, max-age=604800
+
+# Definition JSON is addressed by vendor/product id, not by a content hash, so
+# it must stay revalidated to avoid serving a stale definition after a deploy.
+/definitions/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

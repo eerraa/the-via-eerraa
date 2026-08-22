@@ -1,12 +1,33 @@
+# ERA VIA fork - Cloudflare Pages deployment (Direct Upload).
+#
+# Required repository configuration before this job does anything:
+#   Variables  CLOUDFLARE_PROJECT_NAME  Pages project name; also the *.pages.dev host.
+#   Secrets    CLOUDFLARE_API_TOKEN     API token with the "Cloudflare Pages: Edit" permission.
+#              CLOUDFLARE_ACCOUNT_ID    Cloudflare account id.
+#
+# Until CLOUDFLARE_PROJECT_NAME is set the job is skipped, so an unconfigured
+# fork does not accumulate failing runs on every push to main.
+#
+# Do NOT additionally connect the Cloudflare Pages Git integration to this
+# repository. Git integration plus this workflow would deploy the same commit
+# twice and race for the production alias. Direct Upload from here is the single
+# deployment path.
+
+name: Deploy to Cloudflare Pages
+
 on:
   push:
     branches:
       - main
-  repository_dispatch:
-    types: [definition_update]
   workflow_dispatch:
+
+concurrency:
+  group: cloudflare-pages-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    if: ${{ vars.CLOUDFLARE_PROJECT_NAME != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -15,15 +36,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Use Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Install
         run: bun install --frozen-lockfile
+
       - name: Build
         run: bun run build
+
+      - name: Verify build output
+        run: |
+          test -f dist/index.html
+          test -f dist/404.html
+          test -f dist/_redirects
+          test -f dist/_headers
+          test -f dist/definitions/supported_kbs.json
+          test -f dist/definitions/era_advanced.json
+          era_count=$(find dist/definitions/era/v3 -type f -name '*.json' | wc -l)
+          src_count=$(find era-definitions/custom/v3 -type f -iname '*.json' | wc -l)
+          echo "ERA overlay files: $era_count (canonical sources: $src_count)"
+          test "$era_count" -eq "$src_count"
+          official_count=$(find dist/definitions/v3 -type f -name '*.json' | wc -l)
+          snapshot_count=$(find node_modules/via-keyboards/v3 -type f -name '*.json' | wc -l)
+          echo "official V3 files: $official_count (installed snapshot: $snapshot_count)"
+          test "$official_count" -eq "$snapshot_count"
+          file_count=$(find dist -type f | wc -l)
+          echo "total files: $file_count (Cloudflare Pages limit: 20000)"
+          test "$file_count" -lt 20000
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_ACCOUNT_TOKEN }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=app
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }} --branch=${{ github.ref_name }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
