@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {PelpiKeycodeInput} from '../../../inputs/pelpi/keycode-input';
 import {AccentButton} from '../../../inputs/accent-button';
 import {AccentSlider} from '../../../inputs/accent-slider';
@@ -16,6 +16,29 @@ import {
   getRangeBounds,
   type RangeControlMap,
 } from 'src/utils/range-constraints';
+import {
+  exactTermBoundsFromOptions,
+  isExactTermCommand,
+} from 'src/utils/era-exact-ms';
+import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
+import {MillisecondInput} from '../../../inputs/millisecond-input';
+import {
+  useDeferredApplyMode,
+  useDeferredApplyRegistration,
+} from './deferred-apply';
+import {type MillisecondAdapter} from 'src/utils/millisecond-field';
+import {useAppDispatch, useAppSelector} from 'src/store/hooks';
+import {
+  getSelectedConnectedDevice,
+  getSelectedKeyboardAPI,
+  getSelectedDevicePath,
+} from 'src/store/devicesSlice';
+import {
+  getCustomMenuDataMap,
+  getSelectedCustomMenuAvailability,
+  updateSelectedCustomMenuData,
+} from 'src/store/menusSlice';
+import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
 
 type Props = {
   lightingData: LightingData;
@@ -56,8 +79,11 @@ export const VIACustomItem = React.memo(
 
 type ControlGetSet = {
   value: number[];
-  updateValue: (name: string, ...command: number[]) => void;
-  updateRangeValue: (name: string, value: number) => void;
+  updateValue: (
+    name: string,
+    ...command: number[]
+  ) => void | Promise<void>;
+  updateRangeValue: (name: string, value: number) => void | Promise<void>;
   rangeControls: RangeControlMap;
   menuData: Record<string, number[] | number[][]>;
 };
@@ -79,6 +105,284 @@ const getRangeValue = (value: number[], max: number) => {
   }
 };
 
+const ExactMillisecondControl = ({
+  name,
+  command,
+  value,
+  options,
+}: {
+  name: string;
+  command: number[];
+  value: number[];
+  options?: number[];
+}) => {
+  const dispatch = useAppDispatch();
+  const api = useAppSelector(getSelectedKeyboardAPI);
+  const devicePath = useAppSelector(getSelectedDevicePath);
+  const device = useAppSelector(getSelectedConnectedDevice);
+  const menuAvailability = useAppSelector(
+    getSelectedCustomMenuAvailability,
+  );
+  const menuData = useAppSelector(getCustomMenuDataMap);
+  const channel = command[0];
+  const id = command[1];
+  const bounds = exactTermBoundsFromOptions(
+    options,
+    device ? getExactMsFamily(device.vendorProductId) : null,
+  );
+  const currentMs = getRangeValue(value ?? [0, 0], bounds.maxMs);
+  const writeContext = useRef({
+    api,
+    devicePath,
+    menuData,
+    name,
+    dispatch,
+    currentMs,
+    menuAvailability,
+  });
+  writeContext.current = {
+    api,
+    devicePath,
+    menuData,
+    name,
+    dispatch,
+    currentMs,
+    menuAvailability,
+  };
+  const adapter: MillisecondAdapter = useMemo(
+    () => ({
+      minMs: bounds.minMs,
+      maxMs: bounds.maxMs,
+      async write(candidateMs: number) {
+        const context = writeContext.current;
+        if (
+          !context.api ||
+          !context.devicePath ||
+          context.menuAvailability !== 'available'
+        ) {
+          return context.currentMs;
+        }
+        const connectionGeneration = context.api.getConnectionGeneration();
+        const previousMs = context.currentMs;
+        const invalidateConfig = () => {
+          context.dispatch(
+            invalidateStateSyncDomain({
+              devicePath: context.devicePath as string,
+              connectionGeneration,
+              domain: 'config',
+            }),
+          );
+        };
+        try {
+          await context.api.setCustomMenuValue(
+            channel,
+            id,
+            ...shiftFrom16Bit(candidateMs),
+          );
+        } catch (error) {
+          console.warn('Setting exact-ms value failed', error);
+          invalidateConfig();
+          return previousMs;
+        }
+        invalidateConfig();
+        try {
+          await context.api.commitCustomMenu(channel);
+        } catch (error) {
+          console.warn('Saving exact-ms value failed', error);
+          invalidateConfig();
+        }
+        if (!context.api.isConnectionGenerationCurrent(connectionGeneration)) {
+          return previousMs;
+        }
+        const raw = await context.api.getCustomMenuValue([channel, id]);
+        const bytes = raw.slice(1);
+        if (!context.api.isConnectionGenerationCurrent(connectionGeneration)) {
+          return previousMs;
+        }
+        context.dispatch(
+          updateSelectedCustomMenuData({
+            devicePath: context.devicePath,
+            menuData: {
+              ...(context.menuData[context.devicePath] || {}),
+              [context.name]: bytes,
+            },
+          }),
+        );
+        return shiftTo16Bit([bytes[0] ?? 0, bytes[1] ?? 0]);
+      },
+    }),
+    [bounds.maxMs, bounds.minMs, channel, id],
+  );
+  return (
+    <MillisecondInput
+      adapter={adapter}
+      ariaLabel={name}
+      savedMs={currentMs}
+    />
+  );
+};
+
+const DEFAULT_TOGGLE_OPTIONS = [0, 1];
+
+const DeferredToggleControl = ({
+  id,
+  name,
+  command,
+  value,
+  options,
+  updateValue,
+}: {
+  id: string;
+  name: string;
+  command: number[];
+  value: number[];
+  options?: any;
+  updateValue: ControlGetSet['updateValue'];
+}) => {
+  const toggleOptions = (options as number[] | undefined) || DEFAULT_TOGGLE_OPTIONS;
+  const savedChecked = valueIsChecked(toggleOptions[1], value || [0]);
+  const [checked, setChecked] = useState(savedChecked);
+  const dirty = checked !== savedChecked;
+  useEffect(() => {
+    if (!dirty) {
+      setChecked(savedChecked);
+    }
+  }, [dirty, savedChecked]);
+  const latest = useRef({
+    checked,
+    name,
+    command,
+    toggleOptions,
+    updateValue,
+  });
+  latest.current = {checked, name, command, toggleOptions, updateValue};
+  const apply = useCallback(async () => {
+    const current = latest.current;
+    await current.updateValue(
+      current.name,
+      ...current.command,
+      ...boxOrArr(current.toggleOptions[+current.checked]),
+    );
+  }, []);
+  useDeferredApplyRegistration(id, dirty, apply);
+  return <AccentSlider isChecked={checked} onChange={setChecked} />;
+};
+
+const DeferredKeycodeControl = ({
+  id,
+  name,
+  command,
+  value,
+  updateValue,
+}: {
+  id: string;
+  name: string;
+  command: number[];
+  value: number[];
+  updateValue: ControlGetSet['updateValue'];
+}) => {
+  const savedCode = shiftTo16Bit([value?.[0] ?? 0, value?.[1] ?? 0]);
+  const [code, setCode] = useState(savedCode);
+  const dirty = code !== savedCode;
+  useEffect(() => {
+    if (!dirty) {
+      setCode(savedCode);
+    }
+  }, [dirty, savedCode]);
+  const latest = useRef({code, name, command, updateValue});
+  latest.current = {code, name, command, updateValue};
+  const apply = useCallback(async () => {
+    const current = latest.current;
+    await current.updateValue(
+      current.name,
+      ...current.command,
+      ...shiftFrom16Bit(current.code),
+    );
+  }, []);
+  useDeferredApplyRegistration(id, dirty, apply);
+  return (
+    <PelpiKeycodeInput value={code} meta={{}} setValue={setCode} />
+  );
+};
+
+const DeferredDropdownControl = ({
+  id,
+  name,
+  command,
+  value,
+  selectOptions,
+  updateValue,
+}: {
+  id: string;
+  name: string;
+  command: number[];
+  value: number[];
+  selectOptions: {value: number; label: string}[];
+  updateValue: ControlGetSet['updateValue'];
+}) => {
+  const saved = value?.[0] ?? 0;
+  const [draft, setDraft] = useState(saved);
+  const dirty = draft !== saved;
+  useEffect(() => {
+    if (!dirty) {
+      setDraft(saved);
+    }
+  }, [dirty, saved]);
+  const latest = useRef({draft, name, command, updateValue});
+  latest.current = {draft, name, command, updateValue};
+  const apply = useCallback(async () => {
+    const current = latest.current;
+    await current.updateValue(current.name, ...current.command, current.draft);
+  }, []);
+  useDeferredApplyRegistration(id, dirty, apply);
+  return (
+    <AccentSelect
+      onChange={(option: any) => option && setDraft(+option.value)}
+      options={selectOptions}
+      value={selectOptions.find((option) => draft === option.value)}
+    />
+  );
+};
+
+const DeferredRangeControl = ({
+  id,
+  name,
+  min,
+  max,
+  value,
+  updateRangeValue,
+}: {
+  id: string;
+  name: string;
+  min: number;
+  max: number;
+  value: number;
+  updateRangeValue: ControlGetSet['updateRangeValue'];
+}) => {
+  const [draft, setDraft] = useState(value);
+  const dirty = draft !== value;
+  useEffect(() => {
+    if (!dirty) {
+      setDraft(value);
+    }
+  }, [dirty, value]);
+  const latest = useRef({draft, name, updateRangeValue});
+  latest.current = {draft, name, updateRangeValue};
+  const apply = useCallback(async () => {
+    const current = latest.current;
+    await current.updateRangeValue(current.name, current.draft);
+  }, []);
+  useDeferredApplyRegistration(id, dirty, apply);
+  return (
+    <AccentRange
+      min={min}
+      max={max}
+      value={draft}
+      onChange={setDraft}
+    />
+  );
+};
+
 const decodeNullTerminatedUTF8 = (value?: number[]) => {
   if (!value || value.length === 0) {
     return '';
@@ -94,8 +398,10 @@ const decodeNullTerminatedUTF8 = (value?: number[]) => {
 
 const VIACustomControl = (props: VIACustomControlProps) => {
   const {t} = useTranslation();
+  const deferApply = useDeferredApplyMode();
   const {content, type, options, value} = props as any;
   const [name, ...command] = content;
+  const controlId = `${(props as {_id?: string})._id ?? name}:${type}`;
   switch (type) {
     case 'label': {
       return (
@@ -117,6 +423,16 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       );
     }
     case 'range': {
+      if (isExactTermCommand(name)) {
+        return (
+          <ExactMillisecondControl
+            name={name}
+            command={command}
+            value={props.value}
+            options={options}
+          />
+        );
+      }
       const logicalValues = Object.entries(props.rangeControls).reduce<
         Record<string, number>
       >((values, [id, range]) => {
@@ -132,16 +448,40 @@ const VIACustomControl = (props: VIACustomControlProps) => {
         logicalValues,
         true,
       );
+      const rangeValue = getRangeValue(props.value, options[1]);
+      if (deferApply) {
+        return (
+          <DeferredRangeControl
+            id={controlId}
+            name={name}
+            min={bounds.min}
+            max={bounds.max}
+            value={rangeValue}
+            updateRangeValue={props.updateRangeValue}
+          />
+        );
+      }
       return (
         <AccentRange
           min={bounds.min}
           max={bounds.max}
-          value={getRangeValue(props.value, options[1])}
+          value={rangeValue}
           onChange={(val: number) => props.updateRangeValue(name, val)}
         />
       );
     }
     case 'keycode': {
+      if (deferApply) {
+        return (
+          <DeferredKeycodeControl
+            id={controlId}
+            name={name}
+            command={command}
+            value={props.value}
+            updateValue={props.updateValue}
+          />
+        );
+      }
       return (
         <PelpiKeycodeInput
           value={shiftTo16Bit([props.value[0], props.value[1]])}
@@ -153,7 +493,19 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       );
     }
     case 'toggle': {
-      const toggleOptions: any[] = options || [0, 1];
+      const toggleOptions: any[] = options || DEFAULT_TOGGLE_OPTIONS;
+      if (deferApply) {
+        return (
+          <DeferredToggleControl
+            id={controlId}
+            name={name}
+            command={command}
+            value={props.value}
+            options={toggleOptions}
+            updateValue={props.updateValue}
+          />
+        );
+      }
       return (
         <AccentSlider
           isChecked={valueIsChecked(toggleOptions[1], props.value)}
@@ -170,14 +522,26 @@ const VIACustomControl = (props: VIACustomControlProps) => {
     case 'dropdown': {
       const selectOptions = options.map(
         (option: [string, number] | string, idx: number) => {
-          const [label, value] =
+          const [label, optionValue] =
             typeof option === 'string' ? [option, idx] : option;
           return {
-            value: value || idx,
+            value: optionValue || idx,
             label: t(label),
           };
         },
       );
+      if (deferApply) {
+        return (
+          <DeferredDropdownControl
+            id={controlId}
+            name={name}
+            command={command}
+            value={value}
+            selectOptions={selectOptions}
+            updateValue={props.updateValue}
+          />
+        );
+      }
       return (
         <AccentSelect
           /*width={250}*/

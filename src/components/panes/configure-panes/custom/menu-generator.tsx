@@ -7,15 +7,15 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import React, {useState} from 'react';
 import styled from 'styled-components';
-import {
-  OverflowCell,
-  SubmenuOverflowCell,
-  SubmenuCell,
-  SubmenuRow,
-} from '../../grid';
+import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../../grid';
 import {CenterPane} from '../../pane';
 import {title, component} from '../../../icons/lightbulb';
 import {VIACustomItem} from './custom-control';
+import {
+  DeferredApplyButton,
+  DeferredApplyProvider,
+  isDeferredApplyCommand,
+} from './deferred-apply';
 import {evalExpr} from '@the-via/pelpi';
 import type {
   VIAMenu,
@@ -28,6 +28,7 @@ import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
 import {
   getSelectedCustomMenuData,
+  getSelectedCustomMenuAvailability,
   getCustomRangeControls,
   updateCustomMenuValue,
   updateCustomMenuRangeValue,
@@ -52,6 +53,25 @@ const Container = styled.div`
   flex-direction: column;
   padding: 0 12px;
 `;
+
+const MenuStatus: React.FC<{message: string}> = ({message}) => (
+  <OverflowCell>
+    <CustomPane>
+      <Container>
+        <div
+          role="status"
+          style={{
+            padding: '20px',
+            textAlign: 'center',
+            color: 'var(--color_label)',
+          }}
+        >
+          {message}
+        </div>
+      </Container>
+    </CustomPane>
+  </OverflowCell>
+);
 
 type Props = {
   viaMenu: VIAMenu;
@@ -112,11 +132,18 @@ function itemGenerator(
   }
 }
 
-const MenuComponent = React.memo((props: any) => (
-  <>
-    {props.elem.content
-      .flatMap((elem: any) => itemGenerator(elem, props))
-      .map((itemProps: any) => (
+const MenuComponent = React.memo((props: any) => {
+  const items = props.elem.content.flatMap((elem: any) =>
+    itemGenerator(elem, props),
+  );
+  const deferred = items.some(
+    (item: any) =>
+      isCustomMenuCommandContent(item.content) &&
+      isDeferredApplyCommand(item.content[0]),
+  );
+  return (
+    <DeferredApplyProvider deferred={deferred}>
+      {items.map((itemProps: any) => (
         <VIACustomItem
           {...itemProps}
           updateValue={props.updateCustomMenuValue}
@@ -130,8 +157,10 @@ const MenuComponent = React.memo((props: any) => (
           }
         />
       ))}
-  </>
-));
+      <DeferredApplyButton />
+    </DeferredApplyProvider>
+  );
+});
 
 const MenuBuilder = (elem: any) => (props: any) => (
   <MenuComponent {...props} key={elem._id} elem={elem} />
@@ -185,6 +214,7 @@ export const Pane: React.FC<Props> = (props: any) => {
   const dispatch = useAppDispatch();
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const selectedCustomMenuData = useAppSelector(getSelectedCustomMenuData);
+  const menuAvailability = useAppSelector(getSelectedCustomMenuAvailability);
   const rangeControls = useAppSelector(getCustomRangeControls);
 
   const childProps = {
@@ -200,13 +230,38 @@ export const Pane: React.FC<Props> = (props: any) => {
 
   const menus = categoryGenerator(childProps, t);
 
-  const [selectedCategory, setSelectedCategory] = useState(
-    menus[0] || {label: '', Menu: () => <div />},
-  );
-  const SelectedMenu = selectedCategory.Menu;
+  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<
+    string | null
+  >(null);
+  const selectedCategory =
+    menus.find(({label}) => label === selectedCategoryLabel) ?? menus[0];
 
-  if (!selectedDefinition || !selectedCustomMenuData) {
+  if (!selectedDefinition) {
     return null;
+  }
+
+  if (menuAvailability === 'checking') {
+    return <MenuStatus message={t('Loading...')} />;
+  }
+
+  if (menuAvailability === 'unverified') {
+    return (
+      <MenuStatus
+        message={t(
+          'Unable to verify feature support. Reconnect the keyboard. If the problem persists, update to the latest firmware.',
+        )}
+      />
+    );
+  }
+
+  if (!selectedCustomMenuData) {
+    return (
+      <MenuStatus
+        message={t(
+          'Unable to load feature settings. Reconnect the keyboard and try again.',
+        )}
+      />
+    );
   }
 
   // Handle case where all menus are hidden
@@ -236,8 +291,10 @@ export const Pane: React.FC<Props> = (props: any) => {
         <MenuContainer>
           {menus.map((menu) => (
             <SubmenuRow
-              $selected={selectedCategory.label === menu.label}
-              onClick={() => !menu.isHidden && setSelectedCategory(menu)}
+              $selected={selectedCategory?.label === menu.label}
+              onClick={() =>
+                !menu.isHidden && setSelectedCategoryLabel(menu.label)
+              }
               key={menu.label}
               style={{
                 opacity: menu.isHidden ? 0.5 : 1,
@@ -251,7 +308,9 @@ export const Pane: React.FC<Props> = (props: any) => {
       </SubmenuOverflowCell>
       <OverflowCell>
         <CustomPane>
-          <Container>{SelectedMenu(childProps)}</Container>
+          <Container>
+            {selectedCategory ? selectedCategory.Menu(childProps) : null}
+          </Container>
         </CustomPane>
       </OverflowCell>
     </>

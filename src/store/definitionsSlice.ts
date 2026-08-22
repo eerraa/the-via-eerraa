@@ -2,6 +2,7 @@ import {createSelector, createSlice, PayloadAction} from '@reduxjs/toolkit';
 import type {
   AuthorizedDevice,
   AuthorizedDevices,
+  ConnectedDevice,
   ConnectedDevices,
 } from '../types/types';
 import {
@@ -10,7 +11,7 @@ import {
   packBits,
   unpackBits,
 } from '../utils/bit-pack';
-import {KeyboardValue} from '../utils/keyboard-api';
+import {KeyboardAPI, KeyboardValue} from '../utils/keyboard-api';
 import type {
   DefinitionVersion,
   DefinitionVersionMap,
@@ -26,13 +27,20 @@ import {
   ensureSupportedIds,
   getSelectedKeyboardAPI,
 } from './devicesSlice';
-import {getMissingDefinition} from 'src/utils/device-store';
+import {fetchBundledDefinition} from 'src/utils/device-store';
+import {isEraBundledDefinition} from 'src/utils/era-advanced-metadata';
+import {mergeDefinitionLookup} from 'src/utils/definition-priority';
 import {getBasicKeyDict} from 'src/utils/key-to-byte/dictionary-store';
 import {getByteToKey} from 'src/utils/key';
 import {del, entries, setMany, update} from 'idb-keyval';
 import {isFulfilledPromise} from 'src/utils/type-predicates';
 import {extractDeviceInfo, logAppError} from './errorsSlice';
 import {getSelectedKeycodesVersion} from './firmwareSlice';
+import {
+  commitStableConfigCandidate,
+  invalidateStateSyncDomain,
+  type StateSyncConfigCandidate,
+} from './stateSyncCandidateActions';
 
 type LayoutOption = number;
 type LayoutOptionsMap = {[devicePath: string]: LayoutOption[] | null}; // TODO: is this null valid?
@@ -41,13 +49,58 @@ type LayoutOptionsMap = {[devicePath: string]: LayoutOption[] | null}; // TODO: 
 type DefinitionsState = {
   definitions: KeyboardDictionary;
   customDefinitions: KeyboardDictionary;
+  eraDefinitions: KeyboardDictionary;
   layoutOptionsMap: LayoutOptionsMap;
+  definitionEpochs: Record<string, number>;
 };
 
 const initialState: DefinitionsState = {
   definitions: {},
   customDefinitions: {},
+  eraDefinitions: {},
   layoutOptionsMap: {},
+  definitionEpochs: {},
+};
+
+const definitionVersions = ['v2', 'v3'] as const;
+const definitionEpochKey = (id: number, version: DefinitionVersion) =>
+  `${id}:${version}`;
+const effectiveDefinition = (
+  state: DefinitionsState,
+  id: number,
+  version: DefinitionVersion,
+) =>
+  state.eraDefinitions[id]?.[version] ??
+  state.definitions[id]?.[version] ??
+  state.customDefinitions[id]?.[version];
+const bumpEffectiveDefinitionEpoch = (
+  state: DefinitionsState,
+  id: number,
+  version: DefinitionVersion,
+) => {
+  const key = definitionEpochKey(id, version);
+  state.definitionEpochs[key] = (state.definitionEpochs[key] ?? 0) + 1;
+};
+const replaceDefinitionSource = (
+  state: DefinitionsState,
+  source: 'definitions' | 'eraDefinitions',
+  incoming: KeyboardDictionary,
+) => {
+  Object.entries(incoming).forEach(([rawId, definitionMap]) => {
+    const id = Number(rawId);
+    const before = Object.fromEntries(
+      definitionVersions.map((version) => [
+        version,
+        effectiveDefinition(state, id, version),
+      ]),
+    );
+    state[source][id] = {...state[source][id], ...definitionMap};
+    definitionVersions.forEach((version) => {
+      if (before[version] !== effectiveDefinition(state, id, version)) {
+        bumpEffectiveDefinitionEpoch(state, id, version);
+      }
+    });
+  });
 };
 
 const definitionsSlice = createSlice({
@@ -55,13 +108,38 @@ const definitionsSlice = createSlice({
   initialState,
   reducers: {
     updateDefinitions: (state, action: PayloadAction<KeyboardDictionary>) => {
-      state.definitions = {...state.definitions, ...action.payload};
+      replaceDefinitionSource(state, 'definitions', action.payload);
+    },
+    updateEraDefinitions: (state, action: PayloadAction<KeyboardDictionary>) => {
+      replaceDefinitionSource(state, 'eraDefinitions', action.payload);
     },
     loadInitialCustomDefinitions: (
       state,
       action: PayloadAction<KeyboardDictionary>,
     ) => {
+      const affectedIds = new Set([
+        ...Object.keys(state.customDefinitions).map(Number),
+        ...Object.keys(action.payload).map(Number),
+      ]);
+      const before = new Map(
+        Array.from(affectedIds).flatMap((id) =>
+          definitionVersions.map((version) => [
+            definitionEpochKey(id, version),
+            effectiveDefinition(state, id, version),
+          ] as const),
+        ),
+      );
       state.customDefinitions = action.payload;
+      affectedIds.forEach((id) =>
+        definitionVersions.forEach((version) => {
+          if (
+            before.get(definitionEpochKey(id, version)) !==
+            effectiveDefinition(state, id, version)
+          ) {
+            bumpEffectiveDefinitionEpoch(state, id, version);
+          }
+        }),
+      );
     },
     unloadCustomDefinition: (
       state,
@@ -72,17 +150,32 @@ const definitionsSlice = createSlice({
     ) => {
       const {version, id} = action.payload;
       const definitionEntry = state.customDefinitions[id];
+      if (!definitionEntry) {
+        return;
+      }
+      const before = effectiveDefinition(state, id, version);
       if (Object.keys(definitionEntry).length === 1) {
         delete state.customDefinitions[id];
-        del(id);
+        try {
+          void del(id);
+        } catch {
+          // IndexedDB is absent in some test/host environments.
+        }
       } else {
         delete definitionEntry[version];
-        update(id, (d) => {
-          delete d[version];
-          return d;
-        });
+        try {
+          void update(id, (d) => {
+            delete d[version];
+            return d;
+          });
+        } catch {
+          // IndexedDB is absent in some test/host environments.
+        }
       }
       state.customDefinitions = {...state.customDefinitions};
+      if (before !== effectiveDefinition(state, id, version)) {
+        bumpEffectiveDefinitionEpoch(state, id, version);
+      }
     },
     loadCustomDefinitions: (
       state,
@@ -93,6 +186,11 @@ const definitionsSlice = createSlice({
     ) => {
       const {version, definitions} = action.payload;
       definitions.forEach((definition) => {
+        const before = effectiveDefinition(
+          state,
+          definition.vendorProductId,
+          version,
+        );
         const definitionEntry =
           state.customDefinitions[definition.vendorProductId] ?? {};
         if (version === 'v2') {
@@ -101,11 +199,29 @@ const definitionsSlice = createSlice({
           definitionEntry[version] = definition as VIADefinitionV3;
         }
         state.customDefinitions[definition.vendorProductId] = definitionEntry;
+        if (
+          before !==
+          effectiveDefinition(state, definition.vendorProductId, version)
+        ) {
+          bumpEffectiveDefinitionEpoch(
+            state,
+            definition.vendorProductId,
+            version,
+          );
+        }
       });
     },
     updateLayoutOptions: (state, action: PayloadAction<LayoutOptionsMap>) => {
       state.layoutOptionsMap = {...state.layoutOptionsMap, ...action.payload};
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(commitStableConfigCandidate, (state, action) => {
+      const {devicePath, candidate} = action.payload;
+      if (candidate.layoutOptions !== undefined) {
+        state.layoutOptionsMap[devicePath] = candidate.layoutOptions;
+      }
+    });
   },
 });
 
@@ -113,6 +229,7 @@ export const {
   loadCustomDefinitions,
   loadInitialCustomDefinitions,
   updateDefinitions,
+  updateEraDefinitions,
   unloadCustomDefinition,
   updateLayoutOptions,
 } = definitionsSlice.actions;
@@ -123,20 +240,16 @@ export const getBaseDefinitions = (state: RootState) =>
   state.definitions.definitions;
 export const getCustomDefinitions = (state: RootState) =>
   state.definitions.customDefinitions;
+export const getEraDefinitions = (state: RootState) =>
+  state.definitions.eraDefinitions;
 export const getLayoutOptionsMap = (state: RootState) =>
   state.definitions.layoutOptionsMap;
 
 export const getDefinitions = createSelector(
   getBaseDefinitions,
   getCustomDefinitions,
-  (definitions, customDefinitions) => {
-    return Object.entries(customDefinitions).reduce(
-      (p, [id, definitionMap]) => {
-        return {...p, [id]: {...p[id], ...definitionMap}};
-      },
-      definitions,
-    );
-  },
+  getEraDefinitions,
+  (official, sideload, era) => mergeDefinitionLookup(official, sideload, era),
 );
 
 export const getSelectedDefinition = createSelector(
@@ -150,6 +263,59 @@ export const getSelectedDefinition = createSelector(
       connectedDevice.requiredDefinitionVersion
     ],
 );
+
+export const getDefinitionForDevice = (
+  state: RootState,
+  connectedDevice: ConnectedDevice | AuthorizedDevice,
+) =>
+  getDefinitions(state)?.[connectedDevice.vendorProductId]?.[
+    connectedDevice.requiredDefinitionVersion
+  ];
+
+type DefinitionSource = 'era' | 'official' | 'upload';
+
+export const getDefinitionSourceForDevice = (
+  state: RootState,
+  connectedDevice: ConnectedDevice | AuthorizedDevice,
+): DefinitionSource | null => {
+  const id = connectedDevice.vendorProductId;
+  const version = connectedDevice.requiredDefinitionVersion;
+  if (state.definitions.eraDefinitions[id]?.[version]) {
+    return 'era';
+  }
+  if (state.definitions.definitions[id]?.[version]) {
+    return 'official';
+  }
+  if (state.definitions.customDefinitions[id]?.[version]) {
+    return 'upload';
+  }
+  return null;
+};
+
+export const getDefinitionSyncIdentity = (
+  state: RootState,
+  connectedDevice: ConnectedDevice | AuthorizedDevice | null | undefined,
+) => {
+  if (!connectedDevice) {
+    return null;
+  }
+  const definition = getDefinitionForDevice(state, connectedDevice);
+  if (!definition) {
+    return null;
+  }
+  return definitionEpochKey(
+    connectedDevice.vendorProductId,
+    connectedDevice.requiredDefinitionVersion,
+  ) +
+    `:${
+      state.definitions.definitionEpochs[
+        definitionEpochKey(
+          connectedDevice.vendorProductId,
+          connectedDevice.requiredDefinitionVersion,
+        )
+      ] ?? 0
+    }`;
+};
 
 export const getBasicKeyToByte = createSelector(
   getSelectedConnectedDevice,
@@ -211,6 +377,7 @@ export const updateLayoutOption =
     if (!definition || !api || !path || !definition.layouts.labels) {
       return;
     }
+    const connectionGeneration = api.getConnectionGeneration();
 
     const optionsNums = definition.layouts.labels.map((layoutLabel) =>
       Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
@@ -227,13 +394,32 @@ export const updateLayoutOption =
 
     try {
       await api.setKeyboardValue(KeyboardValue.LAYOUT_OPTIONS, ...bytes);
-    } catch {
-      console.warn('Setting layout option command not working');
+    } catch (error) {
+      console.warn('Setting layout option command not working', error);
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: path,
+          connectionGeneration,
+          domain: 'config',
+        }),
+      );
+      return;
+    }
+
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
     }
 
     dispatch(
       updateLayoutOptions({
         [path]: options,
+      }),
+    );
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: path,
+        connectionGeneration,
+        domain: 'config',
       }),
     );
   };
@@ -266,28 +452,32 @@ export const storeCustomDefinitions =
   };
 
 export const loadStoredCustomDefinitions =
-  (): AppThunk => async (dispatch, getState) => {
+  (): AppThunk => async (dispatch) => {
     try {
-      const dictionaryEntries: [string, DefinitionVersionMap][] =
-        await entries();
-      const keyboardDictionary = dictionaryEntries
-        .filter(([key]) => {
-          return ['string', 'number'].includes(typeof key);
-        })
-        .reduce((p, n) => {
-          return {...p, [n[0]]: n[1]};
-        }, {} as KeyboardDictionary);
-      // Each entry should be in the form of [id, {v2:..., v3:...}]
+      const dictionaryEntries = (await entries()) as [
+        IDBValidKey,
+        DefinitionVersionMap,
+      ][];
+      const keyboardDictionary: KeyboardDictionary = {};
+      const v2Ids: number[] = [];
+      const v3Ids: number[] = [];
+      dictionaryEntries.forEach(([entryId, definitionVersionMap]) => {
+        if (typeof entryId !== 'string' && typeof entryId !== 'number') {
+          return;
+        }
+        const vendorProductId = Number(entryId);
+        if (!Number.isFinite(vendorProductId)) {
+          return;
+        }
+        keyboardDictionary[vendorProductId] = definitionVersionMap;
+        if (definitionVersionMap.v2) {
+          v2Ids.push(vendorProductId);
+        }
+        if (definitionVersionMap.v3) {
+          v3Ids.push(vendorProductId);
+        }
+      });
       dispatch(loadInitialCustomDefinitions(keyboardDictionary));
-
-      const [v2Ids, v3Ids] = dictionaryEntries.reduce(
-        ([v2Ids, v3Ids], [entryId, definitionVersionMap]) => [
-          definitionVersionMap.v2 ? [...v2Ids, Number(entryId)] : v2Ids,
-          definitionVersionMap.v3 ? [...v3Ids, Number(entryId)] : v3Ids,
-        ],
-
-        [[] as number[], [] as number[]],
-      );
 
       dispatch(ensureSupportedIds({productIds: v2Ids, version: 'v2'}));
       dispatch(ensureSupportedIds({productIds: v3Ids, version: 'v3'}));
@@ -295,37 +485,77 @@ export const loadStoredCustomDefinitions =
       console.error(e);
     }
   };
-export const loadLayoutOptions = (): AppThunk => async (dispatch, getState) => {
-  const state = getState();
-  const selectedDefinition = getSelectedDefinition(state);
-  const connectedDevice = getSelectedConnectedDevice(state);
-  const api = getSelectedKeyboardAPI(state);
-  if (
-    !connectedDevice ||
-    !selectedDefinition ||
-    !selectedDefinition.layouts.labels ||
-    !api
-  ) {
-    return;
+export const loadLayoutOptions =
+  (connectedDevice: ConnectedDevice): AppThunk =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const selectedDefinition = getDefinitionForDevice(state, connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    if (
+      !selectedDefinition ||
+      !selectedDefinition.layouts.labels ||
+      !api.isConnectionGenerationCurrent(connectionGeneration)
+    ) {
+      return;
+    }
+
+    const {path} = connectedDevice;
+    try {
+      const res = await api.getKeyboardValue(
+        KeyboardValue.LAYOUT_OPTIONS,
+        [],
+        4,
+      );
+      const options = unpackBits(
+        bytesIntoNum(res),
+        selectedDefinition.layouts.labels.map(
+          (layoutLabel: string[] | string) =>
+            Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
+        ),
+      );
+      if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+        return;
+      }
+      dispatch(
+        updateLayoutOptions({
+          [path]: options,
+        }),
+      );
+    } catch {
+      console.warn('Getting layout options command not working');
+    }
+  };
+
+export const readLayoutOptionsStateSyncCandidate = async (
+  connectedDevice: ConnectedDevice,
+  state: RootState,
+  connectionGeneration: number,
+): Promise<StateSyncConfigCandidate | null> => {
+  const definition = getDefinitionForDevice(state, connectedDevice);
+  const api = new KeyboardAPI(connectedDevice.path);
+  if (!definition || !api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
+  }
+  if (!definition.layouts.labels) {
+    return {};
   }
 
-  const {path} = connectedDevice;
-  try {
-    const res = await api.getKeyboardValue(KeyboardValue.LAYOUT_OPTIONS, [], 4);
-    const options = unpackBits(
-      bytesIntoNum(res),
-      selectedDefinition.layouts.labels.map((layoutLabel: string[] | string) =>
-        Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
-      ),
-    );
-    dispatch(
-      updateLayoutOptions({
-        [path]: options,
-      }),
-    );
-  } catch {
-    console.warn('Getting layout options command not working');
+  const response = await api.getKeyboardValue(
+    KeyboardValue.LAYOUT_OPTIONS,
+    [],
+    4,
+  );
+  const layoutOptions = unpackBits(
+    bytesIntoNum(response),
+    definition.layouts.labels.map((layoutLabel: string[] | string) =>
+      Array.isArray(layoutLabel) ? layoutLabel.slice(1).length : 2,
+    ),
+  );
+  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return null;
   }
+  return {layoutOptions};
 };
 
 // Take a list of authorized devices and attempt to resolve any missing definitions
@@ -333,57 +563,115 @@ export const reloadDefinitions =
   (authorizedDevices: AuthorizedDevice[]): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const baseDefinitions = getBaseDefinitions(state);
-    const definitions = getDefinitions(state);
-    const missingDevicesToFetchDefinitions = authorizedDevices.filter(
-      ({vendorProductId, requiredDefinitionVersion}) => {
-        return (
-          !definitions ||
-          !definitions[vendorProductId] ||
-          !definitions[vendorProductId][requiredDefinitionVersion]
-        );
-      },
+    const officialDefinitions = getBaseDefinitions(state);
+    const eraDefinitions = getEraDefinitions(state);
+    const sideloadDefinitions = getCustomDefinitions(state);
+
+    const officialFetches = authorizedDevices.filter(
+      ({vendorProductId, requiredDefinitionVersion}) =>
+        !officialDefinitions?.[vendorProductId]?.[requiredDefinitionVersion],
     );
-    const missingDefinitionsSettledPromises = await Promise.allSettled(
-      missingDevicesToFetchDefinitions.map((device) =>
-        getMissingDefinition(device, device.requiredDefinitionVersion),
-      ),
+    const eraFetches = authorizedDevices.filter(
+      ({vendorProductId, requiredDefinitionVersion}) =>
+        isEraBundledDefinition(vendorProductId) &&
+        !eraDefinitions?.[vendorProductId]?.[requiredDefinitionVersion],
     );
 
-    // Error Reporting
-    missingDefinitionsSettledPromises.forEach((settledPromise, i) => {
-      const device = missingDevicesToFetchDefinitions[i];
+    const [officialSettled, eraSettled] = await Promise.all([
+      Promise.allSettled(
+        officialFetches.map((device) =>
+          fetchBundledDefinition(
+            device,
+            device.requiredDefinitionVersion,
+            'official',
+          ),
+        ),
+      ),
+      Promise.allSettled(
+        eraFetches.map((device) =>
+          fetchBundledDefinition(device, device.requiredDefinitionVersion, 'era'),
+        ),
+      ),
+    ]);
+
+    officialSettled.forEach((settledPromise, i) => {
+      const device = officialFetches[i];
+      if (settledPromise.status !== 'rejected') {
+        return;
+      }
+      const hasFallback =
+        Boolean(
+          sideloadDefinitions?.[device.vendorProductId]?.[
+            device.requiredDefinitionVersion
+          ],
+        ) ||
+        Boolean(
+          eraDefinitions?.[device.vendorProductId]?.[
+            device.requiredDefinitionVersion
+          ],
+        ) ||
+        isEraBundledDefinition(device.vendorProductId);
+      if (hasFallback) {
+        return;
+      }
+      dispatch(
+        logAppError({
+          message: `Fetching ${device.requiredDefinitionVersion} definition failed`,
+          deviceInfo: extractDeviceInfo(device),
+        }),
+      );
+    });
+    eraSettled.forEach((settledPromise, i) => {
+      const device = eraFetches[i];
       if (settledPromise.status === 'rejected') {
-        const deviceInfo = extractDeviceInfo(device);
         dispatch(
           logAppError({
-            message: `Fetching ${device.requiredDefinitionVersion} definition failed`,
-            deviceInfo,
+            message: `Fetching ERA ${device.requiredDefinitionVersion} definition failed`,
+            deviceInfo: extractDeviceInfo(device),
           }),
         );
       }
     });
 
-    const missingDefinitions = missingDefinitionsSettledPromises
+    const officialFound = officialSettled
       .filter(isFulfilledPromise)
-      .map((res) => res.value);
+      .map((res) => res.value)
+      .filter((value): value is NonNullable<typeof value> => value !== null);
+    const eraFound = eraSettled
+      .filter(isFulfilledPromise)
+      .map((res) => res.value)
+      .filter((value): value is NonNullable<typeof value> => value !== null);
 
-    if (!missingDefinitions.length) {
-      return;
-    }
-
-    dispatch(
-      updateDefinitions(
-        missingDefinitions.reduce<KeyboardDictionary>(
-          (p, [definition, version]) => ({
-            ...p,
-            [definition.vendorProductId]: {
-              ...p[definition.vendorProductId],
-              [version]: definition,
+    if (officialFound.length) {
+      dispatch(
+        updateDefinitions(
+          officialFound.reduce<KeyboardDictionary>(
+            (dictionary, [definition, version]) => {
+              dictionary[definition.vendorProductId] = {
+                ...dictionary[definition.vendorProductId],
+                [version]: definition,
+              };
+              return dictionary;
             },
-          }),
-          baseDefinitions,
+            {},
+          ),
         ),
-      ),
-    );
+      );
+    }
+    if (eraFound.length) {
+      dispatch(
+        updateEraDefinitions(
+          eraFound.reduce<KeyboardDictionary>(
+            (dictionary, [definition, version]) => {
+              dictionary[definition.vendorProductId] = {
+                ...dictionary[definition.vendorProductId],
+                [version]: definition,
+              };
+              return dictionary;
+            },
+            {},
+          ),
+        ),
+      );
+    }
   };

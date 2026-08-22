@@ -13,6 +13,7 @@ import {
   loadLayoutOptions,
   updateDefinitions,
   getDefinitions,
+  getDefinitionSourceForDevice,
   loadStoredCustomDefinitions,
 } from './definitionsSlice';
 import {loadKeymapFromDevice} from './keymapSlice';
@@ -23,8 +24,12 @@ import {
   clearAllDevices,
   getConnectedDevices,
   getForceAuthorize,
+  getSelectedConnectionGeneration,
+  getSelectedConnectionNeedsReload,
   getSelectedDevicePath,
+  getSelectionGeneration,
   getSupportedIds,
+  isSelectedDeviceOperationCurrent,
   selectDevice,
   markDeviceReady,
   setForceAuthorize,
@@ -46,8 +51,17 @@ import {extractDeviceInfo, logAppError} from './errorsSlice';
 import {tryForgetDevice} from 'src/shims/node-hid';
 import {isAuthorizedDeviceConnected} from 'src/utils/type-predicates';
 import {loadFirmwareVersion, loadKeycodesVersion} from './firmwareSlice';
-import {loadDefinitionName} from './definitionNameSlice';
+import {probeStateSyncForDevice} from './stateSyncThunks';
+import {
+  isStateSyncOptIn,
+  loadEraAdvancedMetadata,
+} from '../utils/era-advanced-metadata';
+import {
+  clearDefinitionNameOption,
+  loadDefinitionName,
+} from './definitionNameSlice';
 import {KeycodesVersionProtocolError} from 'src/utils/keycodes-version';
+import {getPathSyncState} from './stateSyncSlice';
 
 const selectConnectedDeviceRetry = createRetry(8, 100);
 
@@ -66,14 +80,38 @@ export const selectConnectedDeviceByPath =
 // Maybe not? the nice this about this is we don't have to null check the device
 const selectConnectedDevice =
   (connectedDevice: ConnectedDevice): AppThunk =>
-  async (dispatch) => {
+  async (dispatch, getState) => {
     const deviceInfo = extractDeviceInfo(connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    dispatch(selectDevice({device: connectedDevice, connectionGeneration}));
+    const selectionGeneration = getSelectionGeneration(getState());
+    const isCurrentSelection = () =>
+      api.isConnectionGenerationCurrent(connectionGeneration) &&
+      isSelectedDeviceOperationCurrent(
+        getState(),
+        connectedDevice.path,
+        connectionGeneration,
+        selectionGeneration,
+      );
     try {
+      await loadEraAdvancedMetadata();
+      if (!isCurrentSelection()) return;
+      const requiresCustomMenuVerification =
+        getDefinitionSourceForDevice(getState(), connectedDevice) === 'era' &&
+        isStateSyncOptIn(connectedDevice.vendorProductId);
+      if (requiresCustomMenuVerification) {
+        await dispatch(probeStateSyncForDevice(connectedDevice));
+        if (!isCurrentSelection()) return;
+      }
+
       await dispatch(loadKeycodesVersion(connectedDevice));
-      dispatch(selectDevice(connectedDevice));
+      if (!isCurrentSelection()) return;
       // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
       await dispatch(loadMacros(connectedDevice));
-      await dispatch(loadLayoutOptions());
+      if (!isCurrentSelection()) return;
+      await dispatch(loadLayoutOptions(connectedDevice));
+      if (!isCurrentSelection()) return;
 
       const {protocol} = connectedDevice;
       try {
@@ -81,10 +119,24 @@ const selectConnectedDevice =
           // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
           await dispatch(updateLightingData(connectedDevice));
         } else if (protocol >= 11) {
-          await dispatch(loadDefinitionName(connectedDevice));
-          await dispatch(loadFirmwareVersion(connectedDevice));
-          // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-          await dispatch(updateV3MenuData(connectedDevice));
+          const advancedCommandsVerified =
+            !requiresCustomMenuVerification ||
+            getPathSyncState(getState(), connectedDevice.path)?.capability ===
+              'capable';
+          if (advancedCommandsVerified) {
+            await dispatch(loadDefinitionName(connectedDevice));
+            if (!isCurrentSelection()) return;
+            await dispatch(loadFirmwareVersion(connectedDevice));
+            if (!isCurrentSelection()) return;
+          } else {
+            dispatch(
+              clearDefinitionNameOption({devicePath: connectedDevice.path}),
+            );
+          }
+          if (!requiresCustomMenuVerification) {
+            // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
+            await dispatch(updateV3MenuData(connectedDevice));
+          }
         }
       } catch (e) {
         dispatch(
@@ -94,12 +146,26 @@ const selectConnectedDevice =
           }),
         );
       }
+      if (!isCurrentSelection()) return;
 
       // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
       await dispatch(loadKeymapFromDevice(connectedDevice));
-      dispatch(markDeviceReady(connectedDevice.path));
+      if (!isCurrentSelection()) return;
+      dispatch(
+        markDeviceReady({
+          devicePath: connectedDevice.path,
+          connectionGeneration,
+          selectionGeneration,
+        }),
+      );
+      if (requiresCustomMenuVerification) {
+        await dispatch(probeStateSyncForDevice(connectedDevice));
+      }
       selectConnectedDeviceRetry.clear();
     } catch (e) {
+      if (!isCurrentSelection()) {
+        return;
+      }
       if (e instanceof KeycodesVersionProtocolError) {
         selectConnectedDeviceRetry.clear();
         return;
@@ -133,6 +199,9 @@ export const reloadConnectedDevices =
   (): AppThunk => async (dispatch, getState) => {
     const state = getState();
     const selectedDevicePath = getSelectedDevicePath(state);
+    const selectedConnectionGeneration = getSelectedConnectionGeneration(state);
+    const selectedConnectionNeedsReload =
+      getSelectedConnectionNeedsReload(state);
     const forceRequest = getForceAuthorize(state);
 
     // TODO: should we store in local storage for when offline?
@@ -255,13 +324,22 @@ export const reloadConnectedDevices =
       const firstConnectedDevice = validDevicesArr[0][1];
 
       dispatch(selectConnectedDevice(firstConnectedDevice));
+    } else if (
+      selectedDevicePath &&
+      connectedDevices[selectedDevicePath] &&
+      (selectedConnectionNeedsReload ||
+        new KeyboardAPI(selectedDevicePath).getConnectionGeneration() !==
+          selectedConnectionGeneration)
+    ) {
+      dispatch(selectConnectedDevice(connectedDevices[selectedDevicePath]));
     } else if (validDevicesArr.length === 0) {
-      dispatch(selectDevice(null));
+      dispatch(selectDevice({device: null, connectionGeneration: null}));
       dispatch(setForceAuthorize(true));
     }
   };
 
 export const loadSupportedIds = (): AppThunk => async (dispatch) => {
+  await loadEraAdvancedMetadata();
   await syncStore();
   dispatch(updateSupportedIds(getSupportedIdsFromStore()));
   // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks

@@ -190,7 +190,8 @@ function getByteForLayerCode(
           basicKeyToByte._QK_LAYER_TAP_TOGGLE_MAX,
         );
       }
-      case 'CUSTOM': {
+      case 'CUSTOM':
+      case 'TD': {
         return Math.min(
           basicKeyToByte._QK_KB + numLayer,
           basicKeyToByte._QK_KB_MAX,

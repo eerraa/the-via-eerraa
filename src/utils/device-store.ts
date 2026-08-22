@@ -115,16 +115,21 @@ export async function syncStore(): Promise<DefinitionIndex> {
   return currentDefinitionIndex;
 }
 
-export const getMissingDefinition = async <
-  K extends keyof DefinitionVersionMap,
->(
-  device: AuthorizedDevice,
-  version: K,
-): Promise<[DefinitionVersionMap[K], K]> => {
-  const vpid = getVendorProductId(device.vendorId, device.productId);
-  const url = `/definitions/${version}/${vpid}.json`;
+const fetchDefinitionJson = async <K extends keyof DefinitionVersionMap>(
+  url: string,
+): Promise<DefinitionVersionMap[K] | null> => {
   const response = await fetch(url);
-  const json: DefinitionVersionMap[K] = await response.json();
+  if (!response.ok) {
+    return null;
+  }
+  return (await response.json()) as DefinitionVersionMap[K];
+};
+
+const cacheOfficialDefinition = <K extends keyof DefinitionVersionMap>(
+  vpid: number,
+  version: K,
+  json: DefinitionVersionMap[K],
+) => {
   let definitions = deviceStore.get('definitions');
   const newDefinitions = {
     ...definitions,
@@ -133,11 +138,9 @@ export const getMissingDefinition = async <
       [version]: json,
     },
   };
-
   try {
     deviceStore.set('definitions', newDefinitions);
   } catch (err) {
-    // This is likely due to running out of space, so we clear it
     localStorage.clear();
     initDeviceStore();
     definitions = deviceStore.get('definitions');
@@ -148,6 +151,27 @@ export const getMissingDefinition = async <
         [version]: json,
       },
     });
+  }
+};
+
+export const fetchBundledDefinition = async <
+  K extends keyof DefinitionVersionMap,
+>(
+  device: AuthorizedDevice,
+  version: K,
+  source: 'official' | 'era',
+): Promise<[DefinitionVersionMap[K], K] | null> => {
+  const vpid = getVendorProductId(device.vendorId, device.productId);
+  const url =
+    source === 'era'
+      ? `/definitions/era/${version}/${vpid}.json`
+      : `/definitions/${version}/${vpid}.json`;
+  const json = await fetchDefinitionJson<K>(url);
+  if (!json) {
+    return null;
+  }
+  if (source === 'official') {
+    cacheOfficialDefinition(vpid, version, json);
   }
   return [json, version];
 };

@@ -15,8 +15,11 @@ import {
 } from 'src/store/definitionsSlice';
 import {
   getSelectedRawLayers,
+  replaceEncoderMap,
   saveRawKeymapToDevice,
 } from 'src/store/keymapSlice';
+import {collectDefinitionKeys} from 'src/utils/via-definition-keys';
+import type {StateSyncEncoderMap} from 'src/store/stateSyncCandidateActions';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getSelectedConnectedDevice,
@@ -25,6 +28,7 @@ import {
 import {getExpressions, saveMacros} from 'src/store/macrosSlice';
 import {useTranslation} from 'react-i18next';
 import {getSelectedDefinitionName} from 'src/store/definitionNameSlice';
+import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
 
 type ViaSaveFile = {
   name: string;
@@ -71,13 +75,7 @@ export const Pane: FC = () => {
 
   const getEncoderValues = async () => {
     const {layouts} = selectedDefinition;
-    const {keys, optionKeys} = layouts;
-    const encoders = [
-      ...keys,
-      ...Object.values(optionKeys)
-        .flatMap((a) => Object.values(a))
-        .flat(),
-    ]
+    const encoders = collectDefinitionKeys({layouts})
       .filter((a) => 'ei' in a)
       .map((a) => a.ei as number);
     if (encoders.length > 0) {
@@ -216,34 +214,69 @@ export const Pane: FC = () => {
       await dispatch(saveRawKeymapToDevice(keymap, selectedDevice));
 
       if (saveFile.encoders) {
-        await Promise.all(
-          saveFile.encoders.map((encoder, id) =>
-            Promise.all(
-              encoder.map((layer, layerId) =>
-                Promise.all([
-                  api.setEncoderValue(
-                    layerId,
-                    id,
-                    false,
-                    getByteForCode(
-                      `${deprecatedKeycodes[layer[0]] ?? layer[0]}`,
-                      basicKeyToByte,
+        const connectionGeneration = api.getConnectionGeneration();
+        const encoderMap: StateSyncEncoderMap = {};
+        try {
+          await Promise.all(
+            saveFile.encoders.map((encoder, id) => {
+              encoderMap[id] = encoder.map((layer) => {
+                const counterclockwise = getByteForCode(
+                  `${deprecatedKeycodes[layer[0]] ?? layer[0]}`,
+                  basicKeyToByte,
+                );
+                const clockwise = getByteForCode(
+                  `${deprecatedKeycodes[layer[1]] ?? layer[1]}`,
+                  basicKeyToByte,
+                );
+                return [counterclockwise, clockwise] as [number, number];
+              });
+              return Promise.all(
+                encoder.map((layer, layerId) =>
+                  Promise.all([
+                    api.setEncoderValue(
+                      layerId,
+                      id,
+                      false,
+                      encoderMap[id][layerId][0],
                     ),
-                  ),
-                  api.setEncoderValue(
-                    layerId,
-                    id,
-                    true,
-                    getByteForCode(
-                      `${deprecatedKeycodes[layer[1]] ?? layer[1]}`,
-                      basicKeyToByte,
+                    api.setEncoderValue(
+                      layerId,
+                      id,
+                      true,
+                      encoderMap[id][layerId][1],
                     ),
-                  ),
-                ]),
-              ),
-            ),
-          ),
-        );
+                  ]),
+                ),
+              );
+            }),
+          );
+        } catch (error) {
+          console.warn('Loading encoder values failed', error);
+          setErrorMessage(t('Failed to write encoder values to the keyboard.'));
+          dispatch(
+            invalidateStateSyncDomain({
+              devicePath: selectedDevice.path,
+              connectionGeneration,
+              domain: 'keymap',
+            }),
+          );
+          return;
+        }
+        if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+          dispatch(
+            replaceEncoderMap({
+              devicePath: selectedDevice.path,
+              encoders: encoderMap,
+            }),
+          );
+          dispatch(
+            invalidateStateSyncDomain({
+              devicePath: selectedDevice.path,
+              connectionGeneration,
+              domain: 'keymap',
+            }),
+          );
+        }
       }
 
       setSuccessMessage(t('Successfully updated layout!'));
