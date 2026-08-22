@@ -19,9 +19,10 @@
 - WebHID는 secure context를 요구한다. `*.pages.dev`는 HTTPS를 기본 제공한다.
 - 빌드 산출물은 3,577개 파일 / 44 MB로 Cloudflare Pages 제한(배포당 20,000개 파일,
   파일당 25 MiB) 안에 충분히 들어간다.
-- 비용: Cloudflare Pages 무료 플랜으로 충분하다(정적 asset 요청·대역폭 무제한,
-  월 500회 빌드). 이 저장소는 GitHub Actions에서 빌드하고 결과만 업로드하므로
-  Cloudflare 빌드 쿼터를 사용하지 않는다.
+- 비용: Cloudflare Pages 무료 플랜으로 충분하다. 무료 플랜 제한은 배포당 20,000개
+  파일, 파일당 25 MiB, 월 500회 빌드, 동시 빌드 1개, 프로젝트당 custom domain 100개다.
+  이 저장소는 GitHub Actions에서 빌드하고 산출물만 올리는 Direct Upload 방식이므로
+  Cloudflare 쪽 빌드 파이프라인을 돌리지 않는다.
 
 ### 중복 배포 금지
 
