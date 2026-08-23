@@ -1,0 +1,24 @@
+# ERA VIA fork - Cloudflare Pages / Netlify route rewrites.
+#
+# The app is a wouter SPA whose routes are declared in src/utils/pane-config.tsx
+# and src/components/panes/errors.tsx. Only those paths are rewritten to
+# index.html so that a deep link keeps working after a full page load.
+#
+# A wildcard rule (/* /index.html 200) is deliberately NOT used. The definition
+# loader in src/utils/device-store.ts relies on a real 404 for a missing
+# /definitions/**.json, and a blanket rewrite would answer those probes with
+# HTML and a 200 status. public/404.html exists for the same reason: it turns
+# off Cloudflare Pages' implicit single-page-application fallback.
+#
+# The destination is `/`, not `/index.html`. Cloudflare Pages canonicalises
+# `/index.html` to `/`, which downgrades a 200 rewrite into a 308 redirect to
+# `/` — verified on the live host: `GET /test` answered `308 Location: /`, so
+# every deep link lost its route and landed on Configure. Rewriting to `/`
+# keeps the request URL intact, which is what wouter reads.
+
+/test      /  200
+/design    /  200
+/settings  /  200
+/debug     /  200
+/console   /  200
+/errors    /  200

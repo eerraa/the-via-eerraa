@@ -324,12 +324,25 @@ Treat timeout and rate values as measured parameters rather than permanent guess
    policy, existing VIA value authority, and exact-millisecond identifiers.
 2. Complete physical TOMAK split convergence and official-client transcript checks without
    treating the automated firmware builds as a substitute for flashing or device observation.
-3. Keep H7S read-only until its response ownership and 8 kHz poll-off/on evidence support a
-   separately approved implementation plan.
+3. H7S State Sync selector `0x06`은 기존 물리 검증 전까지 별도 범위로 유지한다. 승인된
+   USB Diagnostics selector `0x07`은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)의
+   read-only, opt-in, RAM-only 계약을 유지하고 polling mode나 recovery에 결합하지 않는다.
 4. Reconsider semantic/range events, ACK, extra domains, or a second value protocol only through
    a new ADR after measured polling latency or refresh cost demonstrates a concrete failure.
 
 Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.
+
+## H7S USB Diagnostics
+
+H7S USB Diagnostics는 State Sync와 독립된 read-only subsystem이다. Canonical ERA
+metadata에서 명시적으로 opt-in한 다섯 H7S definition만 versioned selector `0x07`을
+probe한다. Firmware는 실제 HID request-to-IN-completion timing, main-loop gap, queue drop,
+USB hard event를 RAM에서 aggregate하고 app은 약 1 Hz coherent snapshot만 읽는다.
+
+Mode 선택은 언제나 사용자 소유다. Firmware와 app은 automatic downgrade, automatic
+mode benchmark, EEPROM diagnostics history, synthetic stability score를 만들지 않는다.
+Host history는 device/firmware/protocol identity가 같은 수동 test끼리만 비교한다. 전체
+wire, failure, persistence, UX 계약은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)를 따른다.
 
 ## Durable non-goals
 

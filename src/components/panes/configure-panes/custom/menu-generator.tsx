@@ -7,7 +7,12 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import React, {useState} from 'react';
 import styled from 'styled-components';
-import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../../grid';
+import {
+  OverflowCell,
+  SpanOverflowCell,
+  SubmenuOverflowCell,
+  SubmenuRow,
+} from '../../grid';
 import {CenterPane} from '../../pane';
 import {title, component} from '../../../icons/lightbulb';
 import {VIACustomItem} from './custom-control';
@@ -34,7 +39,11 @@ import {
   updateCustomMenuRangeValue,
 } from 'src/store/menusSlice';
 import {useTranslation} from 'react-i18next';
-import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
+import {
+  isCustomMenuCommandContent,
+  isUsbPollingModeCommand,
+} from 'src/utils/custom-menu';
+import {UsbDiagnosticsSection} from './usb-diagnostics-section';
 
 type Category = {
   label: string;
@@ -54,23 +63,25 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
+const StatusMessage = styled.div`
+  padding: 40px 20px;
+  max-width: 640px;
+  text-align: center;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--color_label);
+  word-break: keep-all;
+  white-space: pre-line;
+`;
+
 const MenuStatus: React.FC<{message: string}> = ({message}) => (
-  <OverflowCell>
+  <SpanOverflowCell>
     <CustomPane>
       <Container>
-        <div
-          role="status"
-          style={{
-            padding: '20px',
-            textAlign: 'center',
-            color: 'var(--color_label)',
-          }}
-        >
-          {message}
-        </div>
+        <StatusMessage role="status">{message}</StatusMessage>
       </Container>
     </CustomPane>
-  </OverflowCell>
+  </SpanOverflowCell>
 );
 
 type Props = {
@@ -141,6 +152,15 @@ const MenuComponent = React.memo((props: any) => {
       isCustomMenuCommandContent(item.content) &&
       isDeferredApplyCommand(item.content[0]),
   );
+  // The submenu that owns the boot polling-mode control also hosts the diagnostics
+  // that measure it, so the measurement lives where the setting is changed instead of
+  // in a separate top-level page the user has to know about first. The section itself
+  // still checks the ERA diagnostics opt-in before sending anything to the keyboard.
+  const hasPollingModeControl = items.some(
+    (item: any) =>
+      isCustomMenuCommandContent(item.content) &&
+      isUsbPollingModeCommand(item.content[0]),
+  );
   return (
     <DeferredApplyProvider deferred={deferred}>
       {items.map((itemProps: any) => (
@@ -158,6 +178,7 @@ const MenuComponent = React.memo((props: any) => {
         />
       ))}
       <DeferredApplyButton />
+      {hasPollingModeControl && <UsbDiagnosticsSection />}
     </DeferredApplyProvider>
   );
 });
@@ -267,21 +288,15 @@ export const Pane: React.FC<Props> = (props: any) => {
   // Handle case where all menus are hidden
   if (menus.length === 0) {
     return (
-      <OverflowCell>
+      <SpanOverflowCell>
         <CustomPane>
           <Container>
-            <div
-              style={{
-                padding: '20px',
-                textAlign: 'center',
-                color: 'var(--color_label)',
-              }}
-            >
+            <StatusMessage role="status">
               {t('No features available for this firmware version.')}
-            </div>
+            </StatusMessage>
           </Container>
         </CustomPane>
-      </OverflowCell>
+      </SpanOverflowCell>
     );
   }
 

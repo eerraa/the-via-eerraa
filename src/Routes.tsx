@@ -1,5 +1,5 @@
 import {UnconnectedGlobalMenu} from './components/menus/global';
-import {Route} from 'wouter';
+import {Redirect, Route} from 'wouter';
 import PANES from './utils/pane-config';
 import {Home} from './components/Home';
 import {createGlobalStyle} from 'styled-components';
@@ -53,6 +53,12 @@ export default () => {
 
           <Home hasHIDSupport={hasHIDSupport}>
             {RouteComponents}
+            {/* USB Diagnostics moved into CONFIGURE > SYSTEM > USB POLLING, next to
+                the polling-mode controls it measures. An open tab or bookmark on the
+                removed page would otherwise render nothing at all. */}
+            <Route path="/diagnostics">
+              <Redirect to="/" />
+            </Route>
             {showConsoleTab && (
               <PersistentPane $active={location === '/console'}>
                 <HIDConsole isActive={location === '/console'} />

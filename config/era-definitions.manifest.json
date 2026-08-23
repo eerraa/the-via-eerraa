@@ -215,10 +215,47 @@
     },
     {
       "id": "brick60-h7s",
-      "path": "era-definitions/custom/v3/brick60/BRICK60-H7S-VIA.JSON",
+      "path": "era-definitions/custom/v3/brick60-h7s/BRICK60-H7S-VIA.json",
       "vendorId": "0x4552",
       "productId": "0x0022",
       "stateSync": true,
+      "usbDiagnostics": true,
+      "exactMsFamily": "h7s"
+    },
+    {
+      "id": "may65-h7s",
+      "path": "era-definitions/custom/v3/may65-h7s/MAY65-H7S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0030",
+      "stateSync": true,
+      "usbDiagnostics": true,
+      "exactMsFamily": "h7s"
+    },
+    {
+      "id": "intigrity80-h7s",
+      "path": "era-definitions/custom/v3/intigrity80-h7s/INTIGRITY80-H7S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0028",
+      "stateSync": true,
+      "usbDiagnostics": true,
+      "exactMsFamily": "h7s"
+    },
+    {
+      "id": "brick65-h7s",
+      "path": "era-definitions/custom/v3/brick65-h7s/BRICK65-H7S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0023",
+      "stateSync": true,
+      "usbDiagnostics": true,
+      "exactMsFamily": "h7s"
+    },
+    {
+      "id": "sculpturei-h7s",
+      "path": "era-definitions/custom/v3/sculpturei-h7s/SCULPTUREI-H7S-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0034",
+      "stateSync": true,
+      "usbDiagnostics": true,
       "exactMsFamily": "h7s"
     }
   ]
