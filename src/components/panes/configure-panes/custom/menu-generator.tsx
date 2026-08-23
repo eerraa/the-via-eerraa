@@ -39,7 +39,11 @@ import {
   updateCustomMenuRangeValue,
 } from 'src/store/menusSlice';
 import {useTranslation} from 'react-i18next';
-import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
+import {
+  isCustomMenuCommandContent,
+  isUsbPollingModeCommand,
+} from 'src/utils/custom-menu';
+import {UsbDiagnosticsSection} from './usb-diagnostics-section';
 
 type Category = {
   label: string;
@@ -148,6 +152,15 @@ const MenuComponent = React.memo((props: any) => {
       isCustomMenuCommandContent(item.content) &&
       isDeferredApplyCommand(item.content[0]),
   );
+  // The submenu that owns the boot polling-mode control also hosts the diagnostics
+  // that measure it, so the measurement lives where the setting is changed instead of
+  // in a separate top-level page the user has to know about first. The section itself
+  // still checks the ERA diagnostics opt-in before sending anything to the keyboard.
+  const hasPollingModeControl = items.some(
+    (item: any) =>
+      isCustomMenuCommandContent(item.content) &&
+      isUsbPollingModeCommand(item.content[0]),
+  );
   return (
     <DeferredApplyProvider deferred={deferred}>
       {items.map((itemProps: any) => (
@@ -165,6 +178,7 @@ const MenuComponent = React.memo((props: any) => {
         />
       ))}
       <DeferredApplyButton />
+      {hasPollingModeControl && <UsbDiagnosticsSection />}
     </DeferredApplyProvider>
   );
 });

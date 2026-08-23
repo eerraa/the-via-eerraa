@@ -276,6 +276,103 @@ describe('USB diagnostics result UI', () => {
     expect(html).toContain('rather than which mode is faster');
   });
 
+  // The summary view is what a user sees first, next to the polling-mode controls.
+  // Everything asserted here exists so that view can answer "was there a problem"
+  // without letting any of the hardware-confirmed caveats disappear.
+  test('summary view answers each measured category in its own sentence', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={snapshots}
+      />,
+    );
+    expect(html).toContain('-second test observed');
+    expect(html).toContain(
+      'No report queue drops were observed during this test.',
+    );
+    expect(html).toContain('No USB reset, reconfiguration, suspend');
+    expect(html).toContain('firmware main-loop gap');
+    expect(html).toContain('Report queue depth peaked at');
+    expect(html).toContain('which is the speed HS 8K requires');
+    // "No failures observed" would cover categories this test never measured.
+    expect(html).toContain('Categories this test does not measure');
+    expect(html).not.toMatch(
+      /stability \d|health|quality score|perfect|certified/i,
+    );
+    expect(html).not.toMatch(/good|bad|stable|unstable/i);
+  });
+
+  test('summary view leaves the phase-dependent and bucketed numbers to advanced', () => {
+    // Absolute latency is re-drawn on every enumeration, normalized multipliers
+    // invert the mode ranking, p99 is a bucket bound and the boot counters are not a
+    // live reading. None of them can be read correctly without their caption, so the
+    // summary omits the numbers rather than the captions.
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={snapshots}
+      />,
+    );
+    expect(html).not.toContain('Minimum / average');
+    expect(html).not.toContain('p99 histogram bound');
+    expect(html).not.toContain('HID timing trend');
+    expect(html).not.toContain('Normalized timing distribution');
+    expect(html).not.toContain('Event timeline');
+    expect(html).not.toContain('Since firmware boot');
+    expect(html).not.toContain('not a live reading');
+    expect(html).not.toContain('<polyline');
+  });
+
+  test('summary view keeps the speed-mismatch caveat', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={[diagnosticSnapshot({pollingMode: 3, speed: 1})]}
+      />,
+    );
+    expect(html).toContain('Normalized values do not describe this mode');
+    expect(html).toContain(
+      'HS 8K requires High Speed, but the link enumerated at Full Speed.',
+    );
+  });
+
+  test('summary view keeps the source of a result it did not just measure', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={snapshots}
+        storedRunLabel="HS 8K · 30s · complete · 8/23/2026"
+      />,
+    );
+    expect(html).toContain('Previously stored result — not this session');
+    expect(html).toContain('HS 8K · 30s · complete · 8/23/2026');
+  });
+
+  test('summary view names a window in which nothing was sent', () => {
+    // Every delivery statement is vacuously true with no reports, which reads like a
+    // clean result unless the empty window is named.
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={[
+          diagnosticSnapshot({
+            reportSamples: 0,
+            queueDepthPeak: 0,
+            histogram: [0, 0, 0, 0, 0, 0, 0, 0],
+          }),
+        ]}
+      />,
+    );
+    expect(html).toContain(
+      'No HID keyboard reports were sent during this test',
+    );
+  });
+
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {
     const mismatchRun = (
       id: string,

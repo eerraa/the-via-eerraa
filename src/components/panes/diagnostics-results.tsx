@@ -48,6 +48,16 @@ const Muted = styled.p({
   margin: '6px 0',
 });
 
+// The summary view answers one question — was anything observed in this window — so
+// each measured category gets its own sentence instead of a number the reader has to
+// interpret. No category is summarized into a single verdict.
+const FindingList = styled.ul({
+  color: 'var(--color_label-highlighted)',
+  lineHeight: 1.55,
+  margin: '0 0 10px',
+  paddingLeft: 20,
+});
+
 const Summary = styled(FullPanel)({
   borderLeft: '4px solid var(--color_accent)',
 });
@@ -456,13 +466,18 @@ export const DiagnosticsResultView: FC<{
   snapshots: UsbDiagnosticsSnapshot[];
   outcome?: UsbDiagnosticsRunOutcome;
   storedRunLabel?: string;
-}> = ({snapshots, outcome, storedRunLabel}) => {
+  // 'summary' keeps the caveat panels and the per-category statements and drops the
+  // panels a first-time reader cannot act on. 'full' adds them back unchanged.
+  detail?: 'summary' | 'full';
+}> = ({snapshots, outcome, storedRunLabel, detail = 'full'}) => {
   const snapshot = snapshots.at(-1);
   if (!snapshot) {
     return null;
   }
   const drops = snapshot.sessionCounters.reportDrops;
   const hardEvents = sessionHardEventCount(snapshot);
+  const stalls = snapshot.loopStallCount;
+  const stallThreshold = formatMicroseconds(snapshot.loopStallThresholdUs);
   const p50 = estimateHistogramQuantile(snapshot.histogram, 0.5);
   const p95 = estimateHistogramQuantile(snapshot.histogram, 0.95);
   const p99 = estimateHistogramQuantile(snapshot.histogram, 0.99);
@@ -495,7 +510,7 @@ export const DiagnosticsResultView: FC<{
           </SummaryHeadline>
           <Muted>
             Every multiplier, histogram bucket, quantile bound and trend point
-            below is normalized against the{' '}
+            in the advanced metrics is normalized against the{' '}
             {formatMicroseconds(snapshot.expectedIntervalUs)} interval of the
             selected mode, so they describe a polling rate this connection never
             ran at. The raw microsecond values and the counters remain valid.
@@ -509,23 +524,59 @@ export const DiagnosticsResultView: FC<{
       )}
       <Summary>
         <PanelTitle>
-          USB Diagnostics —{' '}
-          {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)} /{' '}
+          Result — {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)} /{' '}
           {usbDiagnosticsSpeedLabel(snapshot.speed)}
         </PanelTitle>
         <SummaryHeadline>
-          {drops === 0
-            ? 'No report queue drops were observed during this test.'
-            : `${formatInteger(drops)} report queue drop(s) were observed during this test.`}
+          What this {snapshot.durationSeconds}-second test observed
         </SummaryHeadline>
-        <Muted>
-          {hardEvents === 0
-            ? 'No USB reset, reconfiguration, suspend, or speed change was observed in the session.'
-            : `${formatInteger(hardEvents)} USB hard event(s) were observed in the session.`}
-        </Muted>
+        <FindingList>
+          <li>
+            {drops === 0
+              ? 'No report queue drops were observed during this test.'
+              : `${formatInteger(drops)} report queue drop(s) were observed during this test.`}
+          </li>
+          <li>
+            {hardEvents === 0
+              ? 'No USB reset, reconfiguration, suspend, or speed change was observed in the session.'
+              : `${formatInteger(hardEvents)} USB hard event(s) were observed in the session.`}
+          </li>
+          <li>
+            {stalls === 0
+              ? `No firmware main-loop gap longer than ${stallThreshold} was observed during this test.`
+              : `${formatInteger(stalls)} firmware main-loop gap(s) longer than ${stallThreshold} were observed during this test.`}
+          </li>
+          <li>
+            Report queue depth peaked at{' '}
+            {formatInteger(snapshot.queueDepthPeak)} waiting report(s).
+          </li>
+          <li>
+            {speedConsistent
+              ? `The link enumerated at ${usbDiagnosticsSpeedLabel(
+                  snapshot.speed,
+                )}, which is the speed ${usbDiagnosticsPollingModeLabel(
+                  snapshot.pollingMode,
+                )} requires.`
+              : speedMismatchText(snapshot.pollingMode, snapshot.speed)}
+          </li>
+        </FindingList>
         {outcome === 'aborted' && (
           <Muted>This is a partial result from an interrupted session.</Muted>
         )}
+        {snapshot.reportSamples === 0 && (
+          // Every delivery statement above is vacuously true when nothing was sent,
+          // which reads like a clean result unless the window is named as empty.
+          <Muted>
+            No HID keyboard reports were sent during this test, so the delivery
+            lines describe a window with no keyboard traffic. Type on the
+            keyboard while the next test runs.
+          </Muted>
+        )}
+        <Muted>
+          Each line above covers only the category it names, over the window
+          this test ran. Categories this test does not measure are not covered
+          by it.
+        </Muted>
         <Muted>
           State: {usbDiagnosticsStateLabel(snapshot.state)} ·{' '}
           {(snapshot.elapsedMs / 1000).toFixed(1)} / {snapshot.durationSeconds}s
@@ -535,162 +586,177 @@ export const DiagnosticsResultView: FC<{
         </ProgressTrack>
       </Summary>
 
-      <Panel>
-        <PanelTitle>Connection</PanelTitle>
-        <MetricGrid>
-          <MetricName>Polling mode</MetricName>
-          <MetricValue>
-            {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)}
-          </MetricValue>
-          <MetricName>Negotiated USB speed</MetricName>
-          <MetricValue>{usbDiagnosticsSpeedLabel(snapshot.speed)}</MetricValue>
-          <MetricName>Expected interval</MetricName>
-          <MetricValue>
-            {formatMicroseconds(snapshot.expectedIntervalUs)}
-          </MetricValue>
-          <MetricName>Session ID</MetricName>
-          <MetricValue>{snapshot.sessionId}</MetricValue>
-        </MetricGrid>
-        <Muted>
-          {speedConsistent
-            ? 'The negotiated speed matches the selected polling mode, so the normalized values below describe that mode.'
-            : speedMismatchText(snapshot.pollingMode, snapshot.speed)}
-        </Muted>
-      </Panel>
+      {detail === 'full' && (
+        <>
+          <Panel>
+            <PanelTitle>Connection</PanelTitle>
+            <MetricGrid>
+              <MetricName>Polling mode</MetricName>
+              <MetricValue>
+                {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)}
+              </MetricValue>
+              <MetricName>Negotiated USB speed</MetricName>
+              <MetricValue>
+                {usbDiagnosticsSpeedLabel(snapshot.speed)}
+              </MetricValue>
+              <MetricName>Expected interval</MetricName>
+              <MetricValue>
+                {formatMicroseconds(snapshot.expectedIntervalUs)}
+              </MetricValue>
+              <MetricName>Session ID</MetricName>
+              <MetricValue>{snapshot.sessionId}</MetricValue>
+            </MetricGrid>
+            <Muted>
+              {speedConsistent
+                ? 'The negotiated speed matches the selected polling mode, so the normalized values below describe that mode.'
+                : speedMismatchText(snapshot.pollingMode, snapshot.speed)}
+            </Muted>
+          </Panel>
 
-      <Panel>
-        <PanelTitle>HID delivery</PanelTitle>
-        <MetricGrid>
-          <MetricName>Reports observed</MetricName>
-          <MetricValue>{formatInteger(snapshot.reportSamples)}</MetricValue>
-          <MetricName>Queue depth peak</MetricName>
-          <MetricValue>{formatInteger(snapshot.queueDepthPeak)}</MetricValue>
-          <MetricName>Report queue drops</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.sessionCounters.reportDrops)}
-          </MetricValue>
-          <MetricName>Minimum / average</MetricName>
-          <MetricValue>
-            {formatMicroseconds(snapshot.latencyMinUs)} /{' '}
-            {formatMicroseconds(snapshot.latencyAverageUs)}
-          </MetricValue>
-          <MetricName>Maximum</MetricName>
-          <MetricValue>{formatMicroseconds(snapshot.latencyMaxUs)}</MetricValue>
-        </MetricGrid>
-        <Muted>
-          Delivery timing begins when firmware receives a keyboard report and
-          ends on the keyboard USB IN completion, including queue wait. The
-          minimum is this connection’s fixed offset between the firmware tick
-          and the USB frame; it is re-drawn on every replug, so compare runs by
-          Maximum minus Minimum rather than by the absolute values.
-        </Muted>
-      </Panel>
+          <Panel>
+            <PanelTitle>HID delivery</PanelTitle>
+            <MetricGrid>
+              <MetricName>Reports observed</MetricName>
+              <MetricValue>{formatInteger(snapshot.reportSamples)}</MetricValue>
+              <MetricName>Queue depth peak</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.queueDepthPeak)}
+              </MetricValue>
+              <MetricName>Report queue drops</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.sessionCounters.reportDrops)}
+              </MetricValue>
+              <MetricName>Minimum / average</MetricName>
+              <MetricValue>
+                {formatMicroseconds(snapshot.latencyMinUs)} /{' '}
+                {formatMicroseconds(snapshot.latencyAverageUs)}
+              </MetricValue>
+              <MetricName>Maximum</MetricName>
+              <MetricValue>
+                {formatMicroseconds(snapshot.latencyMaxUs)}
+              </MetricValue>
+            </MetricGrid>
+            <Muted>
+              Delivery timing begins when firmware receives a keyboard report
+              and ends on the keyboard USB IN completion, including queue wait.
+              The minimum is this connection’s fixed offset between the firmware
+              tick and the USB frame; it is re-drawn on every replug, so compare
+              runs by Maximum minus Minimum rather than by the absolute values.
+            </Muted>
+          </Panel>
 
-      <Panel>
-        <PanelTitle>Normalized timing bounds</PanelTitle>
-        <MetricGrid>
-          <MetricName>p50 histogram bound</MetricName>
-          <MetricValue>{p50?.label ?? 'No samples'}</MetricValue>
-          <MetricName>p95 histogram bound</MetricName>
-          <MetricValue>{p95?.label ?? 'No samples'}</MetricValue>
-          <MetricName>p99 histogram bound</MetricName>
-          <MetricValue>{p99?.label ?? 'No samples'}</MetricValue>
-          <MetricName>&gt; 2× interval</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.histogram[6] + snapshot.histogram[7])}
-          </MetricValue>
-        </MetricGrid>
-        <Muted>
-          Quantiles are bounded estimates from eight fixed histogram buckets,
-          not raw-sample percentiles.
-        </Muted>
-      </Panel>
+          <Panel>
+            <PanelTitle>Normalized timing bounds</PanelTitle>
+            <MetricGrid>
+              <MetricName>p50 histogram bound</MetricName>
+              <MetricValue>{p50?.label ?? 'No samples'}</MetricValue>
+              <MetricName>p95 histogram bound</MetricName>
+              <MetricValue>{p95?.label ?? 'No samples'}</MetricValue>
+              <MetricName>p99 histogram bound</MetricName>
+              <MetricValue>{p99?.label ?? 'No samples'}</MetricValue>
+              <MetricName>&gt; 2× interval</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.histogram[6] + snapshot.histogram[7])}
+              </MetricValue>
+            </MetricGrid>
+            <Muted>
+              Quantiles are bounded estimates from eight fixed histogram
+              buckets, not raw-sample percentiles.
+            </Muted>
+          </Panel>
 
-      <FullPanel>
-        <PanelTitle>HID timing trend</PanelTitle>
-        <DiagnosticsTimingTrend snapshots={snapshots} />
-      </FullPanel>
+          <FullPanel>
+            <PanelTitle>HID timing trend</PanelTitle>
+            <DiagnosticsTimingTrend snapshots={snapshots} />
+          </FullPanel>
 
-      <FullPanel>
-        <PanelTitle>Normalized timing distribution</PanelTitle>
-        <DiagnosticsDistribution snapshot={snapshot} />
-      </FullPanel>
+          <FullPanel>
+            <PanelTitle>Normalized timing distribution</PanelTitle>
+            <DiagnosticsDistribution snapshot={snapshot} />
+          </FullPanel>
 
-      <Panel>
-        <PanelTitle>Firmware timing</PanelTitle>
-        <MetricGrid>
-          <MetricName>Main-loop samples</MetricName>
-          <MetricValue>{formatInteger(snapshot.loopSamples)}</MetricValue>
-          <MetricName>Maximum loop gap</MetricName>
-          <MetricValue>{formatMicroseconds(snapshot.loopGapMaxUs)}</MetricValue>
-          <MetricName>
-            Gaps &gt; {formatMicroseconds(snapshot.loopStallThresholdUs)}
-          </MetricName>
-          <MetricValue>{formatInteger(snapshot.loopStallCount)}</MetricValue>
-        </MetricGrid>
-        <Muted>
-          This separates long firmware main-loop gaps from HID delivery timing.
-        </Muted>
-      </Panel>
+          <Panel>
+            <PanelTitle>Firmware timing</PanelTitle>
+            <MetricGrid>
+              <MetricName>Main-loop samples</MetricName>
+              <MetricValue>{formatInteger(snapshot.loopSamples)}</MetricValue>
+              <MetricName>Maximum loop gap</MetricName>
+              <MetricValue>
+                {formatMicroseconds(snapshot.loopGapMaxUs)}
+              </MetricValue>
+              <MetricName>
+                Gaps &gt; {formatMicroseconds(snapshot.loopStallThresholdUs)}
+              </MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.loopStallCount)}
+              </MetricValue>
+            </MetricGrid>
+            <Muted>
+              This separates long firmware main-loop gaps from HID delivery
+              timing.
+            </Muted>
+          </Panel>
 
-      <Panel>
-        <PanelTitle>USB events during the session</PanelTitle>
-        <MetricGrid>
-          <MetricName>Resets</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.sessionCounters.usbResets)}
-          </MetricValue>
-          <MetricName>Configurations</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.sessionCounters.configurations)}
-          </MetricValue>
-          <MetricName>Suspends</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.sessionCounters.suspends)}
-          </MetricValue>
-          <MetricName>Speed changes</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.sessionCounters.speedChanges)}
-          </MetricValue>
-        </MetricGrid>
-      </Panel>
+          <Panel>
+            <PanelTitle>USB events during the session</PanelTitle>
+            <MetricGrid>
+              <MetricName>Resets</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.sessionCounters.usbResets)}
+              </MetricValue>
+              <MetricName>Configurations</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.sessionCounters.configurations)}
+              </MetricValue>
+              <MetricName>Suspends</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.sessionCounters.suspends)}
+              </MetricValue>
+              <MetricName>Speed changes</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.sessionCounters.speedChanges)}
+              </MetricValue>
+            </MetricGrid>
+          </Panel>
 
-      <FullPanel>
-        <PanelTitle>Event timeline</PanelTitle>
-        <DiagnosticsTimeline snapshot={snapshot} />
-      </FullPanel>
+          <FullPanel>
+            <PanelTitle>Event timeline</PanelTitle>
+            <DiagnosticsTimeline snapshot={snapshot} />
+          </FullPanel>
 
-      <FullPanel>
-        <PanelTitle>Since firmware boot</PanelTitle>
-        <MetricGrid>
-          <MetricName>Report queue drops</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.bootCounters.reportDrops)}
-          </MetricValue>
-          <MetricName>USB resets / configurations</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.bootCounters.usbResets)} /{' '}
-            {formatInteger(snapshot.bootCounters.configurations)}
-          </MetricValue>
-          <MetricName>Suspends / speed changes</MetricName>
-          <MetricValue>
-            {formatInteger(snapshot.bootCounters.suspends)} /{' '}
-            {formatInteger(snapshot.bootCounters.speedChanges)}
-          </MetricValue>
-        </MetricGrid>
-        <Muted>
-          These are the values captured at the end of this test, not a live
-          reading — they only change when a test produces a new snapshot.
-          Applying a polling mode restarts the keyboard, which zeroes them, so a
-          test run right after a mode change always starts near zero. To check
-          whether an unplug, suspend or speed change was counted, trigger it and
-          then run another short test.
-        </Muted>
-        <Muted>
-          RAM-only. They reset when the firmware restarts and are never written
-          to EEPROM.
-        </Muted>
-      </FullPanel>
+          <FullPanel>
+            <PanelTitle>Since firmware boot</PanelTitle>
+            <MetricGrid>
+              <MetricName>Report queue drops</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.bootCounters.reportDrops)}
+              </MetricValue>
+              <MetricName>USB resets / configurations</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.bootCounters.usbResets)} /{' '}
+                {formatInteger(snapshot.bootCounters.configurations)}
+              </MetricValue>
+              <MetricName>Suspends / speed changes</MetricName>
+              <MetricValue>
+                {formatInteger(snapshot.bootCounters.suspends)} /{' '}
+                {formatInteger(snapshot.bootCounters.speedChanges)}
+              </MetricValue>
+            </MetricGrid>
+            <Muted>
+              These are the values captured at the end of this test, not a live
+              reading — they only change when a test produces a new snapshot.
+              Applying a polling mode restarts the keyboard, which zeroes them,
+              so a test run right after a mode change always starts near zero.
+              To check whether an unplug, suspend or speed change was counted,
+              trigger it and then run another short test.
+            </Muted>
+            <Muted>
+              RAM-only. They reset when the firmware restarts and are never
+              written to EEPROM.
+            </Muted>
+          </FullPanel>
+        </>
+      )}
     </DashboardGrid>
   );
 };
