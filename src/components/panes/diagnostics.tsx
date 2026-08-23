@@ -216,6 +216,8 @@ export const Diagnostics: FC = () => {
   const [history, setHistory] = useState<UsbDiagnosticsRun[]>(() =>
     loadUsbDiagnosticsHistory(),
   );
+  const [recoveredSnapshot, setRecoveredSnapshot] =
+    useState<UsbDiagnosticsSnapshot | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [commandPending, setCommandPending] = useState(false);
@@ -432,6 +434,7 @@ export const Diagnostics: FC = () => {
     setCommandError(null);
     setCurrentRun(null);
     setSnapshots([]);
+    setRecoveredSnapshot(null);
 
     if (!device || !ready || !api || !metadataReady) {
       setCapabilityState('loading');
@@ -506,6 +509,7 @@ export const Diagnostics: FC = () => {
     setCopyStatus(null);
     setCurrentRun(null);
     setSnapshots([]);
+    setRecoveredSnapshot(null);
 
     const result = await startUsbDiagnostics(api, duration);
     if (!isCurrent(active)) {
@@ -627,6 +631,39 @@ export const Diagnostics: FC = () => {
     }
   }, [api, appendSnapshot, capabilities, finishActive, isCurrent, pollActive]);
 
+  // The firmware keeps a finished session in RAM until CLEAR or the next START, so a
+  // test whose page lost track of it (sleep, reload, reconnect) is still recoverable.
+  // Read it on demand instead of letting the result disappear.
+  const handleReadDeviceResult = useCallback(async () => {
+    if (!api || activeRef.current) {
+      return;
+    }
+    setCommandPending(true);
+    setCommandError(null);
+    const result = await getUsbDiagnosticsSnapshot(api);
+    setCommandPending(false);
+    if (result.kind !== 'ok') {
+      setCommandError(failureMessage(result));
+      return;
+    }
+    if (result.value.state !== 2 && result.value.state !== 3) {
+      setCommandError('The keyboard no longer holds a finished session.');
+      return;
+    }
+    setRecoveredSnapshot(result.value);
+    setCurrentRun(null);
+    setSnapshots([]);
+    setCapabilities((previous) =>
+      previous
+        ? {
+            ...previous,
+            sessionState: result.value.state,
+            sessionId: result.value.sessionId,
+          }
+        : previous,
+    );
+  }, [api]);
+
   const handleClear = useCallback(async () => {
     if (!api || activeRef.current) {
       return;
@@ -641,6 +678,7 @@ export const Diagnostics: FC = () => {
     }
     setSnapshots([]);
     setCurrentRun(null);
+    setRecoveredSnapshot(null);
     setCapabilities((previous) =>
       previous
         ? {...previous, sessionState: result.value.state, sessionId: 0}
@@ -660,13 +698,42 @@ export const Diagnostics: FC = () => {
   }, [capabilities, device, history]);
 
   const displayedRun = currentRun ?? comparableRuns[0] ?? null;
-  const showingStoredRun = snapshots.length === 0 && displayedRun !== null;
+  const showingStoredRun =
+    snapshots.length === 0 && !recoveredSnapshot && displayedRun !== null;
   const displayedSnapshots = snapshots.length
     ? snapshots
-    : (displayedRun?.snapshots ?? []);
+    : recoveredSnapshot
+      ? [recoveredSnapshot]
+      : (displayedRun?.snapshots ?? []);
   // A run whose device or connection changed mid-session clears the live view, so the
   // pane would otherwise fall back to an older stored run with nothing marking it as
   // stale. Name the run whenever what is shown is not the current connection's result.
+  // A recovered session has no page-side start time, so build its run only for Copy and
+  // never store it — history entries must keep a known start time and identity.
+  const recoveredRun = useMemo(() => {
+    if (!recoveredSnapshot || !device || !capabilities) {
+      return null;
+    }
+    const endedAt = new Date();
+    return createUsbDiagnosticsRun({
+      vendorProductId: device.vendorProductId,
+      productName: device.productName,
+      capabilities,
+      startedAt: new Date(endedAt.getTime() - recoveredSnapshot.elapsedMs),
+      endedAt,
+      outcome: recoveredSnapshot.state === 2 ? 'complete' : 'stopped',
+      abortReason:
+        'Read from the keyboard after the page lost track of the session; start time is approximate.',
+      snapshots: [recoveredSnapshot],
+    });
+  }, [capabilities, device, recoveredSnapshot]);
+
+  const recoveredRunLabel = recoveredSnapshot
+    ? `${usbDiagnosticsPollingModeLabel(recoveredSnapshot.pollingMode)} · ${
+        recoveredSnapshot.durationSeconds
+      }s · read from the keyboard, not from a test this page ran`
+    : undefined;
+
   const storedRunLabel =
     showingStoredRun && displayedRun
       ? `${usbDiagnosticsPollingModeLabel(displayedRun.pollingMode)} · ${
@@ -677,7 +744,8 @@ export const Diagnostics: FC = () => {
       : undefined;
 
   const handleCopy = useCallback(async () => {
-    const run = currentRun ?? comparableRuns[0];
+    // Copy must follow what the view shows, or the report describes a different run.
+    const run = recoveredRun ?? currentRun ?? comparableRuns[0];
     if (!run) {
       return;
     }
@@ -687,7 +755,7 @@ export const Diagnostics: FC = () => {
     } catch {
       setCopyStatus('Unable to access the clipboard.');
     }
-  }, [comparableRuns, currentRun]);
+  }, [comparableRuns, currentRun, recoveredRun]);
 
   const running = activeRef.current !== null;
 
@@ -777,6 +845,17 @@ export const Diagnostics: FC = () => {
               </AccentButton>
               <AccentButton
                 disabled={
+                  running ||
+                  commandPending ||
+                  (capabilities.sessionState !== 2 &&
+                    capabilities.sessionState !== 3)
+                }
+                onClick={handleReadDeviceResult}
+              >
+                Read Device Result
+              </AccentButton>
+              <AccentButton
+                disabled={
                   running || commandPending || capabilities.sessionState === 1
                 }
                 onClick={handleClear}
@@ -784,13 +863,29 @@ export const Diagnostics: FC = () => {
                 Clear Device Result
               </AccentButton>
               <AccentButton
-                disabled={!displayedRun || running}
+                disabled={(!displayedRun && !recoveredRun) || running}
                 onClick={handleCopy}
               >
                 Copy Diagnostic Report
               </AccentButton>
               {copyStatus && <span>{copyStatus}</span>}
             </Controls>
+
+            {(capabilities.sessionState === 2 ||
+              capabilities.sessionState === 3) &&
+              !running &&
+              !recoveredSnapshot &&
+              snapshots.length === 0 && (
+                <StatusMessage>
+                  <PanelTitle>
+                    Finished session still on the keyboard
+                  </PanelTitle>
+                  The keyboard is holding the result of a session this page did
+                  not follow to the end — for example one interrupted by sleep,
+                  a reload, or a reconnect. Read Device Result shows it.
+                  Starting a new test or Clear Device Result discards it.
+                </StatusMessage>
+              )}
 
             {capabilities.sessionState === 1 && !running && (
               <StatusMessage>
@@ -806,9 +901,13 @@ export const Diagnostics: FC = () => {
 
             {displayedSnapshots.length > 0 ? (
               <DiagnosticsResultView
-                outcome={currentRun?.outcome ?? displayedRun?.outcome}
+                outcome={
+                  recoveredRun?.outcome ??
+                  currentRun?.outcome ??
+                  displayedRun?.outcome
+                }
                 snapshots={displayedSnapshots}
-                storedRunLabel={storedRunLabel}
+                storedRunLabel={recoveredRunLabel ?? storedRunLabel}
               />
             ) : (
               <StatusMessage>
