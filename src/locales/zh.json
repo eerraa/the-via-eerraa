@@ -268,7 +268,7 @@
   "First Key Priority": "第一按键优先级",
   "Second Key Priority": "第二按键优先级",
   "No features available for this firmware version.": "此固件版本无可用功能。",
-  "Unable to verify feature support. Reconnect the keyboard. If the problem persists, update to the latest firmware.": "无法确认功能支持情况。请重新连接键盘。如果问题仍然存在，请更新到最新固件。",
+  "Unable to verify feature support. Reconnect the keyboard. If the problem persists, update to the latest firmware.": "无法确认功能支持情况。请重新连接键盘。\n如果问题仍然存在，请更新到最新固件。",
   "Unable to load feature settings. Reconnect the keyboard and try again.": "无法加载功能设置。请重新连接键盘后重试。",
   "General Board": "通用板",
   "Caps Key": "大写锁定键",

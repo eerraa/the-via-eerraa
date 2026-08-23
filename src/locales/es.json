@@ -273,7 +273,7 @@
   "Second Key Priority": "Prioridad de segunda tecla",
   "This feature is not available for this firmware version.": "Esta función no está disponible para esta versión de firmware.",
   "No features available for this firmware version.": "No hay funciones disponibles para esta versión de firmware.",
-  "Unable to verify feature support. Reconnect the keyboard. If the problem persists, update to the latest firmware.": "No se puede verificar la compatibilidad de las funciones. Vuelve a conectar el teclado. Si el problema persiste, actualiza al firmware más reciente.",
+  "Unable to verify feature support. Reconnect the keyboard. If the problem persists, update to the latest firmware.": "No se puede verificar la compatibilidad de las funciones. Vuelve a conectar el teclado.\nSi el problema persiste, actualiza al firmware más reciente.",
   "Unable to load feature settings. Reconnect the keyboard and try again.": "No se puede cargar la configuración de funciones. Vuelve a conectar el teclado e inténtalo de nuevo.",
   "General Board": "Placa general",
   "Caps Key": "Tecla Bloq Mayús",
