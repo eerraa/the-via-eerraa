@@ -7,7 +7,12 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import React, {useState} from 'react';
 import styled from 'styled-components';
-import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../../grid';
+import {
+  OverflowCell,
+  SpanOverflowCell,
+  SubmenuOverflowCell,
+  SubmenuRow,
+} from '../../grid';
 import {CenterPane} from '../../pane';
 import {title, component} from '../../../icons/lightbulb';
 import {VIACustomItem} from './custom-control';
@@ -54,23 +59,25 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
+const StatusMessage = styled.div`
+  padding: 40px 20px;
+  max-width: 640px;
+  text-align: center;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--color_label);
+  word-break: keep-all;
+  white-space: pre-line;
+`;
+
 const MenuStatus: React.FC<{message: string}> = ({message}) => (
-  <OverflowCell>
+  <SpanOverflowCell>
     <CustomPane>
       <Container>
-        <div
-          role="status"
-          style={{
-            padding: '20px',
-            textAlign: 'center',
-            color: 'var(--color_label)',
-          }}
-        >
-          {message}
-        </div>
+        <StatusMessage role="status">{message}</StatusMessage>
       </Container>
     </CustomPane>
-  </OverflowCell>
+  </SpanOverflowCell>
 );
 
 type Props = {
@@ -267,21 +274,15 @@ export const Pane: React.FC<Props> = (props: any) => {
   // Handle case where all menus are hidden
   if (menus.length === 0) {
     return (
-      <OverflowCell>
+      <SpanOverflowCell>
         <CustomPane>
           <Container>
-            <div
-              style={{
-                padding: '20px',
-                textAlign: 'center',
-                color: 'var(--color_label)',
-              }}
-            >
+            <StatusMessage role="status">
               {t('No features available for this firmware version.')}
-            </div>
+            </StatusMessage>
           </Container>
         </CustomPane>
-      </OverflowCell>
+      </SpanOverflowCell>
     );
   }
 
