@@ -200,22 +200,38 @@ App에는 독립 chart dependency를 추가하지 않았다. SVG/CSS view가 VIA
 사용하고 responsive grid와 horizontal table overflow로 기존 dark/light theme와 좁은
 viewport를 따른다.
 
+## Absolute microseconds are the comparison axis
+
+1차 실기(BRICK60)에서 FS 1K / HS 2K / HS 4K의 평균 지연이 231 / 224 / 232 µs로 사실상
+같았는데 정규화값은 0.23× / 0.45× / 0.93×로 갈려, 비교표가 FS를 최고·HS 4K를 최악으로
+보여줬다. 리포트 방출이 firmware 디바운스의 1 ms tick 경계에 묶여 있어 지연의 절대 폭이
+폴링 간격과 무관하기 때문이다. 따라서 mode comparison table은 **absolute µs(Avg/Max)를
+기본 축**으로 제시하고, normalized column은 "그 mode가 자기 interval 예산 안에 있었는가"라는
+별개 질문임을 명시한다. Normalized column을 없애지는 않는다 — budget 질문에는 여전히 맞다.
+
+## Stored-result fallback must name its source
+
+Session이 중단되면 `currentRun`과 live snapshot이 초기화되고 `comparableRuns[0]`으로
+말없이 fallback해, "Unmatched firmware session" 배너와 이전 run의 "State: Complete"가
+동시에 표시됐다. Copy Diagnostic Report도 그 이전 run을 복사했다. 표시 중인 결과가 현재
+연결의 것이 아니면 mode·duration·outcome·timestamp를 명시한 caveat panel을 띄운다.
+
 ## Deferred (post-hardware)
 
 실기 baseline 확보 후 착수한다. 판단 기준은 배포 위험이 아니라 구조적 정당성이다.
 펌웨어 측 항목과 근거 전문은 `eerraa-qmk-h7s-fw-via2/docs/DECISIONS.md`의
 "보류 항목 아키텍처 판단"에 있다.
 
-- **Trend 창 정합성** (`buildUsbDiagnosticsTrend`): p99는 *채택된* snapshot 두 개 사이,
+- ~~**Trend 창 정합성**~~ (V260824R1에서 수정함) (`buildUsbDiagnosticsTrend`): p99는 *채택된* snapshot 두 개 사이,
   window maximum은 *capture* 두 개 사이로 창 경계가 다르다. Snapshot 읽기가 중간에
   실패하면 그 주기의 chunk 0이 이미 firmware 창을 리셋했으므로 다음 점에서 두 계열의
   범위가 어긋난다. Firmware가 capture마다 증가하는 `sequence`를 이미 보내므로
   `sequence - previousSequence !== 1`을 host가 감지할 수 있다. Firmware 변경 없이
   host에서 불연속 구간의 window maximum을 제외하거나 점을 분리한다.
-- **localStorage 저장 실패 노출**: `saveUsbDiagnosticsRun()`의 boolean 반환을
+- ~~**localStorage 저장 실패 노출**~~ (V260824R1에서 수정함): `saveUsbDiagnosticsRun()`의 boolean 반환을
   `finishActive()`가 무시해 조용한 데이터 유실 경로가 된다. UI state로 전파한다.
   Quota가 실제 문제가 되면 IndexedDB 재설계 대신 오래된 run의 보관 snapshot 수를 줄인다.
-- **Firmware D-1 수정 이후 재측정**: IN endpoint busy state를 endpoint별로 분리하면
+- **Firmware D-1은 V260824R1에서 수정됨 → 재측정 필수**: IN endpoint busy state를 endpoint별로 분리하면
   keyboard와 EXK가 동시에 in-flight가 되어 delivery latency와 queue depth의 기준선이
   내려간다. 수정 전후 결과를 같은 비교 그룹에 넣지 않는다.
 

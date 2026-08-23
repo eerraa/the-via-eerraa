@@ -236,18 +236,28 @@ type TrendPoint = {
   worstMultiplier: number;
 };
 
+// The two series have different window boundaries: the p99 bound is the histogram
+// delta between two *accepted* snapshots, while the firmware resets its window
+// maximum on every *capture*. `sequence` increments on every capture, so a gap means
+// a snapshot read failed in between and the histogram delta then spans more windows
+// than the window maximum does. Drop the window maximum for such a point rather than
+// plotting two different windows as one.
 export const buildUsbDiagnosticsTrend = (
   snapshots: UsbDiagnosticsSnapshot[],
 ): TrendPoint[] => {
   let previousHistogram = new Array(8).fill(0);
+  let previousSequence: number | null = null;
   return snapshots.flatMap((snapshot) => {
     const intervalHistogram = snapshot.histogram.map((count, index) =>
       Math.max(0, count - previousHistogram[index]),
     );
+    const contiguous =
+      previousSequence === null || snapshot.sequence - previousSequence === 1;
     previousHistogram = snapshot.histogram;
+    previousSequence = snapshot.sequence;
     const quantile = estimateHistogramQuantile(intervalHistogram, 0.99);
     const worstMultiplier =
-      snapshot.expectedIntervalUs === 0
+      snapshot.expectedIntervalUs === 0 || !contiguous
         ? 0
         : snapshot.intervalLatencyMaxUs / snapshot.expectedIntervalUs;
     if (!quantile) {
@@ -445,7 +455,8 @@ const DiagnosticsTimeline: FC<{snapshot: UsbDiagnosticsSnapshot}> = ({
 export const DiagnosticsResultView: FC<{
   snapshots: UsbDiagnosticsSnapshot[];
   outcome?: UsbDiagnosticsRunOutcome;
-}> = ({snapshots, outcome}) => {
+  storedRunLabel?: string;
+}> = ({snapshots, outcome, storedRunLabel}) => {
   const snapshot = snapshots.at(-1);
   if (!snapshot) {
     return null;
@@ -464,6 +475,18 @@ export const DiagnosticsResultView: FC<{
 
   return (
     <DashboardGrid>
+      {storedRunLabel && (
+        <Caveat>
+          <PanelTitle>Previously stored result — not this session</PanelTitle>
+          <SummaryHeadline>{storedRunLabel}</SummaryHeadline>
+          <Muted>
+            No result has been captured for the current connection yet, so the
+            last stored test is shown instead. Copy Diagnostic Report copies
+            this same stored run. Start a new test to measure the current
+            connection.
+          </Muted>
+        </Caveat>
+      )}
       {!speedConsistent && (
         <Caveat>
           <PanelTitle>Normalized values do not describe this mode</PanelTitle>
@@ -687,10 +710,16 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
       {anyMismatch && (
         <Muted>
           Rows marked “speed mismatch” enumerated at a USB speed the selected
-          mode cannot run at, so their normalized columns (p99 bound, Max, &gt;
-          2×) are not comparable with the other rows.
+          mode cannot run at, so their normalized columns (p99 bound, &gt; 2×)
+          are not comparable with the other rows.
         </Muted>
       )}
+      <Muted>
+        Compare modes with the microsecond columns. The normalized columns are
+        each measured against that mode’s own interval, so they answer “did this
+        mode stay inside its own budget?” — a slower mode with a wide budget can
+        score better there while delivering the same microseconds.
+      </Muted>
       <TableWrap>
         <ComparisonTable>
           <thead>
@@ -700,8 +729,9 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
               <th>Date</th>
               <th>Duration</th>
               <th>Drops</th>
-              <th>p99 bound</th>
+              <th>Avg</th>
               <th>Max</th>
+              <th>p99 bound</th>
               <th>&gt; 2×</th>
               <th>Loop max</th>
               <th>USB resets</th>
@@ -730,15 +760,18 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
                   <td>{run.durationSeconds}s</td>
                   <td>{snapshot.sessionCounters.reportDrops}</td>
                   <td>
-                    {estimateHistogramQuantile(snapshot.histogram, 0.99)
-                      ?.label ?? 'No samples'}
+                    {snapshot.reportSamples === 0
+                      ? 'No samples'
+                      : formatMicroseconds(snapshot.latencyAverageUs)}
                   </td>
                   <td>
-                    {snapshot.expectedIntervalUs === 0
-                      ? 'n/a'
-                      : `${(
-                          snapshot.latencyMaxUs / snapshot.expectedIntervalUs
-                        ).toFixed(2)}×`}
+                    {snapshot.reportSamples === 0
+                      ? 'No samples'
+                      : formatMicroseconds(snapshot.latencyMaxUs)}
+                  </td>
+                  <td>
+                    {estimateHistogramQuantile(snapshot.histogram, 0.99)
+                      ?.label ?? 'No samples'}
                   </td>
                   <td>
                     {total === 0

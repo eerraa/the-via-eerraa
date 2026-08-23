@@ -140,6 +140,76 @@ describe('USB diagnostics result UI', () => {
     );
   });
 
+  test('drops the window maximum when a snapshot read was skipped', () => {
+    const skipped = [
+      snapshots[0],
+      diagnosticSnapshot({
+        state: 2,
+        sequence: 4,
+        elapsedMs: 30000,
+        reportSamples: 100,
+        intervalLatencyMaxUs: 625,
+        histogram: [25, 25, 45, 3, 1, 0, 1, 0],
+      }),
+    ];
+    expect(buildUsbDiagnosticsTrend(skipped)).toEqual([
+      {elapsedMs: 1000, p99Multiplier: 1.5, worstMultiplier: 2},
+      {elapsedMs: 30000, p99Multiplier: 4, worstMultiplier: 0},
+    ]);
+  });
+
+  test('labels a stored result so it cannot be read as the current session', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        outcome="complete"
+        snapshots={snapshots}
+        storedRunLabel="HS 8K · 30s · complete · 8/23/2026"
+      />,
+    );
+    expect(html).toContain('Previously stored result — not this session');
+    expect(html).toContain('HS 8K · 30s · complete · 8/23/2026');
+    expect(html).toContain(
+      'Start a new test to measure the current connection',
+    );
+  });
+
+  test('compares modes with absolute microseconds, not only normalized values', () => {
+    const run = (
+      id: string,
+      pollingMode: 0 | 1 | 2 | 3,
+      expectedIntervalUs: number,
+    ): UsbDiagnosticsRun => ({
+      id,
+      vendorProductId: 0x45520030,
+      productName: 'BRICK60',
+      firmwareVersion: 'V260824R1',
+      protocolVersion: 1,
+      pollingMode,
+      speed: pollingMode === 0 ? 1 : 2,
+      durationSeconds: 30,
+      startedAt: '2026-08-23T00:00:00.000Z',
+      endedAt: '2026-08-23T00:00:01.000Z',
+      outcome: 'complete',
+      snapshots: [
+        diagnosticSnapshot({
+          pollingMode,
+          speed: pollingMode === 0 ? 1 : 2,
+          expectedIntervalUs,
+          latencyAverageUs: 231,
+          latencyMaxUs: 1232,
+        }),
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <DiagnosticsComparison runs={[run('fs', 0, 1000), run('4k', 2, 250)]} />,
+    );
+    // Both rows have the same absolute latency, so the microseconds must be visible
+    // next to the normalized columns that would otherwise rank FS above HS 4K.
+    expect(html.match(/231 µs/g)).toHaveLength(2);
+    expect(html.match(/1\.232 ms/g)).toHaveLength(2);
+    expect(html).toContain('Compare modes with the microsecond columns');
+  });
+
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {
     const mismatchRun = (
       id: string,
