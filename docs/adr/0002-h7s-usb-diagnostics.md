@@ -252,3 +252,22 @@ Session이 중단되면 `currentRun`과 live snapshot이 초기화되고 `compar
 실기기에서는 FS 1K 및 HS 2/4/8K 각각에 대해 diagnostics off/on keyboard interval,
 queue drop, VIA response latency를 여러 host controller/hub/cable에서 비교해야 한다.
 자동 build와 host fixture는 이 물리 검증을 대신하지 않는다.
+
+## Phase-independent metrics are the comparison axis (2차 실기 정정)
+
+2차 실기에서 같은 firmware·같은 mode인데 재열거만으로 min/avg가 크게 이동했다
+(FS 166/231 → 512/558 µs, HS 4K 8/232 → 140/184 µs). Report가 firmware debounce의
+1 ms tick 경계에서 방출되고 그 tick과 host USB frame의 위상차가 boot마다 무작위로
+정해지기 때문이며, `min`이 곧 그 위상이다. 같은 boot 안의 두 run은 `min`이 동일하고
+다른 boot이면 달라진다.
+
+따라서 "absolute µs를 기본 축으로" 삼은 직전 결정은 불충분하다. Comparison table의
+기본 축은 **phase-independent metric**이다.
+
+- `Spread` = (Max − Min) / interval — 몇 개의 추가 polling interval을 더 기다렸는가
+- `Queue` = queue depth peak
+- `Drops`, `Loop max`
+
+`Avg`/`Max`는 유지하되 "연결마다 재추첨되는 고정 offset이 포함되어 run 간 비교 불가"임을
+표에 명시한다. Normalized column(p99 bound, > 2×)은 "그 mode가 자기 interval 예산 안에
+있었는가"라는 별개 질문에만 답한다.

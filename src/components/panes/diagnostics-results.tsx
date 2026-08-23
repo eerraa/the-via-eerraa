@@ -579,7 +579,10 @@ export const DiagnosticsResultView: FC<{
         </MetricGrid>
         <Muted>
           Delivery timing begins when firmware receives a keyboard report and
-          ends on the keyboard USB IN completion, including queue wait.
+          ends on the keyboard USB IN completion, including queue wait. The
+          minimum is this connection’s fixed offset between the firmware tick
+          and the USB frame; it is re-drawn on every replug, so compare runs by
+          Maximum minus Minimum rather than by the absolute values.
         </Muted>
       </Panel>
 
@@ -715,10 +718,14 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
         </Muted>
       )}
       <Muted>
-        Compare modes with the microsecond columns. The normalized columns are
-        each measured against that mode’s own interval, so they answer “did this
-        mode stay inside its own budget?” — a slower mode with a wide budget can
-        score better there while delivering the same microseconds.
+        Compare runs with <strong>Spread</strong>, Drops and Queue. Avg and Max
+        each carry a constant offset that is fixed when the keyboard enumerates
+        and is re-drawn on every replug, so the same firmware in the same mode
+        can report very different microseconds between runs. Spread (Max minus
+        Min, in polling intervals) removes that offset and shows how many extra
+        intervals reports had to wait. The p99 and &gt; 2× columns are measured
+        against each mode’s own interval, so they answer “did this mode stay
+        inside its own budget?” rather than which mode is faster.
       </Muted>
       <TableWrap>
         <ComparisonTable>
@@ -729,6 +736,8 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
               <th>Date</th>
               <th>Duration</th>
               <th>Drops</th>
+              <th>Queue</th>
+              <th>Spread</th>
               <th>Avg</th>
               <th>Max</th>
               <th>p99 bound</th>
@@ -759,6 +768,16 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
                   <td>{new Date(run.endedAt).toLocaleString()}</td>
                   <td>{run.durationSeconds}s</td>
                   <td>{snapshot.sessionCounters.reportDrops}</td>
+                  <td>{snapshot.queueDepthPeak}</td>
+                  <td>
+                    {snapshot.reportSamples === 0 ||
+                    snapshot.expectedIntervalUs === 0
+                      ? 'No samples'
+                      : `${(
+                          (snapshot.latencyMaxUs - snapshot.latencyMinUs) /
+                          snapshot.expectedIntervalUs
+                        ).toFixed(2)}×`}
+                  </td>
                   <td>
                     {snapshot.reportSamples === 0
                       ? 'No samples'
