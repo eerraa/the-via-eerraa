@@ -32,6 +32,7 @@ import {
   stopUsbDiagnostics,
   type UsbDiagnosticsCapabilities,
   type UsbDiagnosticsDuration,
+  usbDiagnosticsPollingModeLabel,
   type UsbDiagnosticsFailureKind,
   type UsbDiagnosticsSnapshot,
 } from 'src/utils/era-usb-diagnostics';
@@ -268,11 +269,15 @@ export const Diagnostics: FC = () => {
         abortReason,
         snapshots: active.snapshots,
       });
-      if (run) {
-        saveUsbDiagnosticsRun(run);
-      }
+      const saved = run ? saveUsbDiagnosticsRun(run) : false;
       if (mountedRef.current) {
         setCommandPending(false);
+        if (run && !saved) {
+          // Silently dropping the result would look identical to a successful save.
+          setCommandError(
+            'This result could not be written to local history. Browser storage may be full or blocked.',
+          );
+        }
         if (run) {
           setCurrentRun(run);
           setHistory(loadUsbDiagnosticsHistory());
@@ -655,9 +660,21 @@ export const Diagnostics: FC = () => {
   }, [capabilities, device, history]);
 
   const displayedRun = currentRun ?? comparableRuns[0] ?? null;
+  const showingStoredRun = snapshots.length === 0 && displayedRun !== null;
   const displayedSnapshots = snapshots.length
     ? snapshots
     : (displayedRun?.snapshots ?? []);
+  // A run whose device or connection changed mid-session clears the live view, so the
+  // pane would otherwise fall back to an older stored run with nothing marking it as
+  // stale. Name the run whenever what is shown is not the current connection's result.
+  const storedRunLabel =
+    showingStoredRun && displayedRun
+      ? `${usbDiagnosticsPollingModeLabel(displayedRun.pollingMode)} · ${
+          displayedRun.durationSeconds
+        }s · ${displayedRun.outcome} · ${new Date(
+          displayedRun.endedAt,
+        ).toLocaleString()}`
+      : undefined;
 
   const handleCopy = useCallback(async () => {
     const run = currentRun ?? comparableRuns[0];
@@ -791,6 +808,7 @@ export const Diagnostics: FC = () => {
               <DiagnosticsResultView
                 outcome={currentRun?.outcome ?? displayedRun?.outcome}
                 snapshots={displayedSnapshots}
+                storedRunLabel={storedRunLabel}
               />
             ) : (
               <StatusMessage>
