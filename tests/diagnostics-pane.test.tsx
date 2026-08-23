@@ -173,6 +173,55 @@ describe('USB diagnostics result UI', () => {
     );
   });
 
+  test('exposes a phase-independent spread so runs stay comparable', () => {
+    // Hardware showed the same firmware and mode reporting min/avg 166/231 µs on one
+    // enumeration and 512/558 µs on the next, because the offset between the firmware
+    // tick and the USB frame is re-drawn on every replug. Max minus Min removes it.
+    const enumerationA = diagnosticSnapshot({
+      pollingMode: 0,
+      speed: 1,
+      expectedIntervalUs: 1000,
+      latencyMinUs: 166,
+      latencyAverageUs: 231,
+      latencyMaxUs: 1232,
+    });
+    const enumerationB = diagnosticSnapshot({
+      pollingMode: 1,
+      speed: 2,
+      expectedIntervalUs: 500,
+      latencyMinUs: 326,
+      latencyAverageUs: 370,
+      latencyMaxUs: 876,
+    });
+    const asRun = (
+      id: string,
+      snapshot: typeof enumerationA,
+    ): UsbDiagnosticsRun => ({
+      id,
+      vendorProductId: 0x45520030,
+      productName: 'BRICK60',
+      firmwareVersion: 'V260824R1',
+      protocolVersion: 1,
+      pollingMode: snapshot.pollingMode,
+      speed: snapshot.speed,
+      durationSeconds: 30,
+      startedAt: '2026-08-23T00:00:00.000Z',
+      endedAt: '2026-08-23T00:00:01.000Z',
+      outcome: 'complete',
+      snapshots: [snapshot],
+    });
+    const html = renderToStaticMarkup(
+      <DiagnosticsComparison
+        runs={[asRun('a', enumerationA), asRun('b', enumerationB)]}
+      />,
+    );
+    expect(html).toContain('Spread');
+    expect(html).toContain('1.07×'); // (1232 - 166) / 1000
+    expect(html).toContain('1.10×'); // (876 - 326) / 500
+    expect(html).toContain('Compare runs with <strong>Spread</strong>');
+    expect(html).toContain('re-drawn on every replug');
+  });
+
   test('compares modes with absolute microseconds, not only normalized values', () => {
     const run = (
       id: string,
@@ -207,7 +256,7 @@ describe('USB diagnostics result UI', () => {
     // next to the normalized columns that would otherwise rank FS above HS 4K.
     expect(html.match(/231 µs/g)).toHaveLength(2);
     expect(html.match(/1\.232 ms/g)).toHaveLength(2);
-    expect(html).toContain('Compare modes with the microsecond columns');
+    expect(html).toContain('rather than which mode is faster');
   });
 
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {
