@@ -1,6 +1,8 @@
 import {type FC} from 'react';
 import styled from 'styled-components';
 import {
+  isUsbDiagnosticsSpeedConsistent,
+  usbDiagnosticsExpectedSpeed,
   usbDiagnosticsPollingModeLabel,
   usbDiagnosticsSpeedLabel,
   usbDiagnosticsStateLabel,
@@ -48,6 +50,10 @@ const Muted = styled.p({
 
 const Summary = styled(FullPanel)({
   borderLeft: '4px solid var(--color_accent)',
+});
+
+const Caveat = styled(FullPanel)({
+  borderLeft: '4px solid var(--color_label-highlighted)',
 });
 
 const SummaryHeadline = styled.p({
@@ -212,6 +218,11 @@ const eventLabel = (type: number) =>
     'USB speed change',
     'Firmware loop stall',
   ][type] ?? 'Unknown event';
+
+const speedMismatchText = (mode: 0 | 1 | 2 | 3, speed: 0 | 1 | 2) =>
+  `${usbDiagnosticsPollingModeLabel(mode)} requires ${usbDiagnosticsSpeedLabel(
+    usbDiagnosticsExpectedSpeed(mode),
+  )}, but the link enumerated at ${usbDiagnosticsSpeedLabel(speed)}.`;
 
 const sessionHardEventCount = (snapshot: UsbDiagnosticsSnapshot) =>
   snapshot.sessionCounters.usbResets +
@@ -446,9 +457,33 @@ export const DiagnosticsResultView: FC<{
   const p99 = estimateHistogramQuantile(snapshot.histogram, 0.99);
   const progress =
     (snapshot.elapsedMs / (snapshot.durationSeconds * 1000)) * 100;
+  const speedConsistent = isUsbDiagnosticsSpeedConsistent(
+    snapshot.pollingMode,
+    snapshot.speed,
+  );
 
   return (
     <DashboardGrid>
+      {!speedConsistent && (
+        <Caveat>
+          <PanelTitle>Normalized values do not describe this mode</PanelTitle>
+          <SummaryHeadline>
+            {speedMismatchText(snapshot.pollingMode, snapshot.speed)}
+          </SummaryHeadline>
+          <Muted>
+            Every multiplier, histogram bucket, quantile bound and trend point
+            below is normalized against the{' '}
+            {formatMicroseconds(snapshot.expectedIntervalUs)} interval of the
+            selected mode, so they describe a polling rate this connection never
+            ran at. The raw microsecond values and the counters remain valid.
+            Move the keyboard to a port or hub that enumerates at{' '}
+            {usbDiagnosticsSpeedLabel(
+              usbDiagnosticsExpectedSpeed(snapshot.pollingMode),
+            )}
+            , then repeat the test before comparing modes.
+          </Muted>
+        </Caveat>
+      )}
       <Summary>
         <PanelTitle>
           USB Diagnostics —{' '}
@@ -493,6 +528,11 @@ export const DiagnosticsResultView: FC<{
           <MetricName>Session ID</MetricName>
           <MetricValue>{snapshot.sessionId}</MetricValue>
         </MetricGrid>
+        <Muted>
+          {speedConsistent
+            ? 'The negotiated speed matches the selected polling mode, so the normalized values below describe that mode.'
+            : speedMismatchText(snapshot.pollingMode, snapshot.speed)}
+        </Muted>
       </Panel>
 
       <Panel>
@@ -635,17 +675,28 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
       </Muted>
     );
   }
+  const anyMismatch = latestPerMode.some(
+    (run) => !isUsbDiagnosticsSpeedConsistent(run.pollingMode, run.speed),
+  );
   return (
     <>
       <Muted>
         Latest non-aborted result for each manually selected mode. Firmware and
         diagnostics protocol versions must match the current device.
       </Muted>
+      {anyMismatch && (
+        <Muted>
+          Rows marked “speed mismatch” enumerated at a USB speed the selected
+          mode cannot run at, so their normalized columns (p99 bound, Max, &gt;
+          2×) are not comparable with the other rows.
+        </Muted>
+      )}
       <TableWrap>
         <ComparisonTable>
           <thead>
             <tr>
               <th>Mode</th>
+              <th>Negotiated speed</th>
               <th>Date</th>
               <th>Duration</th>
               <th>Drops</th>
@@ -664,9 +715,17 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
                 0,
               );
               const overTwo = snapshot.histogram[6] + snapshot.histogram[7];
+              const consistent = isUsbDiagnosticsSpeedConsistent(
+                run.pollingMode,
+                run.speed,
+              );
               return (
                 <tr key={run.id}>
                   <td>{usbDiagnosticsPollingModeLabel(run.pollingMode)}</td>
+                  <td>
+                    {usbDiagnosticsSpeedLabel(run.speed)}
+                    {consistent ? '' : ' — speed mismatch'}
+                  </td>
                   <td>{new Date(run.endedAt).toLocaleString()}</td>
                   <td>{run.durationSeconds}s</td>
                   <td>{snapshot.sessionCounters.reportDrops}</td>

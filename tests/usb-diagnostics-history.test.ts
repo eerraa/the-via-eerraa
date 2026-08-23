@@ -146,6 +146,25 @@ describe('USB diagnostics local history', () => {
     expect(report).toContain('Reports observed: 100');
     expect(report).toContain('p50 / p95 / p99 histogram bounds');
     expect(report).toContain('not a stability certification');
+    expect(report).toContain('USB speed: High Speed');
+    expect(report).not.toContain('WARNING:');
     expect(report).not.toMatch(/health|quality score|perfect|certified 8k/i);
+  });
+
+  test('flags a copy report whose negotiated speed cannot run the selected mode', () => {
+    const run = createUsbDiagnosticsRun({
+      vendorProductId: 0x45520030,
+      productName: 'MAY65',
+      capabilities,
+      startedAt: new Date(Date.UTC(2026, 7, 23, 0, 0, 0)),
+      endedAt: new Date(Date.UTC(2026, 7, 23, 0, 0, 30)),
+      outcome: 'complete',
+      snapshots: [diagnosticSnapshot({pollingMode: 3, speed: 1})],
+    })!;
+    const report = buildUsbDiagnosticReport(run);
+    expect(report).toContain(
+      'WARNING: HS 8K requires High Speed, but the link enumerated at Full Speed.',
+    );
+    expect(report).toContain('not comparable with other modes');
   });
 });

@@ -15,8 +15,10 @@ import {
   ERA_USB_DIAGNOSTICS_STATUS_UNSUPPORTED_VERSION,
   getUsbDiagnosticsCapabilities,
   getUsbDiagnosticsSnapshot,
+  isUsbDiagnosticsSpeedConsistent,
   resetUsbDiagnosticsTagsForTesting,
   startUsbDiagnostics,
+  usbDiagnosticsExpectedSpeed,
 } from '../src/utils/era-usb-diagnostics';
 import {
   setEraAdvancedMetadataForTesting,
@@ -404,5 +406,24 @@ describe('USB diagnostics definition gate', () => {
     expect(shouldProbeUsbDiagnostics('era', 0x45520031)).toBe(false);
     expect(shouldProbeUsbDiagnostics(null, 0x45520030)).toBe(false);
     setEraAdvancedMetadataForTesting(null);
+  });
+});
+
+describe('USB diagnostics normalization basis', () => {
+  test('FS 1K is only consistent with Full Speed and HS modes only with High Speed', () => {
+    expect(usbDiagnosticsExpectedSpeed(0)).toBe(1);
+    expect(usbDiagnosticsExpectedSpeed(1)).toBe(2);
+    expect(usbDiagnosticsExpectedSpeed(2)).toBe(2);
+    expect(usbDiagnosticsExpectedSpeed(3)).toBe(2);
+
+    expect(isUsbDiagnosticsSpeedConsistent(0, 1)).toBe(true);
+    expect(isUsbDiagnosticsSpeedConsistent(3, 2)).toBe(true);
+    expect(isUsbDiagnosticsSpeedConsistent(3, 1)).toBe(false);
+    expect(isUsbDiagnosticsSpeedConsistent(0, 2)).toBe(false);
+  });
+
+  test('an unknown negotiated speed is not reported as a mismatch', () => {
+    expect(isUsbDiagnosticsSpeedConsistent(0, 0)).toBe(true);
+    expect(isUsbDiagnosticsSpeedConsistent(3, 0)).toBe(true);
   });
 });

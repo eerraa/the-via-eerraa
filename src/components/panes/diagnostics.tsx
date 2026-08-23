@@ -314,10 +314,28 @@ export const Diagnostics: FC = () => {
         2000,
         Math.max(500, active.capabilities.recommendedSnapshotMs),
       );
-      while (isCurrent(active) && !active.stopRequested) {
+      // stopRequested is always checked first: handleStop and the unmount cleanup
+      // set it before taking ownership of the final result themselves.
+      while (!active.stopRequested) {
+        if (!isCurrent(active)) {
+          finishActive(
+            active,
+            'aborted',
+            'The connection or device selection changed.',
+          );
+          return;
+        }
         const requestStartedAt = performance.now();
         const result = await getUsbDiagnosticsSnapshot(active.api);
-        if (!isCurrent(active) || active.stopRequested) {
+        if (active.stopRequested) {
+          return;
+        }
+        if (!isCurrent(active)) {
+          finishActive(
+            active,
+            'aborted',
+            'The connection or device selection changed.',
+          );
           return;
         }
         if (result.kind === 'ok') {

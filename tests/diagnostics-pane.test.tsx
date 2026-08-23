@@ -112,5 +112,60 @@ describe('USB diagnostics result UI', () => {
     expect(html).toContain('HS 8K');
     expect(html.match(/<tr/g)).toHaveLength(3);
     expect(html).toContain('manually selected mode');
+    expect(html).toContain('Negotiated speed');
+    expect(html).not.toContain('speed mismatch');
+  });
+
+  test('warns when the negotiated speed cannot run the selected polling mode', () => {
+    const mismatched = diagnosticSnapshot({pollingMode: 3, speed: 1});
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView outcome="complete" snapshots={[mismatched]} />,
+    );
+    expect(html).toContain('Normalized values do not describe this mode');
+    expect(html).toContain(
+      'HS 8K requires High Speed, but the link enumerated at Full Speed.',
+    );
+    expect(html).toContain(
+      'The raw microsecond values and the counters remain valid.',
+    );
+  });
+
+  test('states that the negotiated speed matches when it does', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView outcome="complete" snapshots={snapshots} />,
+    );
+    expect(html).not.toContain('Normalized values do not describe this mode');
+    expect(html).toContain(
+      'The negotiated speed matches the selected polling mode',
+    );
+  });
+
+  test('marks comparison rows whose negotiated speed cannot run the mode', () => {
+    const mismatchRun = (
+      id: string,
+      pollingMode: 0 | 1 | 2 | 3,
+      speed: 0 | 1 | 2,
+    ): UsbDiagnosticsRun => ({
+      id,
+      vendorProductId: 0x45520030,
+      productName: 'MAY65',
+      firmwareVersion: 'V260823R2',
+      protocolVersion: 1,
+      pollingMode,
+      speed,
+      durationSeconds: 30,
+      startedAt: '2026-08-23T00:00:00.000Z',
+      endedAt: '2026-08-23T00:00:01.000Z',
+      outcome: 'complete',
+      snapshots: [diagnosticSnapshot({pollingMode, speed})],
+    });
+    const html = renderToStaticMarkup(
+      <DiagnosticsComparison
+        runs={[mismatchRun('fs', 0, 1), mismatchRun('hs8k-on-fs-port', 3, 1)]}
+      />,
+    );
+    expect(html).toContain('speed mismatch');
+    expect(html.match(/speed mismatch/g)).toHaveLength(2);
+    expect(html).toContain('are not comparable with the other rows');
   });
 });
