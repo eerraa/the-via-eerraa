@@ -1668,15 +1668,6 @@
                 13,
                 2
               ]
-            },
-            {
-              "label": "Auto downgrade on USB unstable [BETA]",
-              "type": "toggle",
-              "content": [
-                "id_qmk_usb_autodg_beta",
-                13,
-                3
-              ]
             }
           ]
         },
