@@ -31,6 +31,11 @@ export const setEraAdvancedMetadataForTesting = (
 
 const getEraAdvancedMetadataSync = () => injected ?? loaded;
 
+// Opt-in gates that decide whether a component exists at all need to answer on the
+// first render, or the component appears and then disappears once the fetch settles.
+export const isEraAdvancedMetadataLoaded = () =>
+  getEraAdvancedMetadataSync() !== null;
+
 export const isStateSyncOptIn = (vendorProductId: number) => {
   const metadata = getEraAdvancedMetadataSync();
   if (!metadata) {

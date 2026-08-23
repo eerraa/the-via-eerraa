@@ -58,6 +58,10 @@ probe도 기존 개발용 instrumentation과 중복되므로 release session con
 
 ### VIA 정보 구조
 
+> 배치와 뷰 구성은 아래 "Diagnostics belongs under the polling-mode control"과
+> "Information architecture" 절이 대체한다. 아래 목록은 어떤 정보를 제공하는지의
+> 계약으로 남으며, 어디에 보이는지는 그 두 절을 따른다.
+
 Diagnostics는 기존 global pane routing에 `/diagnostics`로 들어간다.
 
 - connection: polling mode, negotiated speed, duration/state
@@ -284,3 +288,106 @@ CLEAR나 다음 START 전까지 RAM에 유지하는데 app이 읽을 방법을 �
 - 표시할 때는 "read from the keyboard, not from a test this page ran"으로 출처를 명시한다.
 - Copy Diagnostic Report는 화면에 보이는 run을 따라간다. 다른 run을 복사하면 직전에 고친
   stale-result 결함과 같은 문제가 된다.
+
+## Diagnostics belongs under the polling-mode control, not in its own tab
+
+`/diagnostics`를 최상위 아이콘 바 페이지로 둔 최초 결정은 발견성에서 실패했다. 사용자는
+`CONFIGURE → SYSTEM → USB POLLING`에서 mode를 바꾼 뒤 그 효과를 보려 했는데 기능이 전혀
+다른 곳에 있어 찾지 못했다. 최상위 탭은 또한 31개 definition 중 다섯 H7S에서만 의미가
+있는데도 모든 keyboard에 항상 보였고, 이는 "ordinary VIA keyboard의 시각 언어와 workflow를
+보존한다"는 fork 계약과 어긋난다.
+
+**결정: inline.** 진단 블록은 `USB POLLING` submenu의 `Apply Selected Mode` 아래에 항상
+펼쳐진 상태로 렌더링한다. Modal은 기능을 다시 한 단계 숨기고, session이 열려 있어야 하는
+10/60초 동안 실수로 닫으면 firmware session만 남는 위험을 키우므로 채택하지 않았다.
+Accordion도 같은 이유로 발견성 이득이 줄어 채택하지 않았다.
+
+Definition JSON은 바꾸지 않는다. `menu-generator`가 그 submenu의 item 중
+`id_qmk_usb_bootmode` command가 있는지만 보고 `UsbDiagnosticsSection`을 렌더링하며,
+section 자체가 다시 `shouldProbeUsbDiagnostics()`로 ERA 소스 + `usbDiagnostics: true`
+opt-in을 확인한다. 이중 gate이므로 official snapshot이나 Design upload로 열린 같은
+keyboard에도 selector `0x07`은 나가지 않는다. 이 배치는 `custom-control.tsx`의
+`ExactMillisecondControl`과 같은 계열의 escape hatch지만, 렌더링 대상이 값 control이
+아니라 전폭 block이므로 `ControlRow` 안이 아니라 submenu 끝에 붙인다.
+
+부수 효과로, polling mode를 바꾸는 화면을 떠나지 않고 측정할 수 있게 되어 mode 변경 →
+측정 → 비교 순환에서 page 이동으로 session이 중단되던 경로가 하나 사라진다. 반대로
+submenu/category를 옮기면 section이 unmount되어 기존 `/diagnostics` 이탈과 동일하게
+session이 `aborted`로 저장되므로, 실행 중에는 그 사실을 명시하는 문구를 띄운다.
+
+`/diagnostics` route는 제거하되 `/`로 redirect만 남긴다. 열려 있던 tab이나 bookmark가
+빈 화면이 되지 않게 하는 용도이며, global icon bar에서는 사라진다.
+
+### 측정 조건이 달라진 점 (실기 확인 필요)
+
+기존에는 `/diagnostics`에 있는 동안 `configureVisible`이 false여서 State Sync의 500 ms
+recovery poll이 멈춰 있었다. Inline 배치에서는 Configure가 보이는 상태로 측정하므로 그
+poll이 diagnostics snapshot 읽기와 같은 직렬 WebHID queue에서 함께 돈다. Control-plane
+request가 초당 약 2건 늘어나며, main-loop에서 처리되므로 `loop max`/stall count의
+baseline이 올라갈 수 있다.
+
+Diagnostics session 동안 State Sync poll을 멈추지는 않는다. `PROJECT_DIRECTION.md`가
+selector `0x07`을 "polling mode나 recovery에 결합하지 않는다"로 못박았고, 측정 창을 위해
+recovery 동작을 바꾸는 것은 UI 재배치의 범위를 넘는다. 대신 재측정 시 이 변화를 확인해야
+하며, 이전 배치에서 저장된 run과 loop timing을 직접 비교하지 않는다.
+
+## Information architecture: default summary, advanced on demand
+
+패널 9개 + 경고 배너를 한 번에 보여주던 결과 화면은 일반 사용자가 읽을 수 없었다. 정보를
+"필요한 것만 남기고 나머지는 report 텍스트로" 옮기는 안은 채택하지 않았다. §"Phase-independent
+metrics" 절이 요구하는 mode 비교표는 복사-붙여넣기 텍스트로 옮기면 기능 자체가 죽고,
+`Spread`/`Queue` 열과 그 설명이 사라지면 6-1~6-3의 오독이 그대로 돌아온다.
+
+**결정: 기본 요약 뷰 + `Advanced metrics and mode comparison` 토글.** VIA Settings의
+`Show Diagnostic Information` 토글과 같은 계열의 기존 패턴이다.
+
+요약 뷰가 답하는 질문은 하나다 — "이 모드로 이번 창에서 문제가 있었는가". 답에 필요한
+다섯 가지만 각각 한 문장으로 서술한다.
+
+- report queue drops
+- USB hard event (reset / configuration / suspend / speed change)
+- 1 ms 초과 firmware main-loop gap
+- queue depth peak
+- 선택 mode ↔ 협상 speed 정합
+
+Caveat panel 두 개(정합성 불일치, 현재 결과가 아닌 결과의 출처)는 **요약 뷰에도 항상**
+보인다. 판단을 뒤집는 정보이므로 토글 뒤에 두지 않는다.
+
+절대 µs(min/avg/max), 정규화 분위수, 히스토그램, 추세 그래프, 타임라인, 부팅 누계는
+advanced로 옮겼다. 이들은 caption 없이 읽으면 반드시 오독되는 값이고(6-1, 6-2, 6-5, 6-6),
+caption은 각 패널에 그대로 남아 있다. 요약 뷰는 숫자를 caption 없이 보여주는 대신 아예
+보여주지 않는 쪽을 택했다.
+
+새로 추가한 두 문장도 관측 범위 제약을 지킨다.
+
+- "Each line above covers only the category it names, over the window this test ran.
+  Categories this test does not measure are not covered by it." — `No failures observed`
+  형태의 포괄 진술 금지(6-4)를 UI 문구로 명시한 것.
+- report sample이 0이면 "No HID keyboard reports were sent during this test"를 덧붙인다.
+  키를 누르지 않은 창에서는 delivery 관련 문장이 공허하게 참이 되어 깨끗한 결과처럼
+  읽히기 때문이다.
+
+Control은 상시 6개를 전부 disabled로 두던 방식에서, 실제로 동작할 수 있는 순간에만
+나타나도록 바꿨다. `Stop`은 session이 running이거나 firmware에 미매칭 session이 있을 때,
+`Read Device Result`/`Clear Device Result`는 keyboard가 끝난 session을 들고 있을 때
+(`sessionState` 2/3), `Copy Diagnostic Report`는 표시할 run이 있을 때만 렌더링한다.
+`sessionState`가 idle(0)일 때의 CLEAR는 지울 대상이 없으므로 사라진다.
+
+## UI verification
+
+자동 검사는 `tests/diagnostics-pane.test.tsx`(요약/전체 뷰 문구와 §6 안전장치)와
+`tests/custom-menu-pane.test.tsx`(배치와 opt-in gate)가 담당하며, 후자는
+`bun run test:transport`에 편입했다.
+
+실기에서는 다음을 확인한다. 코드만으로 판정할 수 없다.
+
+1. `CONFIGURE → SYSTEM → USB POLLING`에서 `Apply Selected Mode` 아래에 진단 블록이
+   바로 보인다. 상단 아이콘 바에 Diagnostics 아이콘이 없다.
+2. H7S가 아닌 keyboard와 official/upload로 열린 H7S에서는 블록이 없고 selector `0x07`
+   packet이 나가지 않는다.
+3. 30초 test 중 polling mode dropdown을 건드리지 않고 그대로 두면 test가 완주한다.
+   측정 중 다른 submenu로 이동하면 `aborted`로 저장되고 `Read Device Result`로 복구된다.
+4. 같은 mode·같은 boot에서 이전 배치(`/diagnostics`)와 새 배치의 `loop max`,
+   `stall count`, `queue peak`를 비교해 State Sync poll 동시 실행의 영향 크기를 기록한다.
+5. Advanced 토글을 켰을 때 비교표의 `Spread`/`Queue` 열과 `speed mismatch` 표시가
+   그대로 보인다.

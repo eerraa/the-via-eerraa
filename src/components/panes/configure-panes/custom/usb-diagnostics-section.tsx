@@ -7,8 +7,8 @@ import {
   type FC,
 } from 'react';
 import styled from 'styled-components';
-import {Pane} from './pane';
-import {AccentButton, PrimaryAccentButton} from '../inputs/accent-button';
+import {AccentButton, PrimaryAccentButton} from '../../../inputs/accent-button';
+import {AccentSlider} from '../../../inputs/accent-slider';
 import {useAppSelector} from 'src/store/hooks';
 import {
   getIsSelectedDeviceReady,
@@ -18,6 +18,7 @@ import {
 } from 'src/store/devicesSlice';
 import {getDefinitionSourceForDevice} from 'src/store/definitionsSlice';
 import {
+  isEraAdvancedMetadataLoaded,
   loadEraAdvancedMetadata,
   shouldProbeUsbDiagnostics,
 } from 'src/utils/era-advanced-metadata';
@@ -48,75 +49,37 @@ import {
 import {
   DiagnosticsComparison,
   DiagnosticsResultView,
-} from './diagnostics-results';
+} from '../../diagnostics-results';
 
-const DiagnosticsPane = styled(Pane)({
-  overflow: 'auto',
-  color: 'var(--color_label)',
-});
-
-const Page = styled.div({
-  width: 'min(1180px, calc(100% - 32px))',
-  margin: '0 auto',
-  padding: '28px 0 48px',
+// The block lines up with the ControlRow width of the menu it is embedded in so the
+// polling-mode controls and the diagnostics that describe them read as one column.
+const Section = styled.section({
+  width: '100%',
+  maxWidth: 960,
   boxSizing: 'border-box',
+  padding: '20px 5px 24px',
+  color: 'var(--color_label)',
+  fontSize: 16,
+  lineHeight: 1.55,
 });
 
-const PageHeader = styled.header({
-  display: 'flex',
-  alignItems: 'flex-start',
-  justifyContent: 'space-between',
-  gap: 24,
-  flexWrap: 'wrap',
-  marginBottom: 20,
-});
-
-const Title = styled.h1({
+const SectionTitle = styled.h2({
   color: 'var(--color_label-highlighted)',
-  fontSize: 28,
-  lineHeight: 1.2,
-  margin: '0 0 8px',
+  fontSize: 20,
+  lineHeight: 1.3,
+  margin: '0 0 6px',
 });
 
 const Intro = styled.p({
-  maxWidth: 760,
-  lineHeight: 1.55,
-  margin: 0,
-  color: 'var(--color_label)',
-});
-
-const Panel = styled.section({
-  background: 'var(--bg_control)',
-  border: '1px solid var(--border_color_cell)',
-  borderRadius: 10,
-  padding: 18,
-  minWidth: 0,
-});
-
-const FullPanel = styled(Panel)({
-  gridColumn: '1 / -1',
-});
-
-const PanelTitle = styled.h2({
-  color: 'var(--color_label-highlighted)',
-  fontSize: 18,
-  lineHeight: 1.3,
   margin: '0 0 14px',
+  maxWidth: 760,
 });
 
-const DashboardGrid = styled.div({
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))',
-  gap: 14,
-  marginTop: 14,
-});
-
-const Controls = styled(Panel)({
+const Controls = styled.div({
   display: 'flex',
   alignItems: 'center',
   gap: 10,
   flexWrap: 'wrap',
-  marginBottom: 14,
 });
 
 const Select = styled.select({
@@ -130,21 +93,55 @@ const Select = styled.select({
   fontSize: 16,
 });
 
-const Muted = styled.p({
-  color: 'var(--color_label)',
-  opacity: 0.82,
-  lineHeight: 1.5,
-  margin: '6px 0',
+const Note = styled.p({
+  background: 'var(--bg_control)',
+  border: '1px solid var(--border_color_cell)',
+  borderRadius: 10,
+  padding: '12px 14px',
+  lineHeight: 1.55,
+  margin: '14px 0 0',
 });
 
-const StatusMessage = styled(Panel)({
-  lineHeight: 1.55,
-  marginBottom: 14,
+const NoteTitle = styled.strong({
+  color: 'var(--color_label-highlighted)',
+  display: 'block',
+  marginBottom: 4,
+});
+
+const Muted = styled.p({
+  opacity: 0.82,
+  margin: '10px 0 0',
 });
 
 const ErrorText = styled.p({
   color: 'var(--color_label-highlighted)',
-  margin: '8px 0 0',
+  margin: '12px 0 0',
+});
+
+const AdvancedRow = styled.div({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  borderTop: '1px solid var(--border_color_cell)',
+  marginTop: 20,
+  paddingTop: 14,
+});
+
+const AdvancedLabel = styled.span({
+  color: 'var(--color_label)',
+  fontSize: 18,
+});
+
+const AdvancedPanel = styled.div({
+  marginTop: 4,
+});
+
+const AdvancedTitle = styled.h3({
+  color: 'var(--color_label-highlighted)',
+  fontSize: 18,
+  lineHeight: 1.3,
+  margin: '18px 0 8px',
 });
 
 type ActiveRun = {
@@ -197,7 +194,7 @@ const failureMessage = (failure: {
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds));
 
-export const Diagnostics: FC = () => {
+export const UsbDiagnosticsSection: FC = () => {
   const device = useAppSelector(getSelectedConnectedDevice);
   const api = useAppSelector(getSelectedKeyboardAPI);
   const ready = useAppSelector(getIsSelectedDeviceReady);
@@ -205,7 +202,9 @@ export const Diagnostics: FC = () => {
   const definitionSource = useAppSelector((state) =>
     device ? getDefinitionSourceForDevice(state, device) : null,
   );
-  const [metadataReady, setMetadataReady] = useState(false);
+  const [metadataReady, setMetadataReady] = useState(
+    isEraAdvancedMetadataLoaded,
+  );
   const [capabilityState, setCapabilityState] =
     useState<CapabilityState>('loading');
   const [capabilities, setCapabilities] =
@@ -221,6 +220,7 @@ export const Diagnostics: FC = () => {
   const [commandError, setCommandError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [commandPending, setCommandPending] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const activeRef = useRef<ActiveRun | null>(null);
   const mountedRef = useRef(true);
   const selectionRef = useRef({
@@ -542,6 +542,11 @@ export const Diagnostics: FC = () => {
       return;
     }
     active.sessionId = result.value.sessionId;
+    // The START command itself is done here; only the session is still running.
+    // Leaving commandPending set until finishActive() kept Stop Test disabled for
+    // the whole session, so a started test could not be stopped from the UI. From
+    // this point the running session, not a pending command, governs the controls.
+    setCommandPending(false);
     setCapabilities((previous) =>
       previous
         ? {
@@ -706,7 +711,7 @@ export const Diagnostics: FC = () => {
       ? [recoveredSnapshot]
       : (displayedRun?.snapshots ?? []);
   // A run whose device or connection changed mid-session clears the live view, so the
-  // pane would otherwise fall back to an older stored run with nothing marking it as
+  // block would otherwise fall back to an older stored run with nothing marking it as
   // stale. Name the run whenever what is shown is not the current connection's result.
   // A recovered session has no page-side start time, so build its run only for Copy and
   // never store it — history entries must keep a known start time and identity.
@@ -759,179 +764,169 @@ export const Diagnostics: FC = () => {
 
   const running = activeRef.current !== null;
 
+  // A definition that does not opt in never reaches the firmware with a selector
+  // probe, and there is nothing to show, so the block does not exist for it either.
+  // `eligible` already requires the canonical metadata, so an ordinary keyboard that
+  // happens to expose a polling-mode control never renders this block at all.
+  if (!eligible) {
+    return null;
+  }
+
+  const deviceHoldsFinishedSession =
+    capabilities?.sessionState === 2 || capabilities?.sessionState === 3;
+  const hasResult = Boolean(displayedRun || recoveredRun);
+
   return (
-    <DiagnosticsPane>
-      <Page>
-        <PageHeader>
-          <div>
-            <Title>USB Diagnostics</Title>
-            <Intro>
-              Run a short, read-only measurement of actual HID delivery and
-              firmware loop timing. Diagnostics never changes the selected
-              polling mode and does not write results to keyboard EEPROM.
-            </Intro>
-          </div>
-        </PageHeader>
+    <Section>
+      <SectionTitle>USB Delivery Diagnostics</SectionTitle>
+      <Intro>
+        Run a short, read-only measurement of the polling mode this keyboard is
+        currently running. It never changes the selected mode and writes nothing
+        to keyboard EEPROM.
+      </Intro>
 
-        {!device && (
-          <StatusMessage>
-            <PanelTitle>No keyboard selected</PanelTitle>
-            Connect and select a keyboard to view diagnostics.
-          </StatusMessage>
+      {(!ready || capabilityState === 'loading') && (
+        <Note>Checking whether this firmware supports diagnostics.</Note>
+      )}
+
+      {ready && capabilityState === 'unsupported' && (
+        <Note>
+          USB Diagnostics are not supported by this firmware version. Every
+          other feature on this page is unaffected.
+        </Note>
+      )}
+
+      {ready &&
+        (capabilityState === 'unverified' ||
+          capabilityState === 'disconnected') && (
+          <Note>
+            <NoteTitle>Unable to verify diagnostics support</NoteTitle>
+            {commandError}
+          </Note>
         )}
 
-        {device && (!ready || capabilityState === 'loading') && (
-          <StatusMessage>
-            <PanelTitle>Checking diagnostics support</PanelTitle>
-            Waiting for the selected keyboard and its ERA definition.
-          </StatusMessage>
-        )}
-
-        {device && ready && capabilityState === 'unsupported' && (
-          <StatusMessage>
-            <PanelTitle>Diagnostics unavailable</PanelTitle>
-            {eligible
-              ? 'USB Diagnostics are not supported by this firmware version. Existing VIA features remain available.'
-              : 'This keyboard definition does not opt in to H7S USB Diagnostics. No diagnostic command was sent.'}
-          </StatusMessage>
-        )}
-
-        {device &&
-          ready &&
-          (capabilityState === 'unverified' ||
-            capabilityState === 'disconnected') && (
-            <StatusMessage>
-              <PanelTitle>Unable to verify diagnostics support</PanelTitle>
-              {commandError}
-            </StatusMessage>
-          )}
-
-        {device && ready && capabilities && capabilityState === 'supported' && (
-          <>
-            <Controls>
-              <label htmlFor="diagnostics-duration">Test duration</label>
-              <Select
-                disabled={running || commandPending}
-                id="diagnostics-duration"
-                onChange={(event) =>
-                  setDuration(
-                    Number(event.target.value) as UsbDiagnosticsDuration,
-                  )
-                }
-                value={duration}
-              >
-                {capabilities.durations.map((candidate) => (
-                  <option key={candidate} value={candidate}>
-                    {candidate} seconds
-                  </option>
-                ))}
-              </Select>
-              <PrimaryAccentButton
-                disabled={
-                  running || commandPending || capabilities.sessionState === 1
-                }
-                onClick={handleStart}
-              >
-                Start Test
-              </PrimaryAccentButton>
-              <AccentButton
-                disabled={
-                  commandPending ||
-                  (!running && capabilities.sessionState !== 1)
-                }
-                onClick={handleStop}
-              >
+      {ready && capabilities && capabilityState === 'supported' && (
+        <>
+          <Controls>
+            <label htmlFor="usb-diagnostics-duration">Test duration</label>
+            <Select
+              disabled={running || commandPending}
+              id="usb-diagnostics-duration"
+              onChange={(event) =>
+                setDuration(
+                  Number(event.target.value) as UsbDiagnosticsDuration,
+                )
+              }
+              value={duration}
+            >
+              {capabilities.durations.map((candidate) => (
+                <option key={candidate} value={candidate}>
+                  {candidate} seconds
+                </option>
+              ))}
+            </Select>
+            <PrimaryAccentButton
+              disabled={
+                running || commandPending || capabilities.sessionState === 1
+              }
+              onClick={handleStart}
+            >
+              Start Test
+            </PrimaryAccentButton>
+            {(running || capabilities.sessionState === 1) && (
+              <AccentButton disabled={commandPending} onClick={handleStop}>
                 {running ? 'Stop Test' : 'Stop Device Session'}
               </AccentButton>
-              <AccentButton
-                disabled={
-                  running ||
-                  commandPending ||
-                  (capabilities.sessionState !== 2 &&
-                    capabilities.sessionState !== 3)
-                }
-                onClick={handleReadDeviceResult}
-              >
-                Read Device Result
-              </AccentButton>
-              <AccentButton
-                disabled={
-                  running || commandPending || capabilities.sessionState === 1
-                }
-                onClick={handleClear}
-              >
-                Clear Device Result
-              </AccentButton>
-              <AccentButton
-                disabled={(!displayedRun && !recoveredRun) || running}
-                onClick={handleCopy}
-              >
+            )}
+            {!running && deviceHoldsFinishedSession && (
+              <>
+                <AccentButton
+                  disabled={commandPending}
+                  onClick={handleReadDeviceResult}
+                >
+                  Read Device Result
+                </AccentButton>
+                <AccentButton disabled={commandPending} onClick={handleClear}>
+                  Clear Device Result
+                </AccentButton>
+              </>
+            )}
+            {hasResult && (
+              <AccentButton disabled={running} onClick={handleCopy}>
                 Copy Diagnostic Report
               </AccentButton>
-              {copyStatus && <span>{copyStatus}</span>}
-            </Controls>
+            )}
+            {copyStatus && <span>{copyStatus}</span>}
+          </Controls>
 
-            {(capabilities.sessionState === 2 ||
-              capabilities.sessionState === 3) &&
-              !running &&
-              !recoveredSnapshot &&
-              snapshots.length === 0 && (
-                <StatusMessage>
-                  <PanelTitle>
-                    Finished session still on the keyboard
-                  </PanelTitle>
-                  The keyboard is holding the result of a session this page did
-                  not follow to the end — for example one interrupted by sleep,
-                  a reload, or a reconnect. Read Device Result shows it.
-                  Starting a new test or Clear Device Result discards it.
-                </StatusMessage>
-              )}
+          {running && (
+            <Note>
+              The test is running. Type normally or reproduce the workload you
+              want to observe. Leaving this menu, switching keyboards or
+              unplugging ends the test and stores only what was captured so far.
+            </Note>
+          )}
 
-            {capabilities.sessionState === 1 && !running && (
-              <StatusMessage>
-                <PanelTitle>Unmatched firmware session</PanelTitle>A session was
-                already running when this page connected. Stop it, then start a
-                new test so local history has a known start time and identity.
-              </StatusMessage>
+          {deviceHoldsFinishedSession &&
+            !running &&
+            !recoveredSnapshot &&
+            snapshots.length === 0 && (
+              <Note>
+                <NoteTitle>Finished session still on the keyboard</NoteTitle>
+                The keyboard is holding the result of a session this page did
+                not follow to the end — for example one interrupted by sleep, a
+                reload, or a reconnect. Read Device Result shows it. Starting a
+                new test or Clear Device Result discards it.
+              </Note>
             )}
 
-            {commandError && capabilityState === 'supported' && (
-              <ErrorText>{commandError}</ErrorText>
-            )}
+          {capabilities.sessionState === 1 && !running && (
+            <Note>
+              <NoteTitle>Unmatched firmware session</NoteTitle>A session was
+              already running when this page connected. Stop it, then start a
+              new test so local history has a known start time and identity.
+            </Note>
+          )}
 
-            {displayedSnapshots.length > 0 ? (
-              <DiagnosticsResultView
-                outcome={
-                  recoveredRun?.outcome ??
-                  currentRun?.outcome ??
-                  displayedRun?.outcome
-                }
-                snapshots={displayedSnapshots}
-                storedRunLabel={recoveredRunLabel ?? storedRunLabel}
-              />
-            ) : (
-              <StatusMessage>
-                <PanelTitle>Ready</PanelTitle>
-                Choose 10, 30, or 60 seconds and start a test. Type normally or
-                reproduce the workload you want to observe. The app reads one
-                coherent aggregate approximately once per second.
-                <Muted>
-                  Firmware {capabilities.firmwareVersion} · protocol{' '}
-                  {capabilities.protocolVersion} · recommended snapshot{' '}
-                  {capabilities.recommendedSnapshotMs} ms
-                </Muted>
-              </StatusMessage>
-            )}
+          {commandError && <ErrorText>{commandError}</ErrorText>}
 
-            <DashboardGrid>
-              <FullPanel>
-                <PanelTitle>Manual polling-mode comparison</PanelTitle>
-                <DiagnosticsComparison runs={comparableRuns} />
-              </FullPanel>
-            </DashboardGrid>
-          </>
-        )}
-      </Page>
-    </DiagnosticsPane>
+          {displayedSnapshots.length > 0 ? (
+            <DiagnosticsResultView
+              detail={showAdvanced ? 'full' : 'summary'}
+              outcome={
+                recoveredRun?.outcome ??
+                currentRun?.outcome ??
+                displayedRun?.outcome
+              }
+              snapshots={displayedSnapshots}
+              storedRunLabel={recoveredRunLabel ?? storedRunLabel}
+            />
+          ) : (
+            <Muted>
+              No result yet. Choose a duration and start a test. The app reads
+              one coherent aggregate from the keyboard about once per second
+              while it runs.
+            </Muted>
+          )}
+
+          <AdvancedRow>
+            <AdvancedLabel>Advanced metrics and mode comparison</AdvancedLabel>
+            <AccentSlider isChecked={showAdvanced} onChange={setShowAdvanced} />
+          </AdvancedRow>
+
+          {showAdvanced && (
+            <AdvancedPanel>
+              <AdvancedTitle>Manual polling-mode comparison</AdvancedTitle>
+              <DiagnosticsComparison runs={comparableRuns} />
+              <Muted>
+                Firmware {capabilities.firmwareVersion} · diagnostics protocol{' '}
+                {capabilities.protocolVersion} · recommended snapshot interval{' '}
+                {capabilities.recommendedSnapshotMs} ms
+              </Muted>
+            </AdvancedPanel>
+          )}
+        </>
+      )}
+    </Section>
   );
 };
