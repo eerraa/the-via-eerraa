@@ -9,10 +9,16 @@
 # /definitions/**.json, and a blanket rewrite would answer those probes with
 # HTML and a 200 status. public/404.html exists for the same reason: it turns
 # off Cloudflare Pages' implicit single-page-application fallback.
+#
+# The destination is `/`, not `/index.html`. Cloudflare Pages canonicalises
+# `/index.html` to `/`, which downgrades a 200 rewrite into a 308 redirect to
+# `/` — verified on the live host: `GET /test` answered `308 Location: /`, so
+# every deep link lost its route and landed on Configure. Rewriting to `/`
+# keeps the request URL intact, which is what wouter reads.
 
-/test      /index.html  200
-/design    /index.html  200
-/settings  /index.html  200
-/debug     /index.html  200
-/console   /index.html  200
-/errors    /index.html  200
+/test      /  200
+/design    /  200
+/settings  /  200
+/debug     /  200
+/console   /  200
+/errors    /  200
