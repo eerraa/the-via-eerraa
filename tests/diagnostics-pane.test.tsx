@@ -42,7 +42,10 @@ describe('USB diagnostics result UI', () => {
     expect(html).toContain('Firmware timing');
     expect(html).toContain('Event timeline');
     expect(html).toContain('Firmware loop stall');
-    expect(html).toContain('RAM-only counters');
+    expect(html).toContain('RAM-only');
+    // The boot counters were misread as live device state during hardware validation.
+    expect(html).toContain('not a live reading');
+    expect(html).toContain('Applying a polling mode restarts the keyboard');
     expect(html).not.toMatch(
       /stability \d|health|quality score|perfect|certified/i,
     );
