@@ -271,3 +271,16 @@ queue drop, VIA response latency를 여러 host controller/hub/cable에서 비�
 `Avg`/`Max`는 유지하되 "연결마다 재추첨되는 고정 offset이 포함되어 run 간 비교 불가"임을
 표에 명시한다. Normalized column(p99 bound, > 2×)은 "그 mode가 자기 interval 예산 안에
 있었는가"라는 별개 질문에만 답한다.
+
+## Finished sessions are recoverable from the keyboard
+
+실기에서 절전으로 중단된 session이 page 기록을 전혀 남기지 못했다. Firmware는 그 결과를
+CLEAR나 다음 START 전까지 RAM에 유지하는데 app이 읽을 방법을 제공하지 않았다.
+`sessionState`가 `complete(2)` / `stopped(3)`이고 page가 그 session을 따라가지 못했으면
+`Read Device Result`로 읽어 표시한다.
+
+- Page가 시작 시각을 모르므로 **local history에 저장하지 않는다.** 표시와 Copy만 한다.
+  History entry는 알려진 start time과 identity를 유지해야 한다는 기존 원칙을 지킨다.
+- 표시할 때는 "read from the keyboard, not from a test this page ran"으로 출처를 명시한다.
+- Copy Diagnostic Report는 화면에 보이는 run을 따라간다. 다른 run을 복사하면 직전에 고친
+  stale-result 결함과 같은 문제가 된다.

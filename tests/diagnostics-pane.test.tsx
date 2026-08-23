@@ -173,6 +173,20 @@ describe('USB diagnostics result UI', () => {
     );
   });
 
+  test('labels a session read back from the keyboard', () => {
+    // A session interrupted by sleep or a reload leaves no page-side record, but the
+    // firmware still holds it. What is shown must say where it came from.
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        outcome="complete"
+        snapshots={[diagnosticSnapshot({pollingMode: 3, speed: 2})]}
+        storedRunLabel="HS 8K · 30s · read from the keyboard, not from a test this page ran"
+      />,
+    );
+    expect(html).toContain('Previously stored result — not this session');
+    expect(html).toContain('read from the keyboard');
+  });
+
   test('exposes a phase-independent spread so runs stay comparable', () => {
     // Hardware showed the same firmware and mode reporting min/avg 166/231 µs on one
     // enumeration and 512/558 µs on the next, because the offset between the firmware
