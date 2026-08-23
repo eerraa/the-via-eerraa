@@ -679,8 +679,16 @@ export const DiagnosticsResultView: FC<{
           </MetricValue>
         </MetricGrid>
         <Muted>
-          These RAM-only counters reset when the firmware restarts and are not
-          stored in EEPROM.
+          These are the values captured at the end of this test, not a live
+          reading — they only change when a test produces a new snapshot.
+          Applying a polling mode restarts the keyboard, which zeroes them, so a
+          test run right after a mode change always starts near zero. To check
+          whether an unplug, suspend or speed change was counted, trigger it and
+          then run another short test.
+        </Muted>
+        <Muted>
+          RAM-only. They reset when the firmware restarts and are never written
+          to EEPROM.
         </Muted>
       </FullPanel>
     </DashboardGrid>
