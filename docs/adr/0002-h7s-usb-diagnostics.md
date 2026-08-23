@@ -200,6 +200,25 @@ App에는 독립 chart dependency를 추가하지 않았다. SVG/CSS view가 VIA
 사용하고 responsive grid와 horizontal table overflow로 기존 dark/light theme와 좁은
 viewport를 따른다.
 
+## Deferred (post-hardware)
+
+실기 baseline 확보 후 착수한다. 판단 기준은 배포 위험이 아니라 구조적 정당성이다.
+펌웨어 측 항목과 근거 전문은 `eerraa-qmk-h7s-fw-via2/docs/DECISIONS.md`의
+"보류 항목 아키텍처 판단"에 있다.
+
+- **Trend 창 정합성** (`buildUsbDiagnosticsTrend`): p99는 *채택된* snapshot 두 개 사이,
+  window maximum은 *capture* 두 개 사이로 창 경계가 다르다. Snapshot 읽기가 중간에
+  실패하면 그 주기의 chunk 0이 이미 firmware 창을 리셋했으므로 다음 점에서 두 계열의
+  범위가 어긋난다. Firmware가 capture마다 증가하는 `sequence`를 이미 보내므로
+  `sequence - previousSequence !== 1`을 host가 감지할 수 있다. Firmware 변경 없이
+  host에서 불연속 구간의 window maximum을 제외하거나 점을 분리한다.
+- **localStorage 저장 실패 노출**: `saveUsbDiagnosticsRun()`의 boolean 반환을
+  `finishActive()`가 무시해 조용한 데이터 유실 경로가 된다. UI state로 전파한다.
+  Quota가 실제 문제가 되면 IndexedDB 재설계 대신 오래된 run의 보관 snapshot 수를 줄인다.
+- **Firmware D-1 수정 이후 재측정**: IN endpoint busy state를 endpoint별로 분리하면
+  keyboard와 EXK가 동시에 in-flight가 되어 delivery latency와 queue depth의 기준선이
+  내려간다. 수정 전후 결과를 같은 비교 그룹에 넣지 않는다.
+
 ## Verification
 
 - Firmware host test: protocol tag/version/reserved bytes, duration, busy/stop/clear,
