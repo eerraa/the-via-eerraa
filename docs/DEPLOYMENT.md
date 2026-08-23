@@ -3,6 +3,8 @@
 > 이 문서는 공개 정적 호스팅 운영 계약을 기록한다. 장기 아키텍처 결정은
 > `docs/PROJECT_DIRECTION.md`, 세션 상태는 외부 handover가 담당한다.
 
+**운영 URL: <https://the-via.pages.dev>** (2026-08-23 공개, Cloudflare Pages Direct Upload)
+
 ## 1. 호스팅 결정
 
 **Cloudflare Pages Direct Upload**를 사용한다. `.github/workflows/deploy-to-cloudflare.yml`이
@@ -78,11 +80,19 @@ bun run build
 - 의존성은 `bun.lock`으로 고정된다. 공식 정의는 git SHA로 핀된
   `via-keyboards@github:the-via/keyboards#79ae8d2`(+ `patches/via-keyboards-windows-paths.patch`)
   스냅샷이며, 빌드 시점에 원격을 조회하지 않는다.
-- 동일 입력으로 두 번 clean build한 결과는 3,573개 파일 중 3,572개가 **바이트 동일**하다.
-  유일한 차이는 `definitions/supported_kbs.json`의 `generatedAt` 타임스탬프다. 이 필드는
-  `scripts/build-keyboards.ts`가 콘텐츠 해시(`definitions/hash.json`)를 계산할 때 의도적으로
-  제외하므로, 앱의 캐시 무효화 동작에는 영향이 없다. 실제로 `hash.json`과 `index.html`의
-  `data-hash`는 재빌드 후에도 동일했다.
+- **같은 플랫폼에서**는 동일 입력으로 두 번 clean build한 결과가 3,573개 파일 중 3,572개
+  **바이트 동일**하다. 유일한 차이는 `definitions/supported_kbs.json`의 `generatedAt`
+  타임스탬프이며, `scripts/build-keyboards.ts`가 콘텐츠 해시 계산에서 의도적으로 제외하는
+  필드다. 그래서 `hash.json`과 `index.html`의 `data-hash`는 재빌드 후에도 동일했다.
+- **플랫폼이 다르면 `hash.json` 스칼라 값만 달라진다.** Windows 로컬 빌드는
+  `ddd01ee7…`, Linux CI 빌드는 `1faac201…`이었다. 정의 내용은 같다 — 배포본과 로컬 빌드를
+  비교했을 때 ERA overlay 27/27과 공식 V3 표본 12개가 바이트 동일했고,
+  `supported_kbs.json`도 `generatedAt`을 뺀 나머지가 완전히 같았다(v2 1,484 / v3 570,
+  집합과 배열 순서까지 일치). 차이의 출처는 `combinedHash`의 입력 중 하나인
+  `officialHash`뿐이다. 이 값은 설치된 `via-keyboards`가 자체 빌드에서 만들고 정의 배열의
+  파일 순회 순서에 의존하므로 파일시스템이 다르면 달라진다. `hash.json`은 앱의 캐시
+  무효화 키로만 쓰이고 배포본 안에서 `index.html`의 `data-hash`와 일치하면 되므로 동작에
+  영향이 없다. 재현성 주장은 "플랫폼별 바이트 재현"으로 읽어야 한다.
 - CI는 `actions/setup-node@v4`(Node 22)와 `oven-sh/setup-bun@v2`로 런타임을 고정한다.
   `bun run build:kbs`가 `node --import tsx`를 사용하므로 Node 고정이 필요하다.
 
@@ -103,6 +113,19 @@ bun run build
 따라서 `404.html`을 두어 암묵적 SPA 모드를 끄고, 앱의 실제 라우트만 명시적으로 rewrite한다.
 라우트 목록의 canonical source는 `src/utils/pane-config.tsx`와
 `src/components/panes/errors.tsx`다. 라우트를 추가하면 `public/_redirects`도 갱신해야 한다.
+
+**rewrite 대상은 `/index.html`이 아니라 `/`여야 한다.** Cloudflare Pages는
+`/index.html`을 `/`로 정규화하기 때문에, 대상이 `/index.html`이면 `200` rewrite가
+`308` redirect로 downgrade된다. 첫 production 배포에서 실제로 이 현상이 나왔다.
+
+```text
+GET https://the-via.pages.dev/test   ->  308  Location: /
+```
+
+앱 라우트 6개 전부가 `/`로 튕겨 딥링크가 라우트를 잃고 Configure 화면으로 떨어졌다.
+대상을 `/`로 바꾼 뒤 같은 요청이 리다이렉트 없이 `200 text/html`을 반환한다. 이 실패는
+로컬 dev 서버나 정적 파일 서버에서는 재현되지 않으므로, `_redirects`를 고칠 때는 preview
+배포에서 실제 상태 코드를 확인해야 한다.
 
 `_headers`는 `X-Content-Type-Options`, `X-Frame-Options: DENY`,
 `Referrer-Policy`와 캐시 정책만 설정한다.
@@ -170,6 +193,29 @@ $served = (Invoke-RestMethod "$H/definitions/hash.json")
 브라우저 검증은 Chromium 계열에서 `$H`를 열고 개발자 도구 Console/Network에 오류가
 없는지 본다. 실제 키보드 연결·Tap Dance·exact-ms·State Sync 동작은 사용자의 장치와
 WebHID 권한이 있어야 확인되며, 위 검증으로 대체되지 않는다.
+
+### 2026-08-23 최초 공개 배포 검증 결과
+
+```text
+라우트          / /test /design /settings /debug /console /errors
+                모두 200 text/html, 리다이렉트 0회
+미지정 경로     /zzz-nonexistent 404
+정의 JSON       supported_kbs / era_advanced / hash / era overlay / 공식 v3 / 공식 v2  200
+                없는 vpid (v3, era) 404  <- 일반 VIA 키보드 정의 부재 판정 유지
+헤더            모든 응답에 nosniff / frame-deny / referrer 적용
+                /assets/* immutable 1년, / 와 /definitions/* must-revalidate
+정의 일관성     ERA overlay 27/27 배포본 == 로컬 빌드 바이트 동일
+                공식 V3 표본 12/12 바이트 동일
+                era_advanced.json, index/vendor 번들 바이트 동일
+                supported_kbs.json은 generatedAt 외 완전 동일
+호환성 매트릭스 일반 VIA 7종: 공식 정의 200, ERA overlay 404, era_advanced 미포함
+                ERA 27종: overlay 200 + vpid 일치, TD 8슬롯 / menus 4
+                VPID 충돌 10종: 공식·ERA 양쪽 제공, 공식에는 tapdanceKeycodes 없음
+                brick65: stateSync false, exactMs null, menus 1, TD 0 (ATmega32U4 예외)
+headless Chrome 라우트 7개 각각 network 4xx 0 / failed 0 / console error 0 / page error 0
+                /settings·/design은 서로 다른 내용 렌더 확인
+업로드          3,575 파일 + _headers + _redirects (Pages 제한 20,000)
+```
 
 ## 7. 롤백
 
