@@ -4,6 +4,7 @@ type EraAdvancedEntry = {
   id: string;
   vendorProductId: number;
   stateSync: boolean;
+  usbDiagnostics?: boolean;
   exactMsFamily: ExactMsFamily | null;
 };
 
@@ -17,7 +18,7 @@ let loaded: EraAdvancedMetadata | null = null;
 let loadPromise: Promise<EraAdvancedMetadata> | null = null;
 
 const emptyMetadata = (): EraAdvancedMetadata => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   definitions: [],
 });
 
@@ -39,6 +40,23 @@ export const isStateSyncOptIn = (vendorProductId: number) => {
     (entry) => entry.vendorProductId === vendorProductId && entry.stateSync,
   );
 };
+
+export const isUsbDiagnosticsOptIn = (vendorProductId: number) => {
+  const metadata = getEraAdvancedMetadataSync();
+  if (!metadata) {
+    return false;
+  }
+  return metadata.definitions.some(
+    (entry) =>
+      entry.vendorProductId === vendorProductId &&
+      entry.usbDiagnostics === true,
+  );
+};
+
+export const shouldProbeUsbDiagnostics = (
+  definitionSource: 'era' | 'official' | 'upload' | null,
+  vendorProductId: number,
+) => definitionSource === 'era' && isUsbDiagnosticsOptIn(vendorProductId);
 
 export const getExactMsFamily = (
   vendorProductId: number,

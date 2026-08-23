@@ -13,6 +13,7 @@ type DefinitionEntry = {
   id: string;
   path: string;
   stateSync: boolean;
+  usbDiagnostics?: boolean;
   exactMsFamily?: 'qmk' | 'h7s';
 };
 
@@ -110,6 +111,14 @@ const expectedQmkDefinitionIds = [
   'tomak79h-right',
   'tomak79s-left',
   'tomak79s-right',
+].sort();
+
+const expectedUsbDiagnosticsDefinitionIds = [
+  'brick60-h7s',
+  'brick65-h7s',
+  'intigrity80-h7s',
+  'may65-h7s',
+  'sculpturei-h7s',
 ].sort();
 
 describe('era definition tapdanceKeycodes', () => {
@@ -293,5 +302,23 @@ describe('canonical ERA definition inventory', () => {
         ({name}) => !name.endsWith('_exact'),
       ),
     ).toEqual([]);
+  });
+
+  test('opts only the five H7S definitions into USB diagnostics', () => {
+    const optedIn = manifest.definitions.filter(
+      ({usbDiagnostics}) => usbDiagnostics === true,
+    );
+    expect(optedIn.map(({id}) => id).sort()).toEqual(
+      expectedUsbDiagnosticsDefinitionIds,
+    );
+    for (const entry of optedIn) {
+      expect(entry.exactMsFamily).toBe('h7s');
+      expect(JSON.stringify(readJSON(entry.path))).not.toContain(
+        'id_qmk_usb_autodg_beta',
+      );
+      expect(JSON.stringify(readJSON(entry.path))).not.toContain(
+        'Auto downgrade on USB unstable',
+      );
+    }
   });
 });

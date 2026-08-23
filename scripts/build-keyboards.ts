@@ -22,6 +22,7 @@ type DefinitionEntry = {
   productId: string;
   pair?: string;
   stateSync: boolean;
+  usbDiagnostics?: boolean;
   exactMsFamily?: ExactMsFamily;
 };
 
@@ -131,6 +132,16 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
     invariant(
       typeof definition.stateSync === 'boolean',
       `${definition.id}.stateSync must be a boolean.`,
+    );
+    invariant(
+      definition.usbDiagnostics === undefined ||
+        typeof definition.usbDiagnostics === 'boolean',
+      `${definition.id}.usbDiagnostics must be a boolean.`,
+    );
+    invariant(
+      definition.usbDiagnostics !== true ||
+        definition.exactMsFamily === 'h7s',
+      `${definition.id}.usbDiagnostics requires exactMsFamily h7s.`,
     );
     invariant(
       definition.exactMsFamily === undefined ||
@@ -642,11 +653,12 @@ const writeEraOverlay = async (
   await writeFile(
     path.join(definitionsOutputPath, 'era_advanced.json'),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       definitions: definitions.map(({entry, via}) => ({
         id: entry.id,
         vendorProductId: via.vendorProductId,
         stateSync: entry.stateSync === true,
+        usbDiagnostics: entry.usbDiagnostics === true,
         exactMsFamily: entry.exactMsFamily ?? null,
       })),
     }),
