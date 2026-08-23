@@ -5,6 +5,8 @@ import type {
   UsbDiagnosticsSpeed,
 } from './era-usb-diagnostics';
 import {
+  isUsbDiagnosticsSpeedConsistent,
+  usbDiagnosticsExpectedSpeed,
   usbDiagnosticsPollingModeLabel,
   usbDiagnosticsSpeedLabel,
 } from './era-usb-diagnostics';
@@ -325,6 +327,10 @@ export const buildUsbDiagnosticReport = (run: UsbDiagnosticsRun) => {
   const overTwo = countAfterBucket(snapshot.histogram, 6);
   const overTwoRate =
     total === 0 ? 'n/a' : `${((overTwo / total) * 100).toFixed(3)}%`;
+  const speedConsistent = isUsbDiagnosticsSpeedConsistent(
+    run.pollingMode,
+    run.speed,
+  );
 
   return [
     'ERA USB Diagnostics',
@@ -337,6 +343,16 @@ export const buildUsbDiagnosticReport = (run: UsbDiagnosticsRun) => {
     `Outcome: ${run.outcome}`,
     `Timestamp: ${run.endedAt}`,
     ...(run.abortReason ? [`Abort reason: ${run.abortReason}`] : []),
+    ...(speedConsistent
+      ? []
+      : [
+          `WARNING: ${usbDiagnosticsPollingModeLabel(
+            run.pollingMode,
+          )} requires ${usbDiagnosticsSpeedLabel(
+            usbDiagnosticsExpectedSpeed(run.pollingMode),
+          )}, but the link enumerated at ${usbDiagnosticsSpeedLabel(run.speed)}.`,
+          'WARNING: normalized multipliers, histogram buckets and quantile bounds below are not comparable with other modes.',
+        ]),
     '',
     'HID delivery',
     `Reports observed: ${snapshot.reportSamples}`,

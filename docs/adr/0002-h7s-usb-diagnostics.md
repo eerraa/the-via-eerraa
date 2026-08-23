@@ -146,6 +146,22 @@ sequence로 후속 chunk를 정확히 하나씩 읽는다. Session/state/sequenc
 critical-section copy 뒤 wire snapshot을 freeze하므로 ISR/main-loop update 중 torn
 field를 노출하지 않는다.
 
+## Normalization basis and negotiated speed
+
+Firmware는 session 시작 시점의 선택 mode에서 `expected interval`을 계산하고 모든
+histogram bucket과 window multiplier를 그 값으로 정규화한다. 이 값은 실제 enumerate된
+link speed가 아니다. FS 1K는 항상 Full Speed로, HS 2/4/8K는 항상 High Speed로
+enumerate되므로, 선택 mode와 협상된 speed가 다르면(예: HS 8K 선택 상태로 FS만 지원하는
+hub/port에 연결) 정규화 기준이 실제 polling 간격의 8배까지 어긋난다. 이 경우 raw
+microsecond 값과 counter는 여전히 유효하지만 multiplier·quantile bound·trend는 선택
+mode를 설명하지 않는다.
+
+Firmware wire contract는 바꾸지 않는다. Snapshot이 이미 `polling mode`와 `negotiated
+speed`를 함께 보내므로 app이 두 값의 정합성을 판정한다. 불일치하면 result view 상단에
+전용 caveat panel을 띄우고, connection panel과 `Copy Diagnostic Report` 본문에 경고
+문장을 넣으며, mode comparison table의 해당 row를 `speed mismatch`로 표시해 다른 row와
+정규화 열을 비교하지 못하게 한다. 숫자를 숨기거나 자동으로 mode를 바꾸지는 않는다.
+
 ## Host persistence and comparison
 
 Local storage key는 `era.usbDiagnostics.history.v1`, envelope schema version은 1이다.
@@ -165,7 +181,9 @@ Device path나 raw HID 식별자는 저장하지 않는다.
 - Timeout/malformed snapshot은 최대 세 번 연속 실패까지 재시도한다. Disconnect 또는
   세 번 실패는 session을 aborted로 끝내며 captured partial snapshot이 있으면 저장한다.
 - Page/device/connection generation이 바뀌면 polling owner를 취소하고, 아직 같은
-  generation이면 STOP을 queue해 high-resolution probe를 끈다.
+  generation이면 STOP을 queue해 high-resolution probe를 끈다. Polling loop는 이때
+  수집한 partial snapshot을 aborted로 저장한 뒤 owner를 비우므로, page가 mount된 채
+  connection generation만 바뀌어도 Start가 잠기지 않는다.
 - Reconnect 후 firmware에 출처를 알 수 없는 running session이 남아 있으면 자동으로
   history에 붙이지 않는다. 사용자가 그 session을 stop한 뒤 새 test를 시작한다.
 - STOP은 final coherent snapshot을 한 번 읽는다. CLEAR는 running 중 사용하지 않고
@@ -192,6 +210,8 @@ viewport를 따른다.
   unsupported/timeout/disconnect, SET control
 - App history: schema/corruption/bounds/version grouping/aborted exclusion/report text
 - App result render: factual summary, trend, histogram, timeline, comparison, score 문구 부재
+- App normalization basis: mode↔negotiated speed 정합성 판정, 불일치 caveat/report
+  warning/comparison row marking
 - Existing definition, locale, state-sync/transport test와 production build
 
 실기기에서는 FS 1K 및 HS 2/4/8K 각각에 대해 diagnostics off/on keyboard interval,

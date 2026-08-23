@@ -611,3 +611,17 @@ export const usbDiagnosticsSpeedLabel = (speed: UsbDiagnosticsSpeed) =>
 
 export const usbDiagnosticsStateLabel = (state: UsbDiagnosticsSessionState) =>
   ['Idle', 'Running', 'Complete', 'Stopped'][state];
+
+// The firmware normalizes every latency bucket against the interval of the polling
+// mode that was selected when the session started, not against the interval the link
+// actually enumerated with. FS 1K always enumerates at Full Speed and HS 2K/4K/8K
+// always enumerate at High Speed, so a differing negotiated speed means the reported
+// multipliers do not describe the selected polling rate.
+export const usbDiagnosticsExpectedSpeed = (
+  mode: UsbDiagnosticsPollingMode,
+): Exclude<UsbDiagnosticsSpeed, 0> => (mode === 0 ? 1 : 2);
+
+export const isUsbDiagnosticsSpeedConsistent = (
+  mode: UsbDiagnosticsPollingMode,
+  speed: UsbDiagnosticsSpeed,
+) => speed === 0 || speed === usbDiagnosticsExpectedSpeed(mode);
