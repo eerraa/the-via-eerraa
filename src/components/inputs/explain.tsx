@@ -28,7 +28,10 @@ const Toggle = styled.button<{$open: boolean}>(({$open}) => ({
   ':hover': {filter: 'brightness(1.25)'},
 }));
 
-const Body = styled.p({
+// Exported so a caller that cannot keep the button and the body adjacent — a control
+// row puts the button beside the label and the body on its own line under both
+// columns — can still render the same body.
+export const ExplainBody = styled.p({
   flexBasis: '100%',
   '&[hidden]': {display: 'none'},
   color: 'var(--color_label)',
@@ -38,20 +41,17 @@ const Body = styled.p({
   margin: '8px 0 0',
 });
 
-// Place inside a `display: flex; flex-wrap: wrap` heading row: the button sits next to
-// the title and the body wraps onto its own full-width line underneath.
-export const Explain = ({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label?: string;
-}) => {
+// The open state stays inside this hook and `hidden` is handed out already resolved,
+// so no caller can turn the collapsed body into `{open && <Body/>}`. That is the
+// contract: folded text stays in the DOM for find-in-page and for anything reading
+// the page, and only stops taking up the screen.
+export const useExplainDisclosure = (label?: string) => {
   const {t} = useTranslation();
   const [open, setOpen] = useState(false);
   const id = useId();
-  return (
-    <>
+  return {
+    bodyProps: {hidden: !open, id},
+    toggle: (
       <Toggle
         $open={open}
         aria-controls={id}
@@ -62,12 +62,24 @@ export const Explain = ({
       >
         i
       </Toggle>
-      {/* Kept in the DOM while collapsed: the text stays available to
-          find-in-page and to anything reading the page, and only stops taking
-          up the screen. */}
-      <Body hidden={!open} id={id}>
-        {children}
-      </Body>
+    ),
+  };
+};
+
+// Place inside a `display: flex; flex-wrap: wrap` heading row: the button sits next to
+// the title and the body wraps onto its own full-width line underneath.
+export const Explain = ({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label?: string;
+}) => {
+  const {toggle, bodyProps} = useExplainDisclosure(label);
+  return (
+    <>
+      {toggle}
+      <ExplainBody {...bodyProps}>{children}</ExplainBody>
     </>
   );
 };

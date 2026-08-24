@@ -9,7 +9,10 @@
 // `qmk_firmware_eerraa/keyboards/era/common/docs/user/readme.txt`, rewritten for
 // someone reading it inside the configurator: the guide tells you where to click,
 // which the reader already knows by the time they see this, so what is left is what
-// the setting does and how to choose a value.
+// the setting does and how to choose a value. Where the guide is thin or wrong —
+// Anti-Ghosting and the three tapping switches — the text below comes from reading the
+// firmware instead: `port/kkuk.c`, `port/debounce_profile.c` with the algorithms under
+// `quantum/debounce/`, and `port/tapping_term.c` on top of stock `action_tapping.c`.
 
 export type EraFeatureHelp = {
   /** One line, always visible above the controls. */
@@ -43,9 +46,9 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     'id_qmk_kkuk_',
     {
       summary:
-        'Re-sends a key you are still holding so the PC cannot forget it.',
+        'Hold several keys and they cycle: hold a, s and d and you get "asdasdasd", not "asddddd".',
       detail:
-        'Some games drop a held key when a lot happens at once. This sends it again on a timer: First Delay is how long you have to hold before that starts, Repeat is how often it goes out afterwards. Keys you assigned to SOCD are left out of it.',
+        'The menu name is misleading — this has nothing to do with matrix ghosting. Hold two or more ordinary keys still, and the keyboard starts letting the whole group go and pressing it again on a timer, so every key you are holding keeps arriving instead of only the last one repeating. First Delay Time is how long you have to hold before that begins; Repeat Time is how often the group goes out afterwards. Keys you gave to SOCD are left out of it. It is the firmware doing the job people otherwise buy a macro pad for in games.',
     },
   ],
   [
@@ -53,7 +56,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Filters switch chatter, so one press sends one keystroke.',
       detail:
-        'Balanced at 5 ms suits most switches. Raise the time only if a single press sometimes types twice, and go up a little at a time — every millisecond you add is a millisecond the key takes to register. Fast reacts sooner on a clean switch; Advanced lets you set the press and release windows separately.',
+        'Leave it alone unless one press sometimes types twice. When that happens, raise the time a little at a time — on Balanced every millisecond you add is a millisecond the key takes to register. Balanced at 5 to 10 ms suits most switches. The mode decides which time boxes appear under it.',
     },
   ],
   [
@@ -62,7 +65,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
       summary:
         'How long a tap-hold key waits before it decides you meant the hold.',
       detail:
-        'This covers Mod-Tap and Layer-Tap keys, and 200 ms is the default. Shorter makes holds trigger sooner but turns fast typing into accidental holds; longer is more forgiving but the hold arrives late. The toggles change what happens when you press another key partway through — worth trying one at a time rather than all at once.',
+        'This covers Mod-Tap and Layer-Tap keys — the ones that send a key when you tap them and a modifier or a layer when you hold them. 200 ms is the default: shorter makes holds trigger sooner but turns fast typing into accidental holds, longer is more forgiving but the hold arrives late. The three switches under it decide what happens when you press something else before the key has made up its mind. Turn them on one at a time.',
     },
   ],
   [
@@ -170,6 +173,107 @@ export const findEraFeatureHelp = (
     ) {
       return help;
     }
+  }
+  return null;
+};
+
+// A control gets its own disclosure only when its label cannot say which way to move
+// the value. That is true when the choices are proper nouns whose names do not
+// describe what they do (Balanced / Fast / Advanced, Permissive Hold), and when the
+// label states a specification rather than a consequence — a DEBOUNCE row called
+// "Press & Release - delay before and after (same value)" says what the firmware does
+// with the number but not that raising it delays every keystroke.
+//
+// It is not for a control whose unit is already the answer (Cursor Top Speed at 16 px,
+// Repeat Time at 80 ms), nor for one the submenu summary above already takes as its
+// subject — Global Tapping Term and Anti-Ghosting's Enable are what those summaries are
+// about, so repeating them one row lower would be noise.
+//
+// Keyed off exact firmware command names, the same gate the submenu text uses. Two rows
+// can share one command id and mean different things depending on the debounce mode, so
+// those entries also name the labels they belong to; both the H7S spelled-out labels and
+// the shorter RP2040 ones are listed. An unmatched label renders no help, which is the
+// right failure — text about the wrong side of the debounce window is worse than none.
+type EraControlHelp = {
+  command: string;
+  labels?: readonly string[];
+  help: string;
+};
+
+const HELP_BY_CONTROL: readonly EraControlHelp[] = [
+  {
+    command: 'id_qmk_kkuk_mode',
+    help: 'Report Pulse is the only behaviour the firmware implements, and it is what the rest of this menu describes: the held group is released and pressed again on the Repeat Time. The dropdown exists because the setting is stored as a number with room for more; picking anything else is ignored.',
+  },
+  {
+    command: 'id_qmk_debounce_mode',
+    help: 'Balanced waits: nothing is sent until the switch has held still for the set time, on the way down and on the way up alike, so every press registers that many milliseconds late. Fast sends the change the instant it happens and then stops listening to that key for the set time — nothing is added to how fast a key registers, but a bounce that arrives after the window can still double. Advanced is Fast on the press and Balanced on the release, with a separate time for each. Start with Balanced and only move off it if you can feel the delay.',
+  },
+  {
+    command: 'id_qmk_debounce_time_single',
+    help: 'One number for both directions. A press or a release is reported only once the switch has stayed quiet this long, so this is also how much later every key registers. 5 to 10 ms covers most switches — raise it while a press is still doubling, and stop as soon as it is not.',
+  },
+  {
+    command: 'id_qmk_debounce_time_post',
+    labels: [
+      'Press & Release - delay after change (post-only)',
+      'Press & Release Cooldown',
+    ],
+    help: 'Fast reports the change straight away, then stops listening to that key for this long. It costs you nothing in response time, so the only reason to raise it is a press that still doubles — this window is the only thing catching the bounce.',
+  },
+  {
+    command: 'id_qmk_debounce_time_pre',
+    help: 'The press side of Advanced. The press goes out immediately and that key is then ignored for this long, so raising it does not slow the keyboard down. It only has to outlast the bounce on the way down.',
+  },
+  {
+    command: 'id_qmk_debounce_time_post',
+    labels: [
+      'Release - delay before and after release (pre+post window)',
+      'Release Delay',
+    ],
+    help: 'The release side of Advanced. Letting go is reported only once the switch has stayed quiet this long, which is where most chatter lives. It delays the release and not the press, so holding a key and typing feel the same.',
+  },
+  {
+    command: 'id_qmk_tapping_permissive_hold',
+    help: 'For holds that do not take when you move fast. With this on, a tap-hold key becomes the hold as soon as another key is pressed and released while you are still holding it: hold a Shift Mod-Tap, tap b, and you get B even inside the waiting time. Off, that same sequence types both letters instead. Hold on Other Key Press is the blunt version of this — it decides when the other key goes down, this one waits for it to come back up.',
+  },
+  {
+    command: 'id_qmk_tapping_hold_on_other_key_press',
+    help: 'The strongest of the three. A tap-hold key becomes the hold the moment any other key goes down, without waiting for it to come back up. Turn it on if holds still come out as letters with Permissive Hold on. It costs you rolls: pressing the tap-hold key and the next key almost together now gives the hold, which hurts most on a Mod-Tap sitting on a home-row letter.',
+  },
+  {
+    command: 'id_qmk_tapping_retro_tapping',
+    help: 'For letters that vanish when you rest on a key too long. Normally a tap-hold key held past the term and let go with nothing pressed in between sends nothing at all. With this on it sends the tap anyway. It changes nothing about the case where you did press another key, so it sits safely next to either switch above.',
+  },
+];
+
+// Every string in both tables is rendered through `t()`, so each one has to exist as a
+// key in all six catalogs or that language silently falls back to English. Editing the
+// English text without updating the locales is the easy mistake here, so the locale
+// test reads this list rather than trusting anyone to remember.
+export const eraHelpStrings = (): string[] => [
+  ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) => [
+    summary,
+    detail,
+  ]),
+  ...HELP_BY_CONTROL.map(({help}) => help),
+];
+
+export const findEraControlHelp = (
+  commandName: unknown,
+  label: unknown,
+): string | null => {
+  if (typeof commandName !== 'string') {
+    return null;
+  }
+  for (const entry of HELP_BY_CONTROL) {
+    if (entry.command !== commandName) {
+      continue;
+    }
+    if (entry.labels && !entry.labels.some((known) => known === label)) {
+      continue;
+    }
+    return entry.help;
   }
   return null;
 };

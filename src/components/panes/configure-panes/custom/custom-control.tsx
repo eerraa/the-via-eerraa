@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import styled from 'styled-components';
 import {PelpiKeycodeInput} from '../../../inputs/pelpi/keycode-input';
 import {AccentButton} from '../../../inputs/accent-button';
 import {AccentSlider} from '../../../inputs/accent-slider';
@@ -39,6 +40,9 @@ import {
   updateSelectedCustomMenuData,
 } from 'src/store/menusSlice';
 import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
+import {ExplainBody, useExplainDisclosure} from 'src/components/inputs/explain';
+import {findEraControlHelp} from 'src/utils/era-feature-help';
+import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
 
 type Props = {
   lightingData: LightingData;
@@ -56,23 +60,66 @@ type ControlMeta = [
 
 type AdvancedControlProps = Props & {meta: ControlMeta};
 
+// A row that carries its own help wraps: the label and its ⓘ stay in the left column,
+// the control stays in the right one, and the folded body gets a full-width line under
+// both. Rows without help keep the original two-column row untouched.
+const HelpfulControlRow = styled(ControlRow)`
+  flex-wrap: wrap;
+`;
+
+const LabelGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+// The 50px line box above already leaves a gap, so the body only needs room beneath it.
+const ControlExplainBody = styled(ExplainBody)`
+  margin: 0 0 12px;
+`;
+
 export const VIACustomItem = React.memo(
   (props: VIACustomControlProps & {_id: string}) => {
     const {t} = useTranslation();
+    const label = t(props.label);
+    // Matched on the firmware's own command name, so this never appears on an ordinary
+    // VIA keyboard. Most controls get nothing: see the rule in `era-feature-help.ts`.
+    const help = findEraControlHelp(
+      isCustomMenuCommandContent(props.content) ? props.content[0] : null,
+      props.label,
+    );
+    const {toggle, bodyProps} = useExplainDisclosure(
+      t('What this means: {{name}}', {name: label}),
+    );
+    const detail = (
+      <Detail>
+        {'type' in props ? (
+          <VIACustomControl
+            {...props}
+            value={props.value && Array.from(props.value)}
+          />
+        ) : (
+          props.content
+        )}
+      </Detail>
+    );
+    if (!help) {
+      return (
+        <ControlRow id={props._id}>
+          <Label>{label}</Label>
+          {detail}
+        </ControlRow>
+      );
+    }
     return (
-      <ControlRow id={props._id}>
-        <Label>{t(props.label)}</Label>
-        <Detail>
-          {'type' in props ? (
-            <VIACustomControl
-              {...props}
-              value={props.value && Array.from(props.value)}
-            />
-          ) : (
-            props.content
-          )}
-        </Detail>
-      </ControlRow>
+      <HelpfulControlRow id={props._id}>
+        <LabelGroup>
+          <Label>{label}</Label>
+          {toggle}
+        </LabelGroup>
+        {detail}
+        <ControlExplainBody {...bodyProps}>{t(help)}</ControlExplainBody>
+      </HelpfulControlRow>
     );
   },
 );
