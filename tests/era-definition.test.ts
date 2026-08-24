@@ -8,6 +8,7 @@ import {
   splitTapDanceKeycodesFromRaw,
 } from '../src/utils/era-definition';
 import {mergeDefinitionLookup} from '../src/utils/definition-priority';
+import {findEraFeatureHelp} from '../src/utils/era-feature-help';
 
 type DefinitionEntry = {
   id: string;
@@ -391,6 +392,55 @@ describe('canonical ERA definition inventory', () => {
     ).filter(({name}) => name.startsWith('id_qmk_mousekey_'));
     expect(era65.length).toBeGreaterThan(0);
     expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
+  });
+
+  // The SOCD menu shipped without help for twenty-five definitions because the RP2040
+  // firmware calls it `id_qmk_socd_*` while H7S calls it `id_qmk_kill_switch_*`, and
+  // only the second prefix was registered. Nothing failed, because no test asked "does
+  // every ERA submenu actually resolve to help?". This one asks, and any submenu that
+  // legitimately has none has to be named here rather than passing silently.
+  const SUBMENUS_WITHOUT_HELP = ['Backlight', 'Badge Lighting'];
+
+  test('every ERA submenu resolves to feature help, or is listed as not having any', () => {
+    const uncovered = new Map<string, string[]>();
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const menus = (definition.menus ?? []) as {content?: unknown[]}[];
+      for (const menu of menus) {
+        if (!menu || typeof menu !== 'object' || !Array.isArray(menu.content)) {
+          continue;
+        }
+        for (const submenu of menu.content) {
+          if (
+            !submenu ||
+            typeof submenu !== 'object' ||
+            !('label' in submenu) ||
+            typeof (submenu as {label: unknown}).label !== 'string'
+          ) {
+            continue;
+          }
+          const label = (submenu as {label: string}).label;
+          const commands = collectCommandControls(submenu).map(
+            ({name}) => name,
+          );
+          if (commands.length === 0 || findEraFeatureHelp(commands)) {
+            continue;
+          }
+          uncovered.set(label, [...(uncovered.get(label) ?? []), entry.id]);
+        }
+      }
+    }
+    expect([...uncovered.keys()].sort()).toEqual(
+      [...SUBMENUS_WITHOUT_HELP].sort(),
+    );
+  });
+
+  test('both firmware families name the same SOCD feature', () => {
+    // H7S: id_qmk_kill_switch_*. RP2040: id_qmk_socd_*. Same feature, one explanation.
+    const h7s = findEraFeatureHelp(['id_qmk_kill_switch_enable_lr']);
+    const rp2040 = findEraFeatureHelp(['id_qmk_socd_lr_enable']);
+    expect(h7s).not.toBeNull();
+    expect(rp2040).toEqual(h7s!);
   });
 
   test('opts only the five H7S definitions into USB diagnostics', () => {
