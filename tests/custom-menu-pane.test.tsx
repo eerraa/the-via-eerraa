@@ -355,7 +355,7 @@ describe('ERA feature help', () => {
       content: [mouseSubmenu],
     });
 
-    expect(html).toContain('Speed of the mouse keys in your keymap');
+    expect(html).toContain('Speed of the mouse keys on the keymap');
     expect(html).toContain('Cursor Acceleration');
   });
 });

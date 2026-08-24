@@ -27,7 +27,7 @@ export type EraFeatureHelp = {
 // `id_qmk_kill_switch_*`, the RP2040 firmware `id_qmk_socd_*`. One object, two prefixes,
 // so the two families cannot drift apart into two different explanations.
 const SOCD_HELP: EraFeatureHelp = {
-  summary: 'Only the key you pressed last counts.',
+  summary: 'Only the key pressed last counts.',
   detail:
     'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first.',
 };
@@ -38,7 +38,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_tapdance_',
     {
-      summary: 'Four actions on one key: tap, hold, double tap, tap-then-hold.',
+      summary: 'Four actions on one key.',
       detail:
         'Fill in the actions, then place the matching TD key on your keymap from KEYMAP → TAPDANCE. Nothing here does anything until that key is somewhere you can press it. Term is how long the keyboard waits before deciding which action you meant.',
     },
@@ -48,9 +48,9 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_kkuk_',
     {
-      summary: 'Hold a, s and d and you get "asdasdasd", not "asddddd".',
+      summary: 'Cycles the keys held down, so a, s, d gives "asdasdasd".',
       detail:
-        'The KKUK effect. Hold two or more ordinary keys still and the whole group is released and pressed again on a timer, so all of them keep arriving instead of only the last one repeating. First Delay Time is how long you hold before it starts; Repeat Time is how often it repeats. Keys assigned to SOCD are excluded.',
+        'Hold two or more ordinary keys still and the whole group is released and pressed again on a timer, so all of them keep arriving instead of only the last one. First Delay Time is the hold before it starts, Repeat Time the interval after. SOCD keys are excluded.',
     },
   ],
   [
@@ -58,7 +58,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Filters chatter so one press types once.',
       detail:
-        'Leave it alone unless one press sometimes types twice. If it does, raise the time a little at a time. Balanced at 5 to 10 ms suits most switches. The mode decides which time boxes appear.',
+        'Leave it alone unless one press sometimes types twice. If it does, raise the time a little at a time. Balanced at 5 to 10 ms suits most switches. Only the time boxes that mode affects appear.',
     },
   ],
   [
@@ -72,7 +72,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_mousekey_',
     {
-      summary: 'Speed of the mouse keys in your keymap.',
+      summary: 'Speed of the mouse keys on the keymap.',
       detail:
         'Nothing here does anything unless your keymap has mouse keys on it. The values interact, so change one at a time.',
     },
@@ -80,7 +80,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_custom_nkro_',
     {
-      summary: 'No limit on how many keys register at once.',
+      summary: 'Expands simultaneous key input without a limit.',
       detail:
         'Turn it off if an old BIOS or a KVM switch cannot see your typing. Off, the keyboard falls back to 6KRO and registers six keys at once.',
     },
@@ -88,7 +88,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_usb_bootmode',
     {
-      summary: 'Sets the USB polling rate. Applying restarts the keyboard.',
+      summary: 'Sets the USB polling rate; applying restarts the keyboard.',
       detail:
         'Pick a mode, then turn on Apply. 1 kHz works on any port; the high-speed rates need a port that negotiates USB High Speed, which hubs and front-panel headers often cannot.',
     },
@@ -129,7 +129,8 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     'id_qmk_ver_',
     {
       summary: 'Firmware version on this keyboard.',
-      detail: 'Quote it when you report a problem.',
+      detail:
+        'Year, month, day and revision, read from the keyboard. Quote it when you report a problem.',
     },
   ],
   [
@@ -208,12 +209,39 @@ export const findEraFeatureHelp = (
 // listed. An unmatched label renders no help, which is the right failure: text about the
 // wrong side of the debounce window is worse than none.
 type EraControlHelp = {
-  command: string;
+  /** Exact firmware command name. */
+  command?: string;
+  /**
+   * Used instead of `command` when one entry covers a family of numbered commands —
+   * TAPDANCE repeats the same five controls across eight slots, so matching
+   * `id_qmk_tapdance_` plus the row label beats writing forty identical entries.
+   */
+  commandPrefix?: string;
   labels?: readonly string[];
   help: string;
 };
 
 const HELP_BY_CONTROL: readonly EraControlHelp[] = [
+  {
+    commandPrefix: 'id_qmk_tapdance_',
+    labels: ['On Tap'],
+    help: 'The keycode sent when the press is judged a short one.',
+  },
+  {
+    commandPrefix: 'id_qmk_tapdance_',
+    labels: ['On Hold'],
+    help: 'The keycode sent when the press is judged a long one.',
+  },
+  {
+    commandPrefix: 'id_qmk_tapdance_',
+    labels: ['On Double Tap'],
+    help: 'The keycode sent when the key is tapped twice inside Term.',
+  },
+  {
+    commandPrefix: 'id_qmk_tapdance_',
+    labels: ['Tap+Hold'],
+    help: 'The keycode sent when a tap is followed by holding the key down.',
+  },
   {
     command: 'id_qmk_kkuk_mode',
     help: 'Report Pulse is the only behaviour the firmware has, and it is what the rest of this menu describes. Anything else you pick is ignored.',
@@ -290,7 +318,7 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
   },
   {
     command: 'id_qmk_eeprom_sync_requested',
-    help: 'A few seconds after a stored setting changes, an indicator shows and both units copy it across. The other two build on this.',
+    help: 'A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.',
   },
   {
     command: 'id_qmk_input_sync_requested',
@@ -306,6 +334,12 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
 // key in all six catalogs or that language silently falls back to English. Editing the
 // English text without updating the locales is the easy mistake here, so the locale test
 // reads this list rather than trusting anyone to remember.
+// The always-visible half, on its own: `tests/locales.test.ts` holds these to one
+// short impersonal sentence so no menu reads differently from its neighbours.
+export const eraMenuSummaries = (): string[] => [
+  ...new Set(HELP_BY_COMMAND_PREFIX.map(([, {summary}]) => summary)),
+];
+
 export const eraHelpStrings = (): string[] => [
   ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) => [
     summary,
@@ -322,7 +356,10 @@ export const findEraControlHelp = (
     return null;
   }
   for (const entry of HELP_BY_CONTROL) {
-    if (entry.command !== commandName) {
+    const matches = entry.command
+      ? entry.command === commandName
+      : !!entry.commandPrefix && commandName.startsWith(entry.commandPrefix);
+    if (!matches) {
       continue;
     }
     if (entry.labels && !entry.labels.some((known) => known === label)) {
