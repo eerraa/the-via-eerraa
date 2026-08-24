@@ -510,6 +510,64 @@ identity가 바뀌고, 그것에 의존하는 정리 effect가 실행 중인 측
 
 버튼과 select도 VIA의 20px 메뉴 행 기준(40px 높이)에서 이 블록 기준(36px)으로 낮췄다.
 
+## Named for the setting it sits under
+
+`USB Delivery Diagnostics`는 계측 대상(HID report delivery)을 이름으로 삼았다. 블록이
+`USB POLLING` submenu 안에 있고, 답하는 질문도 "이 폴링 모드가 어떤가"이므로 화면 맥락과
+어긋난다. **`USB Polling Diagnostics` / `USB 폴링 진단`**으로 바꾼다. 계측 대상은 그대로다.
+
+## Help for the rest of the ERA menus
+
+진단 블록만 설명을 갖고 나머지 ERA 기능은 이름만 있는 상태였다. `TAPDANCE`, `SOCD`,
+`DEBOUNCE` 같은 메뉴는 이름이 곧 설명이 되지 못하고, 값 하나를 어느 방향으로 움직여야
+하는지도 화면에 없다. 진단에 쓴 disclosure를 그대로 재사용해 각 submenu 위에 한 줄 요약과
+접힌 상세를 붙인다.
+
+`src/utils/era-feature-help.ts`가 표를 갖고, `feature-help.tsx`가 `menu-generator`의
+submenu 항목 위에 렌더링한다.
+
+**메뉴 label이 아니라 command id로 키를 잡는다.** label은 자유 문구라 일반 VIA 정의도
+`TAPPING`이라는 메뉴를 가질 수 있지만, `id_qmk_tapping_*`은 ERA 펌웨어에만 있다. 따라서
+구현이 다른 남의 키보드가 ERA 기능 설명을 가져가는 일이 없다. 진단 블록이 쓰는 게이트와
+같은 원리다.
+
+내용 출처는 펌웨어 저장소의 사용자 안내
+`qmk_firmware_eerraa/keyboards/era/common/docs/user/readme.txt`(및 split 판)다. 그대로
+옮기지 않고 다시 썼다. 안내문은 "VIA CONFIGURE → FEATURE → DEBOUNCE에서 조정합니다"처럼
+경로를 알려주는데, 이 텍스트를 읽는 사람은 이미 그 화면에 있다. 남는 것은 **그 설정이 무엇을
+하는지와 값을 어느 방향으로 움직여야 하는지**뿐이므로 그 두 가지만 남기고 나머지는 버렸다.
+안내문에 없던 판단 기준(예: DEBOUNCE에서 1 ms를 더할 때마다 인식 시간도 1 ms 늘어난다는
+사실, TAPPING 토글은 하나씩 시험하라는 조언)은 정의 JSON의 옵션과 펌웨어 동작에서 확인해
+새로 썼다.
+
+덮는 메뉴: TAPDANCE, SOCD, Anti-Ghosting, DEBOUNCE, TAPPING, MOUSE, NKRO, USB POLLING,
+BOOT, EEPROM CLEAN, SPLIT LINK, SPLIT SYNC, VERSION, INDICATOR, LIGHTING.
+
+### 판정 표현 금지의 범위
+
+§6-4는 **진단의 관측 서술**에 대한 제약이지 설정 안내문에 대한 제약이 아니다. "연결이 실제로
+불안정할 때만 속도를 낮추세요"는 케이블에 대한 조언이고 여기서 "불안정"은 옳은 단어다.
+번역 검사기가 처음에 이런 문장을 여섯 건 잡아냈으므로, 검사 범위를
+`tests/locales.test.ts`의 `DIAGNOSTIC_OBSERVATION_KEYS`와 동일하게 좁혔다. 검사기는 그
+목록을 테스트 파일에서 직접 읽으므로 두 곳이 어긋날 수 없다.
+
+## Sentences a person would say
+
+"AI가 쓴 것 같다"는 지적에 따라 항상 보이는 문구를 다시 썼다. 고친 것은 길이가 아니라
+성격이다.
+
+- 자기 방어용 절 제거. `각 줄은 그 줄이 가리키는 범주만을, 이 테스트가 도는 동안에 한해
+  다룹니다. 이 테스트가 측정하지 않는 범주는 포함되지 않습니다.` →
+  `이 다섯 줄이 이번 테스트가 보는 전부입니다. 그 밖에 잘못될 수 있는 것들은 이 테스트가
+  재는 범위 밖입니다.` 관측 범위 제약은 그대로 유지된다.
+- 사람이 궁금해하는 것을 먼저. `이 테스트가 끝난 시점에 캡처된 값이며 실시간 값이
+  아닙니다.` → `테스트가 끝난 순간에 읽은 값입니다. 보고 있는 동안 올라가지 않습니다.`
+- 결과가 뭔지 말하기. `이 결과를 로컬 기록에 저장하지 못했습니다.` 뒤에 "그러면 나중에
+  비교표에도 나오지 않습니다"를 붙였다. 실패의 의미는 저장이 아니라 비교표 부재다.
+- 오류 문구에서 "세션"·"스냅숏"·"펌웨어가 반환했습니다" 같은 구현 어휘를 걷어내고
+  키보드를 주어로 세웠다. `펌웨어에서 이미 진단 세션이 진행 중입니다.` →
+  `키보드가 이미 테스트를 돌리고 있습니다.`
+
 ## UI verification
 
 자동 검사는 `tests/diagnostics-pane.test.tsx`(요약/전체 뷰 문구와 §6 안전장치)와
@@ -536,3 +594,5 @@ identity가 바뀌고, 그것에 의존하는 정리 effect가 실행 중인 측
    깜빡이지 않는지 본다.
 9. 위 타입 스케일이 실제 화면에서 위계로 읽히는지 본다. 특히 `State: …` 줄이 답변 행보다
    작아야 하고, 요약 부제가 패널 제목보다 크면 안 된다.
+10. FEATURE·TAPDANCE·SYSTEM·Lighting의 각 submenu 위에 한 줄 요약이 뜨는지, ⓘ를 열었을 때
+    컨트롤이 밀리기만 하고 잘리지 않는지 본다. 일반 VIA 키보드에서는 그 줄이 없어야 한다.

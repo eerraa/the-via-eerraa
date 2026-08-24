@@ -146,7 +146,7 @@ describe('USB diagnostics result UI', () => {
       'HS 8K needs High Speed, but this connection is Full Speed.',
     );
     expect(html).toContain(
-      'The raw microsecond values and the counters remain valid.',
+      'The microsecond readings and the counts are still good.',
     );
   });
 
@@ -189,7 +189,7 @@ describe('USB diagnostics result UI', () => {
     expect(html).toContain('Previously stored result — not this session');
     expect(html).toContain('HS 8K · 30s · complete · 8/23/2026');
     expect(html).toContain(
-      'Start a new test to measure the current connection',
+      'Start a new test to see the one you are plugged into now',
     );
   });
 
@@ -315,9 +315,10 @@ describe('USB diagnostics result UI', () => {
     expect(html).toContain('High Speed — matches HS 8K');
     // "Not observed" still scopes the claim to what this test looked at.
     expect(html).toContain('Not observed');
+    expect(html).toContain('everything this test looks at');
     expect(html).not.toMatch(/\breports?\b|enumerat|queue depth/i);
     // "No failures observed" would cover categories this test never measured.
-    expect(html).toContain('Categories this test does not measure');
+    expect(html).toContain('everything this test looks at');
     expect(html).not.toMatch(
       /stability \d|health|quality score|perfect|certified/i,
     );
@@ -410,11 +411,9 @@ describe('USB diagnostics result UI', () => {
       />,
     );
     // The observation-scope limit is still shipped with the result...
-    expect(html).toContain('Categories this test does not measure');
+    expect(html).toContain('outside what it measures');
     // ...but folded away, so the summary reads as answers rather than as prose.
-    expect(visibleText(html)).not.toContain(
-      'Categories this test does not measure',
-    );
+    expect(visibleText(html)).not.toContain('outside what it measures');
     expect(count(html, /hidden=""/g)).toBeGreaterThan(0);
   });
 
@@ -456,7 +455,7 @@ describe('USB diagnostics result UI', () => {
       <DiagnosticsAdvanced snapshots={snapshots} />,
     );
     expect(visibleText(html)).toContain(
-      'Captured when this test ended — not live.',
+      'These were read when the test finished.',
     );
     expect(html).toContain('Applying a polling mode restarts the keyboard');
   });

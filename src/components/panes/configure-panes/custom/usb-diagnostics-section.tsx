@@ -214,13 +214,15 @@ const failureMessage = (
     failure.kind === 'status' &&
     failure.status === ERA_USB_DIAGNOSTICS_STATUS_BUSY
   ) {
-    return t('The firmware already has a diagnostic session in progress.');
+    return t('The keyboard is already running a test.');
   }
   if (failure.kind === 'stale') {
-    return t('The coherent snapshot changed before every chunk was read.');
+    return t(
+      'The keyboard replaced the reading halfway through. It will be retried.',
+    );
   }
   return t(
-    'The diagnostic response was invalid. Reconnect the keyboard and verify that the app and firmware are current.',
+    'The keyboard sent something this app could not read. Reconnect it, and check that the app and the firmware are both up to date.',
   );
 };
 
@@ -317,7 +319,7 @@ export const UsbDiagnosticsSection: FC = () => {
           // Silently dropping the result would look identical to a successful save.
           setCommandError(
             translate.current(
-              'This result could not be written to local history. Browser storage may be full or blocked.',
+              'This result could not be saved. Your browser storage may be full or blocked, so it will not appear in the comparison later.',
             ),
           );
         }
@@ -390,7 +392,7 @@ export const UsbDiagnosticsSection: FC = () => {
           if (result.value.sessionId !== active.sessionId) {
             setCommandError(
               translate.current(
-                'The firmware returned a different diagnostic session.',
+                'The keyboard answered about a different test than the one this page started.',
               ),
             );
             finishActive(active, 'aborted', 'Session identity changed.');
@@ -408,7 +410,7 @@ export const UsbDiagnosticsSection: FC = () => {
           if (result.value.state !== 1) {
             setCommandError(
               translate.current(
-                'The firmware returned an invalid session state.',
+                'The keyboard reported a state this app does not recognise.',
               ),
             );
             finishActive(active, 'aborted', 'Invalid session state.');
@@ -586,7 +588,9 @@ export const UsbDiagnosticsSection: FC = () => {
       active.saved = true;
       setCommandPending(false);
       setCommandError(
-        translate.current('The firmware returned an invalid start response.'),
+        translate.current(
+          'The keyboard did not confirm the start properly, so no test is running.',
+        ),
       );
       return;
     }
@@ -644,7 +648,7 @@ export const UsbDiagnosticsSection: FC = () => {
       );
       setCommandError(
         translate.current(
-          'The unmatched firmware session was stopped. Start a new test to capture a local result.',
+          'Stopped it. Start a new test and this page will record the result.',
         ),
       );
       return;
@@ -677,7 +681,7 @@ export const UsbDiagnosticsSection: FC = () => {
       setCommandError(
         snapshotResult.kind === 'ok'
           ? translate.current(
-              'The final snapshot belonged to a different diagnostic session.',
+              'The last reading belonged to a different test, so it was not kept.',
             )
           : failureMessage(translate.current, snapshotResult),
       );
@@ -706,7 +710,9 @@ export const UsbDiagnosticsSection: FC = () => {
     }
     if (result.value.state !== 2 && result.value.state !== 3) {
       setCommandError(
-        translate.current('The keyboard no longer holds a finished session.'),
+        translate.current(
+          'The keyboard is not holding a finished result any more.',
+        ),
       );
       return;
     }
@@ -839,25 +845,25 @@ export const UsbDiagnosticsSection: FC = () => {
   return (
     <Section>
       <SectionHead>
-        <SectionTitle>{t('USB Delivery Diagnostics')}</SectionTitle>
+        <SectionTitle>{t('USB Polling Diagnostics')}</SectionTitle>
         <Explain>
           {t(
-            'It answers one question: while the test ran, did the keyboard lose key presses, pause, or lose its USB connection? It only reads. It never changes the mode and never writes to the keyboard.',
+            'It watches for three things while the test runs: key presses the keyboard failed to deliver, moments when the firmware stalled, and the USB connection dropping or changing speed. Nothing is written to the keyboard and the polling mode is left exactly as you set it.',
           )}
         </Explain>
       </SectionHead>
       <Intro>
-        {t('Measures how the polling mode selected above actually behaves.')}
+        {t('Checks how the polling mode above actually behaves on this PC.')}
       </Intro>
 
       {(!ready || capabilityState === 'loading') && (
-        <Note>{t('Checking whether this firmware supports diagnostics.')}</Note>
+        <Note>{t('Checking whether this firmware can run the test.')}</Note>
       )}
 
       {ready && capabilityState === 'unsupported' && (
         <Note>
           {t(
-            'USB Diagnostics are not supported by this firmware version. Every other feature on this page is unaffected.',
+            'This firmware version cannot run the test. Everything else on this page works as usual.',
           )}
         </Note>
       )}

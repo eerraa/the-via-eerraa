@@ -69,6 +69,17 @@ const makeStore = (overrides: {era?: boolean; menuData?: object} = {}) => {
       forceAuthorize: false,
     },
     firmware: {firmwareVersionMap: {}, keycodesVersionMap: {}},
+    // TAPDANCE rows are keycode pickers, which read macro state to render.
+    macros: {
+      ast: [],
+      macroBufferSize: 0,
+      macroCount: 0,
+      isFeatureSupported: true,
+      status: 'idle',
+      ownerPath: null,
+      ownerConnectionGeneration: null,
+      ownerSelectionGeneration: null,
+    },
     menus: {
       customMenuDataMap: overrides.menuData
         ? {[device.path]: overrides.menuData}
@@ -147,6 +158,7 @@ const menuData = {
   id_qmk_usb_bootmode: [0],
   id_qmk_usb_bootmode_apply: [0],
   id_qmk_system_dfu: [0],
+  id_qmk_tapdance_1_term_exact: [0, 200],
 };
 
 // The diagnostics section resolves the selected device's KeyboardAPI while it
@@ -177,6 +189,62 @@ describe('Custom menu pane loading failure', () => {
   });
 });
 
+const tapdanceSubmenu = {
+  label: 'TD0',
+  _id: '-0',
+  content: [
+    {
+      label: 'Term (ms)',
+      type: 'range',
+      _id: '-0-0',
+      content: ['id_qmk_tapdance_1_term_exact', 10, 5],
+      options: [1, 65535],
+    },
+  ],
+};
+
+describe('ERA feature help', () => {
+  // The help is keyed off the ERA firmware's own command ids, so a keyboard whose
+  // menu happens to share a label never picks up text about a different feature.
+  test('explains an ERA feature menu above its controls', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'TAPDANCE',
+      content: [tapdanceSubmenu],
+    });
+
+    expect(html).toContain('One key, four actions');
+    expect(html).toContain('Term (ms)');
+    expect(html.indexOf('One key, four actions')).toBeLessThan(
+      html.indexOf('Term (ms)'),
+    );
+    // The long half is shipped but folded away.
+    expect(html).toContain('KEYMAP → CUSTOM');
+    expect(html).toContain('hidden=""');
+  });
+
+  test('explains the polling menu it shares with the diagnostics block', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [pollingSubmenu],
+    });
+
+    expect(html).toContain('How often the keyboard reports to the PC');
+  });
+
+  test('says nothing about a menu that is not an ERA feature', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [bootSubmenu],
+    });
+
+    expect(html).toContain('Jump To BOOT');
+    expect(html).toContain('bootloader mode');
+  });
+});
+
 describe('USB diagnostics placement', () => {
   test('renders the diagnostics block under the polling-mode controls', () => {
     optIn(true);
@@ -186,9 +254,9 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).toContain('USB Delivery Diagnostics');
+    expect(html).toContain('USB Polling Diagnostics');
     // The measurement follows the control it explains, so it comes after it.
-    expect(html.indexOf('USB Delivery Diagnostics')).toBeGreaterThan(
+    expect(html.indexOf('USB Polling Diagnostics')).toBeGreaterThan(
       html.indexOf('Apply Selected Mode'),
     );
   });
@@ -201,7 +269,7 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Jump To BOOT');
-    expect(html).not.toContain('USB Delivery Diagnostics');
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 
   test('omits the block for a definition that does not opt in', () => {
@@ -212,7 +280,7 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).not.toContain('USB Delivery Diagnostics');
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 
   test('omits the block for an official or uploaded definition', () => {
@@ -225,6 +293,6 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).not.toContain('USB Delivery Diagnostics');
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 });
