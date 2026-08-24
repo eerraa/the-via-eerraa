@@ -1,6 +1,9 @@
 # 0002 — H7S USB 전달 진단 계약
 
 Status: Accepted
+Genre: contract
+Canonical for: selector `0x07` wire·계측 경계·정규화 기준·host 보존과 비교 유효성. 진단 결과를 run 간에
+비교해도 되는 축이 무엇인가
 
 이 ADR은 wire·계측·비교 유효성만 담는다. 화면 배치와 문구 계약은
 [ADR 0003](0003-era-menu-help-ui.md)에 있다.

@@ -1,6 +1,9 @@
 # 0003 — ERA 메뉴 설명과 진단 화면 UI
 
 Status: Accepted
+Genre: contract
+Canonical for: 진단 블록의 배치와 정보구조, 관측 서술 제약, 낱말과 타입 스케일, 로케일 규칙, ERA 메뉴
+설명의 결과 컨트롤 단위 ⓘ 부착 기준, 메뉴 이름 결정
 
 ERA 전용 메뉴는 이름만 있고 설명이 없었고, USB 진단은 앱에서 설명이 가장 많은 화면이다.
 둘은 같은 disclosure 컴포넌트(`src/components/inputs/explain.tsx`)를 쓰므로 한 계약으로 묶는다.

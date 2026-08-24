@@ -1,5 +1,8 @@
 # Architecture decision records
 
+Genre: manual
+Canonical for: ADR의 형식과 두 가지 규칙 — 뒤집힌 결정을 어떻게 처리하는가, 제약에 원인을 어떻게 붙이는가
+
 프로토콜 호환성, 영속 데이터, 저장소 간 책임, 배포, 라이선스처럼 **다음 작업이 반드시
 보존해야 하는** 결정만 여기 남긴다. 브랜치 상태, 프로세스 ID, 통상적인 구현 세부, 결정이
 없는 후보 나열은 ADR이 아니다.
@@ -14,7 +17,6 @@
 
 ```text
 # NNNN — 결정 제목
-Status: Proposed | Accepted | Superseded
 
 ## Context     어떤 검증된 제약이나 실패가 결정을 요구했는가
 ## Decision    무엇을 고르고 그 경계는 어디인가

@@ -1,5 +1,9 @@
 # ERA VIA Fork project direction
 
+Genre: contract
+Canonical for: what this fork is for, its priority order, definition ownership, the Tap Dance and
+exact-millisecond UI contract, the State Sync product guarantees, and the durable non-goals
+
 > This is the durable project brief: what the product is for and what must never be done to it.
 > Where a fact lives and which side is canonical is `docs/MAP.md`. Individual decisions with
 > their rejected alternatives are in `docs/adr/`. Transient state is not recorded anywhere —
@@ -118,7 +122,6 @@ L keymap change
   -> selecting R skips the keymap read
   -> stale keymap remains until F5
 ```
-
 
 ### Consistency contract
 

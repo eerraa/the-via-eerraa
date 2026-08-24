@@ -35,6 +35,40 @@ const packageJson = readJSON('package.json') as {
   scripts: Record<string, string>;
 };
 
+// A repository path that quietly stops existing is the most common way a document turns
+// into a lie: `src/utils/pane-config.tsx` outlived the file by several renames because
+// nothing ever asked. A path that belongs to another repository has to carry that
+// repository's name, so this check can tell the two apart.
+const OWNED_PREFIXES = [
+  'src/',
+  'tests/',
+  'config/',
+  'era-definitions/',
+  'public/',
+  'scripts/',
+  'docs/',
+  'types/',
+  'patches/',
+  '.github/',
+];
+
+// Paths a document may name even though they are absent. The reason is the point.
+const ALLOWED_ABSENT: Record<string, string> = {
+  'public/definitions': '빌드 산출물. `bun run build:kbs` 전에는 없다',
+  'era-definitions/v3': '만들지 않기로 한 순정 복제 트리. 부재 자체가 계약이다',
+};
+
+const docFiles = [
+  'AGENTS.md',
+  'CLAUDE.md',
+  ...readdirSync(path.join(repoRoot, 'docs'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => `docs/${name}`),
+  ...readdirSync(path.join(repoRoot, 'docs/adr'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => `docs/adr/${name}`),
+];
+
 // `docs/MAP.md` §2 is a two-column table. Read the value the document claims for a row so the
 // assertion compares document text against a computed number, never number against number.
 const mapTableValue = (label: string) => {
@@ -278,40 +312,6 @@ describe('docs only name commands and files that exist', () => {
     }
   });
 
-  // A repository path that quietly stops existing is the most common way a document turns
-  // into a lie: `src/utils/pane-config.tsx` outlived the file by several renames because
-  // nothing ever asked. A path that belongs to another repository has to carry that
-  // repository's name, so this check can tell the two apart.
-  const OWNED_PREFIXES = [
-    'src/',
-    'tests/',
-    'config/',
-    'era-definitions/',
-    'public/',
-    'scripts/',
-    'docs/',
-    'types/',
-    'patches/',
-    '.github/',
-  ];
-
-  // Paths a document may name even though they are absent. The reason is the point.
-  const ALLOWED_ABSENT: Record<string, string> = {
-    'public/definitions': '빌드 산출물. `bun run build:kbs` 전에는 없다',
-    'era-definitions/v3': '만들지 않기로 한 순정 복제 트리. 부재 자체가 계약이다',
-  };
-
-  const docFiles = [
-    'AGENTS.md',
-    'CLAUDE.md',
-    ...readdirSync(path.join(repoRoot, 'docs'))
-      .filter((name) => name.endsWith('.md'))
-      .map((name) => `docs/${name}`),
-    ...readdirSync(path.join(repoRoot, 'docs/adr'))
-      .filter((name) => name.endsWith('.md'))
-      .map((name) => `docs/adr/${name}`),
-  ];
-
   test('documents exist to be checked', () => {
     expect(docFiles.length).toBeGreaterThan(5);
   });
@@ -342,7 +342,36 @@ describe('docs only name commands and files that exist', () => {
       });
     });
 
-    test(`${doc} links only to documents that exist`, () => {
+      test(`${doc} citations point at a line that exists`, () => {
+      // A `path:line` address is right until the next insertion above it and silently
+      // wrong afterwards. Borrowed from qmk_firmware_eerraa's `era_doc_refs.py`, which
+      // found this rot class first; nothing here uses a citation yet, so this is the
+      // guard that lets one be written safely.
+      const body = read(doc);
+      const broken: string[] = [];
+      for (const match of body.matchAll(
+        /`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?`/g,
+      )) {
+        const [, target, first, last] = match;
+        if (!OWNED_PREFIXES.some((prefix) => target.startsWith(prefix))) {
+          continue;
+        }
+        const full = path.join(repoRoot, target);
+        if (!existsSync(full)) {
+          broken.push(`${target} (파일 없음)`);
+          continue;
+        }
+        const lines = readFileSync(full, 'utf8').split('\n').length;
+        const start = Number(first);
+        const end = last === undefined ? start : Number(last);
+        if (start < 1 || end < start || end > lines) {
+          broken.push(`${target}:${first}${last ? `-${last}` : ''} (${lines}줄)`);
+        }
+      }
+      expect({doc, broken: [...new Set(broken)].sort()}).toEqual({doc, broken: []});
+    });
+
+  test(`${doc} links only to documents that exist`, () => {
       const body = read(doc);
       const broken: string[] = [];
       for (const match of body.matchAll(/\]\(([^)]+\.md)(?:#[^)]*)?\)/g)) {
@@ -364,6 +393,100 @@ describe('docs only name commands and files that exist', () => {
       });
     });
   }
+});
+
+// The header convention the four ERA repositories share — this app, `qmk_firmware_eerraa`,
+// `eerraa-qmk-h7s-fw` and `eerraa-54lm20-fw`. Two fields, because those are the two that
+// carry information at every scale:
+//
+//   Genre:         what kind of sentence this document may hold
+//   Canonical for: the facts this document is the single source of
+//
+// `Status:` is required only under `docs/adr/`, where it genuinely varies (Proposed →
+// Accepted → Superseded). Elsewhere a document is either current or deleted, so the field
+// would be a constant. Measured in `qmk_firmware_eerraa`, where the convention started:
+// 19 of 21 documents said `active`, and the two that did not differed from each other only
+// by a trailing period — a field nobody reads and nothing checks.
+//
+// `Read when:` is deliberately absent. It states, from the document's side, the same fact
+// the entry index states from the task's side, and both were maintained by hand. That is
+// the defect this whole document set was reorganised to remove, and it is present in the
+// repository the convention was borrowed from: `era_wire_contract.md` says "editing payload
+// encode/decode, scheduler IO, responder, or router" while the index row for the same
+// document says "wire payloads, compact IO, responder admission". Routing lives in the
+// index alone, and `every document is reachable from the entry chain` below keeps it honest.
+//
+// One scale-driven difference remains: there, genre is the directory (21 documents over
+// four of them). Here there are seven, so the genre is declared rather than encoded in a
+// path. The repo-root entry files carry no header in either repository — `AGENTS.md` is
+// the chain, not a document routed to by it.
+describe('every document declares its own scope', () => {
+  const KNOWN_GENRES = ['contract', 'entry', 'manual', 'map', 'state'];
+  const KNOWN_STATUS = ['Accepted', 'Proposed', 'Superseded'];
+
+  const documented = docFiles.filter((doc) => doc.startsWith('docs/'));
+
+  test('there are documents to check', () => {
+    expect(documented.length).toBeGreaterThan(3);
+  });
+
+  for (const doc of documented) {
+    test(`${doc} declares Genre and Canonical for`, () => {
+      const lines = read(doc).split('\n');
+      const fields = new Map<string, string>();
+      for (const line of lines.slice(0, 12)) {
+        const match = line.match(/^(Status|Genre|Canonical for|Read when):\s*(.*)$/);
+        if (match) {
+          fields.set(match[1], match[2].trim());
+        }
+      }
+
+      expect({
+        doc,
+        missing: ['Genre', 'Canonical for'].filter((key) => !fields.has(key)),
+      }).toEqual({doc, missing: []});
+
+      expect({doc, genre: fields.get('Genre')}).toEqual({
+        doc,
+        genre: KNOWN_GENRES.find((genre) => genre === fields.get('Genre')),
+      });
+
+      // An empty declaration is worse than none: it reads as answered.
+      expect({
+        doc,
+        stated: (fields.get('Canonical for') ?? '').length > 0,
+      }).toEqual({doc, stated: true});
+
+      // Status belongs to the ADR genre and nowhere else, so a constant cannot creep back in.
+      const isAdrRecord = /^docs\/adr\/\d/.test(doc);
+      expect({doc, hasStatus: fields.has('Status')}).toEqual({
+        doc,
+        hasStatus: isAdrRecord,
+      });
+      if (isAdrRecord) {
+        expect({doc, status: fields.get('Status')}).toEqual({
+          doc,
+          status: KNOWN_STATUS.find((status) => status === fields.get('Status')),
+        });
+      }
+
+      // Routing is the index's job. A document restating it is the duplicate this set removed.
+      expect({doc, hasReadWhen: fields.has('Read when')}).toEqual({
+        doc,
+        hasReadWhen: false,
+      });
+    });
+  }
+
+  // A document nothing routes to is a document nobody opens. AGENTS.md carries the task
+  // table and MAP.md the canonical rules, so between them every document must be named.
+  test('every document is reachable from the entry chain', () => {
+    const routers = AGENTS + '\n' + MAP;
+    const unreachable = documented.filter(
+      (doc) => !routers.includes(doc) && !routers.includes(path.basename(doc)),
+    );
+    expect(unreachable).toEqual([]);
+  });
 });
 
 describe('every test file is reachable from a package script', () => {

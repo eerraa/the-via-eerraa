@@ -1,5 +1,9 @@
 # ERA VIA Fork 배포 운영 문서
 
+Genre: manual
+Canonical for: 공개 정적 호스팅 운영 — 호스팅 선택 근거, 사용자만 할 수 있는 외부 설정, 재현 가능한
+빌드, 정적 라우팅 계약, 배포 전후 검증 절차, 롤백
+
 > 공개 정적 호스팅의 운영 계약이다. 장기 아키텍처 결정은 `docs/PROJECT_DIRECTION.md`,
 > 무엇이 어디 있는지는 `docs/MAP.md`가 담당한다.
 

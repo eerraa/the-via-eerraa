@@ -1,6 +1,9 @@
 # 0001 — State Sync revision validation protocol
 
 Status: Accepted
+Genre: contract
+Canonical for: selector `0x06` 봉투 v1, 세 host domain과 revision-bracketed refresh, per-path transport
+ownership, exact-ms 규칙, 그리고 제거한 메커니즘 15종과 각각을 제거한 이유
 
 Selector `GET_KEYBOARD_VALUE` **`0x06`**, envelope version `0x01`.
 Selected-visible-capable poll starts at 500 ms.
