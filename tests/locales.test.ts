@@ -78,9 +78,9 @@ describe('VIA locale coverage', () => {
     'Connection speed',
     '{{actual}} — matches {{mode}}',
     '{{actual}} — {{mode}} needs {{required}}',
-    'Each line below covers only the category it names, over the window this test ran. Categories this test does not measure are not covered by it.',
+    'These five lines are everything this test looks at. Anything else that could go wrong is simply outside what it measures.',
     'No keys were pressed during this test. Type while the next one runs.',
-    'Captured when this test ended — not live.',
+    'These were read when the test finished. They do not tick up while you watch.',
   ];
 
   const VERDICT_WORDING: Record<string, RegExp> = {

@@ -44,6 +44,7 @@ import {
   isUsbPollingModeCommand,
 } from 'src/utils/custom-menu';
 import {UsbDiagnosticsSection} from './usb-diagnostics-section';
+import {FeatureHelp} from './feature-help';
 
 type Category = {
   label: string;
@@ -152,6 +153,12 @@ const MenuComponent = React.memo((props: any) => {
       isCustomMenuCommandContent(item.content) &&
       isDeferredApplyCommand(item.content[0]),
   );
+  // Every ERA feature menu gets one line saying what it is for, with the rest behind
+  // a disclosure. Keyed off the firmware's own command ids, so an ordinary VIA
+  // keyboard whose menu happens to share a label never picks up this text.
+  const commandNames = items
+    .filter((item: any) => isCustomMenuCommandContent(item.content))
+    .map((item: any) => item.content[0]);
   // The submenu that owns the boot polling-mode control also hosts the diagnostics
   // that measure it, so the measurement lives where the setting is changed instead of
   // in a separate top-level page the user has to know about first. The section itself
@@ -163,6 +170,7 @@ const MenuComponent = React.memo((props: any) => {
   );
   return (
     <DeferredApplyProvider deferred={deferred}>
+      <FeatureHelp commandNames={commandNames} />
       {items.map((itemProps: any) => (
         <VIACustomItem
           {...itemProps}

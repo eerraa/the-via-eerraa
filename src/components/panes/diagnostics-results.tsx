@@ -591,13 +591,13 @@ export const DiagnosticsResultView: FC<{
               </HeadTitle>
               <Explain>
                 {t(
-                  'No result has been captured for the current connection yet, so the last stored test is shown instead. Start a new test to measure the current connection.',
+                  'Nothing has been measured on this connection yet, so the last saved test is standing in. Start a new test to see the one you are plugged into now.',
                 )}
               </Explain>
             </PanelHead>
             <SummaryHeadline>{storedRunLabel}</SummaryHeadline>
             <Muted>
-              {t('Copy Diagnostic Report copies this same stored run.')}
+              {t('The copy button copies this saved result, not a new one.')}
             </Muted>
           </Caveat>
         )}
@@ -626,7 +626,7 @@ export const DiagnosticsResultView: FC<{
             </SummaryHeadline>
             <Muted>
               {t(
-                'The normalized values in Advanced do not describe this connection. The raw microsecond values and the counters remain valid.',
+                'The multiples under Advanced are worked out against the wrong interval and do not describe this connection. The microsecond readings and the counts are still good.',
               )}
             </Muted>
           </Caveat>
@@ -645,7 +645,7 @@ export const DiagnosticsResultView: FC<{
             </SummaryHeadline>
             <Explain>
               {t(
-                'Each line below covers only the category it names, over the window this test ran. Categories this test does not measure are not covered by it.',
+                'These five lines are everything this test looks at. Anything else that could go wrong is simply outside what it measures.',
               )}
             </Explain>
           </ExplainRow>
@@ -943,7 +943,11 @@ export const DiagnosticsAdvanced: FC<{
               {formatInteger(snapshot.bootCounters.speedChanges)}
             </MetricValue>
           </MetricGrid>
-          <Muted>{t('Captured when this test ended — not live.')}</Muted>
+          <Muted>
+            {t(
+              'These were read when the test finished. They do not tick up while you watch.',
+            )}
+          </Muted>
         </Panel>
       </TabPanel>
 
