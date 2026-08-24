@@ -48,9 +48,10 @@ import {
   type UsbDiagnosticsRunOutcome,
 } from 'src/utils/usb-diagnostics-history';
 import {
-  DiagnosticsComparison,
+  DiagnosticsAdvanced,
   DiagnosticsResultView,
 } from '../../diagnostics-results';
+import {Explain, ExplainRow} from '../../../inputs/explain';
 
 // The block lines up with the ControlRow width of the menu it is embedded in so the
 // polling-mode controls and the diagnostics that describe them read as one column.
@@ -68,7 +69,11 @@ const SectionTitle = styled.h2({
   color: 'var(--color_label-highlighted)',
   fontSize: 20,
   lineHeight: 1.3,
-  margin: '0 0 6px',
+  margin: 0,
+});
+
+const SectionHead = styled(ExplainRow)({
+  marginBottom: 12,
 });
 
 const Intro = styled.p({
@@ -146,13 +151,6 @@ const AdvancedLabel = styled.span({
 
 const AdvancedPanel = styled.div({
   marginTop: 4,
-});
-
-const AdvancedTitle = styled.h3({
-  color: 'var(--color_label-highlighted)',
-  fontSize: 18,
-  lineHeight: 1.3,
-  margin: '18px 0 8px',
 });
 
 type ActiveRun = {
@@ -829,11 +827,16 @@ export const UsbDiagnosticsSection: FC = () => {
 
   return (
     <Section>
-      <SectionTitle>{t('USB Delivery Diagnostics')}</SectionTitle>
+      <SectionHead>
+        <SectionTitle>{t('USB Delivery Diagnostics')}</SectionTitle>
+        <Explain>
+          {t(
+            'It answers one question: while the test ran, did the keyboard lose any key reports, pause, or lose its USB link? It only reads — it never changes the mode and never writes to the keyboard.',
+          )}
+        </Explain>
+      </SectionHead>
       <Intro>
-        {t(
-          'Measures how the polling mode selected above actually behaves. It answers one question: while the test ran, did the keyboard lose any key reports, pause, or lose its USB link? It only reads — it never changes the mode and never writes to the keyboard.',
-        )}
+        {t('Measures how the polling mode selected above actually behaves.')}
       </Intro>
 
       {(!ready || capabilityState === 'loading') && (
@@ -963,42 +966,47 @@ export const UsbDiagnosticsSection: FC = () => {
           {commandError && <ErrorText>{commandError}</ErrorText>}
 
           {displayedSnapshots.length > 0 && (
-            <DiagnosticsResultView
-              detail={showAdvanced ? 'full' : 'summary'}
-              outcome={
-                recoveredRun?.outcome ??
-                currentRun?.outcome ??
-                displayedRun?.outcome
-              }
-              snapshots={displayedSnapshots}
-              storedRunLabel={recoveredRunLabel ?? storedRunLabel}
-            />
-          )}
+            <>
+              <DiagnosticsResultView
+                detail="summary"
+                outcome={
+                  recoveredRun?.outcome ??
+                  currentRun?.outcome ??
+                  displayedRun?.outcome
+                }
+                snapshots={displayedSnapshots}
+                storedRunLabel={recoveredRunLabel ?? storedRunLabel}
+              />
 
-          <AdvancedRow>
-            <AdvancedLabel>
-              {t('Advanced metrics and mode comparison')}
-            </AdvancedLabel>
-            <AccentSlider isChecked={showAdvanced} onChange={setShowAdvanced} />
-          </AdvancedRow>
+              <AdvancedRow>
+                <AdvancedLabel>
+                  {t('Advanced metrics and mode comparison')}
+                </AdvancedLabel>
+                <AccentSlider
+                  isChecked={showAdvanced}
+                  onChange={setShowAdvanced}
+                />
+              </AdvancedRow>
 
-          {showAdvanced && (
-            <AdvancedPanel>
-              <AdvancedTitle>
-                {t('Manual polling-mode comparison')}
-              </AdvancedTitle>
-              <DiagnosticsComparison runs={comparableRuns} />
-              <Muted>
-                {t(
-                  'Firmware {{firmware}} · diagnostics protocol {{protocol}} · recommended snapshot interval {{interval}} ms',
-                  {
-                    firmware: capabilities.firmwareVersion,
-                    protocol: capabilities.protocolVersion,
-                    interval: capabilities.recommendedSnapshotMs,
-                  },
-                )}
-              </Muted>
-            </AdvancedPanel>
+              {showAdvanced && (
+                <AdvancedPanel>
+                  <DiagnosticsAdvanced
+                    runs={comparableRuns}
+                    snapshots={displayedSnapshots}
+                  />
+                  <Muted>
+                    {t(
+                      'Firmware {{firmware}} · diagnostics protocol {{protocol}} · recommended snapshot interval {{interval}} ms',
+                      {
+                        firmware: capabilities.firmwareVersion,
+                        protocol: capabilities.protocolVersion,
+                        interval: capabilities.recommendedSnapshotMs,
+                      },
+                    )}
+                  </Muted>
+                </AdvancedPanel>
+              )}
+            </>
           )}
         </>
       )}
