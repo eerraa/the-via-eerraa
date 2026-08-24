@@ -13,9 +13,9 @@ import {useTranslation} from 'react-i18next';
 const Toggle = styled.button<{$open: boolean}>(({$open}) => ({
   appearance: 'none',
   flex: 'none',
-  width: 20,
-  height: 20,
-  lineHeight: '18px',
+  width: 18,
+  height: 18,
+  lineHeight: '16px',
   padding: 0,
   borderRadius: '50%',
   border: '1px solid var(--color_accent)',
@@ -33,8 +33,8 @@ const Body = styled.p({
   '&[hidden]': {display: 'none'},
   color: 'var(--color_label)',
   opacity: 0.82,
-  fontSize: 14,
-  lineHeight: 1.55,
+  fontSize: 13,
+  lineHeight: 1.6,
   margin: '8px 0 0',
 });
 

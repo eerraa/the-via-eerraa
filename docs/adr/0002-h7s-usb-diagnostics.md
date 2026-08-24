@@ -465,6 +465,51 @@ identity가 바뀌고, 그것에 의존하는 정리 effect가 실행 중인 측
 대해 "화면에 남아야 하는 것"은 있어야 하고, 관측 범위 단서 같은 "접혀도 되는 것"은
 없어야 한다.
 
+## Plain words, and a stated type scale
+
+사용자 지적 두 가지.
+
+**"리포트/열거 같은 표현이 이해되지 않는다."** `report`는 HID 용어, `enumerate`는 USB
+스펙 용어, `queue depth`는 펌웨어 용어다. 폴링 속도를 바꾸러 온 사람에게는 아무 의미가
+없다. 측정 대상은 그대로 두고 부르는 말만 바꿨다.
+
+| 이전 | 이후 |
+| --- | --- |
+| Lost key reports / 유실된 키 리포트 | Lost key presses / 키 입력 유실 |
+| USB link interruptions / USB 링크 중단 | USB link changes / USB 연결 변화 |
+| Busiest queue moment / 큐가 가장 붐빈 순간 | Most waiting to send / 전송 대기 최대 |
+| Link speed, "Enumerated at …" | Connection speed, "High Speed — matches HS 8K" |
+| Negotiated USB speed / 협상된 USB 속도 | Connected USB speed / 연결된 USB 속도 |
+| Resets / Configurations / Suspends | Disconnects / Reconnects / Sleeps |
+| Since firmware boot / 펌웨어 부팅 이후 | Since the keyboard powered on / 키보드를 켠 이후 |
+
+`FS 1K` `HS 8K` `Full Speed` `High Speed` `p50/p95/p99` `EEPROM` `RAM`은 그대로 둔다.
+식별자이고, 복사된 보고서·비교표·펌웨어 문서가 부르는 이름과 같아야 한다. `enumerate`는
+고급 비교표의 접힌 해설에만 남는다 — 거기서는 정확한 단어이고, 펼친 사람은 정밀함을 원한다.
+
+**"긴 문장을 선호하지 않는다."** 2열 배치가 이미 주어를 제공하므로 값은 문장이 아니라
+조각이면 된다. `"이 테스트에서는 관측되지 않았습니다."` → `"관측되지 않음"`. 관측 범위
+제약(§6-4)은 값이 아니라 **행 이름과 그 위 제목**이 진다: `이 30초 테스트가 관측한 것`
+아래의 `키 입력 유실 / 관측되지 않음`은 이 테스트가 본 것에 한정된 서술이다. 항상 보이는
+문단은 전부 한두 줄로 줄이고 근거는 disclosure로 넘겼다.
+
+### 타입 스케일
+
+화면에서 두 가지 결함이 보였다. 요약 부제(20px)가 그 위 패널 제목(18px)보다 커서 위계가
+뒤집혀 있었고, 보조 문구에는 크기가 지정되어 있지 않아 VIA 메뉴 행 크기를 상속받았다 —
+카드에서 가장 덜 중요한 `State: Complete · 30.0 / 30s`가 가장 큰 글자 중 하나로 렌더링됐다.
+밀도 높은 데이터 패널은 상속이 아니라 명시된 스케일이 필요하다.
+
+```
+18  섹션 제목
+16  요약 부제
+15  섹션 본문 · 패널 제목 · 요약 답변 행
+14  지표 라벨/값 · 탭 · 안내 문구
+13  보조 문구 · disclosure 본문 · 비교표 · 히스토그램
+```
+
+버튼과 select도 VIA의 20px 메뉴 행 기준(40px 높이)에서 이 블록 기준(36px)으로 낮췄다.
+
 ## UI verification
 
 자동 검사는 `tests/diagnostics-pane.test.tsx`(요약/전체 뷰 문구와 §6 안전장치)와
@@ -489,3 +534,5 @@ identity가 바뀌고, 그것에 의존하는 정리 effect가 실행 중인 측
    밀리기만 하고 잘리지 않는지 본다.
 8. 고급 탭 네 개를 각각 열어 한 화면에 들어오는지, 전환 시 차트가 다시 그려지며
    깜빡이지 않는지 본다.
+9. 위 타입 스케일이 실제 화면에서 위계로 읽히는지 본다. 특히 `State: …` 줄이 답변 행보다
+   작아야 하고, 요약 부제가 패널 제목보다 크면 안 된다.

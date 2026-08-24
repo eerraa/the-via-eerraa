@@ -50,11 +50,9 @@ describe('USB diagnostics result UI', () => {
     const html = renderToStaticMarkup(
       <DiagnosticsResultView outcome="complete" snapshots={snapshots} />,
     );
-    expect(html).toContain('Lost key reports');
-    expect(html).toContain('None were observed during this test.');
-    expect(html).toContain(
-      'No reset, reconfiguration, suspend or speed change was observed.',
-    );
+    expect(html).toContain('Lost key presses');
+    expect(html).toContain('Not observed');
+    expect(html).toContain('USB link changes');
     expect(html).toContain('HID timing trend');
     expect(html).toContain('<polyline');
     expect(html).toContain('Normalized timing distribution');
@@ -87,10 +85,10 @@ describe('USB diagnostics result UI', () => {
     const html = renderToStaticMarkup(
       <DiagnosticsResultView outcome="complete" snapshots={[failed]} />,
     );
-    expect(html).toContain('Lost key reports');
-    expect(html).toContain('2 were observed during this test.');
+    expect(html).toContain('Lost key presses');
+    expect(html).toContain('2 observed');
     // The breakdown names which link event happened instead of only counting them.
-    expect(html).toContain('1 observed — 1 reset, 0 reconfiguration');
+    expect(html).toContain('Dropped 1 · Reconnected 0 · Slept 0');
     expect(html).toContain('USB reset');
     expect(html).not.toMatch(/good|bad|stable|unstable/i);
   });
@@ -145,7 +143,7 @@ describe('USB diagnostics result UI', () => {
     );
     expect(html).toContain('Normalized values do not describe this mode');
     expect(html).toContain(
-      'HS 8K requires High Speed, but the link enumerated at Full Speed.',
+      'HS 8K needs High Speed, but this connection is Full Speed.',
     );
     expect(html).toContain(
       'The raw microsecond values and the counters remain valid.',
@@ -307,21 +305,17 @@ describe('USB diagnostics result UI', () => {
       />,
     );
     expect(html).toContain('-second test observed');
-    // Each row names its topic in plain words, then states only what was observed.
-    expect(html).toContain('Lost key reports');
-    expect(html).toContain('None were observed during this test.');
-    expect(html).toContain('USB link interruptions');
-    expect(html).toContain(
-      'No reset, reconfiguration, suspend or speed change was observed.',
-    );
-    expect(html).toContain('Firmware pauses');
-    expect(html).toContain('main-loop gap(s) longer than 1.000 ms');
-    expect(html).toContain('Busiest queue moment');
-    expect(html).toContain('report(s) were waiting to be sent at once.');
-    expect(html).toContain('Link speed');
-    expect(html).toContain(
-      'Enumerated at High Speed, which is what HS 8K requires.',
-    );
+    // Each row names its topic in words a keyboard owner already uses, and the value
+    // is a fragment because the row name supplies the subject.
+    expect(html).toContain('Lost key presses');
+    expect(html).toContain('USB link changes');
+    expect(html).toContain('Firmware pauses (over 1.000 ms)');
+    expect(html).toContain('Most waiting to send');
+    expect(html).toContain('Connection speed');
+    expect(html).toContain('High Speed — matches HS 8K');
+    // "Not observed" still scopes the claim to what this test looked at.
+    expect(html).toContain('Not observed');
+    expect(html).not.toMatch(/\breports?\b|enumerat|queue depth/i);
     // "No failures observed" would cover categories this test never measured.
     expect(html).toContain('Categories this test does not measure');
     expect(html).not.toMatch(
@@ -362,7 +356,7 @@ describe('USB diagnostics result UI', () => {
     );
     expect(html).toContain('Normalized values do not describe this mode');
     expect(html).toContain(
-      'HS 8K requires High Speed, but the link enumerated at Full Speed.',
+      'HS 8K needs High Speed, but this connection is Full Speed.',
     );
   });
 
@@ -395,7 +389,7 @@ describe('USB diagnostics result UI', () => {
         ]}
       />,
     );
-    expect(html).toContain('No keyboard reports were sent during this test');
+    expect(html).toContain('No keys were pressed during this test');
   });
 
   // A collapsed disclosure keeps its text in the page, so "still shipped" and "still
@@ -435,7 +429,7 @@ describe('USB diagnostics result UI', () => {
     expect(count(html, /hidden=""/g)).toBeGreaterThanOrEqual(3);
     expect(html).toContain('HID timing trend');
     expect(html).toContain('Event timeline');
-    expect(html).toContain('Since firmware boot');
+    expect(html).toContain('Since the keyboard powered on');
   });
 
   test('every advanced group can be selected', () => {
@@ -462,7 +456,7 @@ describe('USB diagnostics result UI', () => {
       <DiagnosticsAdvanced snapshots={snapshots} />,
     );
     expect(visibleText(html)).toContain(
-      'Captured when this test ended, not a live reading.',
+      'Captured when this test ended — not live.',
     );
     expect(html).toContain('Applying a polling mode restarts the keyboard');
   });
@@ -488,10 +482,10 @@ describe('USB diagnostics result UI', () => {
         ]}
       />,
     );
-    expect(visibleText(html)).toContain(
-      'Compare runs with <strong>Spread</strong>',
-    );
-    expect(visibleText(html)).toContain('re-drawn on every replug');
+    expect(visibleText(html)).toContain('Compare with <strong>Spread</strong>');
+    expect(visibleText(html)).toContain('shift on every replug');
+    // The full reasoning is still shipped, one click away.
+    expect(html).toContain('re-drawn on every replug');
   });
 
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {
