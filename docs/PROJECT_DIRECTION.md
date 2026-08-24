@@ -1,6 +1,9 @@
 # ERA VIA Fork project direction
 
-> This is the durable project brief. Update it when goals or accepted architecture change; use `docs/adr/` for detailed decisions and the external handover for transient session state.
+> This is the durable project brief: what the product is for and what must never be done to it.
+> Where a fact lives and which side is canonical is `docs/MAP.md`. Individual decisions with
+> their rejected alternatives are in `docs/adr/`. Transient state is not recorded anywhere —
+> `git log` and the verification commands answer it.
 
 ## Mission
 
@@ -16,7 +19,7 @@ Priority order:
 
 Upstream diff minimization is useful but no longer an end in itself. A well-tested core improvement is preferable to an ERA-specific workaround when VIA's existing architecture is the actual limitation.
 
-## Established direction and completed foundation
+## Established direction
 
 ### Definitions
 
@@ -39,21 +42,13 @@ No definition means unresolved. Stored uploads are re-evaluated through the same
 
 Firmware accepts both presentations: official VIA writes TD0–TD7 as `CUSTOM(n)` / `QK_KB_n`, and the custom app writes the same `QK_KB_n` bytes from `tapdanceKeycodes` via `TD(n)`.
 
-The app manifest currently contains 26 QMK ERA custom variants:
+The inventory itself — how many definitions there are, which board carries which menu, which capability each opts into — is not restated here. `config/era-definitions.manifest.json` and the definition JSON are canonical, `tests/era-definition.test.ts` binds them, and `docs/MAP.md` §2 carries the counts.
 
-| Family    | VIA definitions                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `comm`    | `classicd_a1`, `classicd_a1_ug`, `classicd_core`, `classicd_coreless`, `et_tkl`                                             |
-| top-level | `divine`, `era65`                                                                                                           |
-| `linx3`   | `fave65s`, `n86`, `n87`, `n8x`                                                                                              |
-| `newone`  | `a1`, `h1`, `odessey60h`, `odessey60s`                                                                                      |
-| `sirind`  | `brick65`, `brick65s`, `chickpad`, `klein_hs`, `klein_sd`, `tomak` Left/Right, `tomak79h` Left/Right, `tomak79s` Left/Right |
-
-Twenty-five RP2040 variants opt into the common tapping, Tap Dance, exact-ms, and State Sync units. `sirind/brick65` is the permanent ATmega32U4 exception: its 28,672-byte flash budget keeps stock VIA only and does not claim the common ERA tapping, Tap Dance, exact-ms, or State Sync capabilities. Its custom-tree definition therefore remains a separate stored file but exposes only what that firmware actually supports.
+One entry is a durable product decision rather than inventory: `sirind/brick65` is the permanent ATmega32U4 exception. Its 28,672-byte flash budget keeps stock VIA only, so it claims none of the common ERA tapping, Tap Dance, exact-ms or State Sync capabilities. That is a hardware budget, not a defect, and it must not be "fixed".
 
 `build:kbs` packages the installed official snapshot under `/definitions/v3` and emits the ERA overlay to `/definitions/era/v3/{vpid}.json`. It must preserve official files even when both sources contain the same VPID, and the merged V3 index is the unique union of the two namespaces. Generated output never replaces either canonical source and no provenance or app stock-source tree is produced.
 
-TOMAK79H Left/Right and H7S BRICK60 have been confirmed on hardware to auto-load without manual JSON upload. Do not introduce a parallel runtime loader or external definition service.
+Bundled definitions auto-load without a manual JSON upload; this has been confirmed on hardware. Do not introduce a parallel runtime loader or external definition service.
 
 Firmware repositories remain authoritative for USB identity and protocol implementation, but not for official definition ownership. The app validates its custom overlay and installed official snapshot without duplicating firmware JSON or coupling ordinary builds to firmware Git history.
 
@@ -86,7 +81,7 @@ for the runtime semantics of the selected 16-bit action.
 
 Tapping-family time values must also be directly editable as integer milliseconds. The first
 scope is the global TAPPING term and the TD0–TD7 terms; boolean tapping options and unrelated
-debounce or anti-ghosting timings are not silently included. A representative non-step value
+debounce or KKUK timings are not silently included. A representative non-step value
 such as `137 ms` must round-trip, persist, and drive runtime behavior without being snapped to
 the legacy 20 ms grid.
 
@@ -124,10 +119,6 @@ L keymap change
   -> stale keymap remains until F5
 ```
 
-The original freshness coordinator conflated firmware-observed revisions with revisions whose
-VIA GET snapshots had actually been accepted. It also let loaders publish candidates before the
-end bracket and gave poll and lifecycle refresh separate in-flight ownership. The implemented
-coordinator separates those responsibilities and uses a single path/generation owner.
 
 ### Consistency contract
 
@@ -140,157 +131,31 @@ The product needs current-state convergence, not exactly-once preservation of ev
 - A split peer is considered updated only after that peer finishes applying the state and can return it.
 - Hidden pages do not generate continuous traffic and catch up when active again.
 
-### Working architecture: polling-first revision validation
+### Implemented mechanism
 
-```text
-Selected, visible, explicitly opted-in capable device
-    -> read small RAM-only domain revisions at a measured low frequency
-    -> compare KEYMAP / MACRO / CONFIG equality tokens
-    -> reload only mismatched domains through existing VIA GET commands
-    -> commit a stable, revision-bracketed snapshot to that device's cache
+The mechanism that satisfies the contract above — polling-first revision validation over
+`GET_KEYBOARD_VALUE` selector `0x06`, three host domains, revision-bracketed atomic refresh,
+per-path transport ownership, and every rejected alternative with the reason it was rejected —
+is [ADR 0001](adr/0001-state-sync-protocol.md). It is not restated here.
 
-Reconnect, tab resume, or uncertain connection lifecycle
-    -> do not trust revision equality
-    -> perform the required full authoritative refresh
-```
+Three boundaries stay in direction rather than in the record, because they constrain work that
+has nothing to do with State Sync.
 
-Firmware remains the only value authority. Revision tokens indicate that an existing GET
-domain changed; they never carry setting values. The accepted domains are:
-
-- `KEYMAP`: dynamic keymap and encoder reads;
-- `MACRO`: dynamic macro reads;
-- `CONFIG`: applicable persistent keyboard values and V3 Custom Value reads.
-
-Never expose raw EEPROM addresses in the host protocol. QMK and H7S storage layouts differ, and existing VIA reads already provide authoritative serialization and normalization.
-
-Upstream `UI_SYNC_REQUEST 0x16 v1` remains an unchanged Custom Menu invalidation hint and
-keeps its existing all, channel-command, and command-id semantics. It is not reinterpreted
-as State Sync v2 and is not the sole correctness mechanism. Unsolicited advanced events,
-semantic/range event kinds, nonce, ARM/lease, event sequence, descriptor queues, ACK
-journals, and a second snapshot/value protocol are not part of the approved working
-direction. They may be reconsidered only if polling and refresh measurements demonstrate
-a concrete unmet requirement.
-
-### Reliability boundary and implemented architecture
-
-The transport layer owns one listener, serialized request/response queue, pending matcher,
-write timestamp, and connection generation per WebHID path. Strict `0x16 v1`
-demultiplexing and explicit-device async operations remain independent of State Sync.
-Untagged legacy-command timeout is fail-closed for that transport generation; the tagged
-State Sync query can reject one timed-out request without discarding an otherwise confirmed
-connection because a late response cannot match a later request tag.
-
-State Sync adds canonical definition/build opt-in, runtime capability confirmation through
-`GET_KEYBOARD_VALUE` selector `0x06`, three RAM-only revision tokens, a 500 ms recovery poll,
-and revision-bracketed domain refresh. The freshness coordinator has one owner per
-path/connection generation across poll, selection, reconnect, and resume work. It keeps
-firmware-observed revision separate from the revision of the snapshot actually accepted into
-Redux. A revision observed for one domain may dirty another domain, but only that other
-domain's own stable GET bracket may advance its accepted revision.
-
-Capability confirmation never blesses data loaded before the probe. It is followed by a full
-bracketed refresh before any implemented domain becomes fresh. After capability is confirmed,
-one malformed response or timeout keeps the connection capable, marks freshness dirty, and is
-retried by the next eligible poll. An initial unhandled, malformed, or timed-out probe cannot
-distinguish old firmware from a communication failure, so it marks only that connection
-generation as unverified rather than unsupported.
-
-For the effective State-Sync ERA overlay, the tagged probe runs before any Custom Value GET.
-While confirmation is pending, raw Custom menu navigation remains visible and its panes show a
-loading state. If confirmation is unverified, the same panes remain visible and show “Unable to
-verify feature support. Reconnect the keyboard. If the problem persists, update to the latest
-firmware.” All Custom Menu GET/SET/SAVE, dynamic-name reads, and per-key RGB operations are
-blocked for that generation. A successful probe enables controls only after the first stable
-CONFIG candidate is accepted. Official definitions and Design uploads retain ordinary VIA
-behavior and are not put behind this ERA gate.
-
-The poll is a recovery mechanism, not high-rate full polling. It runs only while the device is
-selected and ready, Configure is visible, the document is visible, and that connection is
-capable. Hidden pages send no periodic traffic, ordinary keyboards receive no capability
-probe, and reconnect/resume perform full authoritative refresh without trusting revision
-equality.
+- **Never expose raw EEPROM addresses in the host protocol.** QMK and H7S storage layouts
+  differ, and existing VIA reads already provide authoritative serialization and normalization.
+- **`UI_SYNC_REQUEST 0x16 v1` keeps its existing meaning** — all, channel-command and
+  command-id semantics unchanged. It is not reinterpreted as State Sync v2 and is not the sole
+  correctness mechanism. Unsolicited events, semantic/range event kinds, nonce, ARM/lease, event
+  sequence, descriptor queues, ACK journals and a second snapshot/value protocol are outside the
+  approved direction. Reconsider them only through a new ADR, and only after measurement shows a
+  concrete unmet requirement.
+- **Refactor broader Redux state only where these contracts require it.**
 
 Physical-device validation is deferred until software-only evidence leaves a concrete question
 that cannot be answered by deterministic simulation, host tests, captured transcript replay, or
 static ownership proof. Lack of hardware data must remain an explicit uncertainty and must not
 be replaced by assumptions about browser close/open, USB endpoint flushing, response latency,
 or 8 kHz performance.
-
-### App responsibility
-
-The app provides a small generic state-sync layer rather than scattered ERA component hooks:
-
-- each WebHID path owns its timestamp, listener, input diagnostics, pending matcher,
-  serialized command queue, and connection generation;
-- strict `0x16 v1` packets are routed to the owning device's Custom Menu adapter without
-  consuming the current command response;
-- malformed or unknown reports use a bounded diagnostic/drop path and never become a future
-  response;
-- an untagged legacy timeout poisons that transport generation because a late response cannot
-  safely be attributed to a retry, while the tagged State Sync query uses request-local timeout;
-- async keymap/menu operations capture an explicit path, API/transport, definition, and
-  generation, then revalidate them before committing Redux state;
-- previous-device completions may update only a still-valid cache for that same
-  path/generation and never the newly selected device's ready/current state;
-- each domain has `unknown | dirty | refreshing | fresh` status plus distinct observed and
-  accepted revisions;
-- keymap including encoders, macros, and CONFIG layout/menu values are read into isolated
-  candidates and committed once only after a stable start/end revision bracket;
-- each candidate also owns the definition identity/epoch used to interpret it, and a
-  sideload replace or unload that changes the selected device's effective definition
-  invalidates freshness and requests a full authoritative refresh;
-- a churned domain retries immediately three times in that owner/request, remains dirty
-  after that bound, and is retried by the next poll or a new lifecycle/full request even
-  when the next observed revision number equals the last observation;
-- a successful SET may update the visible value optimistically but invalidates advanced
-  freshness until a later query and authoritative GET verify it. Failed SET/SAVE rolls
-  back or keeps the domain dirty for readback rather than leaving intended values as
-  current.
-
-Refactor broader Redux state only where these contracts require it.
-
-Important code areas:
-
-```text
-src/utils/keyboard-api.ts
-src/shims/node-hid.ts
-src/components/Home.tsx
-src/store/keymapSlice.ts
-src/store/menusSlice.ts
-src/store/devicesThunks.ts
-```
-
-### Firmware and split responsibility
-
-Increment a domain revision only after the new value is readable through the
-corresponding VIA GET path. Firmware sends no unsolicited advanced State Sync packet.
-
-For a local runtime change, this is after the semantic setter completes. For a split peer change:
-
-```text
-source change
-  -> existing split/EEPROM synchronization
-  -> USB-side peer staged apply
-  -> write/readback or CRC success
-  -> required runtime reload
-  -> peer domain revision increment
-  -> app readback from that peer
-```
-
-The app must not infer peer success from the source half's intent. Existing firmware remains responsible for split replication and conflict handling.
-
-Peer revision bookkeeping is domain-precise when the receiver no longer knows the exact key.
-The app refresh remains atomic at full-domain precision. Add a finer
-domain or changed-range optimization only if measurement shows full-domain recovery is a
-real bottleneck.
-
-QMK revision bookkeeping belongs at semantic commit boundaries and must keep
-configurator control traffic out of scan and interrupt hot paths.
-
-Polling-first does not require an H7S unsolicited-event TX path. A future selector response
-must retain the existing ordinary VIA request/response owner; filling the current
-`raw_hid_send()` stub or adding a second producer could duplicate responses. Endpoint and
-queue ownership still require read-only trace and hardware measurement before H7S changes.
 
 ## Compatibility and performance expectations
 
@@ -324,25 +189,16 @@ Treat timeout and rate values as measured parameters rather than permanent guess
    policy, existing VIA value authority, and exact-millisecond identifiers.
 2. Complete physical TOMAK split convergence and official-client transcript checks without
    treating the automated firmware builds as a substitute for flashing or device observation.
-3. H7S State Sync selector `0x06`은 기존 물리 검증 전까지 별도 범위로 유지한다. 승인된
-   USB Diagnostics selector `0x07`은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)의
-   read-only, opt-in, RAM-only 계약을 유지하고 polling mode나 recovery에 결합하지 않는다.
+3. Keep USB Diagnostics selector `0x07` read-only, opt-in and RAM-only per
+   [ADR 0002](adr/0002-h7s-usb-diagnostics.md), and **never couple it to polling mode or to
+   State Sync recovery.** Mode selection is always the user's; firmware and app do not produce
+   automatic downgrade, automatic mode benchmarks, EEPROM diagnostics history, or a synthetic
+   stability score. Host history compares only manual tests with identical device, firmware and
+   protocol identity.
 4. Reconsider semantic/range events, ACK, extra domains, or a second value protocol only through
    a new ADR after measured polling latency or refresh cost demonstrates a concrete failure.
 
 Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.
-
-## H7S USB Diagnostics
-
-H7S USB Diagnostics는 State Sync와 독립된 read-only subsystem이다. Canonical ERA
-metadata에서 명시적으로 opt-in한 다섯 H7S definition만 versioned selector `0x07`을
-probe한다. Firmware는 실제 HID request-to-IN-completion timing, main-loop gap, queue drop,
-USB hard event를 RAM에서 aggregate하고 app은 약 1 Hz coherent snapshot만 읽는다.
-
-Mode 선택은 언제나 사용자 소유다. Firmware와 app은 automatic downgrade, automatic
-mode benchmark, EEPROM diagnostics history, synthetic stability score를 만들지 않는다.
-Host history는 device/firmware/protocol identity가 같은 수동 test끼리만 비교한다. 전체
-wire, failure, persistence, UX 계약은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)를 따른다.
 
 ## Durable non-goals
 

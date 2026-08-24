@@ -1,9 +1,9 @@
 # ERA VIA Fork 배포 운영 문서
 
-> 이 문서는 공개 정적 호스팅 운영 계약을 기록한다. 장기 아키텍처 결정은
-> `docs/PROJECT_DIRECTION.md`, 세션 상태는 외부 handover가 담당한다.
+> 공개 정적 호스팅의 운영 계약이다. 장기 아키텍처 결정은 `docs/PROJECT_DIRECTION.md`,
+> 무엇이 어디 있는지는 `docs/MAP.md`가 담당한다.
 
-**운영 URL: <https://the-via.pages.dev>** (2026-08-23 공개, Cloudflare Pages Direct Upload)
+**운영 URL: <https://the-via.pages.dev>** (Cloudflare Pages Direct Upload)
 
 ## 1. 호스팅 결정
 
@@ -19,8 +19,9 @@
   이 절대 경로를 깨뜨리므로, 선택하려면 base 경로 처리 소스 변경이 필요하다. 그 변경은
   릴리스 목적에 비해 회귀 위험이 크다.
 - WebHID는 secure context를 요구한다. `*.pages.dev`는 HTTPS를 기본 제공한다.
-- 빌드 산출물은 3,577개 파일 / 44 MB로 Cloudflare Pages 제한(배포당 20,000개 파일,
-  파일당 25 MiB) 안에 충분히 들어간다.
+- 빌드 산출물은 약 3,600개 파일 / 약 44 MB로 Cloudflare Pages 제한(배포당 20,000개 파일,
+  파일당 25 MiB) 안에 충분히 들어간다. 실제 수치는 배포 워크플로의 `Verify build output`이
+  매번 다시 세고 20,000을 넘으면 업로드를 막는다.
 - 비용: Cloudflare Pages 무료 플랜으로 충분하다. 무료 플랜 제한은 배포당 20,000개
   파일, 파일당 25 MiB, 월 500회 빌드, 동시 빌드 1개, 프로젝트당 custom domain 100개다.
   이 저장소는 GitHub Actions에서 빌드하고 산출물만 올리는 Direct Upload 방식이므로
@@ -34,22 +35,18 @@ Direct Upload 단일 경로를 유지한다.
 
 ## 2. 사용자만 수행할 수 있는 외부 설정
 
-에이전트는 아래를 대신 수행하지 않는다. 모두 완료되기 전까지 deploy job은
+에이전트는 아래를 대신 수행하지 않는다. 셋이 모두 채워지기 전까지 deploy job은
 `if: vars.CLOUDFLARE_PROJECT_NAME != ''` 조건에서 **skip**되므로 push마다 실패가 쌓이지 않는다.
 
-확정된 프로젝트명은 **`the-via`**이며 공개 호스트는 `https://the-via.pages.dev`가 된다.
-`*.pages.dev` 서브도메인은 Cloudflare 전체에서 고유하므로 프로젝트명은 나중에 바꿀 수
-없다. 바꾸려면 프로젝트를 새로 만들어야 한다.
-
-남은 작업은 **secret 2개뿐**이다. Pages 프로젝트 생성은 워크플로의
-`Ensure Pages project exists` 단계가 `wrangler pages project create the-via
---production-branch=main`으로 처리하므로 대시보드에서 만들 필요가 없다.
+프로젝트명은 `the-via`다. `*.pages.dev` 서브도메인은 Cloudflare 전체에서 고유하므로
+**나중에 바꿀 수 없다** — 바꾸려면 프로젝트를 새로 만들어야 한다. Pages 프로젝트 생성은
+워크플로의 `Ensure Pages project exists` 단계가 처리하므로 대시보드에서 만들 필요가 없다.
 
 | 항목 | 위치 | 값 |
 | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | GitHub repo → Settings → Secrets and variables → Actions → **Secrets** | Cloudflare API 토큰. My Profile → API Tokens → Create Token → Custom token에서 `Account / Cloudflare Pages / Edit` 권한 하나만 주면 된다 |
 | `CLOUDFLARE_ACCOUNT_ID` | 같은 화면의 **Secrets** | Cloudflare 계정 ID (대시보드 우측 또는 Workers & Pages 개요에서 확인) |
-| `CLOUDFLARE_PROJECT_NAME` | 같은 화면의 **Variables** | `the-via`. **설정 완료됨.** 이 값이 비어 있는 동안 deploy job은 skip된다 |
+| `CLOUDFLARE_PROJECT_NAME` | 같은 화면의 **Variables** | `the-via`. 이 값이 비어 있는 동안 deploy job은 skip된다 |
 
 토큰은 저장소 파일이나 로그에 남기지 않는다. 값 입력은 GitHub 웹 UI에서 직접 한다.
 
@@ -63,13 +60,6 @@ Direct Upload 단일 경로를 유지한다.
 
 Custom domain, DNS 변경, 유료 플랜은 이 문서 범위 밖이며 별도 승인 대상이다.
 
-### 이름에 대한 참고
-
-`the-via`는 upstream VIA의 GitHub organization 이름과 같다. 이 저장소는
-`the-via/app`의 비공식 fork이므로, 공개 호스트명만 보고 공식 프로젝트로 오해할 여지가
-있다. 사용자가 이 이름을 선택했고 앱 자체는 upstream VIA의 표기를 유지하므로 그대로
-진행하되, 오해를 줄이려면 README나 앱 안내 문구에 비공식 fork임을 명시하는 편이 좋다.
-
 ## 3. 재현 가능한 빌드
 
 ```powershell
@@ -80,19 +70,14 @@ bun run build
 - 의존성은 `bun.lock`으로 고정된다. 공식 정의는 git SHA로 핀된
   `via-keyboards@github:the-via/keyboards#79ae8d2`(+ `patches/via-keyboards-windows-paths.patch`)
   스냅샷이며, 빌드 시점에 원격을 조회하지 않는다.
-- **같은 플랫폼에서**는 동일 입력으로 두 번 clean build한 결과가 3,573개 파일 중 3,572개
-  **바이트 동일**하다. 유일한 차이는 `definitions/supported_kbs.json`의 `generatedAt`
-  타임스탬프이며, `scripts/build-keyboards.ts`가 콘텐츠 해시 계산에서 의도적으로 제외하는
-  필드다. 그래서 `hash.json`과 `index.html`의 `data-hash`는 재빌드 후에도 동일했다.
-- **플랫폼이 다르면 `hash.json` 스칼라 값만 달라진다.** Windows 로컬 빌드는
-  `ddd01ee7…`, Linux CI 빌드는 `1faac201…`이었다. 정의 내용은 같다 — 배포본과 로컬 빌드를
-  비교했을 때 ERA overlay 27/27과 공식 V3 표본 12개가 바이트 동일했고,
-  `supported_kbs.json`도 `generatedAt`을 뺀 나머지가 완전히 같았다(v2 1,484 / v3 570,
-  집합과 배열 순서까지 일치). 차이의 출처는 `combinedHash`의 입력 중 하나인
-  `officialHash`뿐이다. 이 값은 설치된 `via-keyboards`가 자체 빌드에서 만들고 정의 배열의
-  파일 순회 순서에 의존하므로 파일시스템이 다르면 달라진다. `hash.json`은 앱의 캐시
-  무효화 키로만 쓰이고 배포본 안에서 `index.html`의 `data-hash`와 일치하면 되므로 동작에
-  영향이 없다. 재현성 주장은 "플랫폼별 바이트 재현"으로 읽어야 한다.
+- **재현성은 "플랫폼별 바이트 재현"이다.** 같은 플랫폼에서 두 번 clean build하면
+  `definitions/supported_kbs.json`의 `generatedAt` 하나를 빼고 전부 바이트 동일하다.
+  그 필드는 `scripts/build-keyboards.ts`가 콘텐츠 해시 계산에서 의도적으로 제외한다.
+- **플랫폼이 다르면 `hash.json` 스칼라만 달라진다. 이것은 결함이 아니다.** 차이의 출처는
+  `combinedHash`의 입력 중 하나인 `officialHash`뿐이고, 그 값은 설치된 `via-keyboards`가
+  자체 빌드에서 정의 배열의 **파일 순회 순서**로 만들기 때문에 파일시스템이 다르면 달라진다.
+  정의 내용은 같다. `hash.json`은 앱의 캐시 무효화 키로만 쓰이고 배포본 안에서
+  `index.html`의 `data-hash`와 일치하면 되므로 동작에 영향이 없다.
 - CI는 `actions/setup-node@v4`(Node 22)와 `oven-sh/setup-bun@v2`로 런타임을 고정한다.
   `bun run build:kbs`가 `node --import tsx`를 사용하므로 Node 고정이 필요하다.
 
@@ -111,7 +96,7 @@ bun run build
   던져, Design 업로드로만 지원되는 키보드가 불필요한 오류로 기록된다.
 
 따라서 `404.html`을 두어 암묵적 SPA 모드를 끄고, 앱의 실제 라우트만 명시적으로 rewrite한다.
-라우트 목록의 canonical source는 `src/utils/pane-config.tsx`와
+라우트 목록의 canonical source는 `src/utils/pane-config.ts`와
 `src/components/panes/errors.tsx`다. 라우트를 추가하면 `public/_redirects`도 갱신해야 한다.
 
 **rewrite 대상은 `/index.html`이 아니라 `/`여야 한다.** Cloudflare Pages는
@@ -157,8 +142,8 @@ GET https://the-via.pages.dev/test   ->  308  Location: /
 
 ## 6. 배포 후 검증
 
-`$H`를 공개 호스트(`https://the-via.pages.dev`)로 두고 아래를 확인한다. 로컬 dist에서
-동일한 결과가 나오는 것을 이미 확인했으므로, 여기서 차이가 나면 호스팅 설정 문제다.
+`$H`를 공개 호스트(`https://the-via.pages.dev`)로 두고 아래를 확인한다. 같은 검사를 로컬
+`dist`에 대해서도 돌릴 수 있으므로, 로컬은 통과하는데 여기서 다르면 호스팅 설정 문제다.
 
 ```powershell
 $H = 'https://the-via.pages.dev'
@@ -190,32 +175,12 @@ $served = (Invoke-RestMethod "$H/definitions/hash.json")
 "hash.json : $served"
 ```
 
+`/diagnostics`는 이 목록에 없다. 앱 안에서는 `/`로 redirect되지만 `_redirects`에 없으므로
+호스트에 콜드 딥링크로 들어오면 404다(`docs/MAP.md` §7).
+
 브라우저 검증은 Chromium 계열에서 `$H`를 열고 개발자 도구 Console/Network에 오류가
 없는지 본다. 실제 키보드 연결·Tap Dance·exact-ms·State Sync 동작은 사용자의 장치와
 WebHID 권한이 있어야 확인되며, 위 검증으로 대체되지 않는다.
-
-### 2026-08-23 최초 공개 배포 검증 결과
-
-```text
-라우트          / /test /design /settings /debug /console /errors
-                모두 200 text/html, 리다이렉트 0회
-미지정 경로     /zzz-nonexistent 404
-정의 JSON       supported_kbs / era_advanced / hash / era overlay / 공식 v3 / 공식 v2  200
-                없는 vpid (v3, era) 404  <- 일반 VIA 키보드 정의 부재 판정 유지
-헤더            모든 응답에 nosniff / frame-deny / referrer 적용
-                /assets/* immutable 1년, / 와 /definitions/* must-revalidate
-정의 일관성     ERA overlay 27/27 배포본 == 로컬 빌드 바이트 동일
-                공식 V3 표본 12/12 바이트 동일
-                era_advanced.json, index/vendor 번들 바이트 동일
-                supported_kbs.json은 generatedAt 외 완전 동일
-호환성 매트릭스 일반 VIA 7종: 공식 정의 200, ERA overlay 404, era_advanced 미포함
-                ERA 27종: overlay 200 + vpid 일치, TD 8슬롯 / menus 4
-                VPID 충돌 10종: 공식·ERA 양쪽 제공, 공식에는 tapdanceKeycodes 없음
-                brick65: stateSync false, exactMs null, menus 1, TD 0 (ATmega32U4 예외)
-headless Chrome 라우트 7개 각각 network 4xx 0 / failed 0 / console error 0 / page error 0
-                /settings·/design은 서로 다른 내용 렌더 확인
-업로드          3,575 파일 + _headers + _redirects (Pages 제한 20,000)
-```
 
 ## 7. 롤백
 
@@ -245,5 +210,9 @@ URL에서 먼저 확인할 수 있다.
 - **정의 drift.** 원격 firmware verifier를 제거했으므로, firmware wire/identity와 앱 custom
   JSON이 따로 바뀌면 일반 CI가 cross-repository drift를 자동 검출하지 않는다. 양쪽이 함께
   바뀌는 릴리스에서는 로컬 compatibility audit가 필요하다.
+- **이름 충돌.** `the-via`는 upstream VIA의 GitHub organization 이름과 같다. 이 저장소는
+  `the-via/app`의 비공식 fork이므로 공개 호스트명만 보고 공식 프로젝트로 오해할 여지가 있다.
+  사용자가 선택한 이름이며 프로젝트명은 되돌릴 수 없다(§2). 완화하려면 README나 앱 안내
+  문구에 비공식 fork임을 명시한다.
 - **공개 범위.** `public/robots.txt`는 전체 크롤링을 허용한다. 검색 노출을 원하지 않으면
   배포 전에 변경해야 한다.

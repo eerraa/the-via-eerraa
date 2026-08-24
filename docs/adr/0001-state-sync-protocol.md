@@ -1,23 +1,22 @@
 # 0001 — State Sync revision validation protocol
 
-Status: Accepted (G1 2026-08-21)
+Status: Accepted
 
-Selector `GET_KEYBOARD_VALUE` **`0x06`**, envelope version `0x01`. Exact-ms IDs:
-global channel 15 value 5; QMK TD terms channel 0 values 72–79; H7S TD terms
-channel 16 values 41–48. Exact wire is 2-byte big-endian `uint16` ms. QMK exact SET
-range is 1–65535 (the uint16 maximum; 99999 does not fit this encoding). That
-range is additive on the exact IDs. Official VIA + its canonical definition remain required:
-legacy IDs stay 1-byte × 10 ms on the 100–500 / 20 ms grid, and official exact
-`options` stay `[100, 500]`. Widening official JSON options to the custom-app range is an
-error. H7S exact SET remains 100–500 until that firmware is separately approved.
-Out-of-range exact SET is rejected. Legacy GET projects floor-to-20 ms and does
-not rewrite the exact store. Selected-visible-capable poll starts at 500 ms.
+Selector `GET_KEYBOARD_VALUE` **`0x06`**, envelope version `0x01`.
+Selected-visible-capable poll starts at 500 ms.
 
-Definition ownership is independent of this wire decision: ERA custom JSON is owned by
-this app's `era-definitions/custom/v3`; official JSON is owned by
-`the-via/keyboards/v3`, with installed `via-keyboards` serving only as a pinned build
-snapshot. Firmware-local QMK/H7S JSON is not an app lookup source. Effective lookup is
-ERA, then official, then Design upload only when both built-in sources are absent.
+Exact-ms는 2-byte big-endian `uint16` ms다. **채널/value id 표는
+`docs/MAP.md` §3이 정본이다.** 이 ADR은 규칙만 고정한다.
+
+- QMK exact SET 범위는 1–65535(uint16 최대값; 99999는 이 인코딩에 들어가지 않는다)이고
+  기존 exact ID에 additive다. H7S exact SET은 별도 승인 전까지 100–500이다.
+- 범위를 벗어난 exact SET은 거절한다.
+- 공식 VIA + 공식 정의는 계속 필수다. legacy ID는 1-byte × 10 ms의 100–500 / 20 ms 그리드로
+  남고 공식 exact `options`는 `[100, 500]`이다. **공식 JSON의 options를 커스텀 앱 범위로
+  넓히는 것은 회귀다.**
+- legacy GET은 floor-to-20 ms로 투영만 하고 exact 저장값을 다시 쓰지 않는다.
+
+Definition ownership은 이 wire 결정과 독립이다 — `docs/MAP.md` §1·§4를 따른다.
 
 ## Context
 
@@ -179,10 +178,9 @@ Design upload가 effective source인 경우도 probe하지 않는다. Non-opt-in
 command transcript가 upstream과 byte-for-byte 같다는 자동 test를 acceptance gate로
 둔다.
 
-Opt-in identity의 구형 firmware에는 probe 한 건이 갈 수 있다. 현재 QMK
-`quantum/via.c:360-365,471-481`과 H7S
-`src/ap/modules/qmk/quantum/via.c:340-345,451-461`은 unknown value/command를
-`id_unhandled (0xFF)`로 돌려보내는 기존 pattern을 가진다. TOMAK79H와 BRICK60은
+Opt-in identity의 구형 firmware에는 probe 한 건이 갈 수 있다. 두 firmware 저장소 모두
+`quantum/via.c`에서 unknown value/command를 `id_unhandled (0xFF)`로 돌려보내는 기존 pattern을
+가진다(`qmk_firmware_eerraa`, `eerraa-qmk-h7s-fw`). TOMAK79H와 BRICK60은
 top-level `via_command_kb()`를 override하지 않아 구형 image에서도 이 default 경로가
 적용된다. 새 generation의 첫 selector query에서 unhandled, malformed response,
 timeout은 구형 firmware와 통신 오류를 구분할 증거가 아니므로 `unverified`로 처리하고
@@ -264,6 +262,10 @@ capability가 아직 없으므로 그 generation에서만 `unverified`로 기록
 모든 thunk와 adapter는 explicit device path/API/definition과 시작 generation을
 capture한다. Redux commit 직전에 path와 generation을 다시 확인한다. 이는 필요한
 core correction이지만 Redux 전면 재작성은 아니다.
+
+이전 device의 늦은 completion은 **같은 path/generation의 아직 유효한 cache만** 갱신할 수
+있고, 새로 선택된 device의 ready/current 상태는 절대 갱신하지 못한다. 마찬가지로 이전
+selection generation은 새 selected device를 ready로 표시할 수 없다.
 
 Domain refresh는 다음 순서다. Poll, initial confirmation, selection, reconnect, resume은
 모두 같은 path/generation coordinator owner를 사용한다.
@@ -380,37 +382,26 @@ exact-range protocol은 추가하지 않는다. Wire event가 없으므로 peer 
 
 ## H7S response ownership and 8 kHz boundary
 
-H7S reference는 clean `main`의
-`cd4473b7896549bb5481b873901da7fc8b5320e4`이고 origin `main`과 같다.
-Committed graph를 먼저 질의했으며, read-only 제약 때문에 hook 설치와 graph sync를
-수행하는 `tools/graphify/bootstrap.py`는 실행하지 않았다.
+H7S의 VIA response는 **single producer**다. `via_hid.c`가 USB RX를 bounded queue에 복사하고,
+main loop에서 `raw_hid_receive()`로 request buffer를 mutate한 뒤 그 buffer를
+`usbHidEnqueueViaResponse()`에 **한 번** 넣는다. 같은 파일의 `raw_hid_send()`는 빈 stub이고,
+`usbd_hid.c`가 ordinary VIA response queue와 enqueue owner를 가진다. Keyboard input report는
+별도 queue/endpoint 경로다.
 
-현재 H7S ownership은 다음과 같다.
+Polling-first에서는 unsolicited event가 없으므로 H7S에 두 번째 VIA-IN producer나 event
+dispatcher를 만들지 않는다. selector handler는 기존 request buffer만 채우고, 현재 main-loop
+response owner가 ordinary response와 같은 방식으로 한 번 enqueue한다.
+**`raw_hid_send()`를 채우거나 별도로 enqueue하면 중복 response가 된다.**
 
-- `via_hid.c:69-88`은 USB RX를 16-entry queue에 복사한다.
-- `via_hid.c:91-116`은 main loop에서 `raw_hid_receive()`로 request buffer를
-  mutate한 뒤 그 buffer를 `usbHidEnqueueViaResponse()`에 한 번 넣는다.
-- `via_hid.c:64-67`의 `raw_hid_send()`는 빈 stub이다.
-- `usbd_hid.c:146-150,1224-1249`은 ordinary VIA response용 128-entry queue와
-  enqueue owner를 가진다.
-- Keyboard input report는 `usbd_hid.c:1251-1283`의 별도 queue/endpoint 경로다.
+`usbd_hid.c`에서 VIA descriptor의 IN endpoint `0x84`가 아니라 `HID_VIA_EP_OUT (0x04)`을
+`USBD_LL_Transmit()`에 넘기는 source discrepancy가 있다. **실제 hardware가 동작한다는 이유로
+추정 수정하면 안 된다.** lower-layer direction 처리와 completion/busy ownership을 read-only
+trace하고 hardware로 확인한 뒤에만 손댄다.
 
-Polling-first에서는 unsolicited event가 없으므로 H7S에 두 번째 VIA-IN producer나
-event dispatcher를 만들지 않는다. 새 selector handler는 기존 request buffer만
-채우고, 현재 main-loop response owner가 ordinary response와 같은 방식으로 한 번
-enqueue해야 한다. `raw_hid_send()`를 채우거나 별도 enqueue하면 중복 response가 된다.
-
-다만 `usbd_hid.c:1175-1179`에서 VIA descriptor의 IN endpoint `0x84`가 아니라
-`HID_VIA_EP_OUT (0x04)`을 `USBD_LL_Transmit()`에 넘기는 source discrepancy는
-실제 hardware가 동작한다는 이유로 추정 수정하면 안 된다. Lower-layer direction
-처리와 completion/busy ownership을 read-only trace하고 hardware로 확인한 뒤에만
-H7S 구현 계획을 승인한다.
-
-Revision poll은 ordinary request/response 하나이므로 event가 response를
-지연·유실시키는 경우는 없다. App의 poll interval은 500 ms로 고정됐지만 H7S는 아직
-구현 대상이 아니다. H7S를 추가하기 전에는 20 ms VIA response pacing과 HS 8 kHz
-입력에 대해 poll off/on A/B로 keyboard interval/jitter, input queue overflow,
-VIA latency/timeout을 측정한다.
+Revision poll은 ordinary request/response 하나이므로 event가 response를 지연·유실시키는
+경우는 없다. H7S에서 20 ms VIA response pacing과 HS 8 kHz 입력에 대한 poll off/on A/B —
+keyboard interval/jitter, input queue overflow, VIA latency/timeout — 는 아직 남은 실기
+측정이다.
 
 ## Compatibility conclusion
 
@@ -427,34 +418,19 @@ VIA latency/timeout을 측정한다.
 ERA image의 v1 transcript와 advanced firmware에서의 병존은 hardware로 확인해야
 한다.
 
-## Removed overdesign and excluded alternatives
+## Excluded alternatives
 
-이번 재검토에서 초기 slice에서 제거·단순화한 항목은 다음과 같다.
-
-- Semantic event, nonce, expiring ARM lease, event sequence, descriptor queue,
-  coalescing/overflow flag와 H7S event TX dispatcher를 모두 제거했다.
-- 별도 CAPABILITIES/ARM/REVISIONS message family를 기존 `0x02` read-only selector
-  한 번으로 줄였다.
-- 네 host domain을 read-cost 기준 세 domain으로 줄였다.
-- Selected-layer provisional Redux patch를 제거하고 atomic full-domain candidate만
-  허용했다.
-- Five-second watchdog와 15-second lease 같은 미측정 상수를 protocol에서 제거했다.
-
-다음 대안은 제외한다.
+위 판정표가 제거한 메커니즘 외에 다음 설계도 제외한다. 표에 없는 것만 적는다.
 
 - **`0x16`을 bidirectional v2로 확장:** v1 unsolicited grammar와 response matching을
   섞고 공식 behavior를 불필요하게 바꾼다.
-- **별도 새 top-level command:** polling-only candidate에는 기존 read-only Keyboard
-  Value selector면 충분하다.
-- **Global revision 하나:** 작은 CONFIG 변경이 큰 KEYMAP/MACRO full read를 유발한다.
 - **Event-only sync:** 마지막 event 유실을 복구하지 못한다.
-- **Value snapshot/new value protocol:** 기존 VIA serialization과 authority를 복제한다.
-- **ACK journal/exactly-once:** current-state convergence보다 강한 문제를 푼다.
-- **Raw EEPROM address/range:** QMK, TOMAK, H7S layout을 host contract로 누출한다.
-- **Subscription mask/renew state machine:** polling-first에는 subscription이 없다.
 - **New split exact-range transport:** 기존 durable apply boundary와 domain mapping이면
   correctness에 충분하다.
 - **Redux-wide rewrite:** explicit-device thunk와 작은 freshness coordinator면 된다.
+
+미측정 상수(five-second watchdog, 15-second lease)를 protocol에 넣지 않는다. timeout과
+rate는 측정된 파라미터로 다룬다.
 
 ## Consequences
 
@@ -467,13 +443,14 @@ H7S control-plane 영향은 실측해야 한다.
 State Sync opt-in이 아닌 legacy v1-only device는 기존 동작을 유지하지만 마지막 `0x16`
 유실을 자동 복구하지 못한다. Opt-in ERA overlay에서 capability를 확인하지 못한 연결은
 일반 VIA keymap 흐름을 유지하되 Custom I/O를 의도적으로 차단하고 안내문을 표시한다.
-Advanced-capable device만 bounded automatic convergence를 얻는다. 이 계약은 app과 QMK
-TOMAK 구현 및 자동 회귀 검증에 반영됐다. 실제 split 양쪽 플래시, 공식 VIA client
-transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 실기기 증거로 둔다.
+Advanced-capable device만 bounded automatic convergence를 얻는다.
 
 ## Verification
 
 ### App fake-device and transport tests
+
+`tests/state-sync-transport.test.ts`, `tests/transport-phase1.test.ts`,
+`tests/era-state-sync.test.ts`가 아래를 검증한다.
 
 1. Non-opt-in ordinary keyboard transcript에는 selector `0x06`이 없고 기존 VIA 흐름이
    유지된다.
@@ -517,16 +494,24 @@ transcript, H7S 8 kHz 영향은 자동 빌드 결과와 구분해 남은 실기�
    그리고 GET가 exact store를 다시 쓰지 않음을 검증한다. JSON `options`를 커스텀
    앱 범위로 넓히는 것은 회귀다.
 
-## Implementation status and remaining physical evidence
+## Probe 대상과 앱에서 보이는 결과
 
-이 ADR은 `Accepted`이며 app과 QMK TOMAK에 구현됐다. Selector `0x06`, envelope v1,
-세 domain, 500 ms eligibility, 기존 VIA GET authority는 더 이상 후보나 Phase 2A
-결정사항이 아니다. H7S에는 이 selector를 구현하지 않았으므로 현재 ERA 앱에서는
-해당 장치의 Custom 메뉴가 확인 불가 안내 상태가 된다. H7S 저장소는 별도 승인 전까지
-read-only reference로 남는다.
+앱은 매니페스트에서 `stateSync: true`인 정의로 열린 연결에만 probe한다. 현재 그 대상은
+31종 중 30종이다(`brick65` 제외 — `docs/MAP.md` §2). **여기에는 H7S 5종도 포함된다.**
 
-자동 검증은 실기기 증거를 대신하지 않는다. 남은 항목은 실제 TOMAK 좌·우 플래시 후
-반대편 durable apply와 UI 수렴 관찰, official VIA client 및 배포 `0x16 v1` transcript,
-USB reconnect/in-place reset 행동, legacy timeout 뒤 endpoint flush 행동, 그리고 H7S를
-향후 지원할 경우의 8 kHz poll-off/on 성능 측정이다. 실기기 플래시나 H7S 변경은 이
-ADR의 구현 완료를 이유로 자동 승인되지 않는다.
+probe가 `unverified`로 끝나면 `getCustomMenuAvailabilityForDevice()`가 그 장치의 **Custom
+pane 전체**를 안내 문구로 대체한다. keymap 등 일반 VIA 흐름은 유지되지만 Custom GET/SET/SAVE와
+per-key RGB I/O는 그 connection generation 동안 막힌다. USB 진단 블록도 Custom pane 안에 있으므로
+함께 사라진다([ADR 0002](0002-h7s-usb-diagnostics.md) §"State Sync opt-in과의 결합").
+
+## 남은 실기 증거
+
+자동 검증은 실기기 증거를 대신하지 않는다. 남은 항목:
+
+- 실제 TOMAK 좌·우 플래시 후 반대편 durable apply와 UI 수렴 관찰
+- official VIA client 및 배포 firmware의 `0x16 v1` transcript
+- USB reconnect / in-place silent reset 행동
+- legacy timeout 뒤 endpoint flush 행동 (이것이 확인되기 전에는 fail-closed를 유지한다)
+- H7S의 8 kHz poll off/on 성능 측정
+
+실기기 플래시나 펌웨어 변경은 이 ADR의 구현 완료를 이유로 자동 승인되지 않는다.
