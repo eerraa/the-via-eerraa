@@ -21,6 +21,16 @@ export type EraFeatureHelp = {
   detail: string;
 };
 
+// The SOCD menu is the same feature under two command families: H7S firmware names it
+// `id_qmk_kill_switch_*`, the RP2040 firmware `id_qmk_socd_*`. One object, two prefixes,
+// so the two families cannot drift apart into two different explanations.
+const SOCD_HELP: EraFeatureHelp = {
+  summary:
+    'While you hold two opposite keys, only the one you pressed last counts.',
+  detail:
+    'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first. Competitive rules differ on this — check yours before you rely on it in a match.',
+};
+
 // Ordered: the first prefix that matches a command in the submenu wins, so more
 // specific prefixes come before the families that would also match them.
 const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
@@ -33,15 +43,8 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
         'Fill in the actions you want, then place the matching TD key on your keymap from KEYMAP → CUSTOM — the settings here do nothing until that key is somewhere you can press it. Term is how long the keyboard waits before deciding which action you meant. Raise it if double taps get missed, lower it if the key feels slow to respond.',
     },
   ],
-  [
-    'id_qmk_kill_switch_',
-    {
-      summary:
-        'While you hold two opposite keys, only the one you pressed last counts.',
-      detail:
-        'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first. Competitive rules differ on this — check yours before you rely on it in a match.',
-    },
-  ],
+  ['id_qmk_kill_switch_', SOCD_HELP],
+  ['id_qmk_socd_', SOCD_HELP],
   [
     'id_qmk_kkuk_',
     {
