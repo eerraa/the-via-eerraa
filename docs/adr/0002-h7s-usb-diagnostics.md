@@ -777,8 +777,9 @@ ERA 메뉴 설명은 영어 원문이 곧 번역 키다. 문구를 다시 쓰면
 
 ## UI verification (2차 추가분)
 
-11. `FEATURE → Anti-Ghosting`의 요약 줄에 `asdasdasd` 예시가 보이고, 한국어로 바꾸면
-    "꾹보드"가 보인다.
+11. `FEATURE → KKUK`의 요약 줄에 `asdasdasd` 예시가 보인다. 메뉴 이름이 고유명이므로
+    그 한 줄만으로 무엇인지 읽히는지 본다. "꾹보드" 통칭은 앱에서 전부 걷어냈으므로
+    어느 언어에서도 나오지 않는 것이 정상이다.
 12. `FEATURE → DEBOUNCE`에서 `Debounce Mode` 옆 ⓘ를 열면 세 모드 비교가 나오고, 모드를
     Balanced → Fast → Advanced로 바꿀 때 아래 ms 행이 바뀌며 각 행의 ⓘ 본문도 그 행에
     맞게 바뀐다. 특히 Fast의 ms 행과 Advanced의 Release 행이 **서로 다른 문구**를 보여야
