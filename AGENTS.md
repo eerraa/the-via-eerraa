@@ -6,6 +6,25 @@ Before architecture or source work, read `docs/PROJECT_DIRECTION.md`. Read relev
 
 Verify the live branch, HEAD, working tree, remotes, development server, and reference repositories instead of trusting recorded runtime status.
 
+### 2026-08-25 — `main` 히스토리를 다시 썼다 (한시적 안내)
+
+`main`은 문서 전용 커밋 13개를 인접 작업 커밋에 합쳐 63커밋에서 46커밋으로 리베이스됐고
+force-push 됐다. **파일 내용은 1바이트도 바뀌지 않았다**(트리 해시 `301e0b20…` 동일).
+합쳐진 커밋의 제목은 흡수한 커밋 본문에 목록으로 남아 있으므로 `git log --grep`으로
+옛 제목을 찾을 수 있다.
+
+리라이트 이전 히스토리 전체는 태그 **`backup/main-before-rewrite`**(`e775278`)에 있다.
+로컬과 `origin` 양쪽에 있다. 이 커밋은 `main`에서 도달할 수 없으므로 `git log`에는
+나타나지 않는다 — 보려면 `git log backup/main-before-rewrite` 또는 `git log --all`.
+
+- 옛 해시로 무언가를 찾고 있다면 그 태그에서 찾아라.
+- 삭제된 원격 브랜치 39개(포크 상속 37 + `fix/pages-spa-rewrite`, `goal/era-via-release`)의
+  커밋도 이 태그에서 도달 가능하다. 포크 상속분은 `upstream` 리모트에도 그대로 있다.
+- 되돌리려면 `git reset --hard backup/main-before-rewrite && git push --force origin main`.
+
+**이 절은 한시적이다.** 리라이트 이후 작업이 자리를 잡아 옛 해시를 찾을 일이 없어지면
+태그와 함께 이 절을 지워라(`git tag -d`, `git push origin :refs/tags/...`).
+
 ## Project contract
 
 - This is a public direct fork of `the-via/app`, not a new configurator or a keyboard-manufacturer product.
