@@ -81,7 +81,7 @@ describe('VIA locale coverage', () => {
     '{{depth}} report(s) were waiting to be sent at once.',
     'Link speed',
     'Enumerated at {{actual}}, which is what {{mode}} requires.',
-    'Each line above covers only the category it names, over the window this test ran. Categories this test does not measure are not covered by it.',
+    'Each line below covers only the category it names, over the window this test ran. Categories this test does not measure are not covered by it.',
     'No keyboard reports were sent during this test, so the lines above describe a window with no typing in it. Type on the keyboard while the next test runs.',
   ];
 

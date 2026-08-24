@@ -5,6 +5,7 @@ import {I18nextProvider, initReactI18next} from 'react-i18next';
 import {renderToStaticMarkup as renderMarkup} from 'react-dom/server';
 import {
   buildUsbDiagnosticsTrend,
+  DiagnosticsAdvanced,
   DiagnosticsComparison,
   DiagnosticsResultView,
 } from '../src/components/panes/diagnostics-results';
@@ -395,6 +396,102 @@ describe('USB diagnostics result UI', () => {
       />,
     );
     expect(html).toContain('No keyboard reports were sent during this test');
+  });
+
+  // A collapsed disclosure keeps its text in the page, so "still shipped" and "still
+  // on the screen" are different questions. These strip the collapsed bodies to ask
+  // the second one.
+  const visibleText = (html: string) =>
+    html.replace(/<p[^>]*hidden=""[^>]*>.*?<\/p>/gs, '');
+
+  const count = (html: string, pattern: RegExp) =>
+    (html.match(pattern) ?? []).length;
+
+  test('caveats stay in the page but stop occupying the screen', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={snapshots}
+      />,
+    );
+    // The observation-scope limit is still shipped with the result...
+    expect(html).toContain('Categories this test does not measure');
+    // ...but folded away, so the summary reads as answers rather than as prose.
+    expect(visibleText(html)).not.toContain(
+      'Categories this test does not measure',
+    );
+    expect(count(html, /hidden=""/g)).toBeGreaterThan(0);
+  });
+
+  test('advanced metrics show one group at a time', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsAdvanced snapshots={snapshots} />,
+    );
+    expect(count(html, /role="tabpanel"/g)).toBe(4);
+    expect(count(html, /aria-selected="true"/g)).toBe(1);
+    // Three of the four groups are hidden rather than unmounted, so the chart keeps
+    // its layout and find-in-page still reaches every group.
+    expect(count(html, /hidden=""/g)).toBeGreaterThanOrEqual(3);
+    expect(html).toContain('HID timing trend');
+    expect(html).toContain('Event timeline');
+    expect(html).toContain('Since firmware boot');
+  });
+
+  test('every advanced group can be selected', () => {
+    for (const tab of [
+      'measurements',
+      'timing',
+      'events',
+      'compare',
+    ] as const) {
+      const html = renderToStaticMarkup(
+        <DiagnosticsAdvanced defaultTab={tab} snapshots={snapshots} />,
+      );
+      expect({tab, selected: count(html, /aria-selected="true"/g)}).toEqual({
+        tab,
+        selected: 1,
+      });
+    }
+  });
+
+  test('the boot-counter warning stays on screen, not behind the disclosure', () => {
+    // Hardware validation twice concluded "suspend is not being counted" from these
+    // numbers, so the sentence that prevents it may not be one click away.
+    const html = renderToStaticMarkup(
+      <DiagnosticsAdvanced snapshots={snapshots} />,
+    );
+    expect(visibleText(html)).toContain(
+      'Captured when this test ended, not a live reading.',
+    );
+    expect(html).toContain('Applying a polling mode restarts the keyboard');
+  });
+
+  test('the phase-independent comparison rule stays on screen', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsComparison
+        runs={[
+          {
+            id: 'a',
+            vendorProductId: 0x45520030,
+            productName: 'BRICK60',
+            firmwareVersion: 'V260824R1',
+            protocolVersion: 1,
+            pollingMode: 3,
+            speed: 2,
+            durationSeconds: 30,
+            startedAt: '2026-08-23T00:00:00.000Z',
+            endedAt: '2026-08-23T00:00:01.000Z',
+            outcome: 'complete',
+            snapshots: [diagnosticSnapshot({})],
+          },
+        ]}
+      />,
+    );
+    expect(visibleText(html)).toContain(
+      'Compare runs with <strong>Spread</strong>',
+    );
+    expect(visibleText(html)).toContain('re-drawn on every replug');
   });
 
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {
