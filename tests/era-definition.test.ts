@@ -359,7 +359,7 @@ describe('canonical ERA definition inventory', () => {
       const definition = readJSON(entry.path);
       expect(submenuLabels(definition, 'FEATURE')).toEqual([
         'SOCD',
-        'Anti-Ghosting',
+        'KKUK',
         'DEBOUNCE',
         'TAPPING',
         'MOUSE',
