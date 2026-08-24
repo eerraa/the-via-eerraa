@@ -61,6 +61,46 @@ const collectTermControls = (value: unknown, into: TermControl[] = []) => {
   return into;
 };
 
+const collectCommandControls = (
+  value: unknown,
+  into: {name: string; channel: number; id: number; label?: string}[] = [],
+) => {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectCommandControls(item, into));
+    return into;
+  }
+  if (!value || typeof value !== 'object') {
+    return into;
+  }
+  const record = value as {content?: unknown; label?: unknown};
+  if (
+    Array.isArray(record.content) &&
+    typeof record.content[0] === 'string' &&
+    typeof record.content[1] === 'number' &&
+    typeof record.content[2] === 'number'
+  ) {
+    into.push({
+      name: record.content[0],
+      channel: record.content[1],
+      id: record.content[2],
+      label: typeof record.label === 'string' ? record.label : undefined,
+    });
+  }
+  Object.values(record).forEach((item) => collectCommandControls(item, into));
+  return into;
+};
+
+const submenuLabels = (definition: Record<string, unknown>, menu: string) => {
+  const menus = (definition.menus ?? []) as {
+    label?: string;
+    content?: {label?: string}[];
+  }[];
+  const found = menus.find(
+    (entry) => entry && typeof entry === 'object' && entry.label === menu,
+  );
+  return (found?.content ?? []).map((entry) => entry.label);
+};
+
 const keycodeNames = (value: unknown) =>
   (Array.isArray(value) ? value : [])
     .map((item) =>
@@ -302,6 +342,55 @@ describe('canonical ERA definition inventory', () => {
         ({name}) => !name.endsWith('_exact'),
       ),
     ).toEqual([]);
+  });
+
+  // The H7S firmware has implemented the mouse-key page since V260823R1, but on its
+  // own channel: the reference QMK number 13 is taken by USB POLLING there, so
+  // `via.h` assigns `id_qmk_mousekey = 17`. Value ids 1-6 match the reference.
+  test('gives every H7S definition the MOUSE page on channel 17', () => {
+    const h7s = manifest.definitions.filter(
+      ({usbDiagnostics}) => usbDiagnostics === true,
+    );
+    expect(h7s.map(({id}) => id).sort()).toEqual(
+      expectedUsbDiagnosticsDefinitionIds,
+    );
+    for (const entry of h7s) {
+      const definition = readJSON(entry.path);
+      expect(submenuLabels(definition, 'FEATURE')).toEqual([
+        'SOCD',
+        'Anti-Ghosting',
+        'DEBOUNCE',
+        'TAPPING',
+        'MOUSE',
+      ]);
+      const mouse = collectCommandControls(definition).filter(({name}) =>
+        name.startsWith('id_qmk_mousekey_'),
+      );
+      expect(mouse.map(({channel}) => channel)).toEqual(
+        Array.from({length: mouse.length}, () => 17),
+      );
+      expect([...new Set(mouse.map(({id}) => id))].sort()).toEqual([
+        1, 2, 3, 4, 5, 6,
+      ]);
+      // Acceleration off swaps a single "Cursor Speed" row in for the start/top pair.
+      const serialized = JSON.stringify(definition);
+      expect(serialized).toContain(
+        '{id_qmk_mousekey_cursor_acceleration} == 0',
+      );
+      expect(serialized).toContain(
+        '{id_qmk_mousekey_cursor_acceleration} != 0',
+      );
+      // H7S is always 20-key rollover with no switch, so a toggle would be a lie.
+      expect(serialized).not.toContain('id_qmk_custom_nkro');
+    }
+  });
+
+  test('leaves the QMK definitions on the reference mouse channel', () => {
+    const era65 = collectCommandControls(
+      readJSON('era-definitions/custom/v3/era65/ERA65-VIA.json'),
+    ).filter(({name}) => name.startsWith('id_qmk_mousekey_'));
+    expect(era65.length).toBeGreaterThan(0);
+    expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
   });
 
   test('opts only the five H7S definitions into USB diagnostics', () => {
