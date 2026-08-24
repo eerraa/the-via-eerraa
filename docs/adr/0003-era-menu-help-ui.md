@@ -16,7 +16,7 @@ wire와 계측은 [ADR 0002](0002-h7s-usb-diagnostics.md), 정의 소유권은
 
 - 사용자는 `USB POLLING`에서 mode를 바꾼 뒤 그 효과를 보려 했는데 기능이 전혀 다른 곳에
   있어 찾지 못했다.
-- 최상위 탭은 31개 정의 중 다섯 H7S에서만 의미가 있는데도 모든 키보드에 항상 보였다.
+- 최상위 탭은 다섯 H7S 정의에서만 의미가 있는데도 모든 키보드에 항상 보였다.
   "일반 VIA 키보드의 시각 언어와 workflow를 보존한다"는 포크 계약과 어긋난다.
 
 Modal은 기능을 한 단계 더 숨기고, session이 열려 있어야 하는 10/30/60초 동안 실수로 닫으면
@@ -167,7 +167,7 @@ firmware session만 남는 위험을 키운다. Accordion도 같은 이유로 �
   전체를 노출하고 `tests/locales.test.ts`가 그 목록의 모든 문자열이 6개 카탈로그에 키로
   존재하는지 검사한다. 목록을 테스트가 소스에서 직접 읽으므로 두 곳이 어긋날 수 없다.
 
-## 6. ERA 메뉴 설명 16개
+## 6. ERA 메뉴 설명
 
 `src/utils/era-feature-help.ts`가 표를 갖고
 `src/components/panes/configure-panes/custom/feature-help.tsx`가 submenu 항목 위에
@@ -186,7 +186,7 @@ firmware session만 남는 위험을 키운다. Accordion도 같은 이유로 �
 
 - **요약은 설정을 부르는 이름이지 설명이 아니다.** `Puts the keyboard into bootloader mode
   so you can flash firmware.`가 아니라 `Enters the bootloader when switched on.`이다.
-  일부만 바꾸면 나머지가 더 장황해 보이므로 16개 전부가 같은 형태여야 한다.
+  일부만 바꾸면 나머지가 더 장황해 보이므로 모든 요약이 같은 형태여야 한다.
 - **상세는 켜고 끈 결과까지만 쓴다.** 원리 설명은 걷어낸다.
 - 요약은 **12단어 이하, 2인칭 없음, 6개 언어 전부에서 한 문장.** 독자를 부르는 것은 상세의
   몫이다. `tests/locales.test.ts`가 이 셋을 검사하며, 실제로 일본어 USB POLLING 요약이 두
