@@ -443,6 +443,109 @@ describe('canonical ERA definition inventory', () => {
     expect(rp2040).toEqual(h7s!);
   });
 
+  // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in
+  // its custom definition, while its own official VIA JSON and both sibling split
+  // boards had all three. Nothing failed, because no test asked which definitions carry
+  // which feature — a definition could quietly miss a menu the firmware supports and
+  // only the custom app's users would lose it. This table is the answer, written down.
+  // Adding a keyboard or a feature means editing it on purpose.
+  const FEATURE_COVERAGE: Record<string, string[]> = {
+    // Every ERA keyboard supports mouse keys. `brick65` is the ATmega32U4 exception
+    // documented in PROJECT_DIRECTION: stock VIA only, no ERA feature menus at all.
+    id_qmk_mousekey: [
+      'brick60-h7s',
+      'brick65-h7s',
+      'brick65s',
+      'chickpad',
+      'classicd-a1',
+      'classicd-a1-ug',
+      'classicd-core',
+      'classicd-coreless',
+      'divine',
+      'era65',
+      'et-tkl',
+      'fave65s',
+      'intigrity80-h7s',
+      'klein-hs',
+      'klein-sd',
+      'may65-h7s',
+      'n86',
+      'n87',
+      'n8x',
+      'newone-a1',
+      'newone-h1',
+      'newone-odessey60h',
+      'newone-odessey60s',
+      'sculpturei-h7s',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    // Every RP2040 keyboard has the toggle. H7S is always 20-key with no switch, so a
+    // toggle there would offer a choice the firmware does not have.
+    id_qmk_custom_nkro: [
+      'brick65s',
+      'chickpad',
+      'classicd-a1',
+      'classicd-a1-ug',
+      'classicd-core',
+      'classicd-coreless',
+      'divine',
+      'era65',
+      'et-tkl',
+      'fave65s',
+      'klein-hs',
+      'klein-sd',
+      'n86',
+      'n87',
+      'n8x',
+      'newone-a1',
+      'newone-h1',
+      'newone-odessey60h',
+      'newone-odessey60s',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    // Split-only: there is no cable to set a speed on, and nothing to sync, unless the
+    // keyboard comes in two units.
+    id_qmk_split_link: [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    id_qmk_eeprom_sync: [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+  };
+
+  test('each feature reaches exactly the definitions that are meant to have it', () => {
+    for (const [command, expectedIds] of Object.entries(FEATURE_COVERAGE)) {
+      const actual = manifest.definitions
+        .filter(({path}) => JSON.stringify(readJSON(path)).includes(command))
+        .map(({id}) => id)
+        .sort();
+      expect({command, ids: actual}).toEqual({
+        command,
+        ids: [...expectedIds].sort(),
+      });
+    }
+  });
+
   test('opts only the five H7S definitions into USB diagnostics', () => {
     const optedIn = manifest.definitions.filter(
       ({usbDiagnostics}) => usbDiagnostics === true,
