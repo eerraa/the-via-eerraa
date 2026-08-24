@@ -10,7 +10,7 @@
 // someone reading it inside the configurator: the guide tells you where to click,
 // which the reader already knows by the time they see this, so what is left is what
 // the setting does and how to choose a value. Where the guide is thin or wrong —
-// Anti-Ghosting and the three tapping switches — the text below comes from reading the
+// KKUK and the three tapping switches — the text below comes from reading the
 // firmware instead: `port/kkuk.c`, `port/debounce_profile.c` with the algorithms under
 // `quantum/debounce/`, and `port/tapping_term.c` on top of stock `action_tapping.c`.
 
@@ -51,7 +51,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
       summary:
         'Hold several keys and they cycle: hold a, s and d and you get "asdasdasd", not "asddddd".',
       detail:
-        'The menu name is misleading — this has nothing to do with matrix ghosting. Hold two or more ordinary keys still, and the keyboard starts letting the whole group go and pressing it again on a timer, so every key you are holding keeps arriving instead of only the last one repeating. First Delay Time is how long you have to hold before that begins; Repeat Time is how often the group goes out afterwards. Keys you gave to SOCD are left out of it. It is the firmware doing the job people otherwise buy a macro pad for in games.',
+        'KKUK is what Korean players call the macro pad that does this, and the keyboard now does it for you. Hold two or more ordinary keys still, and it starts letting the whole group go and pressing it again on a timer, so every key you are holding keeps arriving instead of only the last one repeating. First Delay Time is how long you have to hold before that begins; Repeat Time is how often the group goes out afterwards. Keys you gave to SOCD are left out of it. Older firmware called this menu Anti-Ghosting, which was misleading — it has nothing to do with matrix ghosting.',
     },
   ],
   [
@@ -189,7 +189,7 @@ export const findEraFeatureHelp = (
 //
 // It is not for a control whose unit is already the answer (Cursor Top Speed at 16 px,
 // Repeat Time at 80 ms), nor for one the submenu summary above already takes as its
-// subject — Global Tapping Term and Anti-Ghosting's Enable are what those summaries are
+// subject — Global Tapping Term and KKUK's Enable are what those summaries are
 // about, so repeating them one row lower would be noise.
 //
 // Keyed off exact firmware command names, the same gate the submenu text uses. Two rows

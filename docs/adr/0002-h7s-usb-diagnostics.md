@@ -619,8 +619,10 @@ BOOT, EEPROM CLEAN, SPLIT LINK, SPLIT SYNC, VERSION, INDICATOR, LIGHTING.
 **`asd` → `asdasdasd` 예시를 요약 첫 줄에 올렸다.** 예시는 언어와 무관하게 읽히고, 추상적
 서술보다 짧다.
 
-메뉴 이름이 `Anti-Ghosting`인 것은 펌웨어 정의가 그렇기 때문이고 이 작업에서 바꾸지 않는다.
-다만 그 이름은 매트릭스 고스팅 방지로 읽히므로, 상세 첫 문장이 그 오해를 먼저 정정한다.
+메뉴 이름이 `Anti-Ghosting`인 것은 펌웨어 정의가 그렇기 때문이라 이 시점에는 바꾸지 않고,
+상세 첫 문장이 그 오해를 먼저 정정하는 것으로 처리했다. **이 판단은 아래
+"Anti-Ghosting → KKUK" 절에서 뒤집혔다** — 이름을 유지할 근거가 없다는 것이 확인되어 세
+저장소의 라벨을 모두 `KKUK`으로 바꿨다.
 
 RP2040 정의 25종에만 있는 `id_qmk_kkuk_mode`(옵션이 `Report Pulse` 하나뿐)에는 컨트롤 단위
 설명을 붙였다. `qmk_firmware_eerraa/keyboards/era/common/features/era_kkuk.c`의
@@ -744,16 +746,23 @@ TAPPING 세 토글은 `port/tapping_term.c`가 QMK 표준 per-key 콜백
 value id 1~6, `showIf` 쌍의 존재, `id_qmk_custom_nkro` 부재를 검사한다. era65가 채널 13에
 남아 있는지도 함께 확인해 잘못된 계열에 17을 쓰는 회귀를 막는다.
 
-### 펌웨어 공식 VIA JSON은 아직 고치지 않았다 — 승인 대기
+### 펌웨어 공식 VIA JSON에도 넣었다
 
 `eerraa-qmk-h7s-fw-via2/src/ap/modules/qmk/keyboards/era/*/json/*-VIA.JSON` 5개에도
-`id_qmk_mousekey`가 0건이다. 앱 정의만 고치면 커스텀 앱에서만 MOUSE가 보이고 공식
-`usevia.app`에서는 보이지 않는다. `docs/PROJECT_DIRECTION.md`는 "Firmware must keep working
+`id_qmk_mousekey`가 0건이었다. 앱 정의만 고치면 커스텀 앱에서만 MOUSE가 보이고 공식
+`usevia.app`에서는 보이지 않는다. `docs/PROJECT_DIRECTION.md`가 "Firmware must keep working
 with the official VIA app plus the official V3 definition. **A path that only the custom app
-can speak is an error.**"라고 못박고 있고, 펌웨어 자신의 `docs/readme.txt` 2-9는 이미
-"VIA CONFIGURE → FEATURE → MOUSE에서 조정합니다"라고 안내한다. 즉 공식 JSON은 펌웨어
-문서가 약속한 화면을 갖고 있지 않다. 고치는 것이 맞다고 판단하지만 펌웨어 저장소 변경이므로
-승인 전에는 손대지 않는다.
+can speak is an error.**"라고 못박고 있으므로 그 상태를 남길 수 없다.
+
+누락이 의도가 아니었다는 증거는 펌웨어 저장소 안에 이미 있었다. `docs/features_mousekey.md`의
+노출 표가 `| 각 보드 VIA JSON | FEATURE → MOUSE | 6개 컨트롤 노출. |`이라고 적고 있었고,
+`docs/readme.txt` 2-9는 사용자에게 "VIA CONFIGURE → FEATURE → MOUSE에서 조정합니다"라고
+안내하고 있었다. 두 문서 모두 없는 화면을 가리키고 있었다.
+
+**사용자 승인을 받아 5개 공식 JSON에 같은 블록을 넣었다.** 삽입 스크립트가 파싱 결과를 앱
+정의의 MOUSE와 deep-equal로 비교해 검증하므로 두 정의가 어긋날 수 없다. 공식 JSON은 안쪽
+배열을 한 줄로 두는 손질된 포맷이라 재직렬화하면 파일 전체가 재포맷된다 — 그 스타일 그대로
+렌더링해 텍스트로 삽입했고 파일당 94줄 순수 추가, 삭제 0줄이다.
 
 ## 번역 누락을 코드가 잡는다
 
@@ -781,3 +790,69 @@ ERA 메뉴 설명은 영어 원문이 곧 번역 키다. 문구를 다시 쓰면
     값을 읽고 쓸 수 있으며, 재연결 후에도 유지되는지 본다. `Cursor Acceleration`을 Off로
     바꾸면 `Cursor Speed` 한 줄로, 다른 값으로 바꾸면 `Cursor Start/Top Speed` 두 줄로
     바뀌는지도 함께 본다. **실기 없이는 판정할 수 없는 항목이다.**
+
+## Anti-Ghosting → KKUK: 이름을 동작에 맞춘다
+
+앞 절은 "메뉴 이름이 오해를 부르지만 정의가 그렇게 되어 있으므로 바꾸지 않는다"고 적었다.
+사용자가 그 전제를 되물었고, 확인 결과 이름을 유지할 근거가 없었다.
+
+**사실 확인 두 가지.**
+
+1. `port/kkuk.c`에 `matrix` / `scan` / `row` / `col` 문자열이 **0건**이다. 호출하는 것은
+   `keyboard_report`, `clear_keys()`, `send_keyboard_report()`, `millis()`,
+   `IS_BASIC_KEYCODE`, `kill_switch_is_use`뿐이다. 매트릭스와 키맵이 이미 해석을 끝낸
+   **HID 리포트 계층**에서만 동작한다.
+2. H7S 5개 보드 어디에도 `MATRIX_HAS_GHOST`가 정의되어 있지 않다. 따라서
+   `quantum/keyboard.c`의 `has_ghost_in_row()` 경로 자체가 컴파일되지 않는다. 스위치마다
+   다이오드가 있어 매트릭스 고스팅이 물리적으로 발생하지 않는다.
+
+즉 이 메뉴는 고스팅 방지가 아니다. `Mode` 드롭다운의 유일한 옵션 이름이 `Report Pulse`인
+것도 펌웨어 스스로 이것을 리포트 계층 동작으로 부르고 있다는 증거다.
+
+**결정: `KKUK`.** 후보는 `KKUK` / `HOLD CYCLE` / `REPEAT PULSE`였다. `KKUK`을 고른 이유는
+펌웨어의 식별자가 이미 `kkuk.c`, `KKUK_ENABLE`, `id_qmk_kkuk_*`이어서 **코드·JSON·문서·앱이
+한 단어로 수렴**하기 때문이다. 한국 사용자에게는 "꾹"이 곧 꾹보드라 즉시 읽히고, 그렇지
+않은 사용자에게는 `SOCD`와 같은 고유명으로 읽힌다. 이 UI는 이미 그 패턴을 쓰고 있다 —
+고유명 라벨 바로 아래 한 줄 요약이 설명을 진다. 여기서 그 요약은 `asdasdasd` 예시다.
+
+`HOLD CYCLE`은 서술적이지만 레이어/홀드 순환으로 오독될 여지가 있고 펌웨어 내부 이름과
+계속 어긋난다. `REPEAT PULSE`는 옵션 이름과는 맞지만 일반 사용자에게 "펄스"가 기술적이다.
+
+### 라벨은 로케일이 풀어 쓴다
+
+submenu label은 `t()`를 거치므로 로케일에 키가 있으면 번역된다. 이미 `SOCD`가 그렇게
+쓰이고 있다(중국어만 `SOCD (同时按键冲突)`). 같은 방식으로 `KKUK` 키를 6개 로케일에 넣고
+**한국어에서만 `KKUK (꾹보드)`로 풀어 썼다.** 한국 사용자는 메뉴 행만 보고 알아본다.
+나머지 다섯 언어는 `KKUK` 그대로다.
+
+정의 JSON의 라벨 자체는 영어 `KKUK` 하나이므로 공식 usevia.app에서도 같은 이름이 보인다.
+
+### 설명문에서 바뀐 것
+
+상세 첫 문장이 "메뉴 이름이 오해를 부른다"는 정정이었는데, 이름을 고쳤으므로 그 문장이
+할 일이 없어졌다. 대신 **KKUK이라는 이름의 유래**를 첫 문장에 두고(라벨이 고유명이 된
+만큼 그 설명이 필요해졌다), 이전 이름에 대한 안내를 마지막 문장으로 내렸다. 예전 이름을
+기억하는 사용자를 위한 breadcrumb이며 한 릴리스 주기 뒤에 지워도 된다.
+
+### 세 저장소에 동시에 적용했다
+
+라벨만 바꾸고 앱과 매뉴얼이 서로 다른 이름을 쓰면 오해를 줄이려다 더 큰 혼란을 만든다.
+같은 이유로 §2-4의 MOUSE 판단과 동일한 기준(`PROJECT_DIRECTION`의 "A path that only the
+custom app can speak is an error")을 적용해 세 저장소를 함께 고쳤다.
+
+| 저장소 | 변경 |
+| --- | --- |
+| `the-via-eerraa` | ERA 커스텀 정의 30개 라벨, 로케일 6종의 `KKUK` 키와 설명문 |
+| `eerraa-qmk-h7s-fw-via2` | 공식 VIA JSON 5개 라벨, `docs/readme.txt` 2-5절(한·영), `DECISIONS.md` |
+| `qmk_firmware_eerraa` | 공식 VIA JSON 25개 라벨, `user/readme.txt`·`readme_split.txt`, 보드별 `readme.md` 23개, HID 리포트 계약 문서의 상호참조 2곳 |
+
+**채널·value id·EEPROM 배치·펌웨어 코드는 어느 저장소에서도 바뀌지 않았다.** 라벨은 JSON에만
+있으므로 재빌드나 펌웨어 버전 상승이 필요 없고, 이미 플래시된 키보드도 새 JSON만 불러오면
+새 이름으로 보인다.
+
+`sirind/brick65`(ATmega32U4)만 라벨이 없다. 그 정의에는 FEATURE 메뉴 자체가 없다 —
+`PROJECT_DIRECTION`이 기록한 영구 예외다. 생성 정의 31종 중 30종에 `KKUK`이 있는 것이
+정상이다.
+
+**남은 것**: `qmk_firmware_eerraa`의 `graphify-out/`에는 이전 이름이 담긴 노드가 남아 있다.
+이번 세션은 앱 저장소를 cwd로 두고 작업했고 `graphify update`를 실행하지 않았다.
