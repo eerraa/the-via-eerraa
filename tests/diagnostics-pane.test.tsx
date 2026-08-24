@@ -1,5 +1,8 @@
 import {describe, expect, test} from 'bun:test';
-import {renderToStaticMarkup} from 'react-dom/server';
+import type {ReactElement} from 'react';
+import i18n from 'i18next';
+import {I18nextProvider, initReactI18next} from 'react-i18next';
+import {renderToStaticMarkup as renderMarkup} from 'react-dom/server';
 import {
   buildUsbDiagnosticsTrend,
   DiagnosticsComparison,
@@ -7,6 +10,20 @@ import {
 } from '../src/components/panes/diagnostics-results';
 import type {UsbDiagnosticsRun} from '../src/utils/usb-diagnostics-history';
 import {diagnosticSnapshot} from './usb-diagnostics-fixtures';
+
+// English is the key itself, so an empty catalogue renders the untranslated source
+// text. That is also what a user of an unsupported language sees, which is exactly
+// the string these assertions must keep factual.
+const translations = i18n.createInstance();
+await translations.use(initReactI18next).init({
+  lng: 'en',
+  resources: {en: {translation: {}}},
+});
+
+const renderToStaticMarkup = (element: ReactElement) =>
+  renderMarkup(
+    <I18nextProvider i18n={translations}>{element}</I18nextProvider>,
+  );
 
 const snapshots = [
   diagnosticSnapshot({
@@ -32,10 +49,11 @@ describe('USB diagnostics result UI', () => {
     const html = renderToStaticMarkup(
       <DiagnosticsResultView outcome="complete" snapshots={snapshots} />,
     );
+    expect(html).toContain('Lost key reports');
+    expect(html).toContain('None were observed during this test.');
     expect(html).toContain(
-      'No report queue drops were observed during this test.',
+      'No reset, reconfiguration, suspend or speed change was observed.',
     );
-    expect(html).toContain('No USB reset, reconfiguration, suspend');
     expect(html).toContain('HID timing trend');
     expect(html).toContain('<polyline');
     expect(html).toContain('Normalized timing distribution');
@@ -68,10 +86,10 @@ describe('USB diagnostics result UI', () => {
     const html = renderToStaticMarkup(
       <DiagnosticsResultView outcome="complete" snapshots={[failed]} />,
     );
-    expect(html).toContain(
-      '2 report queue drop(s) were observed during this test.',
-    );
-    expect(html).toContain('1 USB hard event(s) were observed');
+    expect(html).toContain('Lost key reports');
+    expect(html).toContain('2 were observed during this test.');
+    // The breakdown names which link event happened instead of only counting them.
+    expect(html).toContain('1 observed — 1 reset, 0 reconfiguration');
     expect(html).toContain('USB reset');
     expect(html).not.toMatch(/good|bad|stable|unstable/i);
   });
@@ -288,13 +306,21 @@ describe('USB diagnostics result UI', () => {
       />,
     );
     expect(html).toContain('-second test observed');
+    // Each row names its topic in plain words, then states only what was observed.
+    expect(html).toContain('Lost key reports');
+    expect(html).toContain('None were observed during this test.');
+    expect(html).toContain('USB link interruptions');
     expect(html).toContain(
-      'No report queue drops were observed during this test.',
+      'No reset, reconfiguration, suspend or speed change was observed.',
     );
-    expect(html).toContain('No USB reset, reconfiguration, suspend');
-    expect(html).toContain('firmware main-loop gap');
-    expect(html).toContain('Report queue depth peaked at');
-    expect(html).toContain('which is the speed HS 8K requires');
+    expect(html).toContain('Firmware pauses');
+    expect(html).toContain('main-loop gap(s) longer than 1.000 ms');
+    expect(html).toContain('Busiest queue moment');
+    expect(html).toContain('report(s) were waiting to be sent at once.');
+    expect(html).toContain('Link speed');
+    expect(html).toContain(
+      'Enumerated at High Speed, which is what HS 8K requires.',
+    );
     // "No failures observed" would cover categories this test never measured.
     expect(html).toContain('Categories this test does not measure');
     expect(html).not.toMatch(
@@ -368,9 +394,7 @@ describe('USB diagnostics result UI', () => {
         ]}
       />,
     );
-    expect(html).toContain(
-      'No HID keyboard reports were sent during this test',
-    );
+    expect(html).toContain('No keyboard reports were sent during this test');
   });
 
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {
