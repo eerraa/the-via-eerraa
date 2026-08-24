@@ -5,19 +5,21 @@
 // these command ids only exist in ERA firmware, so an unrelated keyboard with a menu
 // called "TAPPING" never picks up text written about a different implementation.
 //
-// The source is the firmware's own user guide at
-// `qmk_firmware_eerraa/keyboards/era/common/docs/user/readme.txt`, rewritten for
-// someone reading it inside the configurator: the guide tells you where to click,
-// which the reader already knows by the time they see this, so what is left is what
-// the setting does and how to choose a value. Where the guide is thin or wrong —
-// KKUK and the three tapping switches — the text below comes from reading the
-// firmware instead: `port/kkuk.c`, `port/debounce_profile.c` with the algorithms under
-// `quantum/debounce/`, and `port/tapping_term.c` on top of stock `action_tapping.c`.
+// Voice: the summary names the setting, it does not narrate it — "Enters the bootloader
+// when switched on", not "Puts the keyboard into bootloader mode so that you can flash
+// firmware onto it". The detail says what happens when the setting is on and when it is
+// off, and stops there. Explaining what the feature *is* in the abstract is what made
+// the first version of this text too long to read on the screen it appears on.
+//
+// Where the firmware's own user guide is thin or wrong — KKUK and the three tapping
+// switches — the text comes from reading the firmware instead: `port/kkuk.c`,
+// `port/debounce_profile.c` with the algorithms under `quantum/debounce/`, and
+// `port/tapping_term.c` on top of stock `action_tapping.c`.
 
 export type EraFeatureHelp = {
-  /** One line, always visible above the controls. */
+  /** One line, always visible above the controls. Names the setting, does not narrate it. */
   summary: string;
-  /** Shown when the reader opens the disclosure. */
+  /** Shown when the reader opens the disclosure. On/off behaviour, then stop. */
   detail: string;
 };
 
@@ -25,10 +27,9 @@ export type EraFeatureHelp = {
 // `id_qmk_kill_switch_*`, the RP2040 firmware `id_qmk_socd_*`. One object, two prefixes,
 // so the two families cannot drift apart into two different explanations.
 const SOCD_HELP: EraFeatureHelp = {
-  summary:
-    'While you hold two opposite keys, only the one you pressed last counts.',
+  summary: 'Only the key you pressed last counts.',
   detail:
-    'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first. Competitive rules differ on this — check yours before you rely on it in a match.',
+    'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first.',
 };
 
 // Ordered: the first prefix that matches a command in the submenu wins, so more
@@ -37,10 +38,9 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_tapdance_',
     {
-      summary:
-        'One key, four actions: tap, hold, double tap, and tap-then-hold.',
+      summary: 'Four actions on one key: tap, hold, double tap, tap-then-hold.',
       detail:
-        'Fill in the actions you want, then place the matching TD key on your keymap from KEYMAP → CUSTOM — the settings here do nothing until that key is somewhere you can press it. Term is how long the keyboard waits before deciding which action you meant. Raise it if double taps get missed, lower it if the key feels slow to respond.',
+        'Fill in the actions, then place the matching TD key on your keymap from KEYMAP → TAPDANCE. Nothing here does anything until that key is somewhere you can press it. Term is how long the keyboard waits before deciding which action you meant.',
     },
   ],
   ['id_qmk_kill_switch_', SOCD_HELP],
@@ -48,103 +48,107 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_kkuk_',
     {
-      summary:
-        'Hold several keys and they cycle: hold a, s and d and you get "asdasdasd", not "asddddd".',
+      summary: 'Hold a, s and d and you get "asdasdasd", not "asddddd".',
       detail:
-        'KKUK is what Korean players call the macro pad that does this, and the keyboard now does it for you. Hold two or more ordinary keys still, and it starts letting the whole group go and pressing it again on a timer, so every key you are holding keeps arriving instead of only the last one repeating. First Delay Time is how long you have to hold before that begins; Repeat Time is how often the group goes out afterwards. Keys you gave to SOCD are left out of it. Older firmware called this menu Anti-Ghosting, which was misleading — it has nothing to do with matrix ghosting.',
+        'The KKUK effect. Hold two or more ordinary keys still and the whole group is released and pressed again on a timer, so all of them keep arriving instead of only the last one repeating. First Delay Time is how long you hold before it starts; Repeat Time is how often it repeats. Keys assigned to SOCD are excluded.',
     },
   ],
   [
     'id_qmk_debounce_',
     {
-      summary: 'Filters switch chatter, so one press sends one keystroke.',
+      summary: 'Filters chatter so one press types once.',
       detail:
-        'Leave it alone unless one press sometimes types twice. When that happens, raise the time a little at a time — on Balanced every millisecond you add is a millisecond the key takes to register. Balanced at 5 to 10 ms suits most switches. The mode decides which time boxes appear under it.',
+        'Leave it alone unless one press sometimes types twice. If it does, raise the time a little at a time. Balanced at 5 to 10 ms suits most switches. The mode decides which time boxes appear.',
     },
   ],
   [
     'id_qmk_tapping_',
     {
-      summary:
-        'How long a tap-hold key waits before it decides you meant the hold.',
+      summary: 'Hold time for tap-hold keys.',
       detail:
-        'This covers Mod-Tap and Layer-Tap keys — the ones that send a key when you tap them and a modifier or a layer when you hold them. 200 ms is the default: shorter makes holds trigger sooner but turns fast typing into accidental holds, longer is more forgiving but the hold arrives late. The three switches under it decide what happens when you press something else before the key has made up its mind. Turn them on one at a time.',
+        'For Mod-Tap and Layer-Tap keys, 200 ms by default. Shorter triggers the hold sooner but turns fast typing into accidental holds; longer is safer but the hold arrives late. The three switches below change what happens when you press another key first.',
     },
   ],
   [
     'id_qmk_mousekey_',
     {
-      summary: 'Pointer and wheel speed for the mouse keys in your keymap.',
+      summary: 'Speed of the mouse keys in your keymap.',
       detail:
-        'Start from the defaults and change one value at a time; these interact, and moving several at once makes it hard to tell what helped. Cursor settings move the pointer, wheel settings scroll. None of it does anything unless your keymap actually has mouse keys on it.',
+        'Nothing here does anything unless your keymap has mouse keys on it. The values interact, so change one at a time.',
     },
   ],
   [
     'id_qmk_custom_nkro_',
     {
-      summary: 'Lets the keyboard report every key you are holding at once.',
+      summary: 'No limit on how many keys register at once.',
       detail:
-        'On is right for almost everything. Turn it off if an old BIOS, a boot menu or a KVM switch cannot see your typing — those usually only understand the simpler six-key report.',
+        'Turn it off if an old BIOS or a KVM switch cannot see your typing. Off, the keyboard falls back to 6KRO and registers six keys at once.',
     },
   ],
   [
     'id_qmk_usb_bootmode',
     {
-      summary:
-        'How often the keyboard reports to the PC. Applies after a restart.',
+      summary: 'Sets the USB polling rate. Applying restarts the keyboard.',
       detail:
-        'Pick a mode, then turn on Apply. The keyboard restarts by itself and comes back at the new rate. 1 kHz works on any port; the high-speed rates need a port that can negotiate USB High Speed, and a hub or a front-panel header often cannot. Run the test below afterwards to see how the mode actually behaved on your machine.',
+        'Pick a mode, then turn on Apply. 1 kHz works on any port; the high-speed rates need a port that negotiates USB High Speed, which hubs and front-panel headers often cannot.',
     },
   ],
   [
     'id_qmk_system_dfu',
     {
-      summary:
-        'Puts the keyboard into bootloader mode so you can flash firmware.',
+      summary: 'Enters the bootloader when switched on.',
       detail:
-        'It acts the moment you switch it on, and the toggle always reads back off — that is expected, not a failed write. A drive named RPI-RP2 appears on your PC; copy the .uf2 file onto it and the drive disappears when flashing is done. Holding the top-left key while you plug the keyboard in does the same thing.',
+        'The keyboard enters the bootloader the moment you switch this on, and a new removable drive appears on your PC. Copy the firmware .uf2 file onto that drive. The toggle always reads back off, which is expected.',
     },
   ],
   [
     'id_qmk_system_reset_',
     {
-      summary:
-        'Erases the keymap and every setting, then restarts on defaults.',
+      summary: 'Erases the keymap and every setting.',
       detail:
-        'Turn on all three toggles within ten seconds of the first one. Miss that and they all release themselves, so you just start again; switching one back off cancels immediately. Back your keymap up from SAVE + LOAD first, because this erases that too.',
+        'Switch all three toggles within ten seconds to run it. Everything stored is erased and the keyboard restarts. Miss the ten seconds and the toggles you switched clear themselves.',
     },
   ],
   [
     'id_qmk_split_link_',
     {
-      summary:
-        'Speed of the cable between the two halves. High unless it misbehaves.',
+      summary: 'Link speed of the cable between the two units.',
       detail:
-        'Choose a speed, then turn on Apply to change both halves together. At startup the halves meet at Low and step up to the speed you stored; if that step fails they stay at Low for that session and the LED gives three long red pulses. Only drop the speed if the link is actually unreliable.',
+        'Apply does nothing if that speed is already running; changing it restarts both units. Three long red LED pulses mean the split cable is not good enough — replace it. Default is High.',
     },
   ],
   [
     'id_qmk_eeprom_sync_',
     {
-      summary: 'Keeps the two halves in step: settings, input and lighting.',
+      summary: 'Makes the two units behave as one keyboard.',
       detail:
-        'All three are on by default and there is rarely a reason to change that. After you alter something the keyboard stores, give it a few seconds and reload VIA on the other half before deciding whether it took.',
+        'All three are on by default, and each covers a different part of what the two units share.',
     },
   ],
   [
     'id_qmk_ver_',
     {
-      summary: 'The firmware build date this keyboard is running.',
-      detail:
-        'Year, month, day and revision, read back from the keyboard. Quote it when you report a problem — it is the only way to tell two builds apart.',
+      summary: 'Firmware version on this keyboard.',
+      detail: 'Quote it when you report a problem.',
     },
   ],
   [
     'id_qmk_custom_ind_',
     {
-      summary: 'Which LED shows Caps Lock, Scroll Lock or Num Lock.',
+      summary: 'LED for Caps Lock, Scroll Lock and Num Lock.',
       detail:
-        'Pick what each indicator watches, then give it a brightness and a colour. An indicator takes over its LED only while that lock is on; the rest of the time the normal lighting has it.',
+        'Pick what each indicator watches, then set its brightness and colour. It takes over that LED only while the lock is on.',
+    },
+  ],
+  // The badge menu is gated on `id_custom_badge_only`, the one command in it that no
+  // other keyboard would plausibly name the same way; the indicator commands beside it
+  // are generic enough that keying on them would be a weaker gate.
+  [
+    'id_custom_badge_only',
+    {
+      summary: 'Lighting and lock indicator for the badge.',
+      detail:
+        'Badge-Only RGB lights the badge and nothing else. Indicator Only stops the badge showing effects so it works as a lock indicator alone.',
     },
   ],
   [
@@ -152,7 +156,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Brightness, effect, speed and colour for the lighting.',
       detail:
-        'Only the lighting your keyboard actually has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider while it is on.',
+        'Only the lighting this keyboard has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider.',
     },
   ],
   [
@@ -160,7 +164,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Brightness, effect, speed and colour for the lighting.',
       detail:
-        'Only the lighting your keyboard actually has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider while it is on.',
+        'Only the lighting this keyboard has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider.',
     },
   ],
 ];
@@ -181,22 +185,28 @@ export const findEraFeatureHelp = (
 };
 
 // A control gets its own disclosure only when its label cannot say which way to move
-// the value. That is true when the choices are proper nouns whose names do not
-// describe what they do (Balanced / Fast / Advanced, Permissive Hold), and when the
-// label states a specification rather than a consequence — a DEBOUNCE row called
-// "Press & Release - delay before and after (same value)" says what the firmware does
-// with the number but not that raising it delays every keystroke.
+// the value. That is true when the choices are proper nouns whose names do not describe
+// what they do (Balanced / Fast / Advanced, Permissive Hold), and when the label states
+// a specification rather than a consequence — a DEBOUNCE row called "Press & Release -
+// delay before and after (same value)" says what the firmware does with the number but
+// not that raising it delays every keystroke.
 //
-// It is not for a control whose unit is already the answer (Cursor Top Speed at 16 px,
-// Repeat Time at 80 ms), nor for one the submenu summary above already takes as its
-// subject — Global Tapping Term and KKUK's Enable are what those summaries are
-// about, so repeating them one row lower would be noise.
+// MOUSE was left out of this on the first pass, on the grounds that a row reading
+// "Cursor Top Speed / 16 px" already carries its own answer. On the actual screen it
+// does not: the unit says how much, never of what. "1.0 s" of acceleration is a ramp
+// time, "100 /s" is an event rate that does not change that ramp, and the pointer rows
+// swap meaning depending on whether acceleration is on. Each row now carries one line.
+//
+// Still left out: controls the submenu summary already takes as its subject (Global
+// Tapping Term, KKUK's Enable), and controls whose label plus unit really is the whole
+// answer (Indicator Brightness).
 //
 // Keyed off exact firmware command names, the same gate the submenu text uses. Two rows
-// can share one command id and mean different things depending on the debounce mode, so
-// those entries also name the labels they belong to; both the H7S spelled-out labels and
-// the shorter RP2040 ones are listed. An unmatched label renders no help, which is the
-// right failure — text about the wrong side of the debounce window is worse than none.
+// can share one command id and mean different things — the debounce window depending on
+// the mode, the pointer speed depending on acceleration — so those entries also name the
+// labels they belong to; both the H7S spelled-out labels and the shorter RP2040 ones are
+// listed. An unmatched label renders no help, which is the right failure: text about the
+// wrong side of the debounce window is worse than none.
 type EraControlHelp = {
   command: string;
   labels?: readonly string[];
@@ -206,15 +216,15 @@ type EraControlHelp = {
 const HELP_BY_CONTROL: readonly EraControlHelp[] = [
   {
     command: 'id_qmk_kkuk_mode',
-    help: 'Report Pulse is the only behaviour the firmware implements, and it is what the rest of this menu describes: the held group is released and pressed again on the Repeat Time. The dropdown exists because the setting is stored as a number with room for more; picking anything else is ignored.',
+    help: 'Report Pulse is the only behaviour the firmware has, and it is what the rest of this menu describes. Anything else you pick is ignored.',
   },
   {
     command: 'id_qmk_debounce_mode',
-    help: 'Balanced waits: nothing is sent until the switch has held still for the set time, on the way down and on the way up alike, so every press registers that many milliseconds late. Fast sends the change the instant it happens and then stops listening to that key for the set time — nothing is added to how fast a key registers, but a bounce that arrives after the window can still double. Advanced is Fast on the press and Balanced on the release, with a separate time for each. Start with Balanced and only move off it if you can feel the delay.',
+    help: 'Balanced waits for the switch to settle before sending, on press and on release alike, so every key registers that much later. Fast sends the instant the switch changes, then ignores that key for the set time — no added delay. Advanced sends the press immediately and waits on the release, with a separate time for each. Start with Balanced.',
   },
   {
     command: 'id_qmk_debounce_time_single',
-    help: 'One number for both directions. A press or a release is reported only once the switch has stayed quiet this long, so this is also how much later every key registers. 5 to 10 ms covers most switches — raise it while a press is still doubling, and stop as soon as it is not.',
+    help: 'One value for both directions. Nothing is reported until the switch has been quiet this long, so this is also how much later every key registers. 5 to 10 ms covers most switches.',
   },
   {
     command: 'id_qmk_debounce_time_post',
@@ -222,11 +232,11 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
       'Press & Release - delay after change (post-only)',
       'Press & Release Cooldown',
     ],
-    help: 'Fast reports the change straight away, then stops listening to that key for this long. It costs you nothing in response time, so the only reason to raise it is a press that still doubles — this window is the only thing catching the bounce.',
+    help: 'The change is sent immediately, then that key is ignored for this long. It costs no response time, so raise it only while a press still doubles.',
   },
   {
     command: 'id_qmk_debounce_time_pre',
-    help: 'The press side of Advanced. The press goes out immediately and that key is then ignored for this long, so raising it does not slow the keyboard down. It only has to outlast the bounce on the way down.',
+    help: 'The press side. It is sent immediately and the key is then ignored for this long, so raising it does not slow the keyboard down.',
   },
   {
     command: 'id_qmk_debounce_time_post',
@@ -234,26 +244,68 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
       'Release - delay before and after release (pre+post window)',
       'Release Delay',
     ],
-    help: 'The release side of Advanced. Letting go is reported only once the switch has stayed quiet this long, which is where most chatter lives. It delays the release and not the press, so holding a key and typing feel the same.',
+    help: 'The release side. Letting go is reported only after the switch has been quiet this long. It delays the release, not the press.',
   },
   {
     command: 'id_qmk_tapping_permissive_hold',
-    help: 'For holds that do not take when you move fast. With this on, a tap-hold key becomes the hold as soon as another key is pressed and released while you are still holding it: hold a Shift Mod-Tap, tap b, and you get B even inside the waiting time. Off, that same sequence types both letters instead. Hold on Other Key Press is the blunt version of this — it decides when the other key goes down, this one waits for it to come back up.',
+    help: 'For holds that do not take when you type fast. On, the key becomes a hold as soon as another key is pressed and released while you are still holding it. Hold on Other Key Press decides earlier — on the other key going down rather than coming back up.',
   },
   {
     command: 'id_qmk_tapping_hold_on_other_key_press',
-    help: 'The strongest of the three. A tap-hold key becomes the hold the moment any other key goes down, without waiting for it to come back up. Turn it on if holds still come out as letters with Permissive Hold on. It costs you rolls: pressing the tap-hold key and the next key almost together now gives the hold, which hurts most on a Mod-Tap sitting on a home-row letter.',
+    help: 'The strongest of the three: the key becomes a hold the moment any other key goes down. Turn it on if holds still come out as letters with Permissive Hold on. It costs rolls, which hurts most on a home-row Mod-Tap.',
   },
   {
     command: 'id_qmk_tapping_retro_tapping',
-    help: 'For letters that vanish when you rest on a key too long. Normally a tap-hold key held past the term and let go with nothing pressed in between sends nothing at all. With this on it sends the tap anyway. It changes nothing about the case where you did press another key, so it sits safely next to either switch above.',
+    help: 'For letters that vanish when you rest on a key too long. On, a tap-hold key held past the term and released with nothing pressed in between still sends the tap.',
+  },
+  {
+    command: 'id_qmk_mousekey_cursor_acceleration',
+    help: 'How long the pointer takes to go from start speed to top speed. Off holds it at the start speed.',
+  },
+  {
+    command: 'id_qmk_mousekey_cursor_min_speed',
+    labels: ['Cursor Speed'],
+    help: 'How far the pointer moves per step. Acceleration is off, so this is the speed the whole time.',
+  },
+  {
+    command: 'id_qmk_mousekey_cursor_min_speed',
+    labels: ['Cursor Start Speed'],
+    help: 'How far the pointer moves per step the instant you press the key.',
+  },
+  {
+    command: 'id_qmk_mousekey_cursor_max_speed',
+    help: 'How far the pointer moves per step once acceleration has finished.',
+  },
+  {
+    command: 'id_qmk_mousekey_cursor_interval',
+    help: 'How many move steps go out each second. Higher is smoother and does not change the acceleration time.',
+  },
+  {
+    command: 'id_qmk_mousekey_wheel_interval',
+    help: 'How many scroll steps go out each second.',
+  },
+  {
+    command: 'id_qmk_mousekey_wheel_acceleration',
+    help: 'How much scrolling speeds up while you hold the key. Off keeps it steady.',
+  },
+  {
+    command: 'id_qmk_eeprom_sync_requested',
+    help: 'A few seconds after a stored setting changes, an indicator shows and both units copy it across. The other two build on this.',
+  },
+  {
+    command: 'id_qmk_input_sync_requested',
+    help: 'With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.',
+  },
+  {
+    command: 'id_qmk_rgb_sync_requested',
+    help: 'Lines the lighting up across both units, reactive effects included.',
   },
 ];
 
 // Every string in both tables is rendered through `t()`, so each one has to exist as a
 // key in all six catalogs or that language silently falls back to English. Editing the
-// English text without updating the locales is the easy mistake here, so the locale
-// test reads this list rather than trusting anyone to remember.
+// English text without updating the locales is the easy mistake here, so the locale test
+// reads this list rather than trusting anyone to remember.
 export const eraHelpStrings = (): string[] => [
   ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) => [
     summary,
