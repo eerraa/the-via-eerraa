@@ -399,7 +399,7 @@ describe('canonical ERA definition inventory', () => {
   // only the second prefix was registered. Nothing failed, because no test asked "does
   // every ERA submenu actually resolve to help?". This one asks, and any submenu that
   // legitimately has none has to be named here rather than passing silently.
-  const SUBMENUS_WITHOUT_HELP = ['Backlight', 'Badge Lighting'];
+  const SUBMENUS_WITHOUT_HELP = ['Backlight'];
 
   test('every ERA submenu resolves to feature help, or is listed as not having any', () => {
     const uncovered = new Map<string, string[]>();

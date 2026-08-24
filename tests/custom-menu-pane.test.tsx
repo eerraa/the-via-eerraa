@@ -317,13 +317,13 @@ describe('ERA feature help', () => {
       content: [tapdanceSubmenu],
     });
 
-    expect(html).toContain('One key, four actions');
+    expect(html).toContain('Four actions on one key');
     expect(html).toContain('Term (ms)');
-    expect(html.indexOf('One key, four actions')).toBeLessThan(
+    expect(html.indexOf('Four actions on one key')).toBeLessThan(
       html.indexOf('Term (ms)'),
     );
     // The long half is shipped but folded away.
-    expect(html).toContain('KEYMAP → CUSTOM');
+    expect(html).toContain('KEYMAP → TAPDANCE');
     expect(html).toContain('hidden=""');
   });
 
@@ -334,7 +334,7 @@ describe('ERA feature help', () => {
       content: [pollingSubmenu],
     });
 
-    expect(html).toContain('How often the keyboard reports to the PC');
+    expect(html).toContain('Sets the USB polling rate');
   });
 
   test('says nothing about a menu that is not an ERA feature', () => {
@@ -345,7 +345,7 @@ describe('ERA feature help', () => {
     });
 
     expect(html).toContain('Jump To BOOT');
-    expect(html).toContain('bootloader mode');
+    expect(html).toContain('Enters the bootloader');
   });
 
   test('explains the MOUSE menu the H7S definitions now carry', () => {
@@ -355,7 +355,7 @@ describe('ERA feature help', () => {
       content: [mouseSubmenu],
     });
 
-    expect(html).toContain('Pointer and wheel speed for the mouse keys');
+    expect(html).toContain('Speed of the mouse keys in your keymap');
     expect(html).toContain('Cursor Acceleration');
   });
 });
@@ -398,10 +398,10 @@ describe('ERA per-control help', () => {
     );
 
     // Both rows are id_qmk_debounce_time_post; only the label tells them apart.
-    expect(fast).toContain('Fast reports the change straight away');
-    expect(fast).not.toContain('The release side of Advanced');
-    expect(advanced).toContain('The release side of Advanced');
-    expect(advanced).not.toContain('Fast reports the change straight away');
+    expect(fast).toContain('The change is sent immediately');
+    expect(fast).not.toContain('The release side.');
+    expect(advanced).toContain('The release side.');
+    expect(advanced).not.toContain('The change is sent immediately');
   });
 
   test('leaves alone the control the submenu summary is already about', () => {
@@ -414,7 +414,7 @@ describe('ERA per-control help', () => {
     // The three switches each need their own answer; the term does not, because the
     // line above the controls is already about it.
     expect(html).toContain('Permissive Hold');
-    expect(html).toContain('For holds that do not take when you move fast');
+    expect(html).toContain('For holds that do not take when you type fast');
     expect(html).toContain('Global Tapping Term (ms)');
     expect(html).not.toContain('What this means: Global Tapping Term (ms)');
   });
