@@ -68,21 +68,19 @@ describe('VIA locale coverage', () => {
   // this kind of over-claiming, so the rule has to survive translation too.
   const DIAGNOSTIC_OBSERVATION_KEYS = [
     'What this {{seconds}}-second test observed',
-    'Lost key reports',
-    'None were observed during this test.',
-    '{{drops}} were observed during this test.',
-    'USB link interruptions',
-    'No reset, reconfiguration, suspend or speed change was observed.',
-    '{{events}} observed — {{resets}} reset, {{configurations}} reconfiguration, {{suspends}} suspend, {{speedChanges}} speed change.',
-    'Firmware pauses',
-    'No main-loop gap longer than {{threshold}} was observed.',
-    '{{gaps}} main-loop gap(s) longer than {{threshold}} were observed.',
-    'Busiest queue moment',
-    '{{depth}} report(s) were waiting to be sent at once.',
-    'Link speed',
-    'Enumerated at {{actual}}, which is what {{mode}} requires.',
+    'Lost key presses',
+    'Not observed',
+    '{{times}} observed',
+    'USB link changes',
+    'Dropped {{resets}} · Reconnected {{configurations}} · Slept {{suspends}} · Speed changed {{speedChanges}}',
+    'Firmware pauses (over {{threshold}})',
+    'Most waiting to send',
+    'Connection speed',
+    '{{actual}} — matches {{mode}}',
+    '{{actual}} — {{mode}} needs {{required}}',
     'Each line below covers only the category it names, over the window this test ran. Categories this test does not measure are not covered by it.',
-    'No keyboard reports were sent during this test, so the lines above describe a window with no typing in it. Type on the keyboard while the next test runs.',
+    'No keys were pressed during this test. Type while the next one runs.',
+    'Captured when this test ended — not live.',
   ];
 
   const VERDICT_WORDING: Record<string, RegExp> = {

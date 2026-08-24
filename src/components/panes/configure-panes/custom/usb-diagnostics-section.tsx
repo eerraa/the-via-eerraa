@@ -61,13 +61,13 @@ const Section = styled.section({
   boxSizing: 'border-box',
   padding: '20px 5px 24px',
   color: 'var(--color_label)',
-  fontSize: 16,
+  fontSize: 15,
   lineHeight: 1.55,
 });
 
 const SectionTitle = styled.h2({
   color: 'var(--color_label-highlighted)',
-  fontSize: 20,
+  fontSize: 18,
   lineHeight: 1.3,
   margin: 0,
 });
@@ -79,6 +79,8 @@ const SectionHead = styled(ExplainRow)({
 const Intro = styled.p({
   margin: '0 0 14px',
   maxWidth: 760,
+  fontSize: 14,
+  opacity: 0.85,
 });
 
 const Controls = styled.div({
@@ -86,17 +88,23 @@ const Controls = styled.div({
   alignItems: 'center',
   gap: 10,
   flexWrap: 'wrap',
+  '& button': {
+    height: 36,
+    lineHeight: '34px',
+    minWidth: 0,
+    fontSize: 15,
+  },
 });
 
 const Select = styled.select({
-  height: 40,
+  height: 36,
   minWidth: 120,
   padding: '0 10px',
   border: '1px solid var(--color_accent)',
   borderRadius: 5,
   color: 'var(--color_accent)',
   background: 'var(--bg_menu)',
-  fontSize: 16,
+  fontSize: 15,
 });
 
 const Note = styled.p({
@@ -104,6 +112,7 @@ const Note = styled.p({
   border: '1px solid var(--border_color_cell)',
   borderRadius: 10,
   padding: '12px 14px',
+  fontSize: 14,
   lineHeight: 1.55,
   margin: '14px 0 0',
 });
@@ -126,11 +135,13 @@ const NoteActions = styled.span({
 
 const Muted = styled.p({
   opacity: 0.82,
+  fontSize: 13,
   margin: '10px 0 0',
 });
 
 const ErrorText = styled.p({
   color: 'var(--color_label-highlighted)',
+  fontSize: 14,
   margin: '12px 0 0',
 });
 
@@ -146,7 +157,7 @@ const AdvancedRow = styled.div({
 
 const AdvancedLabel = styled.span({
   color: 'var(--color_label)',
-  fontSize: 18,
+  fontSize: 15,
 });
 
 const AdvancedPanel = styled.div({
@@ -831,7 +842,7 @@ export const UsbDiagnosticsSection: FC = () => {
         <SectionTitle>{t('USB Delivery Diagnostics')}</SectionTitle>
         <Explain>
           {t(
-            'It answers one question: while the test ran, did the keyboard lose any key reports, pause, or lose its USB link? It only reads — it never changes the mode and never writes to the keyboard.',
+            'It answers one question: while the test ran, did the keyboard lose key presses, pause, or lose its USB connection? It only reads. It never changes the mode and never writes to the keyboard.',
           )}
         </Explain>
       </SectionHead>
@@ -906,15 +917,13 @@ export const UsbDiagnosticsSection: FC = () => {
           {running ? (
             <Note>
               {t(
-                'The test is running. Type normally, or reproduce whatever you want it to observe. Leaving this menu, switching keyboards or unplugging ends the test and keeps only what was captured so far.',
+                'Running. Type normally. Leaving this menu, switching keyboards or unplugging ends the test early.',
               )}
             </Note>
           ) : (
             !hasResult && (
               <Muted>
-                {t(
-                  'No result yet. Pick a length, press Start Test, and type normally until it finishes.',
-                )}
+                {t('Pick a length, press Start Test, then type normally.')}
               </Muted>
             )
           )}
@@ -929,7 +938,7 @@ export const UsbDiagnosticsSection: FC = () => {
               {recoveredSnapshot
                 ? t('It stays there until a new test starts or you discard it.')
                 : t(
-                    'This page did not see the end of the last test — sleep, a page reload, or unplugging can interrupt one. The keyboard keeps that result until a new test starts.',
+                    'Sleep, a reload or unplugging interrupted it. The keyboard keeps the result until a new test starts.',
                   )}
               <NoteActions>
                 {!recoveredSnapshot && (
@@ -953,7 +962,7 @@ export const UsbDiagnosticsSection: FC = () => {
                 {t('A test was already running when this page connected')}
               </NoteTitle>
               {t(
-                'Another tab, or this page before a reload, started it. Stop it first so the next test has a start time this page knows.',
+                'Another tab or a reload started it. Stop it before starting a new test.',
               )}
               <NoteActions>
                 <AccentButton disabled={commandPending} onClick={handleStop}>
