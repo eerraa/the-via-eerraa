@@ -746,16 +746,23 @@ TAPPING 세 토글은 `port/tapping_term.c`가 QMK 표준 per-key 콜백
 value id 1~6, `showIf` 쌍의 존재, `id_qmk_custom_nkro` 부재를 검사한다. era65가 채널 13에
 남아 있는지도 함께 확인해 잘못된 계열에 17을 쓰는 회귀를 막는다.
 
-### 펌웨어 공식 VIA JSON은 아직 고치지 않았다 — 승인 대기
+### 펌웨어 공식 VIA JSON에도 넣었다
 
 `eerraa-qmk-h7s-fw-via2/src/ap/modules/qmk/keyboards/era/*/json/*-VIA.JSON` 5개에도
-`id_qmk_mousekey`가 0건이다. 앱 정의만 고치면 커스텀 앱에서만 MOUSE가 보이고 공식
-`usevia.app`에서는 보이지 않는다. `docs/PROJECT_DIRECTION.md`는 "Firmware must keep working
+`id_qmk_mousekey`가 0건이었다. 앱 정의만 고치면 커스텀 앱에서만 MOUSE가 보이고 공식
+`usevia.app`에서는 보이지 않는다. `docs/PROJECT_DIRECTION.md`가 "Firmware must keep working
 with the official VIA app plus the official V3 definition. **A path that only the custom app
-can speak is an error.**"라고 못박고 있고, 펌웨어 자신의 `docs/readme.txt` 2-9는 이미
-"VIA CONFIGURE → FEATURE → MOUSE에서 조정합니다"라고 안내한다. 즉 공식 JSON은 펌웨어
-문서가 약속한 화면을 갖고 있지 않다. 고치는 것이 맞다고 판단하지만 펌웨어 저장소 변경이므로
-승인 전에는 손대지 않는다.
+can speak is an error.**"라고 못박고 있으므로 그 상태를 남길 수 없다.
+
+누락이 의도가 아니었다는 증거는 펌웨어 저장소 안에 이미 있었다. `docs/features_mousekey.md`의
+노출 표가 `| 각 보드 VIA JSON | FEATURE → MOUSE | 6개 컨트롤 노출. |`이라고 적고 있었고,
+`docs/readme.txt` 2-9는 사용자에게 "VIA CONFIGURE → FEATURE → MOUSE에서 조정합니다"라고
+안내하고 있었다. 두 문서 모두 없는 화면을 가리키고 있었다.
+
+**사용자 승인을 받아 5개 공식 JSON에 같은 블록을 넣었다.** 삽입 스크립트가 파싱 결과를 앱
+정의의 MOUSE와 deep-equal로 비교해 검증하므로 두 정의가 어긋날 수 없다. 공식 JSON은 안쪽
+배열을 한 줄로 두는 손질된 포맷이라 재직렬화하면 파일 전체가 재포맷된다 — 그 스타일 그대로
+렌더링해 텍스트로 삽입했고 파일당 94줄 순수 추가, 삭제 0줄이다.
 
 ## 번역 누락을 코드가 잡는다
 
