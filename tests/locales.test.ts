@@ -150,6 +150,42 @@ describe('VIA locale coverage', () => {
   // The ERA menu help is written in English in `era-feature-help.ts` and translated by
   // key, so a reworded sentence that never reaches the catalogs degrades that menu to
   // English in five languages without failing anything else.
+  // The summaries are the only ERA text that is on the screen without being asked for,
+  // and they are read one menu at a time, so a menu written in a different shape from
+  // its neighbours is the thing a reader notices. Two rules keep them one family: a
+  // summary names the setting rather than addressing the reader, and it stays short
+  // enough to sit on one line next to the ⓘ button. The detail below is where "you"
+  // and the longer explanation belong.
+  test('menu summaries stay short and impersonal in every language', async () => {
+    const {eraMenuSummaries} = await import('../src/utils/era-feature-help');
+    const summaries = eraMenuSummaries();
+    expect(summaries.length).toBeGreaterThan(10);
+    for (const summary of summaries) {
+      expect({summary, words: summary.split(/\s+/).length <= 12}).toEqual({
+        summary,
+        words: true,
+      });
+      expect({
+        summary,
+        secondPerson: /\b(you|your|yours)\b/i.test(summary),
+      }).toEqual({
+        summary,
+        secondPerson: false,
+      });
+      // One sentence. Korean and Japanese end every sentence with a full stop too, so
+      // counting terminators catches a summary that grew a second clause in translation.
+      for (const [lang, catalog] of Object.entries(locales)) {
+        const value = catalog[summary];
+        const sentences = (value.match(/[.。]/g) ?? []).length;
+        expect({lang, summary, sentences: sentences <= 1}).toEqual({
+          lang,
+          summary,
+          sentences: true,
+        });
+      }
+    }
+  });
+
   test('every ERA feature-help string is a catalog key', async () => {
     const {eraHelpStrings} = await import('../src/utils/era-feature-help');
     const strings = eraHelpStrings();
