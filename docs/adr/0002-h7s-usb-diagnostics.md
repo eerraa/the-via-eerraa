@@ -596,3 +596,188 @@ BOOT, EEPROM CLEAN, SPLIT LINK, SPLIT SYNC, VERSION, INDICATOR, LIGHTING.
    작아야 하고, 요약 부제가 패널 제목보다 크면 안 된다.
 10. FEATURE·TAPDANCE·SYSTEM·Lighting의 각 submenu 위에 한 줄 요약이 뜨는지, ⓘ를 열었을 때
     컨트롤이 밀리기만 하고 잘리지 않는지 본다. 일반 VIA 키보드에서는 그 줄이 없어야 한다.
+
+## Anti-Ghosting 설명은 기능을 잘못 서술하고 있었다
+
+기존 문구는 "누르고 있는 키를 다시 보내서 PC가 잊지 않게 합니다"였다. 이것은 **다른
+기능의 설명**이다. 실제 동작은 `eerraa-qmk-h7s-fw-via2/src/ap/modules/qmk/port/kkuk.c`를
+읽어 확인했다.
+
+- `kkuk_process()`가 기본 키코드의 누름/뗌을 세어 `key_cnt`를 유지한다. SOCD(`kill_switch`)에
+  지정된 키는 세지 않는다.
+- `kkuk_idle()`은 `key_cnt >= 2`이고 마지막 키 변화로부터 `delay_time`이 지나면 모드에
+  진입한다. **키 하나만 누르고 있으면 아무 일도 일어나지 않는다.**
+- 모드 중에는 `repeat_time`마다 `clear_keys()` + `send_keyboard_report()`로 **묶음 전체를
+  뗀 리포트**를 보내고, 곧바로 원래 리포트를 복원해 다시 보낸다.
+
+즉 `asd`를 누르고 있으면 OS 자동 반복의 `asddddd`가 아니라 `asdasdasd`가 들어간다. 한국
+사용자가 아는 이름은 **꾹보드**이고, 이 한 단어가 어떤 설명보다 빠르다. 한국어 문구는
+꾹보드를 두 번(정체 규정과 마지막 문장) 넣었다.
+
+영어 키에는 `KKUK`을 병기하지 않았다. 영어 문자열은 6개 언어 전체의 번역 키이므로, 한국어
+통칭을 키에 넣으면 독일어·스페인어 독자에게 의미 없는 고유명사가 그대로 실린다. 대신
+**`asd` → `asdasdasd` 예시를 요약 첫 줄에 올렸다.** 예시는 언어와 무관하게 읽히고, 추상적
+서술보다 짧다.
+
+메뉴 이름이 `Anti-Ghosting`인 것은 펌웨어 정의가 그렇기 때문이고 이 작업에서 바꾸지 않는다.
+다만 그 이름은 매트릭스 고스팅 방지로 읽히므로, 상세 첫 문장이 그 오해를 먼저 정정한다.
+
+RP2040 정의 25종에만 있는 `id_qmk_kkuk_mode`(옵션이 `Report Pulse` 하나뿐)에는 컨트롤 단위
+설명을 붙였다. `qmk_firmware_eerraa/keyboards/era/common/features/era_kkuk.c`의
+`era_kkuk_set_mode()`가 `ERA_KKUK_MODE_REPORT_PULSE` 외의 값을 무시하므로, "고를 것이 없다"는
+사실 자체가 답이다.
+
+## 컨트롤 단위 ⓘ — DEBOUNCE와 TAPPING의 정보구조
+
+submenu 상단 ⓘ 하나로는 DEBOUNCE를 설명할 수 없다는 것이 문제 제기였다. 세 가지 안을
+검토했다.
+
+**(A) 상단 ⓘ 본문 확장 — 탈락.** 한 문단에 다섯 개 ms 항목과 세 모드를 모두 넣으면 독자는
+자기가 보고 있는 행에 해당하는 문장을 그 안에서 찾아내야 한다. `Explain` 본문이 `<p>`
+하나라 표·목록을 쓰려면 컴포넌트를 손봐야 하고, 표를 넣더라도 "지금 화면에 있는 행"을
+독자가 매핑하는 부담은 그대로다. TAPPING에서는 더 나쁘다. 토글 세 개 각각이 증상→처방
+2~3문장을 요구하므로 한 문단이 여덟 문장이 된다.
+
+**(B) 모드별 조건부 상단 설명 — 탈락.** `selectedCustomMenuData`로 현재 모드를 읽어 해당
+모드 설명만 상단에 보여주는 방식이다. "내가 보고 있는 ms 항목의 의미"는 해결하지만
+**"세 모드의 차이"는 해결하지 못한다.** 아직 고르지 않은 모드의 설명이 화면에 없으면
+비교가 불가능하고, 모드를 고르는 순간이 바로 비교가 필요한 순간이다.
+
+**(C) 컨트롤 단위 ⓘ — 채택.** 답을 질문 옆에 둔다. `Debounce Mode` 드롭다운의 ⓘ가 세 모드를
+한자리에서 비교하고, 그 아래 `showIf`로 살아남은 ms 행의 ⓘ가 그 행만 설명한다. TAPPING의
+토글 세 개도 같은 방식으로 각자 ⓘ를 갖되, 각 본문이 나머지 둘을 명시적으로 지목해 차이를
+말한다("Hold on Other Key Press는 같은 생각의 더 거친 버전입니다 — 그쪽은 다른 키가 눌리는
+순간 판정하고, 이쪽은 그 키가 떼질 때까지 기다립니다").
+
+### 어디에 붙이고 어디에 안 붙이는지
+
+산발적으로 붙으면 "왜 이 항목만 설명이 있나"를 묻게 되므로 기준을 고정한다.
+
+> **컨트롤 단위 ⓘ는 label이 "이 값을 어느 방향으로 움직여야 하는가"에 답하지 못할 때만
+> 붙인다.**
+>
+> 붙이는 경우: (a) 선택지가 고유명이라 이름이 동작을 설명하지 않는다
+> (`Balanced`/`Fast`/`Advanced`, `Permissive Hold`, `Report Pulse`). (b) label이 사양을
+> 서술할 뿐 결과를 말하지 않는다 — `Press & Release - delay before and after (same value)`는
+> 펌웨어가 그 숫자로 무엇을 하는지 말하지만, 그 값을 올리면 모든 입력이 그만큼 늦게
+> 인식된다는 사실은 말하지 않는다.
+>
+> 붙이지 않는 경우: 단위가 곧 답인 컨트롤(`Cursor Top Speed` 16 px, `Repeat Time` 80 ms),
+> 그리고 **상단 요약이 이미 그 컨트롤을 주어로 삼고 있는 컨트롤**. `Global Tapping Term
+> (ms)`은 TAPPING 요약("탭홀드 키가 홀드로 판단하기까지 기다리는 시간")이 그 자체를
+> 설명하고 있고, Anti-Ghosting의 `Enable`은 그 메뉴 요약이 곧 그 토글의 설명이다. 한 줄
+> 아래에서 반복하면 소음이다.
+
+그래서 TAPPING은 1행에 ⓘ가 없고 2~4행에 있다. 이는 결함이 아니라 기준이 선별적으로
+작동한 결과이며, 화면에서도 그렇게 읽힌다 — 첫 행은 바로 위 요약이 설명한 것이고 나머지
+셋은 아니다. MOUSE는 라벨과 단위가 답을 다 갖고 있어 하나도 붙지 않는다.
+
+### 구현
+
+`Explain`은 버튼과 본문을 인접하게 렌더링하므로 `ControlRow`(label 왼쪽 / Detail 오른쪽,
+`justify-content: space-between`)에 그대로 넣을 수 없다. 본문을 `Detail` 앞에 두면 wrap
+시 컨트롤이 3번째 줄로 밀린다. `explain.tsx`에 `useExplainDisclosure()` 훅과
+`ExplainBody`를 분리 노출해 호출자가 버튼과 본문을 따로 배치할 수 있게 했다.
+
+**§4.3 접힘 계약은 훅 쪽이 더 강하게 지킨다.** 훅은 `open`을 밖으로 내보내지 않고 이미
+해석된 `hidden`만 `bodyProps`로 넘긴다. 호출자가 `{open && <Body/>}`를 **쓸 수가 없다.**
+
+도움말이 있는 행만 `flex-wrap: wrap` 변형(`HelpfulControlRow`)을 쓰고, label과 버튼을
+`LabelGroup`으로 묶는다. 도움말이 없는 행은 기존 2열 `ControlRow` 그대로다.
+
+키는 **정확한 command 이름**으로 잡는다(submenu 게이트와 같은 원리, 더 좁다).
+`id_qmk_debounce_time_post`는 Fast의 `Press & Release - delay after change (post-only)`와
+Advanced의 `Release - delay before and after release (pre+post window)` 두 행이 공유하고
+**모드에 따라 뜻이 다르므로**, 그 두 항목만 label까지 함께 맞춘다. H7S의 서술형 label과
+RP2040의 축약형 label(`Press & Release Cooldown` / `Release Delay`)을 모두 등록했다.
+label이 어느 쪽과도 안 맞으면 아무것도 렌더링하지 않는다 — 디바운스 창의 반대쪽을 설명하는
+문구가 뜨는 것보다 없는 편이 낫다.
+
+`aria-label`은 `What this means: {{name}}`로 컨트롤 이름을 담는다. 한 화면에 ⓘ가 여러 개
+생기므로 보조기술이 같은 이름의 버튼을 반복해 읽는 상황을 피한다.
+
+### DEBOUNCE·TAPPING 문구의 근거
+
+펌웨어 readme 2-6은 모드 이름과 권장값만 주고 2-7은 항목 이름만 나열한다. 실제 의미는
+코드에서 확인했다.
+
+| 모드 | 알고리즘 | 읽는 값 | 동작 |
+| --- | --- | --- | --- |
+| Balanced (0) | `sym_defer_pk` | `post_ms` | 신호가 그 시간 잠잠해진 뒤 보고. 누름·뗌 모두 그만큼 늦다 |
+| Fast (1) | `sym_eager_pk` | `post_ms` | 변화 즉시 보고 후 그 시간 동안 그 키 무시 |
+| Advanced (2) | `asym_eager_defer_pk` | 누름 `pre_ms` / 뗌 `post_ms` | 누름은 즉시+잠금, 뗌은 잠잠해진 뒤 보고 |
+
+`debounce_profile_set_single_delay()`가 Balanced에서 `pre_ms`와 `post_ms`를 같은 값으로
+쓰고, 세 알고리즘 모두 `debounce_runtime_release_delay()`(= `post_ms`)를 읽는다. Advanced만
+`debounce_runtime_press_delay()`(= `pre_ms`)를 누름 쪽에 함께 쓴다. 따라서 "Balanced에서
+1 ms를 더하면 인식이 1 ms 늦어진다 / Fast와 Advanced의 누름 쪽은 늦어지지 않는다"는 서술이
+코드와 일치한다.
+
+TAPPING 세 토글은 `port/tapping_term.c`가 QMK 표준 per-key 콜백
+(`get_permissive_hold` / `get_hold_on_other_key_press` / `get_retro_tapping`)을 그대로
+구현하고, `quantum/action_tapping.c`도 stock이다. 따라서 QMK 표준 의미가 그대로 적용된다.
+문구는 정의가 아니라 **증상 → 처방**으로 썼다: "빠르게 칠 때 홀드가 걸리지 않는 증상에
+씁니다", "Permissive Hold를 켜도 홀드가 글자로 나온다면 이걸 켜세요", "키에 손을 너무 오래
+얹었을 때 글자가 사라지는 증상에 씁니다". 각 본문이 나머지 토글과의 차이를 명시하므로 셋을
+따로 읽어도 선택할 수 있다.
+
+## H7S 5종에 MOUSE 정의를 추가한다
+
+펌웨어는 `V260823R1`부터 마우스 키 설정을 지원한다. `quantum/via.h`가
+`id_qmk_mousekey = 17`을 할당하고(참조 QMK의 13번은 H7S에서 USB POLLING이 점유),
+같은 파일이 value id 1~6을 참조 배치와 동일하게 정의하며,
+`port/mousekey_config.c`가 get/set을 전부 구현한다. H7S 5종의 `port/via_port.c`가 모두
+채널 17을 라우팅한다. 그런데 앱 정의에는 MOUSE submenu가 없어 **펌웨어가 가진 기능에
+접근할 방법이 없었다.**
+
+`era-definitions/custom/v3/era65/ERA65-VIA.json`의 MOUSE submenu를 그대로 복사하고
+**채널만 13 → 17로 바꿔** 5종의 FEATURE 메뉴 `TAPPING` 뒤에 넣었다. RP2040 계열의
+`SOCD / Anti-Ghosting / DEBOUNCE / TAPPING / MOUSE` 순서와 같은 자리다. value id·옵션 목록·
+`Cursor Acceleration == 0`일 때 `Cursor Speed`, 아닐 때 `Cursor Start/Top Speed`를 보여주는
+`showIf` 구조는 손대지 않았다. 옵션 값과 기본값은 펌웨어 readme 2-9와 일치한다.
+
+**NKRO는 넣지 않는다.** H7S readme 2-10과 펌웨어 `DECISIONS.md`의 2026-08-23 항목에 따르면
+이 키보드는 전환 없이 항상 20키 동시 입력이고 켜고 끄는 옵션 자체가 없다. 토글을 만들면
+없는 선택지를 있는 것처럼 보이게 하는 거짓말이 된다.
+
+`tests/era-definition.test.ts`가 5종 모두에 대해 FEATURE 순서, mousekey 컨트롤의 채널 17,
+value id 1~6, `showIf` 쌍의 존재, `id_qmk_custom_nkro` 부재를 검사한다. era65가 채널 13에
+남아 있는지도 함께 확인해 잘못된 계열에 17을 쓰는 회귀를 막는다.
+
+### 펌웨어 공식 VIA JSON은 아직 고치지 않았다 — 승인 대기
+
+`eerraa-qmk-h7s-fw-via2/src/ap/modules/qmk/keyboards/era/*/json/*-VIA.JSON` 5개에도
+`id_qmk_mousekey`가 0건이다. 앱 정의만 고치면 커스텀 앱에서만 MOUSE가 보이고 공식
+`usevia.app`에서는 보이지 않는다. `docs/PROJECT_DIRECTION.md`는 "Firmware must keep working
+with the official VIA app plus the official V3 definition. **A path that only the custom app
+can speak is an error.**"라고 못박고 있고, 펌웨어 자신의 `docs/readme.txt` 2-9는 이미
+"VIA CONFIGURE → FEATURE → MOUSE에서 조정합니다"라고 안내한다. 즉 공식 JSON은 펌웨어
+문서가 약속한 화면을 갖고 있지 않다. 고치는 것이 맞다고 판단하지만 펌웨어 저장소 변경이므로
+승인 전에는 손대지 않는다.
+
+## 번역 누락을 코드가 잡는다
+
+ERA 메뉴 설명은 영어 원문이 곧 번역 키다. 문구를 다시 쓰면 키가 바뀌므로, 로케일을 함께
+갱신하지 않으면 다섯 언어가 조용히 영어로 degrade한다. 키 파리티 검사는 이것을 잡지
+못한다 — 여섯 파일이 똑같이 그 키를 갖고 있지 않을 뿐 파리티는 유지되기 때문이다.
+
+`era-feature-help.ts`가 `eraHelpStrings()`로 번역 대상 전체를 노출하고,
+`tests/locales.test.ts`가 그 목록의 모든 문자열이 6개 카탈로그에 키로 존재하는지 검사한다.
+목록을 테스트가 소스에서 직접 읽으므로 두 곳이 어긋날 수 없다. 판정 표현 금지 검사가
+`DIAGNOSTIC_OBSERVATION_KEYS`를 테스트 파일에서 읽는 것과 같은 방식이다.
+
+## UI verification (2차 추가분)
+
+11. `FEATURE → Anti-Ghosting`의 요약 줄에 `asdasdasd` 예시가 보이고, 한국어로 바꾸면
+    "꾹보드"가 보인다.
+12. `FEATURE → DEBOUNCE`에서 `Debounce Mode` 옆 ⓘ를 열면 세 모드 비교가 나오고, 모드를
+    Balanced → Fast → Advanced로 바꿀 때 아래 ms 행이 바뀌며 각 행의 ⓘ 본문도 그 행에
+    맞게 바뀐다. 특히 Fast의 ms 행과 Advanced의 Release 행이 **서로 다른 문구**를 보여야
+    한다(같은 command id다).
+13. `FEATURE → TAPPING`에서 1행에는 ⓘ가 없고 2~4행에만 있다.
+14. ⓘ를 연 컨트롤 행에서 컨트롤이 오른쪽 자리를 유지한 채 본문만 아래 줄에 펼쳐지는지,
+    독일어처럼 label이 긴 언어에서 컨트롤이 3번째 줄로 밀리지 않는지 본다.
+15. `FEATURE → MOUSE`가 BRICK60·BRICK65·INTIGRITY80·MAY65·SCULPTUREI에서 모두 보이고,
+    값을 읽고 쓸 수 있으며, 재연결 후에도 유지되는지 본다. `Cursor Acceleration`을 Off로
+    바꾸면 `Cursor Speed` 한 줄로, 다른 값으로 바꾸면 `Cursor Start/Top Speed` 두 줄로
+    바뀌는지도 함께 본다. **실기 없이는 판정할 수 없는 항목이다.**

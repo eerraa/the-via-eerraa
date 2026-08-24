@@ -147,6 +147,24 @@ describe('VIA locale coverage', () => {
     }
   });
 
+  // The ERA menu help is written in English in `era-feature-help.ts` and translated by
+  // key, so a reworded sentence that never reaches the catalogs degrades that menu to
+  // English in five languages without failing anything else.
+  test('every ERA feature-help string is a catalog key', async () => {
+    const {eraHelpStrings} = await import('../src/utils/era-feature-help');
+    const strings = eraHelpStrings();
+    expect(strings.length).toBeGreaterThan(0);
+    for (const value of strings) {
+      for (const [lang, catalog] of Object.entries(locales)) {
+        expect({lang, value, translated: typeof catalog[value]}).toEqual({
+          lang,
+          value,
+          translated: 'string',
+        });
+      }
+    }
+  });
+
   test('definition menu labels stay in documented English', () => {
     for (const catalog of Object.values(locales)) {
       for (const label of ['FEATURE', 'TAPDANCE', 'SYSTEM']) {
