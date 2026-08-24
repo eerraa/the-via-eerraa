@@ -41,6 +41,79 @@ describe('VIA locale coverage', () => {
     }
   });
 
+  test('interpolation placeholders survive every translation', () => {
+    // A translator dropping {{threshold}} turns a factual sentence into a vague one,
+    // and i18next renders the loss silently.
+    const placeholders = (value: string) =>
+      (value.match(/\{\{\w+\}\}/g) ?? []).sort();
+    for (const [key, english] of Object.entries(locales.en)) {
+      const expected = placeholders(english);
+      if (expected.length === 0) {
+        continue;
+      }
+      for (const [lang, catalog] of Object.entries(locales)) {
+        expect({lang, key, placeholders: placeholders(catalog[key])}).toEqual({
+          lang,
+          key,
+          placeholders: expected,
+        });
+      }
+    }
+  });
+
+  // The diagnostics UI may only state what was observed in the measured window.
+  // "No report queue drops were observed" is allowed; "stable", "no problems" and
+  // any score are not, because they cover failure categories the test never
+  // measured. Hardware validation produced wrong conclusions twice from exactly
+  // this kind of over-claiming, so the rule has to survive translation too.
+  const DIAGNOSTIC_OBSERVATION_KEYS = [
+    'What this {{seconds}}-second test observed',
+    'Lost key reports',
+    'None were observed during this test.',
+    '{{drops}} were observed during this test.',
+    'USB link interruptions',
+    'No reset, reconfiguration, suspend or speed change was observed.',
+    '{{events}} observed — {{resets}} reset, {{configurations}} reconfiguration, {{suspends}} suspend, {{speedChanges}} speed change.',
+    'Firmware pauses',
+    'No main-loop gap longer than {{threshold}} was observed.',
+    '{{gaps}} main-loop gap(s) longer than {{threshold}} were observed.',
+    'Busiest queue moment',
+    '{{depth}} report(s) were waiting to be sent at once.',
+    'Link speed',
+    'Enumerated at {{actual}}, which is what {{mode}} requires.',
+    'Each line above covers only the category it names, over the window this test ran. Categories this test does not measure are not covered by it.',
+    'No keyboard reports were sent during this test, so the lines above describe a window with no typing in it. Type on the keyboard while the next test runs.',
+  ];
+
+  const VERDICT_WORDING: Record<string, RegExp> = {
+    en: /\b(stable|unstable|healthy|perfect|certified|flawless|no problems?)\b/i,
+    ko: /(?<!더 )이상\s*없|안정적|불안정|정상입니다|문제\s*없|완벽|양호|점수/,
+    ja: /安定|正常です|問題(は)?あり(ま)?せん|問題なし|完璧|良好|スコア/,
+    zh: /稳定|不稳定|一切正常|没有问题|无问题|完美|良好|评分/,
+    de: /\b(stabil|instabil|einwandfrei|perfekt|fehlerfrei|makellos)\b/i,
+    es: /\b(estable|inestable|perfecto|impecable|sin problemas)\b/i,
+  };
+
+  test('diagnostics observations never become verdicts in any language', () => {
+    for (const key of DIAGNOSTIC_OBSERVATION_KEYS) {
+      for (const [lang, catalog] of Object.entries(locales)) {
+        const value = catalog[key];
+        expect({lang, key, present: typeof value === 'string'}).toEqual({
+          lang,
+          key,
+          present: true,
+        });
+        expect({lang, key, verdict: VERDICT_WORDING[lang].test(value)}).toEqual(
+          {
+            lang,
+            key,
+            verdict: false,
+          },
+        );
+      }
+    }
+  });
+
   test('picker and millisecond strings are translated, not left as English keys', () => {
     const required = [
       'Search',

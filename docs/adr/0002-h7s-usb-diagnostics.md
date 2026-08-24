@@ -281,7 +281,7 @@ queue drop, VIA response latency를 여러 host controller/hub/cable에서 비�
 실기에서 절전으로 중단된 session이 page 기록을 전혀 남기지 못했다. Firmware는 그 결과를
 CLEAR나 다음 START 전까지 RAM에 유지하는데 app이 읽을 방법을 제공하지 않았다.
 `sessionState`가 `complete(2)` / `stopped(3)`이고 page가 그 session을 따라가지 못했으면
-`Read Device Result`로 읽어 표시한다.
+`Show It`(구 `Read Device Result`)로 읽어 표시한다.
 
 - Page가 시작 시각을 모르므로 **local history에 저장하지 않는다.** 표시와 Copy만 한다.
   History entry는 알려진 start time과 identity를 유지해야 한다는 기존 원칙을 지킨다.
@@ -373,6 +373,59 @@ Control은 상시 6개를 전부 disabled로 두던 방식에서, 실제로 동�
 (`sessionState` 2/3), `Copy Diagnostic Report`는 표시할 run이 있을 때만 렌더링한다.
 `sessionState`가 idle(0)일 때의 CLEAR는 지울 대상이 없으므로 사라진다.
 
+## Name the situation, not the operation
+
+실사용자(저장소 소유자 본인) 피드백: "Read Device Result 등 무슨 기능이고 어떻게
+해석해야 되는지 모르겠다."
+
+원인은 길이가 아니라 추상성이었다. `Read Device Result`는 이미 짧지만 *동작*(장치에서
+결과를 읽는다)을 이름으로 삼아 *상황*(절전·새로고침·재연결로 테스트가 끊겼는데 결과는
+키보드에 남아 있다)을 말하지 않았다. 더 줄이면 더 모호해진다. 따라서 정보를 더 압축하는
+방향이 아니라 다음 세 가지를 적용했다.
+
+1. **상황을 문장으로 먼저 말하고, 동작 버튼을 그 문장 안에 넣는다.** 복구·정리 동작은
+   컨트롤 행에서 빠지고, 그 상황을 설명하는 note 안으로 들어갔다. 버튼이 설명을 이름에
+   담을 필요가 없어지므로 `Show It` / `Discard It` / `Stop It`로 충분해진다.
+
+   | 이전 | 이후 |
+   | --- | --- |
+   | `Read Device Result` (항상 표시, 대개 비활성) | "A finished test is still on the keyboard" 카드 안의 `Show It` |
+   | `Clear Device Result` | 같은 카드 안의 `Discard It` |
+   | `Stop Device Session` | "A test was already running when this page connected" 카드 안의 `Stop It` |
+
+   기본 컨트롤 행은 `Test duration` + `Start Test`만 남는다.
+
+2. **각 수치에 평문 주제를 붙인다.** 요약 뷰는 문장 목록에서 2열 정의 목록으로 바꿨다.
+   왼쪽은 무엇에 대한 이야기인지("Lost key reports", "USB link interruptions",
+   "Firmware pauses", "Busiest queue moment", "Link speed"), 오른쪽은 관측 사실만.
+   글자 수는 오히려 줄었고 §6-4의 서술 범위 제약은 그대로다. 하드 이벤트가 관측되면
+   개수만 세지 않고 어떤 종류였는지 함께 보여준다.
+
+3. **섹션 도입부가 측정 항목이 아니라 답하는 질문을 말한다.**
+
+## Localisation
+
+진단은 이 앱에서 가장 설명이 많은 화면이므로, 영어만으로는 비영어권 사용자가 판단할 수
+없다. 두 컴포넌트를 `react-i18next`로 옮기고 지원 6개 로케일(de/en/es/ja/ko/zh) 전부에
+140개 키를 추가했다. 키는 앱의 기존 관례대로 영어 원문이므로, 번역이 없으면 읽을 수 있는
+영어로 degrade한다.
+
+- **번역은 문구 확정 이후에 했다.** 순서를 반대로 하면 모호한 문장을 6개 언어로 번역한 뒤
+  다시 6번 고쳐야 한다.
+- **USB·펌웨어 식별자는 번역하지 않는다.** `FS 1K` / `HS 8K` / `Full Speed` /
+  `High Speed` / `p50·p95·p99` / `EEPROM` / `RAM`은 비교표, 복사된 보고서, 펌웨어 문서가
+  부르는 이름과 같아야 한다.
+- **`Copy Diagnostic Report` 본문은 영어로 남긴다.** 이 텍스트는 유지보수자에게 붙여넣는
+  버그 리포트다. 사용자의 언어로 번역되면 받는 쪽이 읽지 못한다. 부수적으로
+  `usb-diagnostics-history.ts`(측정 로직)를 건드리지 않아도 된다.
+- **§6-4는 번역에서도 강제한다.** 유창한 번역이 "관측되지 않았습니다"를 "안정적입니다"나
+  "문제 없습니다"로 승격시키면 계약이 깨진다. `tests/locales.test.ts`가 관측 서술 16개
+  키에 대해 6개 언어별 판정 표현 정규식을 검사하고, 모든 `{{placeholder}}`가 번역에서
+  살아남는지도 함께 검사한다.
+
+`t()`는 세션 콜백에서 ref로 참조한다. 의존성 배열에 넣으면 언어 변경 시 `finishActive`의
+identity가 바뀌고, 그것에 의존하는 정리 effect가 실행 중인 측정을 중단시킨다.
+
 ## UI verification
 
 자동 검사는 `tests/diagnostics-pane.test.tsx`(요약/전체 뷰 문구와 §6 안전장치)와
@@ -391,3 +444,5 @@ Control은 상시 6개를 전부 disabled로 두던 방식에서, 실제로 동�
    `stall count`, `queue peak`를 비교해 State Sync poll 동시 실행의 영향 크기를 기록한다.
 5. Advanced 토글을 켰을 때 비교표의 `Spread`/`Queue` 열과 `speed mismatch` 표시가
    그대로 보인다.
+6. 언어를 ko/ja/zh/de/es로 바꿔 요약 뷰와 상황 카드가 잘리거나 겹치지 않는지 본다.
+   독일어가 가장 길어 2열 정의 목록의 왼쪽 열 폭에서 먼저 문제가 드러난다.
