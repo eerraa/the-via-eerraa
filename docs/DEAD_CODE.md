@@ -246,7 +246,7 @@ dropdown. That is the official VIA path, not dead custom-app code.
 
 Live strings or comments that are wrong. Not deletion of the control.
 
-### 4.1 `_redirects` / docs-contract pane-config suffix — fixed 2026-08-30
+### 4.1 `_redirects` / docs-contract pane-config suffix — fixed 2026-08-30, PR #26
 
 Not pending. Re-measured 2026-08-30 before edit: `src/utils/pane-config.ts`
 exists. Git history of that path starts as `.ts` (snowpack template); there is
@@ -258,7 +258,7 @@ Other `_redirects` header paths exist (`src/components/panes/errors.tsx`,
 `/design` `/settings` `/debug` `/console` `/errors` match `pane-config.ts` plus
 `ErrorsPaneConfig`. `/diagnostics` remains absent (`docs/MAP.md` §7).
 
-Fixed in this PR (number filled after open): `public/_redirects` suffix `.ts`.
+Fixed in PR #26: `public/_redirects` suffix `.ts`.
 docs-contract example now cites `src/utils/pane-config.ts` and does not claim a
 `.tsx` rename.
 
@@ -296,7 +296,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
 6. §2.6 unused exports — removed 2026-08-30, PR #24. Keep files.
 7. §2.7 unused locale keys — removed 2026-08-30, PR #25. Six catalogs in one commit.
-8. §4.1 `_redirects` / docs-contract pane-config suffix — fixed 2026-08-30.
+8. §4.1 `_redirects` / docs-contract pane-config suffix — fixed 2026-08-30, PR #26.
    Separate from `Breating Period`, which is a live label.
 
 Never in a deletion session from this ledger: §1 `0x06` short packet; §3
