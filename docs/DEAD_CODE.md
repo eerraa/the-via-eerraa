@@ -163,7 +163,7 @@ stay as the wire catalog. `ts-prune` / `find-deadcode` stay.
 `getSelectedRawLayers`, `updateCustomColorContinuous`, and Redux
 `getRenderMode` stay.
 
-### 2.7 Unused locale keys — removed 2026-08-30
+### 2.7 Unused locale keys — removed 2026-08-30, PR #25
 
 Not pending. Re-measured 2026-08-30 before delete. A key is live if `src/`
 passes that string to `t`, or a menu `label` / dropdown option in
@@ -172,7 +172,7 @@ loads) is that string — Custom pane does `t(label)`. Not a
 `FEATURE_COVERAGE` command. All six catalogs (`de en es ja ko zh`) moved
 together. `tests/locales.test.ts` same-key lock stays.
 
-Removed in this PR (number filled after open), 77 keys:
+Removed in PR #25, 77 keys:
 
 Unicode-ellipsis duplicates (ASCII forms stay): `Searching for devices…`,
 `No macro recorded yet…`, `Loading…`.
@@ -281,7 +281,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 4. §2.4 unreferenced files — removed 2026-08-30, PR #22.
 5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
 6. §2.6 unused exports — removed 2026-08-30, PR #24. Keep files.
-7. §2.7 unused locale keys — removed 2026-08-30. Six catalogs in one commit.
+7. §2.7 unused locale keys — removed 2026-08-30, PR #25. Six catalogs in one commit.
 8. §4 comment-only fixes (`public/_redirects` and docs-contract comment
    suffix). Separate from `Breating Period`, which is a live label.
 
