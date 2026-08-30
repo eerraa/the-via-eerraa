@@ -1,38 +1,101 @@
 # Architecture decision records
 
 Genre: manual
-Canonical for: ADR의 형식과 두 가지 규칙 — 뒤집힌 결정을 어떻게 처리하는가, 제약에 원인을 어떻게 붙이는가
+Canonical for: when to write an ADR in this repository, numbered-ADR Status
+Proposed / Accepted / Superseded, Genre contract and Canonical for, and how
+a decision is retired
 
-프로토콜 호환성, 영속 데이터, 저장소 간 책임, 배포, 라이선스처럼 **다음 작업이 반드시
-보존해야 하는** 결정만 여기 남긴다. 브랜치 상태, 프로세스 ID, 통상적인 구현 세부, 결정이
-없는 후보 나열은 ADR이 아니다.
+> Shared two-line header, five genres, REFUSED three-liner, and retirement
+> catalogue are [eerraa-agent-docs](https://github.com/eerraa/eerraa-agent-docs)
+> tag **v1**
+> [`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/v1/AGENT_DOCS_CONVENTION.md).
+> This file does not copy that spec. Path · header · index · citation checks,
+> and that `Status:` is required only on numbered ADRs, are
+> `tests/docs-contract.test.ts`. Constraint-cause and no-dates rules for every
+> document are `docs/MAP.md` §9. Product direction is
+> `docs/PROJECT_DIRECTION.md`.
 
-| # | 결정 |
+Re-measured from `tests/docs-contract.test.ts` (`KNOWN_STATUS`, numbered-ADR
+match `/^docs\/adr\/\d/`) and the numbered files in this directory.
+
+| # | Decision |
 | --- | --- |
 | [0001](0001-state-sync-protocol.md) | State Sync revision validation (selector `0x06`) |
-| [0002](0002-h7s-usb-diagnostics.md) | H7S USB 전달 진단 계약 (selector `0x07`) |
-| [0003](0003-era-menu-help-ui.md) | ERA 메뉴 설명과 진단 화면 UI |
+| [0002](0002-h7s-usb-diagnostics.md) | H7S USB delivery diagnostics (selector `0x07`) |
+| [0003](0003-era-menu-help-ui.md) | ERA menu help and diagnostics screen UI |
 
-## 형식
+## 1. When to write
+
+Write an ADR for a decision the next change must preserve: protocol
+compatibility, persistent data, cross-repository ownership, deploy, license,
+or a durable UI/product contract with refused alternatives. The numbered files
+in this directory are that set.
+
+Not an ADR: branch state, process ids, ordinary implementation detail, or a
+list of candidates with no decision. Transient work is recorded nowhere —
+`git log` and the verification commands answer it (`AGENTS.md` §6).
+
+Product-wide durable non-goals that are not one decision live in
+`docs/PROJECT_DIRECTION.md`. An accepted ADR that becomes product direction is
+**linked** from there; the decision stays in the ADR.
+
+A new numbered file is unreachable until `AGENTS.md` or `docs/MAP.md` names it
+(`every document is reachable from the entry chain` in
+`tests/docs-contract.test.ts`).
+
+## 2. Numbered ADR header
+
+A numbered file `docs/adr/NNNN-*.md` declares, in this order, as 0001–0003 do:
 
 ```text
-# NNNN — 결정 제목
+# NNNN — decision title
 
-## Context     어떤 검증된 제약이나 실패가 결정을 요구했는가
-## Decision    무엇을 고르고 그 경계는 어디인가
-## Consequences 무엇이 쉬워지고 어려워지고 미뤄지는가
-## Verification 무엇이 이 결정을 검증하거나 반증하는가
+Status: Accepted
+Genre: contract
+Canonical for: the facts this ADR is the single source of
 ```
 
-## 두 가지 규칙
+- **Status** — exactly one of `Proposed`, `Accepted`, `Superseded`
+  (`KNOWN_STATUS` in `tests/docs-contract.test.ts`). Required on numbered
+  ADRs. This README is a manual, not a numbered record, so it has no
+  `Status:`.
+  - `Proposed` — drafted, not yet in force.
+  - `Accepted` — in force.
+  - `Superseded` — no longer in force; a successor owns Canonical for those
+    facts.
+- **Genre** — `contract` on every numbered ADR. This README is `manual`.
+- **Canonical for** — non-empty. An empty declaration is worse than none. Two
+  Accepted ADRs must not claim the same facts.
 
-**뒤집힌 결정은 지운다.** "이 판단은 아래 절에서 뒤집혔다"는 주석을 손으로 달지 않는다.
-현재 유효한 결정만 남기고, 뒤집힌 내용은 `git log`가 갖는다. 단 **뒤집힌 이유가 지금 규칙의
-근거인 경우에는 그 이유만 현재 결정 안에 남긴다** — 예를 들어 "최상위 탭은 발견성에서
-실패했다"는 인라인 배치가 왜 계약인지를 설명하므로 남고, 최상위 탭의 명세는 사라진다.
+`Read when:` is forbidden. Routing is `AGENTS.md`.
 
-**제약에는 원인을 붙인다.** 규칙만 남고 원인이 사라지면 다음 사람이 규칙을 우회할 명분을
-갖는다. 커밋은 변경 단위이고 제약은 계약 단위라서 `git log`가 이것을 대신하지 못한다.
-`docs/adr/0003-era-menu-help-ui.md` §3이 그 형태의 예다.
+## 3. Body
 
-받아들여진 ADR이 제품 방향의 일부가 되면 `docs/PROJECT_DIRECTION.md`에서 링크한다.
+Four sentence kinds. They are not a required heading list: 0001 titles the
+choice `Decision and rationale`; 0003 uses numbered sections and ends at
+`## 10. Verification`. 0001 and 0002 have `## Consequences` and
+`## Verification`.
+
+- **Context** — which verified constraint or failure required a decision.
+- **Decision** — what was chosen and where it stops.
+- **Consequences** — what became easier, harder, or deferred.
+- **Verification** — what would confirm or falsify the decision.
+
+Refused alternatives sit next to the decision as the v1 three-liner. This
+file does not restate that shape.
+
+## 4. How to retire
+
+Inside one ADR: delete the overturned text. Do not annotate "this judgment was
+overturned in the section below." `git log` holds the old text. If the reason
+for overturning now grounds the current rule, keep **only that reason**.
+
+[ADR 0003](0003-era-menu-help-ui.md) §1 keeps "a top-level tab failed
+discoverability" because that is why inline placement is the contract; the
+top-level-tab spec is gone. §3 keeps **Cause:** because dropping it leaves
+nothing to stop the next dashboard from adding a score. The general
+constraint-cause rule for every document is `docs/MAP.md` §9.
+
+When a numbered ADR as a whole is no longer in force: set `Status:
+Superseded`. Do not add an archive tree. Write the successor as a new numbered
+file. Do not reuse `NNNN`.
