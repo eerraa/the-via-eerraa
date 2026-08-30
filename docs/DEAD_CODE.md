@@ -91,7 +91,7 @@ Removed in PR #21: `github.ts` (`authGithub`,
 `src/utils/` and `github_oauth.html` from `public/` (posted to
 `/api/GithubOAuth`, which this host does not serve).
 
-### 2.4 Unreferenced source files — removed 2026-08-30
+### 2.4 Unreferenced source files — removed 2026-08-30, PR #22
 
 Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
 and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
@@ -101,7 +101,7 @@ and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
 `src/assets/` remain (`chippy_600.png`, `cubey.glb`,
 `keyboard_components.glb`).
 
-Removed in this PR (number filled after open): `debug-shallow-equal.ts`
+Removed in PR #22: `debug-shallow-equal.ts`
 (`debugShallowEqual`) from `src/utils/`; `export-scene.tsx` (`ExportScene`)
 from `src/components/three-fiber/`; unused icons `left-arrow.tsx`,
 `right-arrow.tsx`, `tune.tsx`, `memory.tsx`, `via.tsx` (`VIALogo`) from
@@ -227,7 +227,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 1. §2.1 Azure / `fiber` — removed 2026-08-30, PR #19.
 2. §2.2 unused definition scripts — removed 2026-08-30, PR #20.
 3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30, PR #21.
-4. §2.4 unreferenced files — removed 2026-08-30.
+4. §2.4 unreferenced files — removed 2026-08-30, PR #22.
 5. §2.5 unused npm dependencies (`bun.lock` / `package-lock.json` together).
 6. §2.6 unused exports. Keep files.
 7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
