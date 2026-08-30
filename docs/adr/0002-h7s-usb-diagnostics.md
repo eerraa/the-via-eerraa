@@ -2,8 +2,8 @@
 
 Status: Accepted
 Genre: contract
-Canonical for: selector `0x07` wire·계측 경계·정규화 기준·host 보존과 비교 유효성. 진단 결과를 run 간에
-비교해도 되는 축이 무엇인가
+Canonical for: selector `0x07` wire, instrumentation bounds, normalization basis, host
+persistence and comparison validity — which axes remain comparable across diagnostic runs
 
 이 ADR은 wire·계측·비교 유효성만 담는다. 화면 배치와 문구 계약은
 [ADR 0003](0003-era-menu-help-ui.md)에 있다.
@@ -63,74 +63,144 @@ Histogram quantile은 raw percentile이 아니라 해당 bucket의 **상한 경�
 
 ## Wire contract
 
-기존 VIA `GET_KEYBOARD_VALUE(0x02)` / `SET_KEYBOARD_VALUE(0x03)`에 selector `0x07`을 추가한다.
-Packet은 report ID를 제외한 정확히 32 B, protocol v1, big-endian이다. Firmware는 요청에 대한
-응답만 보내며 unsolicited producer를 만들지 않는다.
+Re-measured from `src/utils/era-usb-diagnostics.ts` and
+`tests/era-usb-diagnostics.test.ts`. Existing `GET_KEYBOARD_VALUE`
+(`ERA_USB_DIAGNOSTICS_COMMAND_GET` `0x02`) /
+`SET_KEYBOARD_VALUE` (`ERA_USB_DIAGNOSTICS_COMMAND_SET` `0x03`) + selector
+`ERA_USB_DIAGNOSTICS_SELECTOR` `0x07`. Protocol
+`ERA_USB_DIAGNOSTICS_PROTOCOL_VERSION` `0x01`. Layout is the 32-byte VIA
+payload with WebHID report id `0` stripped (`ERA_USB_DIAGNOSTICS_PACKET_SIZE`).
+Integers are big-endian.
+
+This selector is not `APICommand.CUSTOM_MENU_SET_VALUE` `0x07`. Diagnostics
+rides on keyboard-value GET/SET; custom-menu SET is a different command.
+
+The host encodes with `encodeUsbDiagnosticsRequest`, prepends report id `0`,
+and matches on length 32, command (`0x02`/`0x03` or `0xFF`), selector, and
+echoed tag. Per-path tag is incrementing BE16, skip 0 on wrap. Reserved
+request bytes `9..31` are 0.
+
+> **REFUSED:** an unsolicited `0x07` producer, or a second packet length.
+> **WHY:** this host only `exchange`s a tagged 32-byte GET/SET
+> (`src/utils/era-usb-diagnostics.ts`); `0xFF` is `unhandled`, and any other
+> length fails the matcher / `parseHeader`.
+> **REOPENS:** a new protocol version, approved separately.
 
 ### Request
 
-| Byte | Field                                      |
-| ---- | ------------------------------------------ |
-| 0    | command: GET `0x02` 또는 SET `0x03`        |
-| 1    | selector `0x07`                            |
-| 2    | protocol version `0x01`                    |
-| 3    | operation                                  |
-| 4–5  | host tag, BE16                             |
-| 6    | duration seconds 또는 snapshot chunk index |
-| 7–8  | snapshot sequence; chunk 0은 0             |
-| 9–31 | reserved, 반드시 0                         |
+|    Byte | Field |
+| ------: | ----- |
+|     `0` | GET `0x02` or SET `0x03` |
+|     `1` | `0x07` |
+|     `2` | `0x01` |
+|     `3` | operation |
+|  `4..5` | host tag, BE16 |
+|     `6` | argument: START duration seconds, or SNAPSHOT chunk index; else 0 |
+|  `7..8` | snapshot sequence, BE16; chunk 0 GET sends 0 |
+| `9..31` | `0` |
 
-Operation은 capabilities `0x00` GET, snapshot `0x01` GET, start `0x10` SET, stop `0x11` SET,
-clear `0x12` SET이다. Start duration은 10/30/60만 허용한다.
+| Operation | Id | Command |
+| --------- | -- | ------- |
+| capabilities | `ERA_USB_DIAGNOSTICS_OPERATION_CAPABILITIES` `0x00` | GET |
+| snapshot | `ERA_USB_DIAGNOSTICS_OPERATION_SNAPSHOT` `0x01` | GET |
+| start | `ERA_USB_DIAGNOSTICS_OPERATION_START` `0x10` | SET |
+| stop | `ERA_USB_DIAGNOSTICS_OPERATION_STOP` `0x11` | SET |
+| clear | `ERA_USB_DIAGNOSTICS_OPERATION_CLEAR` `0x12` | SET |
 
-### Common response
+START argument is one of `ERA_USB_DIAGNOSTICS_DURATIONS`: 10, 30, 60.
 
-| Byte  | Field                                           |
-| ----- | ----------------------------------------------- |
-| 0–5   | command, selector, v1, operation, echoed tag    |
-| 6     | status                                          |
-| 7     | state: idle 0, running 1, complete 2, stopped 3 |
-| 8–9   | session ID, BE16; no session은 0                |
-| 10–11 | frozen snapshot sequence, BE16                  |
-| 12    | chunk index                                     |
-| 13    | chunk count                                     |
-| 14–31 | 18 B operation payload                          |
+### Response
 
-Status는 OK 0, unsupported version 1, invalid 2, busy 3, no session 4, stale snapshot 5다.
+|     Byte | Field |
+| -------: | ----- |
+|      `0` | echoed command |
+|      `1` | `0x07` |
+|      `2` | `0x01` |
+|      `3` | echoed operation |
+|   `4..5` | echoed tag, BE16 |
+|      `6` | status |
+|      `7` | state: idle 0, running 1, complete 2, stopped 3 |
+|   `8..9` | session ID, BE16; none is 0 |
+| `10..11` | frozen snapshot sequence, BE16 |
+|     `12` | chunk index |
+|     `13` | chunk count |
+| `14..31` | 18 B operation payload |
+
+`parseHeader` requires length 32, selector `0x07`, version `0x01`, echoed
+operation and tag, state `0..3`, and status `≤ 5`. Status `> 5`, a state
+outside `0..3`, or a length other than 32 is not this packet (`malformed`).
+Command `0xFF` is `unhandled`, not a status code.
+
+| Status | Id |
+| ------ | -- |
+| OK | `ERA_USB_DIAGNOSTICS_STATUS_OK` `0x00` |
+| unsupported version | `ERA_USB_DIAGNOSTICS_STATUS_UNSUPPORTED_VERSION` `0x01` |
+| invalid | `ERA_USB_DIAGNOSTICS_STATUS_INVALID` `0x02` |
+| busy | `ERA_USB_DIAGNOSTICS_STATUS_BUSY` `0x03` |
+| no session | `ERA_USB_DIAGNOSTICS_STATUS_NO_SESSION` `0x04` |
+| stale snapshot | `ERA_USB_DIAGNOSTICS_STATUS_STALE_SNAPSHOT` `0x05` |
+
+OK continues into the payload parser. Stale snapshot is kind `stale`. The
+other defined codes are kind `status`.
+
+Capabilities, START, STOP, and CLEAR require sequence 0, chunk index 0, and
+chunk count 0.
 
 ### Capabilities payload
 
-| Payload byte | Field                                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------------------ |
-| 0            | flags: report timing `0x01`, histogram `0x02`, firmware timing `0x04`, timeline `0x08`, boot counters `0x10` |
-| 1            | duration mask: 10/30/60초 bits `0x07`                                                                        |
-| 2–3          | histogram bin count 8, timeline capacity 8                                                                   |
-| 4–5          | recommended snapshot interval 1000 ms, BE16                                                                  |
-| 6–7          | endian 1(big), time unit 1(µs)                                                                               |
-| 8            | firmware version length, 최대 9                                                                              |
-| 9–17         | ASCII firmware version과 zero padding                                                                        |
+Packet byte 14 is payload byte 0. Host requires every bit of
+`ERA_USB_DIAGNOSTICS_REQUIRED_CAPABILITIES` `0x1f`. Extra flag bits are
+allowed. Duration mask bits outside `ERA_USB_DIAGNOSTICS_DURATION_MASK`
+`0x07` fail parse. Mask bits 0, 1, 2 map to 10, 30, 60 seconds.
+
+| Payload byte | Field |
+| -----------: | ----- |
+|          `0` | flags: report timing `0x01`, histogram `0x02`, firmware timing `0x04`, timeline `0x08`, boot counters `0x10` |
+|          `1` | duration mask |
+|          `2` | histogram buckets; host requires `ERA_USB_DIAGNOSTICS_HISTOGRAM_BUCKETS` 8 |
+|          `3` | timeline capacity; host requires `ERA_USB_DIAGNOSTICS_TIMELINE_CAPACITY` 8 |
+|       `4..5` | recommended snapshot interval ms, BE16; host requires nonzero (capability fixture and H7S encoder send 1000) |
+|          `6` | endian; host requires 1 (big) |
+|          `7` | time unit; host requires 1 (microseconds) |
+|          `8` | firmware version length; host requires 1–9 |
+|     `9..17` | ASCII `0x20..0x7e` of that length, then 0 |
+
+### START / STOP / CLEAR payload
+
+START OK: packet `14` duration (10 / 30 / 60), `15` polling mode `0..3`,
+`16..19` expected interval µs BE32 nonzero, `20..31` 0.
+
+STOP and CLEAR: packet `14..31` 0.
 
 ### Snapshot chunks
 
-Chunk 0 요청은 새 coherent frozen snapshot과 nonzero sequence를 만든다. Host는 그 sequence로
-후속 chunk를 정확히 하나씩 읽는다. Session/state/sequence/index/count가 하나라도 달라지거나
-다른 host가 frozen snapshot을 교체해 `STALE_SNAPSHOT`이 오면 전체 snapshot을 폐기하고 다음
-주기에 chunk 0부터 다시 시작한다.
+`getUsbDiagnosticsSnapshot` GETs chunk 0 with argument 0 and sequence 0.
+Host requires response chunk index 0, sequence ≠ 0, and chunk count in
+`ERA_USB_DIAGNOSTICS_BASE_CHUNKS` 8 .. `ERA_USB_DIAGNOSTICS_MAX_CHUNKS` 12.
+It then GETs each later chunk with argument = index and sequence = that
+frozen sequence, one in flight. Identity (state / session / sequence /
+index / count) that changes mid-read is `malformed`. Stale snapshot aborts
+that read as kind `stale`.
 
-| Chunk | 18 B payload                                                                                                                          |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | mode U8, speed U8, duration U8, event count U8, elapsed ms U32, expected interval µs U32, report samples U32, bin/timeline count U8×2 |
-| 1     | latency min/average/max/window max U32×4, queue peak U16                                                                              |
-| 2–3   | histogram U32×4씩                                                                                                                     |
-| 4     | loop samples/max/window max/stall count U32×4, stall threshold U16                                                                    |
-| 5     | boot drops/resets/configurations/suspends U32×4                                                                                       |
-| 6     | boot speed changes, session drops/resets/configurations U32×4                                                                         |
-| 7     | session suspends/speed changes/timeline overwrites U32×3, zero padding                                                                |
-| 8–11  | event 두 개씩: type U8 + relative ms U32 + value U32                                                                                  |
+Parse also requires snapshot state ≠ idle (0), session ID ≠ 0, event count
+`≤ 8`, and `chunkCount === 8 + ceil(eventCount / 2)`. Event type is `1..6`.
+Odd last event: packet bytes `23..31` of that chunk are 0. Chunks 2, 3, 5, 6:
+packet `30..31` are 0. Chunk 7: packet `26..31` are 0.
 
-기본 chunk는 8개이며 event 두 개마다 한 개를 더해 최대 12개다. Firmware는 짧은
-critical-section copy 뒤 wire snapshot을 freeze하므로 ISR/main-loop update 중 torn field를
-노출하지 않는다.
+| Chunk | 18 B payload (packet `14..31`) |
+| ----: | ------------------------------ |
+|   `0` | mode U8, speed U8, duration U8, event count U8, elapsed ms U32, expected interval µs U32, report samples U32, histogram buckets U8, timeline capacity U8 |
+|   `1` | latency min / average / max / window max U32×4, queue peak U16 |
+| `2..3` | histogram U32×4 each |
+|   `4` | loop samples / max / window max / stall count U32×4, stall threshold U16 |
+|   `5` | boot drops / resets / configurations / suspends U32×4 |
+|   `6` | boot speed changes, session drops / resets / configurations U32×4 |
+|   `7` | session suspends / speed changes / timeline overwrites U32×3, then 0 |
+| `8..11` | two events each: type U8 + relative ms U32 + value U32 |
+
+Chunk 0 mode is `0..3` (FS 1K / HS 2K / HS 4K / HS 8K). Speed is `0..2`
+(Unknown / Full Speed / High Speed). Duration is 10 / 30 / 60. Chunk 0
+histogram buckets / timeline capacity must be 8 / 8.
 
 ## Normalization basis and negotiated speed
 
