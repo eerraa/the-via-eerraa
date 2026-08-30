@@ -24,14 +24,17 @@ generation invalidation을 이미 제공하고, chart dependency 없이 SVG/CSS�
 
 ## 제품 경계
 
-- Firmware는 USB 안정성 score나 stable/unstable 판정을 만들지 않는다.
-- Diagnostics는 polling mode, EEPROM, reset, recovery state를 변경하지 않는다.
-- 사용자가 VIA의 기존 BootMode control로 mode를 바꾸고 재부팅한 뒤 각각 별도 10/30/60초
-  test를 실행한다. 앱은 mode를 자동 순회하지 않는다.
-- Firmware 진단 state와 aggregate는 RAM-only다. 장기 history만 host localStorage에 둔다.
-- selector probe는 canonical ERA metadata의 `usbDiagnostics: true`인 다섯 H7S definition에서만
-  허용한다. Ordinary/official/upload definition에는 새 packet을 전송하지 않는다.
-- Synthetic health/quality/stability score와 arbitrary 색상 판정은 만들지 않는다.
+사용자가 VIA의 기존 BootMode control로 mode를 바꾸고 재부팅한 뒤 각각 별도 10/30/60초
+test를 실행한다. Firmware 진단 state와 aggregate는 RAM-only다. 장기 history만 host
+localStorage에 둔다. selector probe는 canonical ERA metadata의 `usbDiagnostics: true`인
+다섯 H7S definition에서만 허용한다. Ordinary/official/upload definition에는 새 packet을
+전송하지 않는다.
+
+> **REFUSED:** 자동 다운그레이드, 자동 mode 벤치마크, EEPROM 진단 이력, 합성 안정성 점수,
+> selector `0x07`을 polling mode나 State Sync 복구에 결합하기.
+> **WHY:** 모드 선택은 항상 사용자의 것이고, SOF 간격 heuristic은 실제 HID 전달이 아닌데
+> 결정을 되돌렸으며, 진단이 제어면·EEPROM·복구를 바꾸면 관측이 관측 대상을 오염시킨다.
+> **REOPENS:** 없다. 관측이 더 필요하면 읽기 전용 `0x07` 세션을 넓힌다.
 
 ## 계측
 
@@ -53,9 +56,10 @@ Histogram quantile은 raw percentile이 아니라 해당 bucket의 **상한 경�
 연속 coherent snapshot의 누적 histogram 차이로 약 1초 window의 p99 경계를 만들고, firmware가
 매 snapshot마다 초기화하는 window maximum과 함께 time-series로 표시한다.
 
-**SOF high-resolution 계측은 만들지 않는다.** 매 125 µs hot path timestamp 비용이 있고, 실제
-HID delivery와 다른 신호인데도 과거 heuristic 오해를 다시 만들기 쉽다. Matrix timing probe도
-기존 개발용 instrumentation과 중복이므로 release session contract에 넣지 않는다.
+> **REFUSED:** SOF high-resolution 계측과 release session contract의 matrix timing probe.
+> **WHY:** 매 125 µs hot path timestamp 비용이 있고, 실제 HID delivery와 다른 신호인데도
+> 과거 heuristic 오해를 다시 만들기 쉽다.
+> **REOPENS:** 없다. Matrix timing probe는 기존 개발용 instrumentation과 중복이다.
 
 ## Wire contract
 

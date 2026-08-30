@@ -15,16 +15,18 @@ git log --oneline -3
 bun install --frozen-lockfile
 ```
 
-전부 읽지 마라. 하려는 일에 따라 읽는다.
+전부 읽지 마라. 하려는 일에 따라 읽는다. 행은 세 열이다 — **Change**(편집 전
+필독) / **Locate**(조회) / **Verify**(빌드·캡처·판정). 세 열을 한 목록으로 합치지
+않는다.
 
-| 하려는 일 | 읽을 것 |
-| --- | --- |
-| 무엇이 어디 있고 무엇이 정본인가 | `docs/MAP.md` — 여기부터 |
-| 제품 방향과 영구 금지사항 | `docs/PROJECT_DIRECTION.md` |
-| State Sync·exact-ms wire | `docs/adr/0001-state-sync-protocol.md` |
-| H7S USB 진단 wire·계측 | `docs/adr/0002-h7s-usb-diagnostics.md` |
-| ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` |
-| 공개 배포 | `docs/DEPLOYMENT.md` |
+| 하려는 일 | Change | Locate | Verify |
+| --- | --- | --- | --- |
+| 무엇이 어디 있고 무엇이 정본인가 | `docs/MAP.md` — 여기부터 | `docs/MAP.md` | `tests/docs-contract.test.ts` |
+| 제품 방향과 영구 금지사항 | `docs/PROJECT_DIRECTION.md` | — | `tests/docs-contract.test.ts` |
+| State Sync·exact-ms wire | `docs/adr/0001-state-sync-protocol.md` | `docs/MAP.md` §3 | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
+| H7S USB 진단 wire·계측 | `docs/adr/0002-h7s-usb-diagnostics.md` | `docs/MAP.md` §3 | `tests/era-usb-diagnostics.test.ts` |
+| ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` | `docs/MAP.md` §1 | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| 공개 배포 | `docs/DEPLOYMENT.md` | `docs/MAP.md` §5·§7 | `bun run build` |
 
 ## 2. 먼저 알아야 손해를 안 보는 것
 
@@ -37,8 +39,8 @@ bun install --frozen-lockfile
   실제 게이트는 §3의 네 명령뿐이다.
 - **`git checkout --`으로 파일을 되돌리면 autocrlf가 CRLF로 되돌려 놓는다.** 되돌린 뒤
   줄바꿈이 바뀐 것처럼 보이는 것은 정상이고, `git diff`는 정규화 후 비교하므로 깨끗하다.
-- **PR CI는 `bun run build` 하나만 돈다.** 테스트를 돌리지 않는다. 커밋 전에 로컬에서
-  §3을 직접 돌려야 한다.
+- **PR CI는 `bun run build`와 `test:p1`을 돈다.** `test:transport`와
+  `bun x tsc --noEmit`는 로컬 게이트다. 커밋 전에 로컬에서 §3을 직접 돌려야 한다.
 - **cwd를 이 앱 저장소에 둔다.** 펌웨어 저장소를 cwd로 세션을 열면 그쪽 규칙이
   `graphify update .`를 걸고, 과거에 그 경로로 이 저장소에 `graphify-out/` 75,000줄이
   잘못 커밋된 사고가 있다.
@@ -91,9 +93,11 @@ bun run build            # ERA 정의 31종
   보고한다.
 - 지속되는 결정은 `docs/PROJECT_DIRECTION.md`나 간결한 ADR에 남긴다. 진행 상태·브랜치·
   다음 할 일은 어디에도 기록하지 않는다 — `git log`와 실행이 답한다.
-- 문서 작성 규칙(헤더 규약, 경로 표기, 원인 보존, 날짜 금지)은 `docs/MAP.md` §9에 있다.
-  `docs/` 아래 문서는 `Genre`와 `Canonical for` 두 줄을 선언한다 — 네 저장소 공통 규약이고
-  이 파일과 `CLAUDE.md`는 진입 사슬이므로 예외다.
+- 문서 작성 규칙의 공통 규약은
+  [eerraa-agent-docs](https://github.com/eerraa/eerraa-agent-docs) 태그 **v1**의
+  [`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/v1/AGENT_DOCS_CONVENTION.md)다.
+  이 저장소가 보태는 것(경로 접두사, 상수, 링크, 스크립트)은 `docs/MAP.md` §9에 있다.
+  루트 `AGENTS.md`·`CLAUDE.md`는 진입 사슬이므로 헤더를 갖지 않는다 — 그것도 v1이 정한다.
 
 ## 7. `main` 히스토리를 다시 썼다 (한시적 안내)
 

@@ -15,9 +15,13 @@ Exact-ms는 2-byte big-endian `uint16` ms다. **채널/value id 표는
   기존 exact ID에 additive다. H7S exact SET은 별도 승인 전까지 100–500이다.
 - 범위를 벗어난 exact SET은 거절한다.
 - 공식 VIA + 공식 정의는 계속 필수다. legacy ID는 1-byte × 10 ms의 100–500 / 20 ms 그리드로
-  남고 공식 exact `options`는 `[100, 500]`이다. **공식 JSON의 options를 커스텀 앱 범위로
-  넓히는 것은 회귀다.**
+  남고 공식 exact `options`는 `[100, 500]`이다.
 - legacy GET은 floor-to-20 ms로 투영만 하고 exact 저장값을 다시 쓰지 않는다.
+
+> **REFUSED:** 공식 JSON의 exact `options`를 커스텀 앱 범위로 넓히기.
+> **WHY:** 공식 VIA + 공식 정의는 계속 필수이고, 공식 exact options는 `[100, 500]`의 레거시
+> 그리드로 남는다.
+> **REOPENS:** 없다. 커스텀 앱만 말할 수 있는 경로는 오류다.
 
 Definition ownership은 이 wire 결정과 독립이다 — `docs/MAP.md` §1·§4를 따른다.
 
@@ -61,22 +65,34 @@ candidate commit을 함께 소유하는 VIA core freshness 문제다.
 ## Decision and rationale
 
 기존 제안의 semantic event + revision recovery는 최종 수렴에 필요한 것보다
-강했다. Unsolicited event 한 종류를 추가하면 ARM, client nonce, lease 만료,
-event sequence, descriptor queue, overflow/coalescing, H7S event TX arbitration이
-연쇄적으로 필요하다. 그런데 event가 마지막 한 건에서 유실될 때 correctness를
-보장하는 것은 결국 periodic revision query다.
+강했다.
 
 **채택한 방식은 event가 없는 polling-first revision validation이다.** 선택되어 있고
 Configure가 보이는 capable device에만 작은 revision query를 저빈도로 보내고,
 revision이 달라진 domain만 기존 VIA GET으로 다시 읽는다. Lifecycle 경계에서는
 revision equality를 신뢰하지 않고 필요한 full refresh를 수행한다. `0x16` v1은
 Custom Menu의 빠른 invalidation hint로 그대로 유지하되 correctness의 유일한
-근거로 삼지 않는다.
+근거로 삼지 않는다. 이 축소안은 reconnect와 client replacement를 별도
+subscription state machine 없이 복구하고, 공식 VIA client에 unsolicited packet을
+보낼 가능성을 구조적으로 제거한다.
 
-이 축소안은 reconnect와 client replacement를 별도 subscription state machine
-없이 복구하고, 공식 VIA client에 unsolicited packet을 보낼 가능성을 구조적으로
-제거한다. Poll interval과 CONFIG refresh 비용이 실측상 수용 불가능할 때에만
-semantic event를 후속 ADR로 다시 제안한다.
+> **REFUSED:** unsolicited semantic event와 그에 딸린 host nonce, ARM/lease, event
+> sequence, descriptor queue·overflow coalescing, H7S unsolicited-event TX dispatcher.
+> **WHY:** 마지막 event가 유실되면 correctness를 보장하는 것은 결국 periodic revision
+> query이고, unsolicited packet은 공식 VIA client에 advanced traffic을 구조적으로 만든다.
+> **REOPENS:** poll interval과 CONFIG refresh 비용이 실측상 수용 불가능할 때, event를
+> hint로 두는 후속 ADR.
+
+> **REFUSED:** ACK journal, subscription state machine, snapshot/value 프로토콜.
+> **WHY:** 현재-state 수렴은 revision invalidation + 기존 GET으로 충분하고, 이 경로들은
+> 펌웨어 GET 외에 두 번째 authority와 retained client state를 만든다.
+> **REOPENS:** 측정된 polling 지연이나 refresh 비용이 구체적 실패를 보여준 뒤, 새 ADR로만
+> 재검토한다.
+
+> **REFUSED:** 호스트 프로토콜에 raw EEPROM 주소를 노출하기.
+> **WHY:** QMK와 H7S 저장 레이아웃이 다르고, 기존 VIA 읽기가 이미 권위 있는 직렬화와
+> 정규화를 제공한다.
+> **REOPENS:** 없다.
 
 ## Mechanism verdicts and five-question review
 
@@ -425,15 +441,28 @@ ERA image의 v1 transcript와 advanced firmware에서의 병존은 hardware로 �
 
 위 판정표가 제거한 메커니즘 외에 다음 설계도 제외한다. 표에 없는 것만 적는다.
 
-- **`0x16`을 bidirectional v2로 확장:** v1 unsolicited grammar와 response matching을
-  섞고 공식 behavior를 불필요하게 바꾼다.
-- **Event-only sync:** 마지막 event 유실을 복구하지 못한다.
-- **New split exact-range transport:** 기존 durable apply boundary와 domain mapping이면
-  correctness에 충분하다.
-- **Redux-wide rewrite:** explicit-device thunk와 작은 freshness coordinator면 된다.
+> **REFUSED:** `UI_SYNC_REQUEST 0x16`을 bidirectional v2로 확장하거나 State Sync 정확성
+> 근거로 재해석하기.
+> **WHY:** v1 unsolicited grammar와 response matching을 섞고 공식 VIA 동작을 바꾸며,
+> 마지막 `0x16` 유실은 이 grammar로 복구되지 않는다.
+> **REOPENS:** 없다. Advanced capability와 무관하게 기존 packet grammar를 유지한다.
 
-미측정 상수(five-second watchdog, 15-second lease)를 protocol에 넣지 않는다. timeout과
-rate는 측정된 파라미터로 다룬다.
+> **REFUSED:** event-only sync.
+> **WHY:** 마지막 event 유실을 복구하지 못한다.
+> **REOPENS:** 없다. 채택하더라도 event는 hint여야 하며 revision poll이 최종 수렴을 담당한다.
+
+> **REFUSED:** 새 split exact-range transport.
+> **WHY:** 기존 durable apply boundary와 three host domain mapping이면 correctness에
+> 충분하다.
+> **REOPENS:** 없다.
+
+> **REFUSED:** 이 계약을 이유로 Redux를 전면 재작성하기.
+> **WHY:** explicit-device thunk와 작은 freshness coordinator면 장치 격리를 충족한다.
+> **REOPENS:** VIA core가 정확성이나 유지보수성을 실제로 막는다는 증거가 있을 때.
+
+> **REFUSED:** 미측정 상수(five-second watchdog, 15-second lease)를 protocol에 넣기.
+> **WHY:** timeout과 rate는 측정된 파라미터로 다룬다.
+> **REOPENS:** 실측값이 생기면 그 값으로 후속 ADR에서 다룬다.
 
 ## Consequences
 
