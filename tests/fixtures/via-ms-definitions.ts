@@ -25,10 +25,3 @@ export const customExactGlobalTermControl = {
   ...exactGlobalTermControl,
   options: [1, 65535],
 };
-
-export const exactTapDanceTermControl = (slot: number, valueId: number) => ({
-  label: 'Term',
-  type: 'range' as const,
-  content: [`id_qmk_tapdance_${slot + 1}_term_exact`, 0, valueId],
-  options: [100, 500],
-});

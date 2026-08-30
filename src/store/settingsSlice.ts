@@ -16,16 +16,12 @@ import {DefinitionVersion} from '@the-via/reader';
 // TODO: why are these settings mixed? Is it because we only want some of them cached? SHould we rename to "CachedSettings"?
 type SettingsState = Settings & {
   isTestMatrixEnabled: boolean;
-  restartRequired: boolean;
-  allowGlobalHotKeys: boolean;
   showDesignTabConfirmationNotice: boolean;
 };
 
 const initialState: SettingsState = {
   ...getSettings(),
   isTestMatrixEnabled: false,
-  restartRequired: false,
-  allowGlobalHotKeys: false,
   showDesignTabConfirmationNotice: false,
 };
 
@@ -113,12 +109,6 @@ const settingsSlice = createSlice({
       state.testKeyboardSoundsSettings = testKeyboardSoundsSettings;
       setSettings(state);
     },
-    disableGlobalHotKeys: (state) => {
-      state.allowGlobalHotKeys = false;
-    },
-    enableGlobalHotKeys: (state) => {
-      state.allowGlobalHotKeys = true;
-    },
     updateHostKeyboardLayout: (state, action: PayloadAction<string>) => {
       state.hostKeyboardLayout = action.payload;
       setSettings(state);
@@ -137,8 +127,6 @@ export const {
   setTestKeyboardSoundsSettings,
   setMacroEditorSettings,
   toggleThemeMode,
-  disableGlobalHotKeys,
-  enableGlobalHotKeys,
   updateRenderMode,
   updateThemeName,
   updateDesignDefinitionVersion,
@@ -149,8 +137,6 @@ export default settingsSlice.reducer;
 
 export const getDesignDefinitionVersion = (state: RootState) =>
   state.settings.designDefinitionVersion;
-export const getAllowGlobalHotKeys = (state: RootState) =>
-  state.settings.allowGlobalHotKeys;
 export const getDisableFastRemap = (state: RootState) =>
   state.settings.disableFastRemap;
 export const getShowSliderValuesMode = (state: RootState) =>
@@ -161,8 +147,6 @@ export const getShowConsoleTab = (state: RootState) =>
   state.settings.showConsoleTab;
 export const getShowDesignTabConfirmationNotice = (state: RootState) =>
   state.settings.showDesignTabConfirmationNotice;
-export const getRestartRequired = (state: RootState) =>
-  state.settings.restartRequired;
 export const getIsTestMatrixEnabled = (state: RootState) =>
   state.settings.isTestMatrixEnabled;
 export const getMacroEditorSettings = (state: RootState) =>

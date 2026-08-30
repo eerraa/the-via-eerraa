@@ -103,31 +103,6 @@ export const updateBacklightValue =
     await api.saveLighting();
   };
 
-export const updateCustomColor =
-  (idx: number, hue: number, sat: number): AppThunk =>
-  async (dispatch, getState) => {
-    const state = getState();
-    const connectedDevice = getSelectedConnectedDevice(state);
-    const api = getSelectedKeyboardAPI(state);
-    const oldLightingData = getSelectedLightingData(state);
-    if (!connectedDevice || !oldLightingData || !api) {
-      // TODO: shoud we be throwing instead of returning whenever we do these device checks in thunks?
-      return;
-    }
-
-    const customColors = [...(oldLightingData.customColors || [])];
-    customColors[idx] = {hue, sat};
-    const lightingData = {
-      ...oldLightingData,
-      customColors,
-    };
-    const {path} = connectedDevice;
-    dispatch(updateSelectedLightingData({lightingData, devicePath: path}));
-
-    api.setCustomColor(idx, hue, sat);
-    await api.saveLighting();
-  };
-
 const continuousLightingKey = (scope: string | number) => `lighting:${scope}`;
 
 const continuousLightingConfig = (

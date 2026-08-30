@@ -1162,9 +1162,6 @@ export const getCustomCommandsForDefinition = (
   return commandsForMenus(menus, firmwareVersion);
 };
 
-export const getCommonMenusDataMap = (state: RootState) =>
-  state.menus.commonMenusMap;
-
 export const getShowKeyPainter = (state: RootState) =>
   state.menus.showKeyPainter;
 

@@ -20,8 +20,6 @@ import type {
 export {KeyboardValue} from './keyboard-values';
 export {
   parseUISyncRequest,
-  UISyncRequestType,
-  type UISyncCustomMenuCommandTarget,
   type UISyncRequest,
 } from './ui-sync';
 

@@ -572,12 +572,6 @@ export const getLoadProgress = createSelector(
       : layers && layers.filter((layer) => layer.isLoaded).length / layerCount,
 );
 
-export const getSelectedRawLayer = createSelector(
-  getSelectedRawLayers,
-  getSelectedLayerIndex,
-  (deviceLayers, layerIndex) => deviceLayers && deviceLayers[layerIndex],
-);
-
 export const getSelectedKeymaps = createSelector(
   getSelectedKeyDefinitions,
   getSelectedDefinition,

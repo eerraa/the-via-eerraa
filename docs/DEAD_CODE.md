@@ -124,33 +124,44 @@ Removed in PR #23:
 `@types/raf-schd` from `package.json`. `bun.lock` and `package-lock.json`
 refreshed together. `ts-prune` / `find-deadcode` stay.
 
-### 2.6 Unused TypeScript exports (file stays)
+### 2.6 Unused TypeScript exports (file stays) — removed 2026-08-30
 
-Same proof as §2.4, export-level. Do not delete the file.
+Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
+and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
+`era-definitions/custom/v3`. Files stay. `bun run find-deadcode` (`ts-prune`)
+listed each `src/` name below. `exactTapDanceTermControl` is under `tests/`,
+outside `tsconfig.json` `include` (`src`, `types`); grep showed no importer.
+`ts-prune` "used in module" on `disableGlobalHotKeys` / `enableGlobalHotKeys`
+is the slice `actions` destructure, not a dispatcher in `src/` or `tests/`.
 
-| Export | File |
-| --- | --- |
-| `getSelectedRawLayer` | `src/store/keymapSlice.ts` — callers use `getSelectedRawLayers`. |
-| `updateCustomColor` | `src/store/lightingSlice.ts` — UI uses `updateCustomColorContinuous`. |
-| `getCommonMenusDataMap` | `src/store/menusSlice.ts` |
-| `disableGlobalHotKeys`, `enableGlobalHotKeys`, `getAllowGlobalHotKeys`, `getRestartRequired` | `src/store/settingsSlice.ts` — no dispatcher outside the slice. |
-| `getRandomColor`, `getBrightenedColor`, `get256HSV` | `src/utils/color-math.ts` — `getDarkenedColor` / `getHSV` / `updateCSSVariables` are live. |
-| `getShowSliderValuesModeFromStore`, `getRenderModeFromStore` | `src/utils/device-store.ts` — UI reads Redux `getRenderMode`. |
-| `isNumericOrShiftedSymbol`, `isNumericSymbol` | `src/utils/key.ts` — defined, never called. |
-| `isNotNullish` | `src/utils/type-predicates.ts` — `isFulfilledPromise` and `isAuthorizedDeviceConnected` are live. |
-| `DEFAULT_HOST_KEYBOARD_LAYOUT` | `src/utils/keymap-extras/index.ts` — default is the `'keymap_us'` literal in `src/utils/device-store.ts`. |
-| `LabelProps` | `src/components/panes/configure-panes/custom/menu-generator.tsx` |
-| Re-exports `UISyncRequestType`, `UISyncCustomMenuCommandTarget` | `src/utils/keyboard-api.ts` — tests import from `src/utils/ui-sync.ts`. |
-| `exactTapDanceTermControl` | `tests/fixtures/via-ms-definitions.ts` — other exports in that file are imported by `tests/millisecond-field.test.ts`. |
+Removed in this PR (number filled after open):
+`getSelectedRawLayer` from `src/store/keymapSlice.ts`;
+`updateCustomColor` from `src/store/lightingSlice.ts`;
+`getCommonMenusDataMap` from `src/store/menusSlice.ts`;
+`disableGlobalHotKeys`, `enableGlobalHotKeys`, `getAllowGlobalHotKeys`,
+`getRestartRequired` from `src/store/settingsSlice.ts`;
+`getRandomColor`, `getBrightenedColor`, `get256HSV` from
+`src/utils/color-math.ts`;
+`getShowSliderValuesModeFromStore`, `getRenderModeFromStore` from
+`src/utils/device-store.ts`;
+`isNumericOrShiftedSymbol`, `isNumericSymbol` from `src/utils/key.ts`;
+`isNotNullish` from `src/utils/type-predicates.ts`;
+`DEFAULT_HOST_KEYBOARD_LAYOUT` from `src/utils/keymap-extras/index.ts`;
+`LabelProps` from
+`src/components/panes/configure-panes/custom/menu-generator.tsx`;
+re-exports `UISyncRequestType`, `UISyncCustomMenuCommandTarget` from
+`src/utils/keyboard-api.ts` (live imports remain `src/utils/ui-sync.ts`);
+`exactTapDanceTermControl` from `tests/fixtures/via-ms-definitions.ts`.
 
-`ts-prune` also lists test-only HID helpers (`configureHIDTransport`,
-`registerHIDDeviceForTesting`, …). Those are imported by
-`tests/transport-phase1.test.ts` and `tests/state-sync-transport.test.ts`. KEEP.
-
+Kept: test-only HID helpers (`configureHIDTransport`,
+`registerHIDDeviceForTesting`, …) imported by
+`tests/transport-phase1.test.ts` and `tests/state-sync-transport.test.ts`.
 Named diagnostic bit constants (`ERA_USB_DIAGNOSTICS_CAP_*`,
 `ERA_USB_DIAGNOSTICS_STATUS_INVALID`, `ERA_USB_DIAGNOSTICS_STATUS_NO_SESSION`)
-are unused as identifiers; `ERA_USB_DIAGNOSTICS_REQUIRED_CAPABILITIES` is
-`0x1f` (all five bits). KEEP the names as the wire catalog.
+stay as the wire catalog. `ts-prune` / `find-deadcode` stay.
+`getDarkenedColor` / `getHSV` / `updateCSSVariables`,
+`getSelectedRawLayers`, `updateCustomColorContinuous`, and Redux
+`getRenderMode` stay.
 
 ### 2.7 Unused locale keys
 
@@ -229,7 +240,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30, PR #21.
 4. §2.4 unreferenced files — removed 2026-08-30, PR #22.
 5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
-6. §2.6 unused exports. Keep files.
+6. §2.6 unused exports — removed 2026-08-30. Keep files.
 7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
    green.
 8. §4 comment-only fixes (`public/_redirects` and docs-contract comment

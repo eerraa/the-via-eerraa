@@ -570,5 +570,3 @@ export const keymapExtras: Record<string, KeymapExtra> = {
     keycodeLUT: workman_zxcvm,
   },
 };
-
-export const DEFAULT_HOST_KEYBOARD_LAYOUT = 'keymap_us';

@@ -13,14 +13,6 @@ export const updateCSSVariables = (themeName: keyof typeof THEMES) => {
   );
 };
 
-export const getRandomColor = () =>
-  Array(3)
-    .fill(0)
-    .reduce(
-      (a) => `${a}${(~~(Math.random() * 255)).toString(16).padStart(2, '0')}`,
-      '#',
-    );
-
 export function getRGBPrime(
   hue: number,
   c: number,
@@ -44,21 +36,6 @@ export function getRGBPrime(
   throw new Error('Invalid hue');
 }
 
-export const getBrightenedColor = (color: string, multiplier = 0.8) => {
-  const cleanedColor = color.replace('#', '');
-  const r = parseInt(cleanedColor[0], 16) * 16 + parseInt(cleanedColor[1], 16);
-  const g = parseInt(cleanedColor[2], 16) * 16 + parseInt(cleanedColor[3], 16);
-  const b = parseInt(cleanedColor[4], 16) * 16 + parseInt(cleanedColor[5], 16);
-  const hr = Math.min(Math.round(r / multiplier), 256).toString(16);
-  const hg = Math.min(Math.round(g / multiplier), 256).toString(16);
-  const hb = Math.min(Math.round(b / multiplier), 256).toString(16);
-  const res = `#${hr.padStart(2, '0')}${hg.padStart(2, '0')}${hb.padStart(
-    2,
-    '0',
-  )}`;
-  return res;
-};
-
 export const getColorByte = (color: string) => {
   const cleanedColor = color.replace('#', '');
   const r = parseInt(cleanedColor[0], 16) * 16 + parseInt(cleanedColor[1], 16);
@@ -79,14 +56,6 @@ export const getDarkenedColor = (color: string, multiplier = 0.8) => {
   return res;
 };
 
-export const get256HSV = (color: string) => {
-  const [h, s, v] = getHSV(color);
-  return [
-    Math.round((255 * h) / 360),
-    Math.round(255 * s),
-    Math.round(255 * v),
-  ];
-};
 export const getHSV = (color: string) => {
   const [rPrime, gPrime, bPrime] = getColorByte(color).map((c) => c / 255);
   const [cmax, cmin] = [

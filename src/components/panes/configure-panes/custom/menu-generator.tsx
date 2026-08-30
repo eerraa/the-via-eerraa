@@ -379,13 +379,6 @@ export const MenuContainer = styled.div`
   padding: 15px 10px 20px 10px;
 `;
 
-export type LabelProps = {
-  _type?: 'slice' | 'submenu' | 'menu';
-  _id?: string;
-  _renderIf?: (props: any) => boolean;
-  content: any;
-};
-
 export function elemLabeler(elem: any, prefix: string = ''): any {
   if (isItem(elem)) {
     return {

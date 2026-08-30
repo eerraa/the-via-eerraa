@@ -113,18 +113,6 @@ export function isMultiLegend(label: string) {
   return /^[^\n]+\n[^\n]+$/.test(label);
 }
 
-// Tests if label is a number
-export function isNumericOrShiftedSymbol(label: string) {
-  const numbersTop = '!@#$%^&*()_+|~{}:"<>?1234567890'.split('');
-  return label.length === 1 && numbersTop.includes(label[0]);
-}
-
-// Tests if label is a number
-export function isNumericSymbol(label: string) {
-  const numbersTop = '!@#$%^&*()_+|~{}:"<>?'.split('');
-  return label.length !== 1 && numbersTop.includes(label[0]);
-}
-
 // Maps the byte value to the keycode
 export function getByteForCode(
   code: string,

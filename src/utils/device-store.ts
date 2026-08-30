@@ -190,14 +190,6 @@ export const getThemeModeFromStore = (): 'dark' | 'light' => {
   return deviceStore.get('settings')?.themeMode;
 };
 
-export const getShowSliderValuesModeFromStore = (): 'Slider & Show Value' | 'Slider & Input Field' | 'Slider Only' => {
-  return deviceStore.get('settings')?.ShowSliderValuesMode;
-};
-
-export const getRenderModeFromStore = (): '3D' | '2D' => {
-  return deviceStore.get('settings')?.renderMode;
-};
-
 export const getThemeNameFromStore = () => {
   return deviceStore.get('settings')?.themeName;
 };
