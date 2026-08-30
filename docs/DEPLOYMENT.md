@@ -15,8 +15,7 @@ Re-measured from this repository: `.github/workflows/deploy-to-cloudflare.yml`,
 `.gitattributes`, `vite.config.ts`, `index.html`, `src/utils/device-store.ts`,
 `src/store/definitionsSlice.ts`, `src/utils/era-advanced-metadata.ts`,
 `src/utils/pane-config.ts`, `src/components/panes/errors.tsx`, `src/Routes.tsx`,
-`src/utils/macro-api/macro-api.ts`, `src/utils/github.ts`,
-`public/github_oauth.html`. There is no `wrangler.toml`, `wrangler.json`, or
+`src/utils/macro-api/macro-api.ts`. There is no `wrangler.toml`, `wrangler.json`, or
 Cloudflare Pages Git-build config in this tree. The production alias is
 <https://the-via.pages.dev>.
 
@@ -236,10 +235,9 @@ production alias moves.
   `fonts.gstatic.com`). Visitor IPs are sent to Google. Fully self-hosted
   fonts are a separate change; `public/fonts/` is a different, already-bundled
   family.
-- **`src/utils/github.ts` is not imported.** Its non-localhost redirect URI is
-  `usevia.app`. `public/github_oauth.html` still ships and POSTs to
-  `/api/GithubOAuth`, which this static host does not serve. No deploy-time
-  OAuth.
+- **No deploy-time GitHub OAuth.** This static host does not serve
+  `/api/GithubOAuth`. The unused gist helper and callback HTML were removed
+  (`docs/DEAD_CODE.md` §2.3).
 - **The project name `the-via` matches upstream VIA's GitHub organization.**
   This repository is an unofficial fork of `the-via/app`. The `*.pages.dev`
   label is not reversible without a new project (§2).

@@ -78,16 +78,18 @@ Removed in PR #20: `download-definition.js`
 and `build-definitions.js` (`via-keyboards public/definitions`) from
 `scripts/`. Live definition pipeline stays `scripts/build-keyboards.ts`.
 
-### 2.3 GitHub gist OAuth
+### 2.3 GitHub gist OAuth — removed 2026-08-30
 
-`docs/DEPLOYMENT.md` §7 already records: `src/utils/github.ts` is not
-imported; `public/github_oauth.html` POSTs to `/api/GithubOAuth`, which this
-host does not serve.
+Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
+and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
+`era-definitions/custom/v3`. No `api/` directory. No CI workflow or app route
+names `GithubOAuth`. Vite copies `public/` into `dist/`; nothing imported the
+helper.
 
-| Path | Proof |
-| --- | --- |
-| `src/utils/github.ts` | `authGithub`, `getUser`, `getKLEFiles`: zero importers. Redirect URI is `usevia.app`. |
-| `public/github_oauth.html` | Shipped by Vite `public/` copy. No app import. No `/api` route. |
+Removed in this PR (number filled after open): `github.ts` (`authGithub`,
+`getUser`, `getKLEFiles`; non-localhost redirect URI was `usevia.app`) from
+`src/utils/` and `github_oauth.html` from `public/` (posted to
+`/api/GithubOAuth`, which this host does not serve).
 
 ### 2.4 Unreferenced source files
 
@@ -226,7 +228,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 
 1. §2.1 Azure / `fiber` — removed 2026-08-30, PR #19.
 2. §2.2 unused definition scripts — removed 2026-08-30, PR #20.
-3. §2.3 GitHub OAuth pair (ts + html together).
+3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30.
 4. §2.4 unreferenced files (icons, `ExportScene`, `App.css`, empty
    `public/assets/404.html`, scaffold SVG/icns, `src/constants/routes.json`).
 5. §2.5 unused npm dependencies (`bun.lock` / `package-lock.json` together).
