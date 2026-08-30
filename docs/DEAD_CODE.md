@@ -91,27 +91,25 @@ Removed in PR #21: `github.ts` (`authGithub`,
 `src/utils/` and `github_oauth.html` from `public/` (posted to
 `/api/GithubOAuth`, which this host does not serve).
 
-### 2.4 Unreferenced source files
+### 2.4 Unreferenced source files — removed 2026-08-30
 
-Zero importers in `src/` and `tests/`. None are menu JSON. None are
-`FEATURE_COVERAGE` keys.
+Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
+and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
+`era-definitions/custom/v3`. Live pane icons are Font Awesome in
+`src/utils/pane-config.ts` (`faGear`, `faBug`). `src/index.tsx` imports
+`src/app.global.css` only. Live 404 is `public/404.html`. Live files under
+`src/assets/` remain (`chippy_600.png`, `cubey.glb`,
+`keyboard_components.glb`).
 
-| Path | Notes |
-| --- | --- |
-| `src/utils/debug-shallow-equal.ts` | `debugShallowEqual` never imported. |
-| `src/components/three-fiber/export-scene.tsx` | `ExportScene` never imported. |
-| `src/components/icons/left-arrow.tsx` | Default export unused. Live icons are Font Awesome in `src/utils/pane-config.ts`. |
-| `src/components/icons/right-arrow.tsx` | Same. |
-| `src/components/icons/tune.tsx` | Exports `title`/`component` for Settings. Settings uses `faGear`. |
-| `src/components/icons/memory.tsx` | Default `{title: 'Debug', component}`. Debug uses `faBug`. |
-| `src/components/icons/via.tsx` | `VIALogo` unused. |
-| `src/App.css` | Vite scaffold (`aliceblue !important`). `src/index.tsx` imports `src/app.global.css` only. |
-| `src/logo.svg` | Zero references. |
-| `src/assets/react.svg` | Zero references. |
-| `src/assets/images/squarey.svg` | Zero references. |
-| `src/app.icns` | Zero references. |
-| `src/constants/routes.json` | `{"HOME":"/"}`. Zero importers. Routes live in `src/utils/pane-config.ts`. |
-| `public/assets/404.html` | One newline. Live 404 is `public/404.html` (deploy verify). |
+Removed in this PR (number filled after open): `debug-shallow-equal.ts`
+(`debugShallowEqual`) from `src/utils/`; `export-scene.tsx` (`ExportScene`)
+from `src/components/three-fiber/`; unused icons `left-arrow.tsx`,
+`right-arrow.tsx`, `tune.tsx`, `memory.tsx`, `via.tsx` (`VIALogo`) from
+`src/components/icons/`; Vite scaffold `App.css`, `logo.svg`, and `app.icns`
+from `src/`; `react.svg` from `src/assets/`; `squarey.svg` from
+`src/assets/images/`; `routes.json` (`{"HOME":"/"}`); empty `404.html` (one
+newline) that was not `public/404.html`. Live routes stay in
+`src/utils/pane-config.ts`.
 
 ### 2.5 Unused package.json dependencies
 
@@ -229,8 +227,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 1. §2.1 Azure / `fiber` — removed 2026-08-30, PR #19.
 2. §2.2 unused definition scripts — removed 2026-08-30, PR #20.
 3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30, PR #21.
-4. §2.4 unreferenced files (icons, `ExportScene`, `App.css`, empty
-   `public/assets/404.html`, scaffold SVG/icns, `src/constants/routes.json`).
+4. §2.4 unreferenced files — removed 2026-08-30.
 5. §2.5 unused npm dependencies (`bun.lock` / `package-lock.json` together).
 6. §2.6 unused exports. Keep files.
 7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
