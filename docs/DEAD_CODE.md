@@ -163,29 +163,69 @@ stay as the wire catalog. `ts-prune` / `find-deadcode` stay.
 `getSelectedRawLayers`, `updateCustomColorContinuous`, and Redux
 `getRenderMode` stay.
 
-### 2.7 Unused locale keys
+### 2.7 Unused locale keys — removed 2026-08-30
 
-`src/locales/*.json`: 6 files, 605 keys each
-(`tests/locales.test.ts` same-key lock). A key is live if `src/` calls `t`
-with that string, or a definition JSON label is that string (Custom pane
-does `t(label)`).
+Not pending. Re-measured 2026-08-30 before delete. A key is live if `src/`
+passes that string to `t`, or a menu `label` / dropdown option in
+`era-definitions/custom/v3` or `via-keyboards` (official V3 JSON this app
+loads) is that string — Custom pane does `t(label)`. Not a
+`FEATURE_COVERAGE` command. All six catalogs (`de en es ja ko zh`) moved
+together. `tests/locales.test.ts` same-key lock stays.
 
-Proven unused clusters (English key; all six catalogs must move together):
+Removed in this PR (number filled after open), 77 keys:
 
-| Cluster | Examples | Proof |
-| --- | --- | --- |
-| Duplicate ASCII vs Unicode ellipsis | `Searching for devices…` vs live `Searching for devices...` in `src/components/loading-text.tsx`; `No macro recorded yet…` vs live `No macro recorded yet...` in `src/components/panes/configure-panes/submenus/macros/macro-recorder.tsx`; `Loading…` with no `src/` caller | The ASCII form is the `t()` argument. |
-| Duplicate period | `This feature is not available for this firmware version` (no period) vs live string with period in `src/components/panes/configure-panes/custom/menu-generator.tsx` | |
-| Duplicate import error | `Could not import layout. This file was created for a different keyboard` vs live `…keyboard: {{name}}` in `src/components/panes/configure-panes/save-load.tsx` | |
-| Retired tab title | `Diagnostics` | No `t('Diagnostics')`. Top-level page is gone ([ADR 0003](adr/0003-era-menu-help-ui.md)). |
-| Unused typo key | `Blacklight` | No `src/` and no definition label. Live backlight labels are `Backlight` / `Breating Period` (§4). |
-| Analog / DKS / rapid-trigger catalog | `Actuation`, `DKS`, `Rapit Trigger`, `Set Actuatoin Point`, `Per key actuation`, … | Zero `src/` matches. |
-| Video / image / flash catalog | `Import Video`, `FPS`, `Failed to flash.`, … | Zero `src/` matches. |
-| Per-key switch-type catalog | `Caps Key Switch Type`, `Left Shift Key Mode`, `Haptic Status`, … | Zero `src/` matches. |
+Unicode-ellipsis duplicates (ASCII forms stay): `Searching for devices…`,
+`No macro recorded yet…`, `Loading…`.
+Period duplicate: `This feature is not available for this firmware version`
+(the form with a period stays).
+Import-error duplicate: `Could not import layout. This file was created for
+a different keyboard` (the `{{name}}` form stays).
+Retired tab title: `Diagnostics` (no `t('Diagnostics')`; top-level page is
+gone, [ADR 0003](adr/0003-era-menu-help-ui.md)). `USB Polling Diagnostics`
+and related observation keys stay.
+Typo: `Blacklight`. Live backlight labels are `Backlight` / `Breating Period`
+(§4).
 
-Do not delete a key that is only reached via `t(label)` from JSON until that
-label is grepped in `era-definitions/custom/v3`. Long Design-tab strings in
-`src/components/panes/design.tsx` are live even when they span JSON newlines.
+Analog / DKS / rapid-trigger keys with no `src/` `t()` argument, no
+`era-definitions/custom/v3` label, and no `via-keyboards` label/option:
+`Selecting a key to start setting dynamic keystroke`, `AP`, `DKS`, `RT`,
+`Selecting keys to set per key actuation`, `Per key actuation`,
+`Selecting keys to set rapid trigger`, `Revert all keys to global`,
+`Rapit Trigger`, `Global actuation`, `Continuous rapid trigger`,
+`Press(active)`, `Release(reset)`, `sensitivity`, `Set Actuatoin Point`,
+`Self Check`, `SELF CHECK`, `Recheck`, `Check Failed, Retry`,
+`Actuation Level (0% | 100%)`, `Actuation Offset (1-255)`,
+`Bottoming Calibration`, `Clear Bottoming Calibration Data`, `EC Tools`,
+`Hybrid Tools`, `Initial Deadzone Offset (0% | 100%)`,
+`Noise Floor Calibration (DO NOT PRESS ANY KEY WHILE CLICKING)`,
+`Release Level (0% | 100%, ALWAYS < Actuation Level)`,
+`Release Offset (1-255)`, `Show Calibration Data`.
+
+Video / image / flash keys with the same proof: `Matrix Lighting`,
+`Import Image`, `Import Video`, `FPS`, `video`, `image`, `slider`,
+`Original Size`, `Space Remaining`, `Processing`, `Failed to process.`,
+`Failed to save.`, `File Name`, `Import From Album`, `Transition Animation`,
+`Top to bottom`, `Bottom to top`, `Left to right`, `Right to left`,
+`Current bindings`, `Flash`, `Failed to flash.`, `Flash successful.`,
+`Import File`, `Download File`, `Current Version`, `Update Available`,
+`Time Sync`, `Initializing`,
+`Cancel transfer will revert to factory default video, confirm cancel?`,
+`Cancel transfer will revert to factory default image, confirm cancel?`,
+`Cancel transfer will revert to factory default slider, confirm cancel?`,
+`To boost the data transfer speed, the backlight will shut off during transfer period and resume afterwards.`,
+`Please DO NOT disconnect or switch mode during the upgrade, until the keyboard auto-reboot finishes.`,
+`Custom Animation`, `Custom Image`, `Custom Slider`, `Sharing failed`,
+`Sharing success`.
+
+Per-key switch-type key with the same proof: `Main Cluster Switch Type`.
+
+Kept (looked unused in `src/` literals; official VIA JSON still feeds them
+to `t(label)`): `Actuation` and `Calibration` (`via-keyboards` cipulot EC
+menus); `Switch Type`, `Haptic Status`, `General Board`, `Caps Key`,
+`Caps Key Switch Type`, `Caps Key Mode`, and the matching Left/Right Shift,
+Right FN, Left/Right Mod 1–2, Left/Right Spacebar 1–2 Key / Switch Type /
+Mode labels (`via-keyboards` cipulot `hybrid_enso_e` and `21xx`). Long
+Design-tab strings in `src/components/panes/design.tsx` stay.
 
 ## 3. RETIRED-ID
 
@@ -241,8 +281,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 4. §2.4 unreferenced files — removed 2026-08-30, PR #22.
 5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
 6. §2.6 unused exports — removed 2026-08-30, PR #24. Keep files.
-7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
-   green.
+7. §2.7 unused locale keys — removed 2026-08-30. Six catalogs in one commit.
 8. §4 comment-only fixes (`public/_redirects` and docs-contract comment
    suffix). Separate from `Breating Period`, which is a live label.
 
