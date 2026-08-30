@@ -111,7 +111,7 @@ from `src/`; `react.svg` from `src/assets/`; `squarey.svg` from
 newline) that was not `public/404.html`. Live routes stay in
 `src/utils/pane-config.ts`.
 
-### 2.5 Unused package.json dependencies — removed 2026-08-30
+### 2.5 Unused package.json dependencies — removed 2026-08-30, PR #23
 
 Not pending. Re-measured 2026-08-30 before delete: zero `import` / `require` in
 `src/`, `tests/`, and `scripts/`; not a `FEATURE_COVERAGE` command; not a menu
@@ -119,7 +119,7 @@ Not pending. Re-measured 2026-08-30 before delete: zero `import` / `require` in
 script names them. `src/store/index.ts` does not add logger middleware. No
 `raf-schd` package.
 
-Removed in this PR (number filled after open):
+Removed in PR #23:
 `@microsoft/applicationinsights-web`, `concurrently`, `redux-logger`, and
 `@types/raf-schd` from `package.json`. `bun.lock` and `package-lock.json`
 refreshed together. `ts-prune` / `find-deadcode` stay.
@@ -228,7 +228,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 2. §2.2 unused definition scripts — removed 2026-08-30, PR #20.
 3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30, PR #21.
 4. §2.4 unreferenced files — removed 2026-08-30, PR #22.
-5. §2.5 unused npm dependencies — removed 2026-08-30.
+5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
 6. §2.6 unused exports. Keep files.
 7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
    green.
