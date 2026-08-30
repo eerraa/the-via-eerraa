@@ -3,7 +3,7 @@ name: PR Build
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, fiber]
+    branches: [main]
 
 jobs:
   build:

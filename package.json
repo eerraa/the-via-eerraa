@@ -5,7 +5,6 @@
     "build": "bun run typecheck:scripts && bun run build:kbs && tsc && vite build",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "lint": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "build:azure": "bun run build",
     "preview": "vite preview",
     "build:kbs": "node --import tsx scripts/build-keyboards.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",

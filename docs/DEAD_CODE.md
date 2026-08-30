@@ -45,20 +45,21 @@ It does not pick between `malformed` (host parse of a non-32 IN) and `0xFF`
 Each cluster is one later session. Do not mix clusters in one commit unless
 they are the same proof.
 
-### 2.1 Azure Static Web Apps and GitHub `fiber`
+### 2.1 Azure Static Web Apps and GitHub `fiber` — removed 2026-08-30
 
-This fork's host is Cloudflare Pages Direct Upload
-(`docs/DEPLOYMENT.md`). There is no `api/` directory.
+Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
+and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
+`era-definitions/custom/v3`. No `api/` directory. Origin has no `fiber`
+branch. Cloudflare workflow and PR CI call `bun run build`, not
+`build:azure`. Vite does not copy a repo-root SWA config into `dist/`.
 
-| Path | Proof |
-| --- | --- |
-| `staticwebapp.config.json` | Azure SWA routes. Not read by the Cloudflare workflow. Missing `/console` that `public/_redirects` has. |
-| `package.json` script `build:azure` | Alias of `build`. Zero callers outside that alias. |
-| `.vscode/settings.json` `azureFunctions.*` | Points at missing `api/`. |
-| `.vscode/tasks.json` | Four tasks, cwd `api`. |
-| `.vscode/launch.json` | "Attach to Node Functions", preLaunchTask `func: host start`. |
-| `.vscode/extensions.json` recommendation `ms-azuretools.vscode-azurefunctions` | No functions project. |
-| `.github/workflows/pr-build.yml` `branches: [main, fiber]` | `fiber` is not a branch this fork maintains. Trigger leftover from upstream. |
+Removed in this PR (number filled after open): `staticwebapp.config.json`;
+`package.json` script `build:azure`; `.vscode/settings.json` (only
+`azureFunctions.*` plus Functions-attach `debug.internalConsoleOptions`);
+`.vscode/tasks.json`; `.vscode/launch.json`; Azure Functions recommendation
+from `.vscode/extensions.json`; `fiber` from
+`.github/workflows/pr-build.yml` `on.pull_request.branches` (now `main`
+only). Prettier recommendation in `.vscode/extensions.json` stays.
 
 Root `README.md` still describes Azure. `docs/DEPLOYMENT.md` forbids editing
 it. That file is KEEP (upstream surface), not this cluster.
@@ -218,7 +219,7 @@ Looks unused; deleting is a regression.
 One cluster per session. Re-measure importers before deleting. Stop if a
 name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 
-1. §2.1 Azure / `fiber` — no runtime import path.
+1. §2.1 Azure / `fiber` — removed 2026-08-30 (this PR).
 2. §2.2 unused definition scripts.
 3. §2.3 GitHub OAuth pair (ts + html together).
 4. §2.4 unreferenced files (icons, `ExportScene`, `App.css`, empty
