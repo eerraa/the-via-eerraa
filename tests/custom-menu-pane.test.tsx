@@ -46,7 +46,20 @@ const device = {
   hasResolvedDefinition: true,
 } as const;
 
-const makeStore = (overrides: {era?: boolean; menuData?: object} = {}) => {
+type ConfigSyncOverride = {
+  status: 'dirty' | 'refreshing' | 'fresh';
+  observedRevision?: number;
+  acceptedRevision?: number;
+  foregroundWriteDepth?: number;
+};
+
+const makeStore = (
+  overrides: {
+    era?: boolean;
+    menuData?: object;
+    configSync?: ConfigSyncOverride;
+  } = {},
+) => {
   const definitionEntry = {[device.vendorProductId]: {v3: {}}};
   const state = {
     definitions: {
@@ -69,6 +82,17 @@ const makeStore = (overrides: {era?: boolean; menuData?: object} = {}) => {
       forceAuthorize: false,
     },
     firmware: {firmwareVersionMap: {}, keycodesVersionMap: {}},
+    // TAPDANCE rows are keycode pickers, which read macro state to render.
+    macros: {
+      ast: [],
+      macroBufferSize: 0,
+      macroCount: 0,
+      isFeatureSupported: true,
+      status: 'idle',
+      ownerPath: null,
+      ownerConnectionGeneration: null,
+      ownerSelectionGeneration: null,
+    },
     menus: {
       customMenuDataMap: overrides.menuData
         ? {[device.path]: overrides.menuData}
@@ -76,6 +100,30 @@ const makeStore = (overrides: {era?: boolean; menuData?: object} = {}) => {
       commonMenusMap: {},
       showKeyPainter: false,
     },
+    ...(overrides.configSync && {
+      stateSync: {
+        byPath: {
+          [device.path]: {
+            capability: 'capable',
+            generation: 0,
+            config: {
+              status: overrides.configSync.status,
+              observedRevision:
+                overrides.configSync.observedRevision ?? 2,
+              acceptedRevision:
+                overrides.configSync.acceptedRevision ?? 1,
+              mutationEpoch: 0,
+              foregroundWriteDepth:
+                overrides.configSync.foregroundWriteDepth ?? 0,
+              acceptedSelectionGeneration: 1,
+              acceptedDefinitionIdentity: `${device.vendorProductId}:v3:0`,
+            },
+          },
+        },
+        configureVisible: true,
+        documentHidden: false,
+      },
+    }),
   };
   return configureStore({reducer: () => state as any});
 };
@@ -91,16 +139,14 @@ const render = (store: ReturnType<typeof makeStore>, viaMenu: object) =>
 
 // Only the ERA H7S definitions opt into USB Diagnostics, and the section must not
 // exist — let alone probe selector 0x07 — for anything else.
-const optIn = (usbDiagnostics: boolean) =>
+const optIn = (usbDiagnostics: boolean, stateSync = false) =>
   setEraAdvancedMetadataForTesting({
     schemaVersion: 2,
     definitions: [
       {
         id: 'custom-menu-test',
         vendorProductId: device.vendorProductId,
-        // State Sync verification is a separate gate that would hold the menu in a
-        // checking state; this test is about the diagnostics opt-in only.
-        stateSync: false,
+        stateSync,
         usbDiagnostics,
         exactMsFamily: 'h7s',
       },
@@ -147,7 +193,112 @@ const menuData = {
   id_qmk_usb_bootmode: [0],
   id_qmk_usb_bootmode_apply: [0],
   id_qmk_system_dfu: [0],
+  id_qmk_tapdance_1_term_exact: [0, 200],
+  id_qmk_debounce_mode: [0],
+  id_qmk_debounce_time_single: [5],
+  id_qmk_debounce_time_pre: [5],
+  id_qmk_debounce_time_post: [5],
+  id_qmk_tapping_global_term_exact: [0, 200],
+  id_qmk_tapping_permissive_hold: [0],
+  id_qmk_mousekey_cursor_acceleration: [20],
 };
+
+// The ms rows a DEBOUNCE mode shows are not the ones another mode shows, and Fast and
+// Advanced spend the same command id on rows that mean different things, so the
+// fixtures carry the real labels and the real showIf expressions from the definitions.
+const msOptions = [
+  ['1 ms', 1],
+  ['5 ms', 5],
+];
+
+const debounceSubmenu = {
+  label: 'DEBOUNCE',
+  _id: '-0',
+  content: [
+    {
+      label: 'Debounce Mode',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_debounce_mode', 14, 1],
+      options: [
+        ['Balanced', 0],
+        ['Fast', 1],
+        ['Advanced', 2],
+      ],
+    },
+    {
+      showIf: '{id_qmk_debounce_mode} == 0',
+      label: 'Press & Release - delay before and after (same value)',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_debounce_time_single', 14, 2],
+      options: msOptions,
+    },
+    {
+      showIf: '{id_qmk_debounce_mode} == 1',
+      label: 'Press & Release - delay after change (post-only)',
+      type: 'dropdown',
+      _id: '-0-2',
+      content: ['id_qmk_debounce_time_post', 14, 4],
+      options: msOptions,
+    },
+    {
+      showIf: '{id_qmk_debounce_mode} == 2',
+      label: 'Release - delay before and after release (pre+post window)',
+      type: 'dropdown',
+      _id: '-0-3',
+      content: ['id_qmk_debounce_time_post', 14, 4],
+      options: msOptions,
+    },
+  ],
+};
+
+const withDebounceMode = (mode: number) => ({
+  ...menuData,
+  id_qmk_debounce_mode: [mode],
+});
+
+const tappingSubmenu = {
+  label: 'TAPPING',
+  _id: '-0',
+  content: [
+    {
+      label: 'Global Tapping Term (ms)',
+      type: 'range',
+      _id: '-0-0',
+      content: ['id_qmk_tapping_global_term_exact', 15, 5],
+      options: [100, 500],
+    },
+    {
+      label: 'Permissive Hold',
+      type: 'toggle',
+      _id: '-0-1',
+      content: ['id_qmk_tapping_permissive_hold', 15, 2],
+    },
+  ],
+};
+
+const mouseSubmenu = {
+  label: 'MOUSE',
+  _id: '-0',
+  content: [
+    {
+      label: 'Cursor Acceleration',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_mousekey_cursor_acceleration', 17, 3],
+      options: [
+        ['Off (constant speed)', 0],
+        ['1.0 s', 20],
+      ],
+    },
+  ],
+};
+
+// A collapsed disclosure keeps its text in the page, so "shipped" and "on the screen"
+// are different questions. This strips the collapsed bodies to ask the second one.
+const visibleText = (html: string) =>
+  html.replace(/<p[^>]*hidden=""[^>]*>.*?<\/p>/gs, '');
 
 // The diagnostics section resolves the selected device's KeyboardAPI while it
 // decides whether to render, and that constructor reads the WebHID cache.
@@ -177,6 +328,190 @@ describe('Custom menu pane loading failure', () => {
   });
 });
 
+describe('State Sync menu continuity', () => {
+  test('keeps the accepted controls mounted while external state reconciles', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {status: 'dirty'},
+      }),
+      {label: 'SYSTEM', content: [bootSubmenu]},
+    );
+
+    expect(html).toContain('Jump To BOOT');
+    expect(html).not.toContain('Loading...');
+  });
+
+  test('still uses the loading boundary before the first accepted snapshot', () => {
+    optIn(false, true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [bootSubmenu],
+    });
+
+    expect(html).toContain('Loading...');
+    expect(html).not.toContain('Jump To BOOT');
+  });
+});
+
+const tapdanceSubmenu = {
+  label: 'TD0',
+  _id: '-0',
+  content: [
+    {
+      label: 'Term (ms)',
+      type: 'range',
+      _id: '-0-0',
+      content: ['id_qmk_tapdance_1_term_exact', 10, 5],
+      options: [1, 65535],
+    },
+  ],
+};
+
+describe('ERA feature help', () => {
+  // The help is keyed off the ERA firmware's own command ids, so a keyboard whose
+  // menu happens to share a label never picks up text about a different feature.
+  test('explains an ERA feature menu above its controls', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'TAPDANCE',
+      content: [tapdanceSubmenu],
+    });
+
+    expect(html).toContain('Four actions on one key');
+    expect(html).toContain('Term (ms)');
+    expect(html.indexOf('Four actions on one key')).toBeLessThan(
+      html.indexOf('Term (ms)'),
+    );
+    // The long half is shipped but folded away.
+    expect(html).toContain('KEYMAP → TAPDANCE');
+    expect(html).toContain('hidden=""');
+  });
+
+  test('explains the polling menu it shares with the diagnostics block', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [pollingSubmenu],
+    });
+
+    expect(html).toContain('Sets the USB polling rate');
+  });
+
+  test('says nothing about a menu that is not an ERA feature', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [bootSubmenu],
+    });
+
+    expect(html).toContain('Jump To BOOT');
+    expect(html).toContain('Enters the bootloader');
+  });
+
+  test('explains the MOUSE menu the H7S definitions now carry', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'FEATURE',
+      content: [mouseSubmenu],
+    });
+
+    expect(html).toContain('Speed of the mouse keys on the keymap');
+    expect(html).toContain('Cursor Acceleration');
+  });
+});
+
+// Per-control help exists because a submenu's one paragraph cannot answer for a row
+// whose meaning depends on another value in the same menu, and because the reader is
+// looking at that row, not at the top of the page.
+describe('ERA per-control help', () => {
+  test('puts a disclosure on the control whose choices are proper nouns', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData: withDebounceMode(0)}), {
+      label: 'FEATURE',
+      content: [debounceSubmenu],
+    });
+
+    expect(html).toContain('Debounce Mode');
+    expect(html).toContain('Start with Balanced');
+    // Shipped with the row, folded away until asked for.
+    expect(visibleText(html)).not.toContain('Start with Balanced');
+    // Label, then the button beside it, then the body on the line under both. Put the
+    // body before the control and the wrapping row pushes the control onto a third
+    // line, which is what the ordering here is guarding.
+    expect(html.indexOf('>Debounce Mode<')).toBeLessThan(
+      html.indexOf('What this means: Debounce Mode'),
+    );
+    expect(html.indexOf('What this means: Debounce Mode')).toBeLessThan(
+      html.indexOf('Start with Balanced'),
+    );
+  });
+
+  test('reads the same command id differently on either side of the mode', () => {
+    optIn(true);
+    const fast = render(makeStore({era: true, menuData: withDebounceMode(1)}), {
+      label: 'FEATURE',
+      content: [debounceSubmenu],
+    });
+    const advanced = render(
+      makeStore({era: true, menuData: withDebounceMode(2)}),
+      {label: 'FEATURE', content: [debounceSubmenu]},
+    );
+
+    // Both rows are id_qmk_debounce_time_post; only the label tells them apart.
+    expect(fast).toContain('The change is sent immediately');
+    expect(fast).not.toContain('The release side.');
+    expect(advanced).toContain('The release side.');
+    expect(advanced).not.toContain('The change is sent immediately');
+  });
+
+  test('leaves alone the control the submenu summary is already about', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'FEATURE',
+      content: [tappingSubmenu],
+    });
+
+    // The three switches each need their own answer; the term does not, because the
+    // line above the controls is already about it.
+    expect(html).toContain('Permissive Hold');
+    expect(html).toContain('For holds that do not take when you type fast');
+    expect(html).toContain('Global Tapping Term (ms)');
+    expect(html).not.toContain('What this means: Global Tapping Term (ms)');
+  });
+
+  test('never reaches a keyboard that is not running ERA firmware', () => {
+    optIn(true);
+    const html = render(makeStore({menuData: {id_generic_mode: [0]}}), {
+      label: 'FEATURE',
+      content: [
+        {
+          label: 'Debounce Mode',
+          _id: '-0',
+          content: [
+            {
+              label: 'Debounce Mode',
+              type: 'dropdown',
+              _id: '-0-0',
+              content: ['id_generic_mode', 14, 1],
+              options: [
+                ['Balanced', 0],
+                ['Fast', 1],
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain('Debounce Mode');
+    expect(html).not.toContain('Start with Balanced');
+    expect(html).not.toContain('What this means');
+  });
+});
+
 describe('USB diagnostics placement', () => {
   test('renders the diagnostics block under the polling-mode controls', () => {
     optIn(true);
@@ -186,9 +521,9 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).toContain('USB Delivery Diagnostics');
+    expect(html).toContain('USB Polling Diagnostics');
     // The measurement follows the control it explains, so it comes after it.
-    expect(html.indexOf('USB Delivery Diagnostics')).toBeGreaterThan(
+    expect(html.indexOf('USB Polling Diagnostics')).toBeGreaterThan(
       html.indexOf('Apply Selected Mode'),
     );
   });
@@ -201,7 +536,7 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Jump To BOOT');
-    expect(html).not.toContain('USB Delivery Diagnostics');
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 
   test('omits the block for a definition that does not opt in', () => {
@@ -212,7 +547,7 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).not.toContain('USB Delivery Diagnostics');
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 
   test('omits the block for an official or uploaded definition', () => {
@@ -225,6 +560,6 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).not.toContain('USB Delivery Diagnostics');
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 });

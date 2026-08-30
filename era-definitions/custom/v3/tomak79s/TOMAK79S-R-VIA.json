@@ -354,7 +354,7 @@
             },
             {
               "showIf": "{id_custom_indicator_toggle} != 0",
-              "label": "Indicator Priority",
+              "label": "Indicator Only",
               "type": "toggle",
               "content": [
                 "id_custom_indicator_override",
@@ -489,7 +489,7 @@
           ]
         },
         {
-          "label": "Anti-Ghosting",
+          "label": "KKUK",
           "content": [
             {
               "label": "Enable",

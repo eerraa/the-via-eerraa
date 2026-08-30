@@ -41,6 +41,7 @@ import {
   invalidateStateSyncDomain,
   type StateSyncConfigCandidate,
 } from './stateSyncCandidateActions';
+import {beginForegroundMutation} from './stateSyncSlice';
 
 type LayoutOption = number;
 type LayoutOptionsMap = {[devicePath: string]: LayoutOption[] | null}; // TODO: is this null valid?
@@ -392,6 +393,13 @@ export const updateLayoutOption =
       packBits(options.map((option, idx) => [option, optionsNums[idx]])),
     );
 
+    dispatch(
+      beginForegroundMutation({
+        path,
+        generation: connectionGeneration,
+        domains: ['config'],
+      }),
+    );
     try {
       await api.setKeyboardValue(KeyboardValue.LAYOUT_OPTIONS, ...bytes);
     } catch (error) {
@@ -531,9 +539,10 @@ export const readLayoutOptionsStateSyncCandidate = async (
   connectedDevice: ConnectedDevice,
   state: RootState,
   connectionGeneration: number,
+  reservedApi?: KeyboardAPI,
 ): Promise<StateSyncConfigCandidate | null> => {
   const definition = getDefinitionForDevice(state, connectedDevice);
-  const api = new KeyboardAPI(connectedDevice.path);
+  const api = reservedApi ?? new KeyboardAPI(connectedDevice.path);
   if (!definition || !api.isConnectionGenerationCurrent(connectionGeneration)) {
     return null;
   }

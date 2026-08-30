@@ -2,6 +2,8 @@ import {afterEach, beforeEach, describe, expect, test} from 'bun:test';
 import {configureStore} from '@reduxjs/toolkit';
 import {
   configureHIDTransport,
+  disconnectHIDDeviceForTesting,
+  getHIDTransportDebugState,
   HID,
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
@@ -16,6 +18,7 @@ import {
   resetStateSyncTagsForTesting,
   ERA_STATE_SYNC_SELECTOR,
 } from '../src/utils/era-state-sync';
+import {UISyncRequestType} from '../src/utils/ui-sync';
 import {setEraAdvancedMetadataForTesting} from '../src/utils/era-advanced-metadata';
 import devicesReducer, {
   markDeviceReady,
@@ -36,6 +39,8 @@ import macrosReducer, {
   getIsMacrosReady,
   loadMacros,
   loadMacrosSuccess,
+  resetMacrosOnDevice,
+  saveMacros,
 } from '../src/store/macrosSlice';
 import definitionsReducer, {
   getDefinitionSyncIdentity,
@@ -50,17 +55,26 @@ import menusReducer, {
   getSelectedCustomMenuAvailability,
   getV3Menus,
   syncCustomMenuValues,
+  completeCustomMenuRangeValueContinuous,
+  completeCustomMenuValueContinuous,
+  updateCustomMenuRangeValueContinuous,
   updateCustomMenuValue,
+  updateCustomMenuValueContinuous,
   updateSelectedCustomMenuData,
   updateV3MenuData,
+  rollbackCustomMenuData,
 } from '../src/store/menusSlice';
 import firmwareReducer from '../src/store/firmwareSlice';
 import stateSyncReducer, {
+  beginForegroundMutation,
+  ensurePathSync,
   setConfigureVisible,
   setDocumentHidden,
   setDomainStatus,
 } from '../src/store/stateSyncSlice';
+import {commitStableKeymapCandidate} from '../src/store/stateSyncCandidateActions';
 import {
+  handleUISyncRequest,
   pollStateSync,
   probeStateSyncForDevice,
   refreshAfterDefinitionChange,
@@ -70,11 +84,17 @@ import {
   unloadCustomDefinitionWithRefresh,
 } from '../src/store/stateSyncThunks';
 import {keyColorsFromPerKeyRGB} from '../src/utils/use-color-painter';
+import {importLayoutToDevice} from '../src/store/importLayoutThunks';
 import {
   collectUniqueEncoderIds,
   collectMaxLedIndex,
 } from '../src/utils/via-definition-keys';
 import type {ConnectedDevice} from '../src/types/types';
+import {
+  completeContinuousHIDTransactionsForPath,
+  hasContinuousHIDTransactionsForPath,
+  resetContinuousHIDTransactionsForTesting,
+} from '../src/utils/continuous-hid-transaction';
 
 type InputListener = (event: {data: DataView}) => void;
 
@@ -322,6 +342,7 @@ class FakeStateSyncFirmware {
   malformNextStateSync = false;
   holdNextStateSync = false;
   holdAfterMacroBufferRead = 0;
+  holdAfterKeymapRead = 0;
   holdAfterLayoutRead = 0;
   holdAfterMenuRead = 0;
   holdAfterEncoderRead = 0;
@@ -332,6 +353,14 @@ class FakeStateSyncFirmware {
   churnEveryKeymapRead = false;
   rejectNextCustomSet = false;
   rejectNextCustomSave = false;
+  holdNextCustomSet = false;
+  rejectNextMacroPayload = false;
+  rejectNextKeymapSet = false;
+  macroClosed = false;
+  macroVerificationMarkers: number[] = [];
+  macroVerificationReadCount = 0;
+  operationLog: string[] = [];
+  customEvents: string[] = [];
   rejectNextEncoderSet = false;
   rejectNextLayoutSet = false;
   publishedConfigRuntime = false;
@@ -373,6 +402,8 @@ class FakeStateSyncFirmware {
       }
       const shouldHold =
         this.holdNextStateSync ||
+        (this.holdAfterKeymapRead > 0 &&
+          this.keymapReads >= this.holdAfterKeymapRead) ||
         (this.holdAfterMacroBufferRead > 0 &&
           this.macroBufferReads >= this.holdAfterMacroBufferRead) ||
         (this.holdAfterLayoutRead > 0 &&
@@ -382,6 +413,7 @@ class FakeStateSyncFirmware {
           this.encoderReads >= this.holdAfterEncoderRead);
       if (shouldHold) {
         this.holdNextStateSync = false;
+        this.holdAfterKeymapRead = 0;
         this.holdAfterMacroBufferRead = 0;
         this.holdAfterLayoutRead = 0;
         this.holdAfterMenuRead = 0;
@@ -457,6 +489,7 @@ class FakeStateSyncFirmware {
         ...(this.encoderValuesById[encoderId] ?? this.encoderValues),
       ] as [number, number];
       const value = (data[4] << 8) | data[5];
+      this.operationLog.push('encoder');
       pair[data[3] ? 1 : 0] = value;
       this.encoderValuesById[encoderId] = pair;
       if (encoderId === 0) {
@@ -469,7 +502,35 @@ class FakeStateSyncFirmware {
       return;
     }
     if (data[0] === 0x0d) {
-      this.device.emit(payload(0x0d, 0x00, 0x02));
+      // One payload byte, its macro terminator, and the final completion marker.
+      this.device.emit(payload(0x0d, 0x00, 0x03));
+      return;
+    }
+    if (data[0] === 0x10) {
+      this.operationLog.push('macro-reset');
+      this.macroClosed = false;
+      this.device.emit(payload(0x10));
+      return;
+    }
+    if (data[0] === 0x0f) {
+      const offset = (data[1] << 8) | data[2];
+      const size = data[3];
+      const markerWrite = offset === 2 && size === 1;
+      if (this.rejectNextMacroPayload && !markerWrite) {
+        this.rejectNextMacroPayload = false;
+        throw new Error('rejected macro payload');
+      }
+      if (!markerWrite && offset === 0 && size > 0) {
+        this.macroText = String.fromCharCode(data[4]);
+      }
+      if (markerWrite && data[4] === 0) {
+        this.macroClosed = true;
+        this.revisions.macro += 1;
+      }
+      this.operationLog.push(
+        markerWrite ? (data[4] === 0 ? 'macro-close' : 'macro-open') : 'macro-payload',
+      );
+      this.device.emit(payload(...Array.from(data)));
       return;
     }
     if (data[0] === 0x0e) {
@@ -479,9 +540,34 @@ class FakeStateSyncFirmware {
         this.heldMacroBufferRequest = data.slice();
         return;
       }
-      const bytes = new Array(28).fill(0);
-      bytes[0] = this.macroText.charCodeAt(0);
+      const offset = (data[1] << 8) | data[2];
+      const logicalBytes = [this.macroText.charCodeAt(0), 0, 0];
+      const bytes = logicalBytes.slice(offset, offset + data[3]);
+      if (
+        this.macroClosed &&
+        offset === 2 &&
+        data[3] === 1 &&
+        this.macroVerificationMarkers.length
+      ) {
+        bytes[0] =
+          this.macroVerificationMarkers[
+            Math.min(
+              this.macroVerificationReadCount,
+              this.macroVerificationMarkers.length - 1,
+            )
+          ];
+        this.macroVerificationReadCount += 1;
+      }
       this.device.emit(payload(0x0e, data[1], data[2], data[3], ...bytes));
+      return;
+    }
+    if (data[0] === 0x13) {
+      if (this.rejectNextKeymapSet) {
+        this.rejectNextKeymapSet = false;
+        throw new Error('rejected keymap SET');
+      }
+      this.operationLog.push('keymap');
+      this.device.emit(payload(...Array.from(data)));
       return;
     }
     if (data[0] === 0x0c) {
@@ -510,6 +596,11 @@ class FakeStateSyncFirmware {
         throw new Error('rejected SET');
       }
       this.customSetCount++;
+      this.customEvents.push(`set:${data[3]}`);
+      if (this.holdNextCustomSet) {
+        this.holdNextCustomSet = false;
+        return;
+      }
       if (this.menuValue !== data[3]) {
         this.menuValue = data[3];
         this.revisions.config++;
@@ -524,6 +615,7 @@ class FakeStateSyncFirmware {
         throw new Error('rejected SAVE');
       }
       this.customSaveCount++;
+      this.customEvents.push(`save:${data[1]}`);
       this.publishedConfigRuntime = false;
       this.device.emit(payload(0x09, data[1]));
       return;
@@ -662,6 +754,7 @@ const prepareSelectedStateSyncDevice = async (
 };
 
 beforeEach(() => {
+  resetContinuousHIDTransactionsForTesting();
   resetHIDTransportForTesting();
   resetStateSyncTagsForTesting();
   stopStateSyncPollingForTesting();
@@ -680,6 +773,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetContinuousHIDTransactionsForTesting();
   stopStateSyncPollingForTesting();
   setEraAdvancedMetadataForTesting(null);
   resetHIDTransportForTesting();
@@ -885,6 +979,37 @@ describe('state-sync probe isolation', () => {
     );
   });
 
+  test('an initial wrong-tag envelope times out into unverified', async () => {
+    configureHIDTransport({responseTimeoutMs: 15});
+    const {device} = await connectFake('old-wrong-tag');
+    device.onSend = (data) => {
+      if (data[0] === 0x02 && data[1] === ERA_STATE_SYNC_SELECTOR) {
+        const wrongTagRequest = data.slice();
+        wrongTagRequest[5] = (wrongTagRequest[5] + 1) & 0xff;
+        emitEnvelope(device, wrongTagRequest, {
+          keymap: 1,
+          macro: 1,
+          config: 1,
+        });
+      }
+    };
+    const store = makeStore();
+    const connected = makeConnectedDevice('old-wrong-tag', TOMAK_VPID);
+    installEraDefinition(store);
+    store.dispatch(updateConnectedDevices({[connected.path]: connected}));
+
+    await (store.dispatch as any)(probeStateSyncForDevice(connected));
+
+    expect(store.getState().stateSync.byPath[connected.path]?.capability).toBe(
+      'unverified',
+    );
+    expect(
+      device.sentReports.filter(
+        ({data}) => data[0] === 0x02 && data[1] === ERA_STATE_SYNC_SELECTOR,
+      ),
+    ).toHaveLength(1);
+  });
+
   test('reconnect gives an unverified ERA device one fresh capability probe', async () => {
     const {device: oldDevice} = await connectFake('old-reconnect');
     oldDevice.onSend = (data) => {
@@ -940,6 +1065,415 @@ describe('state-sync probe isolation', () => {
         ({data}) => data[0] === 0x02 && data[1] === ERA_STATE_SYNC_SELECTOR,
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe('continuous custom controls', () => {
+  test('range changes deduplicate identical values and SAVE once on completion', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('continuous-range', {withMenu: true});
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+
+    const changes = [
+      dispatch(updateCustomMenuRangeValueContinuous('id_test_value', 10)),
+      dispatch(updateCustomMenuRangeValueContinuous('id_test_value', 20)),
+      dispatch(updateCustomMenuRangeValueContinuous('id_test_value', 20)),
+      dispatch(updateCustomMenuRangeValueContinuous('id_test_value', 30)),
+    ];
+    await Promise.all(changes);
+
+    expect(firmware.customEvents).toEqual(['set:10', 'set:20', 'set:30']);
+    expect(hasContinuousHIDTransactionsForPath(connected.path, generation)).toBe(
+      true,
+    );
+    await dispatch(completeCustomMenuRangeValueContinuous('id_test_value'));
+
+    expect(firmware.customEvents).toEqual([
+      'set:10',
+      'set:20',
+      'set:30',
+      'save:1',
+    ]);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config,
+    ).toMatchObject({mutationEpoch: 1, status: 'fresh'});
+  });
+
+  test('color changes use the same interaction owner and SAVE once', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
+      'continuous-color',
+      {withMenu: true},
+    );
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+
+    await Promise.all([
+      dispatch(
+        updateCustomMenuValueContinuous('id_test_value', 1, 1, 40),
+      ),
+      dispatch(
+        updateCustomMenuValueContinuous('id_test_value', 1, 1, 80),
+      ),
+      dispatch(
+        updateCustomMenuValueContinuous('id_test_value', 1, 1, 80),
+      ),
+    ]);
+    await dispatch(completeCustomMenuValueContinuous('id_test_value'));
+
+    expect(firmware.customEvents).toEqual(['set:40', 'set:80', 'save:1']);
+  });
+
+  test('disconnect rejects a pending interaction without silently sending SAVE', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('continuous-disconnect', {
+        withMenu: true,
+      });
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+    firmware.holdNextCustomSet = true;
+
+    const changing = dispatch(
+      updateCustomMenuRangeValueContinuous('id_test_value', 55),
+    );
+    await waitUntil(() => firmware.customSetCount === 1, 800);
+    disconnectHIDDeviceForTesting(connected.path);
+    await changing;
+    await dispatch(completeCustomMenuRangeValueContinuous('id_test_value'));
+
+    expect(firmware.customEvents).toEqual(['set:55']);
+    expect(firmware.customSaveCount).toBe(0);
+    expect(store.getState().stateSync.byPath[connected.path]).toMatchObject({
+      generation,
+      config: {mutationEpoch: 1, status: 'dirty'},
+    });
+    expect(hasContinuousHIDTransactionsForPath(connected.path, generation)).toBe(
+      false,
+    );
+  });
+
+  test('path-level lifecycle flush preserves a pending SAVE outside the component', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('continuous-path-flush', {
+        withMenu: true,
+      });
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+
+    await dispatch(
+      updateCustomMenuRangeValueContinuous('id_test_value', 66),
+    );
+    await completeContinuousHIDTransactionsForPath(
+      connected.path,
+      generation,
+    );
+
+    expect(firmware.customEvents).toEqual(['set:66', 'save:1']);
+  });
+
+  test('discrete controls still SET and SAVE immediately', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
+      'continuous-discrete',
+      {withMenu: true},
+    );
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+
+    await dispatch(updateCustomMenuValue('id_test_value', 1, 1, 77));
+
+    expect(firmware.customEvents).toEqual(['set:77', 'save:1']);
+  });
+
+  test('a rebooting discrete control stops at disconnect and closes its old-generation session', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('discrete-reboot', {
+        withMenu: true,
+      });
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+    const normalSend = firmware.onSend;
+    let rebootOnSet = true;
+    firmware.device.onSend = (data) => {
+      if (
+        rebootOnSet &&
+        data[0] === 0x07 &&
+        data[1] === 0x01 &&
+        data[2] === 0x01
+      ) {
+        rebootOnSet = false;
+        firmware.customSetCount++;
+        firmware.customEvents.push(`set:${data[3]}`);
+        disconnectHIDDeviceForTesting(connected.path);
+        return;
+      }
+      return normalSend(data);
+    };
+
+    expect(
+      await dispatch(updateCustomMenuValue('id_test_value', 1, 1, 99)),
+    ).toBe(false);
+
+    expect(firmware.customEvents).toEqual(['set:99']);
+    expect(firmware.customSaveCount).toBe(0);
+    expect(store.getState().stateSync.byPath[connected.path]).toMatchObject({
+      generation,
+      config: {
+        status: 'dirty',
+        foregroundWriteDepth: 0,
+      },
+    });
+  });
+
+  test('a local write session keeps rapid discrete changes live through reconciliation', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
+      'discrete-write-session',
+      {withMenu: true},
+    );
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+    firmware.holdAfterLayoutRead = firmware.layoutReads + 1;
+    firmware.holdAfterMenuRead = firmware.menuReads + 1;
+
+    const first = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 10));
+    await waitUntil(() => firmware.heldStateSyncRequest !== undefined, 800);
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'available',
+    );
+
+    const second = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 20));
+    expect(
+      store.getState().menus.customMenuDataMap[connected.path]
+        ?.id_test_value?.[0],
+    ).toBe(20);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config
+        .foregroundWriteDepth,
+    ).toBe(2);
+
+    firmware.releaseHeldStateSync();
+    await Promise.all([first, second]);
+
+    expect(firmware.customEvents).toEqual([
+      'set:10',
+      'save:1',
+      'set:20',
+      'save:1',
+    ]);
+    expect(
+      store.getState().menus.customMenuDataMap[connected.path]
+        ?.id_test_value?.[0],
+    ).toBe(20);
+    expect(store.getState().stateSync.byPath[connected.path]?.config).toMatchObject(
+      {
+        status: 'fresh',
+        foregroundWriteDepth: 0,
+        acceptedRevision: firmware.revisions.config,
+      },
+    );
+  });
+
+  test('an equal authoritative readback preserves the optimistic menu object', async () => {
+    const {store, connected} = await prepareSelectedStateSyncDevice(
+      'discrete-structural-sharing',
+      {withMenu: true},
+    );
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+
+    const writing = dispatch(
+      updateCustomMenuValue('id_test_value', 1, 1, 77),
+    );
+    const optimisticMenuData =
+      store.getState().menus.customMenuDataMap[connected.path];
+    await writing;
+
+    expect(store.getState().menus.customMenuDataMap[connected.path]).toBe(
+      optimisticMenuData,
+    );
+  });
+
+  test('a failed earlier write cannot roll back a later optimistic value', async () => {
+    const {store, connected} = await prepareSelectedStateSyncDevice(
+      'discrete-conditional-rollback',
+      {withMenu: true},
+    );
+    store.dispatch(
+      updateSelectedCustomMenuData({
+        devicePath: connected.path,
+        menuData: {id_test_value: [20]},
+      }),
+    );
+    store.dispatch(
+      rollbackCustomMenuData({
+        devicePath: connected.path,
+        expected: {id_test_value: [10]},
+        previous: {id_test_value: [0]},
+      }),
+    );
+
+    expect(
+      store.getState().menus.customMenuDataMap[connected.path]
+        ?.id_test_value?.[0],
+    ).toBe(20);
+  });
+
+  test('a capable device with dirty CONFIG cannot start another mutation', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('config-authority-dirty', {
+        withMenu: true,
+      });
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    dispatch(
+      setDomainStatus({
+        path: connected.path,
+        generation,
+        domain: 'config',
+        status: 'dirty',
+      }),
+    );
+    firmware.customEvents = [];
+
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'reconciling',
+    );
+
+    expect(
+      await dispatch(updateCustomMenuValue('id_test_value', 1, 1, 88)),
+    ).toBe(false);
+    expect(firmware.customEvents).toEqual([]);
+  });
+});
+
+describe('incoming 0x16 routing', () => {
+  const allCustomValues = {type: UISyncRequestType.CUSTOM_MENU_ALL} as const;
+
+  test('a capable opt-in dirties CONFIG and refreshes it through a revision bracket', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
+      'sync-request-capable',
+      {withMenu: true},
+    );
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    const menuReadsBefore = firmware.menuReads;
+    firmware.menuValue = 23;
+    firmware.revisions.config += 1;
+    firmware.holdNextStateSync = true;
+
+    const routing = dispatch(
+      handleUISyncRequest({
+        devicePath: connected.path,
+        connectionGeneration: new KeyboardAPI(
+          connected.path,
+        ).getConnectionGeneration(),
+        request: allCustomValues,
+      }),
+    );
+    await waitUntil(() => firmware.heldStateSyncRequest !== undefined, 800);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config.status,
+    ).toBe('dirty');
+    expect(firmware.menuReads).toBe(menuReadsBefore);
+    firmware.releaseHeldStateSync();
+    await routing;
+
+    expect(firmware.menuReads).toBe(menuReadsBefore + 1);
+    expect(
+      store.getState().menus.customMenuDataMap[connected.path]
+        ?.id_test_value?.[0],
+    ).toBe(23);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config,
+    ).toMatchObject({
+      status: 'fresh',
+      acceptedRevision: firmware.revisions.config,
+      observedRevision: firmware.revisions.config,
+    });
+    expect(
+      firmware.device.sentReports.some(({data}) => data[0] === 0x16),
+    ).toBe(false);
+  });
+
+  test('an ordinary device keeps the legacy targeted/full Custom GET path', async () => {
+    const {device} = await connectFake('sync-request-ordinary');
+    const firmware = new FakeStateSyncFirmware(device);
+    firmware.menuValue = 17;
+    device.onSend = firmware.onSend;
+    const store = makeStore();
+    const connected = makeConnectedDevice(
+      'sync-request-ordinary',
+      ORDINARY_VPID,
+    );
+    store.dispatch(
+      updateDefinitions({
+        [ORDINARY_VPID]: {
+          v3: {...makeV3Definition(true), vendorProductId: ORDINARY_VPID},
+        },
+      } as any),
+    );
+    store.dispatch(updateConnectedDevices({[connected.path]: connected}));
+    const generation = new KeyboardAPI(
+      connected.path,
+    ).getConnectionGeneration();
+
+    await (store.dispatch as any)(
+      handleUISyncRequest({
+        devicePath: connected.path,
+        connectionGeneration: generation,
+        request: allCustomValues,
+      }),
+    );
+
+    expect(firmware.menuReads).toBe(1);
+    expect(firmware.stateSyncReads).toBe(0);
+    expect(
+      store.getState().menus.customMenuDataMap[connected.path]
+        ?.id_test_value?.[0],
+    ).toBe(17);
+  });
+
+  test('an unverified opt-in treats 0x16 as invalidation without advanced I/O', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
+      'sync-request-unverified',
+      {withMenu: true},
+    );
+    firmware.device.onSend = (data) => {
+      if (data[0] === 0x02 && data[1] === ERA_STATE_SYNC_SELECTOR) {
+        const response = data.slice();
+        response[0] = 0xff;
+        firmware.device.emit(response);
+        return;
+      }
+      return firmware.onSend(data);
+    };
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    const reportsBefore = firmware.device.sentReports.length;
+
+    await dispatch(
+      handleUISyncRequest({
+        devicePath: connected.path,
+        connectionGeneration: new KeyboardAPI(
+          connected.path,
+        ).getConnectionGeneration(),
+        request: allCustomValues,
+      }),
+    );
+
+    expect(firmware.device.sentReports).toHaveLength(reportsBefore);
+    expect(firmware.menuReads).toBe(0);
+    expect(firmware.customSetCount).toBe(0);
+    expect(firmware.customSaveCount).toBe(0);
+    expect(
+      store.getState().stateSync.byPath[connected.path],
+    ).toMatchObject({capability: 'unverified', config: {status: 'dirty'}});
   });
 });
 
@@ -1046,6 +1580,44 @@ describe('selected-visible polling', () => {
 });
 
 describe('State Sync freshness coordinator regressions', () => {
+  test('a foreground reservation blocks State Sync on the same path', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('foreground-blocks-state-sync');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.revisions.keymap += 1;
+    dispatch(setConfigureVisible(true));
+
+    let releaseForeground = () => undefined;
+    const foregroundGate = new Promise<void>((resolve) => {
+      releaseForeground = resolve;
+    });
+    const api = new KeyboardAPI(connected.path);
+    const foreground = api.withPathReservation(
+      generation,
+      Symbol('foreground-blocker'),
+      async () => foregroundGate,
+    );
+    await waitUntil(
+      () =>
+        getHIDTransportDebugState(connected.path)?.hasActiveReservation ===
+        true,
+      800,
+    );
+    const stateSyncReadsBefore = firmware.stateSyncReads;
+    const polling = dispatch(pollStateSync());
+    await waitUntil(
+      () =>
+        (getHIDTransportDebugState(connected.path)?.commandQueueDepth ?? 0) > 0,
+      800,
+    );
+    expect(firmware.stateSyncReads).toBe(stateSyncReadsBefore);
+
+    releaseForeground();
+    await Promise.all([foreground, polling]);
+    expect(firmware.stateSyncReads).toBeGreaterThan(stateSyncReadsBefore);
+  });
+
   test('capability probe cannot attach a newer revision to the stale lifecycle snapshot', async () => {
     const {store, connected, firmware} =
       await prepareSelectedStateSyncDevice('probe-race');
@@ -1252,6 +1824,33 @@ describe('State Sync freshness coordinator regressions', () => {
     await polling;
     expect(candidateWasPrivate).toEqual(macroAst('A'));
     expect(store.getState().macros.ast).toEqual(macroAst('B'));
+  });
+
+  test('a failed macro payload never commits optimistic Redux state or closes the marker', async () => {
+    const {store, connected, firmware} =
+      await prepareSelectedStateSyncDevice('macro-save-failure');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    const beforeAst = store.getState().macros.ast;
+    const reportsBefore = firmware.device.sentReports.length;
+    firmware.rejectNextMacroPayload = true;
+
+    await expect(dispatch(saveMacros(connected, ['B']))).rejects.toThrow(
+      'rejected macro payload',
+    );
+
+    expect(store.getState().macros.ast).toEqual(beforeAst);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.macro,
+    ).toMatchObject({status: 'dirty', mutationEpoch: 1});
+    const markerValues = firmware.device.sentReports
+      .slice(reportsBefore)
+      .filter(({data}) => {
+        const offset = (data[1] << 8) | data[2];
+        return data[0] === 0x0f && offset === 2 && data[3] === 1;
+      })
+      .map(({data}) => data[4]);
+    expect(markerValues).toEqual([0xff]);
   });
 
   test('layout and menu candidates commit together only after a stable config bracket', async () => {
@@ -1499,7 +2098,7 @@ describe('State Sync freshness coordinator regressions', () => {
     ).toEqual([7]);
   });
 
-  test('SET during CONFIG candidate read bumps revision so the old candidate is rejected', async () => {
+  test('a CONFIG mutation epoch rejects an in-flight candidate before the queued SET runs', async () => {
     const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
       'config-set-interleave',
       {withMenu: true},
@@ -1511,9 +2110,30 @@ describe('State Sync freshness coordinator regressions', () => {
     dispatch(setConfigureVisible(true));
     const polling = dispatch(pollStateSync());
     await waitUntil(() => firmware.heldMenuGetRequest !== undefined, 800);
-    const setPromise = dispatch(
-      updateCustomMenuValue('id_test_value', 1, 1, 9),
+    dispatch(
+      beginForegroundMutation({
+        path: connected.path,
+        generation: new KeyboardAPI(connected.path).getConnectionGeneration(),
+        domains: ['config'],
+      }),
     );
+    const api = new KeyboardAPI(connected.path);
+    const generation = api.getConnectionGeneration();
+    const owner = Symbol('already-authorized-config-interaction');
+    const setPromise = api.withPathReservation(
+      generation,
+      owner,
+      async (reservedApi) => {
+        await reservedApi.setCustomMenuValue(1, 1, 9);
+        await reservedApi.commitCustomMenu(1);
+      },
+    );
+    await waitUntil(
+      () =>
+        (getHIDTransportDebugState(connected.path)?.commandQueueDepth ?? 0) > 0,
+      800,
+    );
+    expect(firmware.customSetCount).toBe(0);
     firmware.releaseHeldMenuGet();
     await polling;
     await setPromise;
@@ -1523,6 +2143,110 @@ describe('State Sync freshness coordinator regressions', () => {
       store.getState().menus.customMenuDataMap[connected.path]
         ?.id_test_value?.[0],
     ).toBe(9);
+  });
+
+  test('a KEYMAP mutation epoch rejects a pre-mutation candidate', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('keymap-mutation-epoch');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    dispatch(
+      setDomainStatus({
+        path: connected.path,
+        generation,
+        domain: 'keymap',
+        status: 'dirty',
+      }),
+    );
+    dispatch(setConfigureVisible(true));
+    firmware.holdAfterKeymapRead = firmware.keymapReads + 1;
+    const polling = dispatch(pollStateSync());
+    await waitUntil(() => firmware.heldStateSyncRequest !== undefined, 800);
+    dispatch(
+      beginForegroundMutation({
+        path: connected.path,
+        generation,
+        domains: ['keymap'],
+      }),
+    );
+    const api = new KeyboardAPI(connected.path);
+    const owner = Symbol('keymap-foreground');
+    const foreground = api.withPathReservation(generation, owner, (reserved) =>
+      reserved.setKey(0, 0, 0, 9),
+    );
+    firmware.releaseHeldStateSync();
+    await Promise.all([polling, foreground]);
+
+    expect(
+      store.getState().keymap.rawDeviceMap[connected.path][0].keymap,
+    ).toEqual([9]);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.keymap,
+    ).toMatchObject({
+      status: 'fresh',
+      mutationEpoch: 1,
+      acceptedRevision: firmware.revisions.keymap,
+    });
+  });
+
+  test('a MACRO mutation epoch rejects a pre-mutation candidate', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('macro-mutation-epoch');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    dispatch(
+      setDomainStatus({
+        path: connected.path,
+        generation,
+        domain: 'macro',
+        status: 'dirty',
+      }),
+    );
+    dispatch(setConfigureVisible(true));
+    firmware.holdAfterMacroBufferRead = firmware.macroBufferReads + 1;
+    const polling = dispatch(pollStateSync());
+    await waitUntil(() => firmware.heldStateSyncRequest !== undefined, 800);
+    dispatch(
+      beginForegroundMutation({
+        path: connected.path,
+        generation,
+        domains: ['macro'],
+      }),
+    );
+    const api = new KeyboardAPI(connected.path);
+    const owner = Symbol('macro-foreground');
+    const foreground = api.withPathReservation(generation, owner, (reserved) =>
+      reserved.setMacroBytes([66, 0]),
+    );
+    firmware.releaseHeldStateSync();
+    await Promise.all([polling, foreground]);
+
+    expect(getExpressions(store.getState() as any)).toEqual(['B']);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.macro,
+    ).toMatchObject({
+      status: 'fresh',
+      mutationEpoch: 1,
+      acceptedRevision: firmware.revisions.macro,
+    });
+  });
+
+  test('standalone macro RESET advances the epoch without writing a marker', async () => {
+    const {store, connected, firmware} =
+      await prepareSelectedStateSyncDevice('macro-reset-standalone');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    const reportsBefore = firmware.device.sentReports.length;
+
+    await dispatch(resetMacrosOnDevice());
+
+    const mutationReports = firmware.device.sentReports
+      .slice(reportsBefore)
+      .filter(({data}) => [0x0f, 0x10].includes(data[0]));
+    expect(mutationReports.map(({data}) => data[0])).toEqual([0x10]);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.macro.mutationEpoch,
+    ).toBe(1);
   });
 
   test('no-op SET does not raise CONFIG revision and SAVE of a published SET raises it once', async () => {
@@ -1556,6 +2280,9 @@ describe('State Sync freshness coordinator regressions', () => {
     expect(
       store.getState().stateSync.byPath[connected.path]?.config.status,
     ).toBe('dirty');
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config.mutationEpoch,
+    ).toBe(1);
   });
 
   test('SET success and SAVE failure keeps CONFIG dirty for readback', async () => {
@@ -1590,6 +2317,9 @@ describe('State Sync freshness coordinator regressions', () => {
     expect(
       store.getState().stateSync.byPath[connected.path]?.config.status,
     ).toBe('dirty');
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config.mutationEpoch,
+    ).toBe(1);
   });
 
   test('definition replace while a domain read is pending discards the old candidate', async () => {
@@ -1876,6 +2606,186 @@ describe('State Sync freshness coordinator regressions', () => {
     expect(
       store.getState().stateSync.byPath[connected.path]?.keymap.status,
     ).toBe('fresh');
+  });
+});
+
+describe('full layout import transaction', () => {
+  test('awaits macro verification, keeps fast keymap packets and encoders under one owner', async () => {
+    const {store, connected, firmware} =
+      await prepareSelectedStateSyncDevice('full-import-owner');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.operationLog = [];
+    firmware.macroVerificationMarkers = [0xff, 0];
+    firmware.macroVerificationReadCount = 0;
+    const reportsBefore = firmware.device.sentReports.length;
+
+    const importing = dispatch(
+      importLayoutToDevice(connected, {
+        macros: ['B'],
+        keymap: [Array.from({length: 20}, (_, index) => 0x1200 + index)],
+        encoders: {0: [[0x0200, 0x0201]]},
+      }),
+    );
+    await waitUntil(() => firmware.macroVerificationReadCount === 1, 800);
+    expect(firmware.operationLog).not.toContain('keymap');
+    const outsideCommand = new KeyboardAPI(
+      connected.path,
+    ).getProtocolVersion();
+
+    await importing;
+    expect(await outsideCommand).toBe(12);
+    expect(firmware.operationLog).toEqual([
+      'macro-reset',
+      'macro-open',
+      'macro-payload',
+      'macro-close',
+      'keymap',
+      'keymap',
+      'encoder',
+      'encoder',
+    ]);
+    const commands = firmware.device.sentReports
+      .slice(reportsBefore)
+      .map(({data}) => data[0]);
+    expect(commands.at(-1)).toBe(0x01);
+    expect(commands.indexOf(0x13)).toBeGreaterThan(commands.lastIndexOf(0x0e));
+    expect(
+      store.getState().stateSync.byPath[connected.path],
+    ).toMatchObject({
+      macro: {mutationEpoch: 1, status: 'dirty'},
+      keymap: {mutationEpoch: 1, status: 'dirty'},
+    });
+  });
+
+  test('a macro failure stops keymap and encoder writes and preserves macro state', async () => {
+    const {store, connected, firmware} =
+      await prepareSelectedStateSyncDevice('full-import-macro-failure');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    const beforeAst = store.getState().macros.ast;
+    firmware.operationLog = [];
+    firmware.rejectNextMacroPayload = true;
+
+    await expect(
+      dispatch(
+        importLayoutToDevice(connected, {
+          macros: ['B'],
+          keymap: [[0x1234]],
+          encoders: {0: [[0x0200, 0x0201]]},
+        }),
+      ),
+    ).rejects.toThrow('rejected macro payload');
+
+    expect(firmware.operationLog).not.toContain('keymap');
+    expect(firmware.operationLog).not.toContain('encoder');
+    expect(store.getState().macros.ast).toEqual(beforeAst);
+  });
+
+  test('a same-generation partial failure releases the owner and requests one reconciliation', async () => {
+    const {store, connected, firmware} =
+      await prepareSelectedStateSyncDevice('full-import-reconcile');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.operationLog = [];
+    const stateSyncReadsBefore = firmware.stateSyncReads;
+    const encoders = {} as StateSyncEncoderMap;
+    Object.defineProperty(encoders, '0', {
+      enumerable: true,
+      get: () => {
+        throw new Error('encoder import decode failed');
+      },
+    });
+
+    await expect(
+      dispatch(
+        importLayoutToDevice(connected, {
+          keymap: [[0x1234]],
+          encoders,
+        }),
+      ),
+    ).rejects.toThrow('encoder import decode failed');
+
+    expect(firmware.operationLog).toContain('keymap');
+    expect(firmware.operationLog).not.toContain('encoder');
+    expect(firmware.stateSyncReads).toBeGreaterThan(stateSyncReadsBefore);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.keymap.status,
+    ).toBe('fresh');
+  });
+});
+
+describe('mutation epoch path and generation ownership', () => {
+  test('mutating one path does not reject another path candidate and reconnect starts a new epoch space', () => {
+    let state = stateSyncReducer(
+      undefined,
+      ensurePathSync({path: 'epoch-A', generation: 1}),
+    );
+    state = stateSyncReducer(
+      state,
+      ensurePathSync({path: 'epoch-B', generation: 1}),
+    );
+    state = stateSyncReducer(
+      state,
+      beginForegroundMutation({
+        path: 'epoch-A',
+        generation: 1,
+        domains: ['keymap'],
+      }),
+    );
+    state = stateSyncReducer(
+      state,
+      commitStableKeymapCandidate({
+        devicePath: 'epoch-B',
+        connectionGeneration: 1,
+        selectionGeneration: 4,
+        definitionIdentity: 'definition-B',
+        revision: 7,
+        mutationEpoch: 0,
+        candidate: {layers: [], encoders: {}},
+      }),
+    );
+    expect(state.byPath['epoch-B'].keymap).toMatchObject({
+      status: 'fresh',
+      acceptedRevision: 7,
+      mutationEpoch: 0,
+    });
+
+    state = stateSyncReducer(
+      state,
+      ensurePathSync({path: 'epoch-A', generation: 2}),
+    );
+    expect(state.byPath['epoch-A'].keymap.mutationEpoch).toBe(0);
+    state = stateSyncReducer(
+      state,
+      commitStableKeymapCandidate({
+        devicePath: 'epoch-A',
+        connectionGeneration: 1,
+        selectionGeneration: 4,
+        definitionIdentity: 'old-definition-A',
+        revision: 99,
+        mutationEpoch: 1,
+        candidate: {layers: [], encoders: {}},
+      }),
+    );
+    expect(state.byPath['epoch-A'].keymap).toMatchObject({
+      status: 'unknown',
+      acceptedRevision: 0,
+      mutationEpoch: 0,
+    });
+
+    state = stateSyncReducer(
+      state,
+      beginForegroundMutation({
+        path: 'epoch-A',
+        generation: 1,
+        domains: ['keymap'],
+      }),
+    );
+    expect(state.byPath['epoch-A']).toMatchObject({
+      generation: 2,
+      keymap: {status: 'unknown', mutationEpoch: 0},
+    });
   });
 });
 

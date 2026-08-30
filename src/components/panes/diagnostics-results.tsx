@@ -1,5 +1,7 @@
-import {type FC} from 'react';
+import {useState, type FC} from 'react';
 import styled from 'styled-components';
+import {Trans, useTranslation} from 'react-i18next';
+import {Explain, ExplainRow} from '../inputs/explain';
 import {
   isUsbDiagnosticsSpeedConsistent,
   usbDiagnosticsExpectedSpeed,
@@ -29,10 +31,46 @@ const FullPanel = styled(Panel)({
 
 const PanelTitle = styled.h2({
   color: 'var(--color_label-highlighted)',
-  fontSize: 18,
-  lineHeight: 1.3,
+  fontSize: 15,
+  lineHeight: 1.35,
   margin: '0 0 14px',
 });
+
+// Reused as the heading of every panel so the disclosure button always lands in the
+// same place relative to the title.
+const PanelHead = styled(ExplainRow)({
+  marginBottom: 14,
+});
+
+const HeadTitle = styled.h2({
+  color: 'var(--color_label-highlighted)',
+  fontSize: 15,
+  lineHeight: 1.35,
+  margin: 0,
+});
+
+// Grouping the advanced panels behind a selector turns four screens of stacked cards
+// into one, and names what each group answers instead of making the reader scroll to
+// find out.
+const TabBar = styled.div({
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+  marginBottom: 4,
+});
+
+const Tab = styled.button<{$selected: boolean}>(({$selected}) => ({
+  appearance: 'none',
+  padding: '6px 14px',
+  borderRadius: 12,
+  border: '1px solid transparent',
+  cursor: 'pointer',
+  fontSize: 14,
+  lineHeight: '22px',
+  background: $selected ? 'var(--bg_icon)' : 'transparent',
+  color: $selected ? 'var(--color_label-highlighted)' : 'var(--color_label)',
+  ':hover': {color: 'var(--color_label-highlighted)'},
+}));
 
 const DashboardGrid = styled.div({
   display: 'grid',
@@ -44,18 +82,33 @@ const DashboardGrid = styled.div({
 const Muted = styled.p({
   color: 'var(--color_label)',
   opacity: 0.82,
+  fontSize: 13,
   lineHeight: 1.5,
   margin: '6px 0',
 });
 
-// The summary view answers one question — was anything observed in this window — so
-// each measured category gets its own sentence instead of a number the reader has to
-// interpret. No category is summarized into a single verdict.
-const FindingList = styled.ul({
+// The summary view answers one question — was anything observed in this window. The
+// left column names the topic in plain words so the reader knows what is being
+// reported, and the right column states only what was observed. Splitting them is what
+// makes the line readable; shortening the sentence would only make it more abstract.
+const FindingGrid = styled.dl({
+  display: 'grid',
+  gridTemplateColumns: 'minmax(150px, auto) minmax(0, 1fr)',
+  gap: '10px 20px',
+  margin: '0 0 12px',
+});
+
+const FindingName = styled.dt({
+  color: 'var(--color_label)',
+  fontSize: 15,
+  lineHeight: 1.5,
+});
+
+const FindingValue = styled.dd({
   color: 'var(--color_label-highlighted)',
-  lineHeight: 1.55,
-  margin: '0 0 10px',
-  paddingLeft: 20,
+  fontSize: 15,
+  lineHeight: 1.5,
+  margin: 0,
 });
 
 const Summary = styled(FullPanel)({
@@ -68,7 +121,7 @@ const Caveat = styled(FullPanel)({
 
 const SummaryHeadline = styled.p({
   color: 'var(--color_label-highlighted)',
-  fontSize: 20,
+  fontSize: 16,
   lineHeight: 1.4,
   margin: '0 0 8px',
 });
@@ -82,12 +135,14 @@ const MetricGrid = styled.dl({
 
 const MetricName = styled.dt({
   color: 'var(--color_label)',
+  fontSize: 14,
   lineHeight: 1.4,
 });
 
 const MetricValue = styled.dd({
   color: 'var(--color_label-highlighted)',
   fontVariantNumeric: 'tabular-nums',
+  fontSize: 14,
   textAlign: 'right',
   lineHeight: 1.4,
   margin: 0,
@@ -114,6 +169,7 @@ const HistogramRow = styled.div({
   alignItems: 'center',
   gap: 10,
   margin: '9px 0',
+  fontSize: 13,
   fontVariantNumeric: 'tabular-nums',
 });
 
@@ -186,6 +242,7 @@ const TimelineLabels = styled.div({
 const EventList = styled.ul({
   paddingLeft: 20,
   margin: '10px 0 0',
+  fontSize: 14,
   lineHeight: 1.55,
 });
 
@@ -193,11 +250,18 @@ const TableWrap = styled.div({
   overflowX: 'auto',
 });
 
+const CompareHint = styled(Muted)({
+  flex: '1 1 260px',
+  minWidth: 0,
+  margin: 0,
+});
+
 const ComparisonTable = styled.table({
   width: '100%',
   minWidth: 830,
   borderCollapse: 'collapse',
   fontVariantNumeric: 'tabular-nums',
+  fontSize: 13,
   '& th, & td': {
     borderBottom: '1px solid var(--border_color_cell)',
     padding: '9px 8px',
@@ -218,21 +282,36 @@ const formatMicroseconds = (value: number) =>
 const percent = (value: number, total: number) =>
   total === 0 ? 0 : (value / total) * 100;
 
-const eventLabel = (type: number) =>
-  [
-    'Unknown event',
-    'Report queue drop',
-    'USB reset',
-    'USB configured',
-    'USB suspend',
-    'USB speed change',
-    'Firmware loop stall',
-  ][type] ?? 'Unknown event';
+// Keys are the English source text, matching the rest of the app's locale files, so a
+// missing translation degrades to readable English instead of a raw identifier.
+type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-const speedMismatchText = (mode: 0 | 1 | 2 | 3, speed: 0 | 1 | 2) =>
-  `${usbDiagnosticsPollingModeLabel(mode)} requires ${usbDiagnosticsSpeedLabel(
-    usbDiagnosticsExpectedSpeed(mode),
-  )}, but the link enumerated at ${usbDiagnosticsSpeedLabel(speed)}.`;
+const eventLabel = (t: Translate, type: number) =>
+  t(
+    [
+      'Unknown event',
+      'Report queue drop',
+      'USB reset',
+      'USB configured',
+      'USB suspend',
+      'USB speed change',
+      'Firmware loop stall',
+    ][type] ?? 'Unknown event',
+  );
+
+// USB speed and polling-mode names stay untranslated: they are specification and
+// firmware identifiers, and they must match what the comparison table, the copied
+// report and the firmware documentation call them.
+const speedMismatchText = (
+  t: Translate,
+  mode: 0 | 1 | 2 | 3,
+  speed: 0 | 1 | 2,
+) =>
+  t('{{mode}} needs {{required}}, but this connection is {{actual}}.', {
+    mode: usbDiagnosticsPollingModeLabel(mode),
+    required: usbDiagnosticsSpeedLabel(usbDiagnosticsExpectedSpeed(mode)),
+    actual: usbDiagnosticsSpeedLabel(speed),
+  });
 
 const sessionHardEventCount = (snapshot: UsbDiagnosticsSnapshot) =>
   snapshot.sessionCounters.usbResets +
@@ -287,9 +366,14 @@ export const buildUsbDiagnosticsTrend = (
 export const DiagnosticsTimingTrend: FC<{
   snapshots: UsbDiagnosticsSnapshot[];
 }> = ({snapshots}) => {
+  const {t} = useTranslation();
   const points = buildUsbDiagnosticsTrend(snapshots);
   if (points.length === 0) {
-    return <Muted>No HID reports were observed in a completed interval.</Muted>;
+    return (
+      <Muted>
+        {t('No HID reports were observed in a completed interval.')}
+      </Muted>
+    );
   }
 
   const width = 760;
@@ -316,7 +400,7 @@ export const DiagnosticsTimingTrend: FC<{
   return (
     <ChartFrame>
       <svg
-        aria-label="HID delivery timing over the diagnostic session"
+        aria-label={t('HID delivery timing over the diagnostic session')}
         role="img"
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
@@ -379,15 +463,15 @@ export const DiagnosticsTimingTrend: FC<{
       <Legend>
         <LegendItem>
           <LegendSwatch $color="var(--color_accent)" />
-          p99 histogram bound per snapshot window
+          {t('p99 histogram bound per snapshot window')}
         </LegendItem>
         <LegendItem>
           <LegendSwatch $color="var(--color_label-highlighted)" />
-          Worst delivery time per snapshot window
+          {t('Worst delivery time per snapshot window')}
         </LegendItem>
         <LegendItem>
           <LegendSwatch $color="var(--color_label)" />
-          Configured polling interval
+          {t('Configured polling interval')}
         </LegendItem>
       </Legend>
     </ChartFrame>
@@ -397,6 +481,7 @@ export const DiagnosticsTimingTrend: FC<{
 const DiagnosticsDistribution: FC<{snapshot: UsbDiagnosticsSnapshot}> = ({
   snapshot,
 }) => {
+  const {t} = useTranslation();
   const total = snapshot.histogram.reduce((sum, count) => sum + count, 0);
   return (
     <>
@@ -413,8 +498,9 @@ const DiagnosticsDistribution: FC<{snapshot: UsbDiagnosticsSnapshot}> = ({
         );
       })}
       <Muted>
-        Buckets are normalized to the polling interval selected when the test
-        started. Values are HID report request-to-USB-IN-completion times.
+        {t(
+          'Buckets are normalized to the polling interval selected when the test started. Values are HID report request-to-USB-IN-completion times.',
+        )}
       </Muted>
     </>
   );
@@ -423,18 +509,20 @@ const DiagnosticsDistribution: FC<{snapshot: UsbDiagnosticsSnapshot}> = ({
 const DiagnosticsTimeline: FC<{snapshot: UsbDiagnosticsSnapshot}> = ({
   snapshot,
 }) => {
+  const {t} = useTranslation();
   if (snapshot.events.length === 0) {
-    return <Muted>No bounded timeline events were recorded.</Muted>;
+    return <Muted>{t('No bounded timeline events were recorded.')}</Muted>;
   }
   const durationMs = Math.max(snapshot.durationSeconds * 1000, 1);
   return (
     <>
-      <TimelineTrack aria-label="Diagnostic event timeline">
+      <TimelineTrack aria-label={t('Diagnostic event timeline')}>
         {snapshot.events.map((event, index) => (
           <TimelineMarker
             $position={(event.relativeMs / durationMs) * 100}
             key={`${event.relativeMs}:${event.type}:${index}`}
             title={`${(event.relativeMs / 1000).toFixed(3)}s — ${eventLabel(
+              t,
               event.type,
             )}`}
           />
@@ -447,15 +535,18 @@ const DiagnosticsTimeline: FC<{snapshot: UsbDiagnosticsSnapshot}> = ({
       <EventList>
         {snapshot.events.map((event, index) => (
           <li key={`${event.relativeMs}:${event.type}:detail:${index}`}>
-            {(event.relativeMs / 1000).toFixed(3)}s — {eventLabel(event.type)}
+            {(event.relativeMs / 1000).toFixed(3)}s —{' '}
+            {eventLabel(t, event.type)}
             {event.type === 6 ? ` (${formatMicroseconds(event.value)})` : ''}
           </li>
         ))}
       </EventList>
       {snapshot.timelineOverwrites > 0 && (
         <Muted>
-          {formatInteger(snapshot.timelineOverwrites)} older timeline event(s)
-          were overwritten by the fixed-size firmware ring.
+          {t(
+            '{{overwrites}} older timeline event(s) were overwritten by the fixed-size firmware ring.',
+            {overwrites: formatInteger(snapshot.timelineOverwrites)},
+          )}
         </Muted>
       )}
     </>
@@ -470,6 +561,7 @@ export const DiagnosticsResultView: FC<{
   // panels a first-time reader cannot act on. 'full' adds them back unchanged.
   detail?: 'summary' | 'full';
 }> = ({snapshots, outcome, storedRunLabel, detail = 'full'}) => {
+  const {t} = useTranslation();
   const snapshot = snapshots.at(-1);
   if (!snapshot) {
     return null;
@@ -478,9 +570,6 @@ export const DiagnosticsResultView: FC<{
   const hardEvents = sessionHardEventCount(snapshot);
   const stalls = snapshot.loopStallCount;
   const stallThreshold = formatMicroseconds(snapshot.loopStallThresholdUs);
-  const p50 = estimateHistogramQuantile(snapshot.histogram, 0.5);
-  const p95 = estimateHistogramQuantile(snapshot.histogram, 0.95);
-  const p99 = estimateHistogramQuantile(snapshot.histogram, 0.99);
   const progress =
     (snapshot.elapsedMs / (snapshot.durationSeconds * 1000)) * 100;
   const speedConsistent = isUsbDiagnosticsSpeedConsistent(
@@ -489,289 +578,434 @@ export const DiagnosticsResultView: FC<{
   );
 
   return (
-    <DashboardGrid>
-      {storedRunLabel && (
-        <Caveat>
-          <PanelTitle>Previously stored result — not this session</PanelTitle>
-          <SummaryHeadline>{storedRunLabel}</SummaryHeadline>
-          <Muted>
-            No result has been captured for the current connection yet, so the
-            last stored test is shown instead. Copy Diagnostic Report copies
-            this same stored run. Start a new test to measure the current
-            connection.
-          </Muted>
-        </Caveat>
-      )}
-      {!speedConsistent && (
-        <Caveat>
-          <PanelTitle>Normalized values do not describe this mode</PanelTitle>
-          <SummaryHeadline>
-            {speedMismatchText(snapshot.pollingMode, snapshot.speed)}
-          </SummaryHeadline>
-          <Muted>
-            Every multiplier, histogram bucket, quantile bound and trend point
-            in the advanced metrics is normalized against the{' '}
-            {formatMicroseconds(snapshot.expectedIntervalUs)} interval of the
-            selected mode, so they describe a polling rate this connection never
-            ran at. The raw microsecond values and the counters remain valid.
-            Move the keyboard to a port or hub that enumerates at{' '}
-            {usbDiagnosticsSpeedLabel(
-              usbDiagnosticsExpectedSpeed(snapshot.pollingMode),
-            )}
-            , then repeat the test before comparing modes.
-          </Muted>
-        </Caveat>
-      )}
-      <Summary>
-        <PanelTitle>
-          Result — {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)} /{' '}
-          {usbDiagnosticsSpeedLabel(snapshot.speed)}
-        </PanelTitle>
-        <SummaryHeadline>
-          What this {snapshot.durationSeconds}-second test observed
-        </SummaryHeadline>
-        <FindingList>
-          <li>
-            {drops === 0
-              ? 'No report queue drops were observed during this test.'
-              : `${formatInteger(drops)} report queue drop(s) were observed during this test.`}
-          </li>
-          <li>
-            {hardEvents === 0
-              ? 'No USB reset, reconfiguration, suspend, or speed change was observed in the session.'
-              : `${formatInteger(hardEvents)} USB hard event(s) were observed in the session.`}
-          </li>
-          <li>
-            {stalls === 0
-              ? `No firmware main-loop gap longer than ${stallThreshold} was observed during this test.`
-              : `${formatInteger(stalls)} firmware main-loop gap(s) longer than ${stallThreshold} were observed during this test.`}
-          </li>
-          <li>
-            Report queue depth peaked at{' '}
-            {formatInteger(snapshot.queueDepthPeak)} waiting report(s).
-          </li>
-          <li>
-            {speedConsistent
-              ? `The link enumerated at ${usbDiagnosticsSpeedLabel(
-                  snapshot.speed,
-                )}, which is the speed ${usbDiagnosticsPollingModeLabel(
-                  snapshot.pollingMode,
-                )} requires.`
-              : speedMismatchText(snapshot.pollingMode, snapshot.speed)}
-          </li>
-        </FindingList>
-        {outcome === 'aborted' && (
-          <Muted>This is a partial result from an interrupted session.</Muted>
-        )}
-        {snapshot.reportSamples === 0 && (
-          // Every delivery statement above is vacuously true when nothing was sent,
-          // which reads like a clean result unless the window is named as empty.
-          <Muted>
-            No HID keyboard reports were sent during this test, so the delivery
-            lines describe a window with no keyboard traffic. Type on the
-            keyboard while the next test runs.
-          </Muted>
-        )}
-        <Muted>
-          Each line above covers only the category it names, over the window
-          this test ran. Categories this test does not measure are not covered
-          by it.
-        </Muted>
-        <Muted>
-          State: {usbDiagnosticsStateLabel(snapshot.state)} ·{' '}
-          {(snapshot.elapsedMs / 1000).toFixed(1)} / {snapshot.durationSeconds}s
-        </Muted>
-        <ProgressTrack>
-          <ProgressFill $progress={progress} />
-        </ProgressTrack>
-      </Summary>
-
-      {detail === 'full' && (
-        <>
-          <Panel>
-            <PanelTitle>Connection</PanelTitle>
-            <MetricGrid>
-              <MetricName>Polling mode</MetricName>
-              <MetricValue>
-                {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)}
-              </MetricValue>
-              <MetricName>Negotiated USB speed</MetricName>
-              <MetricValue>
-                {usbDiagnosticsSpeedLabel(snapshot.speed)}
-              </MetricValue>
-              <MetricName>Expected interval</MetricName>
-              <MetricValue>
-                {formatMicroseconds(snapshot.expectedIntervalUs)}
-              </MetricValue>
-              <MetricName>Session ID</MetricName>
-              <MetricValue>{snapshot.sessionId}</MetricValue>
-            </MetricGrid>
+    <>
+      <DashboardGrid>
+        {storedRunLabel && (
+          <Caveat>
+            {/* Which run is on screen and that Copy follows it are the two facts that
+              stop this being read as the current result. They stay visible; the
+              rest of the explanation does not need to occupy the screen. */}
+            <PanelHead>
+              <HeadTitle>
+                {t('Previously stored result — not this session')}
+              </HeadTitle>
+              <Explain>
+                {t(
+                  'Nothing has been measured on this connection yet, so the last saved test is standing in. Start a new test to see the one you are plugged into now.',
+                )}
+              </Explain>
+            </PanelHead>
+            <SummaryHeadline>{storedRunLabel}</SummaryHeadline>
             <Muted>
+              {t('The copy button copies this saved result, not a new one.')}
+            </Muted>
+          </Caveat>
+        )}
+        {!speedConsistent && (
+          <Caveat>
+            {/* The sentence that changes how the numbers are read stays on screen.
+                The remedy folds away. */}
+            <PanelHead>
+              <HeadTitle>
+                {t('Normalized values do not describe this mode')}
+              </HeadTitle>
+              <Explain>
+                {t(
+                  'They are normalized against the {{interval}} interval of the selected mode, so they describe a polling rate this connection never ran at. Move the keyboard to a port or hub that connects at {{required}}, then repeat the test before comparing modes.',
+                  {
+                    interval: formatMicroseconds(snapshot.expectedIntervalUs),
+                    required: usbDiagnosticsSpeedLabel(
+                      usbDiagnosticsExpectedSpeed(snapshot.pollingMode),
+                    ),
+                  },
+                )}
+              </Explain>
+            </PanelHead>
+            <SummaryHeadline>
+              {speedMismatchText(t, snapshot.pollingMode, snapshot.speed)}
+            </SummaryHeadline>
+            <Muted>
+              {t(
+                'The multiples under Advanced are worked out against the wrong interval and do not describe this connection. The microsecond readings and the counts are still good.',
+              )}
+            </Muted>
+          </Caveat>
+        )}
+        <Summary>
+          <PanelTitle>
+            {t('Result')} —{' '}
+            {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)} /{' '}
+            {usbDiagnosticsSpeedLabel(snapshot.speed)}
+          </PanelTitle>
+          <ExplainRow>
+            <SummaryHeadline>
+              {t('What this {{seconds}}-second test observed', {
+                seconds: snapshot.durationSeconds,
+              })}
+            </SummaryHeadline>
+            <Explain>
+              {t(
+                'These five lines are everything this test looks at. Anything else that could go wrong is simply outside what it measures.',
+              )}
+            </Explain>
+          </ExplainRow>
+          <FindingGrid>
+            <FindingName>{t('Lost key presses')}</FindingName>
+            <FindingValue>
+              {drops === 0
+                ? t('Not observed')
+                : t('{{times}} observed', {times: formatInteger(drops)})}
+            </FindingValue>
+            <FindingName>{t('USB link changes')}</FindingName>
+            <FindingValue>
+              {hardEvents === 0
+                ? t('Not observed')
+                : t(
+                    'Dropped {{resets}} · Reconnected {{configurations}} · Slept {{suspends}} · Speed changed {{speedChanges}}',
+                    {
+                      resets: formatInteger(snapshot.sessionCounters.usbResets),
+                      configurations: formatInteger(
+                        snapshot.sessionCounters.configurations,
+                      ),
+                      suspends: formatInteger(
+                        snapshot.sessionCounters.suspends,
+                      ),
+                      speedChanges: formatInteger(
+                        snapshot.sessionCounters.speedChanges,
+                      ),
+                    },
+                  )}
+            </FindingValue>
+            <FindingName>
+              {t('Firmware pauses (over {{threshold}})', {
+                threshold: stallThreshold,
+              })}
+            </FindingName>
+            <FindingValue>
+              {stalls === 0
+                ? t('Not observed')
+                : t('{{times}} observed', {times: formatInteger(stalls)})}
+            </FindingValue>
+            <FindingName>{t('Most waiting to send')}</FindingName>
+            <FindingValue>
+              {formatInteger(snapshot.queueDepthPeak)}
+            </FindingValue>
+            <FindingName>{t('Connection speed')}</FindingName>
+            <FindingValue>
               {speedConsistent
-                ? 'The negotiated speed matches the selected polling mode, so the normalized values below describe that mode.'
-                : speedMismatchText(snapshot.pollingMode, snapshot.speed)}
-            </Muted>
-          </Panel>
-
-          <Panel>
-            <PanelTitle>HID delivery</PanelTitle>
-            <MetricGrid>
-              <MetricName>Reports observed</MetricName>
-              <MetricValue>{formatInteger(snapshot.reportSamples)}</MetricValue>
-              <MetricName>Queue depth peak</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.queueDepthPeak)}
-              </MetricValue>
-              <MetricName>Report queue drops</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.sessionCounters.reportDrops)}
-              </MetricValue>
-              <MetricName>Minimum / average</MetricName>
-              <MetricValue>
-                {formatMicroseconds(snapshot.latencyMinUs)} /{' '}
-                {formatMicroseconds(snapshot.latencyAverageUs)}
-              </MetricValue>
-              <MetricName>Maximum</MetricName>
-              <MetricValue>
-                {formatMicroseconds(snapshot.latencyMaxUs)}
-              </MetricValue>
-            </MetricGrid>
+                ? t('{{actual}} — matches {{mode}}', {
+                    actual: usbDiagnosticsSpeedLabel(snapshot.speed),
+                    mode: usbDiagnosticsPollingModeLabel(snapshot.pollingMode),
+                  })
+                : t('{{actual}} — {{mode}} needs {{required}}', {
+                    actual: usbDiagnosticsSpeedLabel(snapshot.speed),
+                    mode: usbDiagnosticsPollingModeLabel(snapshot.pollingMode),
+                    required: usbDiagnosticsSpeedLabel(
+                      usbDiagnosticsExpectedSpeed(snapshot.pollingMode),
+                    ),
+                  })}
+            </FindingValue>
+          </FindingGrid>
+          {outcome === 'aborted' && (
             <Muted>
-              Delivery timing begins when firmware receives a keyboard report
-              and ends on the keyboard USB IN completion, including queue wait.
-              The minimum is this connection’s fixed offset between the firmware
-              tick and the USB frame; it is re-drawn on every replug, so compare
-              runs by Maximum minus Minimum rather than by the absolute values.
+              {t('This is a partial result from an interrupted session.')}
             </Muted>
-          </Panel>
-
-          <Panel>
-            <PanelTitle>Normalized timing bounds</PanelTitle>
-            <MetricGrid>
-              <MetricName>p50 histogram bound</MetricName>
-              <MetricValue>{p50?.label ?? 'No samples'}</MetricValue>
-              <MetricName>p95 histogram bound</MetricName>
-              <MetricValue>{p95?.label ?? 'No samples'}</MetricValue>
-              <MetricName>p99 histogram bound</MetricName>
-              <MetricValue>{p99?.label ?? 'No samples'}</MetricValue>
-              <MetricName>&gt; 2× interval</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.histogram[6] + snapshot.histogram[7])}
-              </MetricValue>
-            </MetricGrid>
+          )}
+          {snapshot.reportSamples === 0 && (
+            // Every delivery statement above is vacuously true when nothing was sent,
+            // which reads like a clean result unless the window is named as empty.
             <Muted>
-              Quantiles are bounded estimates from eight fixed histogram
-              buckets, not raw-sample percentiles.
+              {t(
+                'No keys were pressed during this test. Type while the next one runs.',
+              )}
             </Muted>
-          </Panel>
+          )}
+          <Muted>
+            {t('State')}: {t(usbDiagnosticsStateLabel(snapshot.state))} ·{' '}
+            {(snapshot.elapsedMs / 1000).toFixed(1)} /{' '}
+            {snapshot.durationSeconds}s
+          </Muted>
+          <ProgressTrack>
+            <ProgressFill $progress={progress} />
+          </ProgressTrack>
+        </Summary>
+      </DashboardGrid>
+      {detail === 'full' && <DiagnosticsAdvanced snapshots={snapshots} />}
+    </>
+  );
+};
 
-          <FullPanel>
-            <PanelTitle>HID timing trend</PanelTitle>
-            <DiagnosticsTimingTrend snapshots={snapshots} />
-          </FullPanel>
+type AdvancedTab = 'measurements' | 'timing' | 'events' | 'compare';
 
-          <FullPanel>
-            <PanelTitle>Normalized timing distribution</PanelTitle>
-            <DiagnosticsDistribution snapshot={snapshot} />
-          </FullPanel>
+const ADVANCED_TABS: {key: AdvancedTab; label: string}[] = [
+  {key: 'measurements', label: 'Measurements'},
+  {key: 'timing', label: 'Timing'},
+  {key: 'events', label: 'Events'},
+  {key: 'compare', label: 'Mode comparison'},
+];
 
-          <Panel>
-            <PanelTitle>Firmware timing</PanelTitle>
-            <MetricGrid>
-              <MetricName>Main-loop samples</MetricName>
-              <MetricValue>{formatInteger(snapshot.loopSamples)}</MetricValue>
-              <MetricName>Maximum loop gap</MetricName>
-              <MetricValue>
-                {formatMicroseconds(snapshot.loopGapMaxUs)}
-              </MetricValue>
-              <MetricName>
-                Gaps &gt; {formatMicroseconds(snapshot.loopStallThresholdUs)}
-              </MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.loopStallCount)}
-              </MetricValue>
-            </MetricGrid>
-            <Muted>
-              This separates long firmware main-loop gaps from HID delivery
-              timing.
-            </Muted>
-          </Panel>
+// Every group stays mounted and is hidden rather than unmounted. The chart keeps its
+// layout, find-in-page still reaches the text, and switching groups costs nothing.
+const TabPanel = styled(DashboardGrid)({
+  '&[hidden]': {display: 'none'},
+});
 
-          <Panel>
-            <PanelTitle>USB events during the session</PanelTitle>
-            <MetricGrid>
-              <MetricName>Resets</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.sessionCounters.usbResets)}
-              </MetricValue>
-              <MetricName>Configurations</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.sessionCounters.configurations)}
-              </MetricValue>
-              <MetricName>Suspends</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.sessionCounters.suspends)}
-              </MetricValue>
-              <MetricName>Speed changes</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.sessionCounters.speedChanges)}
-              </MetricValue>
-            </MetricGrid>
-          </Panel>
+export const DiagnosticsAdvanced: FC<{
+  snapshots: UsbDiagnosticsSnapshot[];
+  runs?: UsbDiagnosticsRun[];
+  defaultTab?: AdvancedTab;
+}> = ({snapshots, runs = [], defaultTab = 'measurements'}) => {
+  const {t} = useTranslation();
+  const [tab, setTab] = useState<AdvancedTab>(defaultTab);
+  const snapshot = snapshots.at(-1);
+  if (!snapshot) {
+    return null;
+  }
+  const p50 = estimateHistogramQuantile(snapshot.histogram, 0.5);
+  const p95 = estimateHistogramQuantile(snapshot.histogram, 0.95);
+  const p99 = estimateHistogramQuantile(snapshot.histogram, 0.99);
+  const speedConsistent = isUsbDiagnosticsSpeedConsistent(
+    snapshot.pollingMode,
+    snapshot.speed,
+  );
 
-          <FullPanel>
-            <PanelTitle>Event timeline</PanelTitle>
-            <DiagnosticsTimeline snapshot={snapshot} />
-          </FullPanel>
+  return (
+    <>
+      <TabBar role="tablist">
+        {ADVANCED_TABS.map(({key, label}) => (
+          <Tab
+            $selected={tab === key}
+            aria-selected={tab === key}
+            key={key}
+            onClick={() => setTab(key)}
+            role="tab"
+            type="button"
+          >
+            {t(label)}
+          </Tab>
+        ))}
+      </TabBar>
 
-          <FullPanel>
-            <PanelTitle>Since firmware boot</PanelTitle>
-            <MetricGrid>
-              <MetricName>Report queue drops</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.bootCounters.reportDrops)}
-              </MetricValue>
-              <MetricName>USB resets / configurations</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.bootCounters.usbResets)} /{' '}
-                {formatInteger(snapshot.bootCounters.configurations)}
-              </MetricValue>
-              <MetricName>Suspends / speed changes</MetricName>
-              <MetricValue>
-                {formatInteger(snapshot.bootCounters.suspends)} /{' '}
-                {formatInteger(snapshot.bootCounters.speedChanges)}
-              </MetricValue>
-            </MetricGrid>
-            <Muted>
-              These are the values captured at the end of this test, not a live
-              reading — they only change when a test produces a new snapshot.
-              Applying a polling mode restarts the keyboard, which zeroes them,
-              so a test run right after a mode change always starts near zero.
-              To check whether an unplug, suspend or speed change was counted,
-              trigger it and then run another short test.
-            </Muted>
-            <Muted>
-              RAM-only. They reset when the firmware restarts and are never
-              written to EEPROM.
-            </Muted>
-          </FullPanel>
-        </>
-      )}
-    </DashboardGrid>
+      <TabPanel hidden={tab !== 'measurements'} role="tabpanel">
+        <Panel>
+          <PanelHead>
+            <HeadTitle>{t('Connection')}</HeadTitle>
+            <Explain>
+              {speedConsistent
+                ? t(
+                    'The negotiated speed matches the selected polling mode, so the normalized values below describe that mode.',
+                  )
+                : speedMismatchText(t, snapshot.pollingMode, snapshot.speed)}
+            </Explain>
+          </PanelHead>
+          <MetricGrid>
+            <MetricName>{t('Polling mode')}</MetricName>
+            <MetricValue>
+              {usbDiagnosticsPollingModeLabel(snapshot.pollingMode)}
+            </MetricValue>
+            <MetricName>{t('Connected USB speed')}</MetricName>
+            <MetricValue>
+              {usbDiagnosticsSpeedLabel(snapshot.speed)}
+            </MetricValue>
+            <MetricName>{t('Polling interval')}</MetricName>
+            <MetricValue>
+              {formatMicroseconds(snapshot.expectedIntervalUs)}
+            </MetricValue>
+            <MetricName>{t('Session ID')}</MetricName>
+            <MetricValue>{snapshot.sessionId}</MetricValue>
+          </MetricGrid>
+        </Panel>
+
+        <Panel>
+          <PanelHead>
+            <HeadTitle>{t('HID delivery')}</HeadTitle>
+            <Explain>
+              {t(
+                'Delivery timing begins when firmware receives a keyboard report and ends on the keyboard USB IN completion, including queue wait. The minimum is this connection’s fixed offset between the firmware tick and the USB frame; it is re-drawn on every replug, so compare runs by Maximum minus Minimum rather than by the absolute values.',
+              )}
+            </Explain>
+          </PanelHead>
+          <MetricGrid>
+            <MetricName>{t('Key presses observed')}</MetricName>
+            <MetricValue>{formatInteger(snapshot.reportSamples)}</MetricValue>
+            <MetricName>{t('Most waiting to send')}</MetricName>
+            <MetricValue>{formatInteger(snapshot.queueDepthPeak)}</MetricValue>
+            <MetricName>{t('Lost key presses')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.sessionCounters.reportDrops)}
+            </MetricValue>
+            <MetricName>{t('Minimum / average')}</MetricName>
+            <MetricValue>
+              {formatMicroseconds(snapshot.latencyMinUs)} /{' '}
+              {formatMicroseconds(snapshot.latencyAverageUs)}
+            </MetricValue>
+            <MetricName>{t('Maximum')}</MetricName>
+            <MetricValue>
+              {formatMicroseconds(snapshot.latencyMaxUs)}
+            </MetricValue>
+          </MetricGrid>
+        </Panel>
+
+        <Panel>
+          <PanelHead>
+            <HeadTitle>{t('Normalized timing bounds')}</HeadTitle>
+            <Explain>
+              {t(
+                'Quantiles are bounded estimates from eight fixed histogram buckets, not raw-sample percentiles.',
+              )}
+            </Explain>
+          </PanelHead>
+          <MetricGrid>
+            <MetricName>{t('p50 histogram bound')}</MetricName>
+            <MetricValue>{p50?.label ?? t('No samples')}</MetricValue>
+            <MetricName>{t('p95 histogram bound')}</MetricName>
+            <MetricValue>{p95?.label ?? t('No samples')}</MetricValue>
+            <MetricName>{t('p99 histogram bound')}</MetricName>
+            <MetricValue>{p99?.label ?? t('No samples')}</MetricValue>
+            <MetricName>&gt; 2× interval</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.histogram[6] + snapshot.histogram[7])}
+            </MetricValue>
+          </MetricGrid>
+        </Panel>
+
+        <Panel>
+          <PanelHead>
+            <HeadTitle>{t('Firmware timing')}</HeadTitle>
+            <Explain>
+              {t(
+                'This separates long firmware main-loop gaps from HID delivery timing.',
+              )}
+            </Explain>
+          </PanelHead>
+          <MetricGrid>
+            <MetricName>{t('Main-loop samples')}</MetricName>
+            <MetricValue>{formatInteger(snapshot.loopSamples)}</MetricValue>
+            <MetricName>{t('Maximum loop gap')}</MetricName>
+            <MetricValue>
+              {formatMicroseconds(snapshot.loopGapMaxUs)}
+            </MetricValue>
+            <MetricName>
+              {t('Gaps >')} {formatMicroseconds(snapshot.loopStallThresholdUs)}
+            </MetricName>
+            <MetricValue>{formatInteger(snapshot.loopStallCount)}</MetricValue>
+          </MetricGrid>
+        </Panel>
+
+        <Panel>
+          <PanelHead>
+            <HeadTitle>{t('USB events during this test')}</HeadTitle>
+          </PanelHead>
+          <MetricGrid>
+            <MetricName>{t('Disconnects')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.sessionCounters.usbResets)}
+            </MetricValue>
+            <MetricName>{t('Reconnects')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.sessionCounters.configurations)}
+            </MetricValue>
+            <MetricName>{t('Sleeps')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.sessionCounters.suspends)}
+            </MetricValue>
+            <MetricName>{t('Speed changes')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.sessionCounters.speedChanges)}
+            </MetricValue>
+          </MetricGrid>
+        </Panel>
+
+        <Panel>
+          {/* These were read as live device state during hardware validation, so the
+              one sentence that prevents that stays on screen; the rest folds away. */}
+          <PanelHead>
+            <HeadTitle>{t('Since the keyboard powered on')}</HeadTitle>
+            <Explain>
+              {t(
+                'These are the values captured at the end of this test, not a live reading — they only change when a test produces a new snapshot. Applying a polling mode restarts the keyboard, which zeroes them, so a test run right after a mode change always starts near zero. To check whether an unplug, suspend or speed change was counted, trigger it and then run another short test. RAM-only. They reset when the firmware restarts and are never written to EEPROM.',
+              )}
+            </Explain>
+          </PanelHead>
+          <MetricGrid>
+            <MetricName>{t('Lost key presses')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.bootCounters.reportDrops)}
+            </MetricValue>
+            <MetricName>{t('Disconnects / reconnects')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.bootCounters.usbResets)} /{' '}
+              {formatInteger(snapshot.bootCounters.configurations)}
+            </MetricValue>
+            <MetricName>{t('Sleeps / speed changes')}</MetricName>
+            <MetricValue>
+              {formatInteger(snapshot.bootCounters.suspends)} /{' '}
+              {formatInteger(snapshot.bootCounters.speedChanges)}
+            </MetricValue>
+          </MetricGrid>
+          <Muted>
+            {t(
+              'These were read when the test finished. They do not tick up while you watch.',
+            )}
+          </Muted>
+        </Panel>
+      </TabPanel>
+
+      <TabPanel hidden={tab !== 'timing'} role="tabpanel">
+        <FullPanel>
+          <PanelHead>
+            <HeadTitle>{t('HID timing trend')}</HeadTitle>
+          </PanelHead>
+          <DiagnosticsTimingTrend snapshots={snapshots} />
+        </FullPanel>
+
+        <FullPanel>
+          <PanelHead>
+            <HeadTitle>{t('Normalized timing distribution')}</HeadTitle>
+            <Explain>
+              {t(
+                'Buckets are normalized to the polling interval selected when the test started. Values are HID report request-to-USB-IN-completion times.',
+              )}
+            </Explain>
+          </PanelHead>
+          <DiagnosticsDistribution snapshot={snapshot} />
+        </FullPanel>
+      </TabPanel>
+
+      <TabPanel hidden={tab !== 'events'} role="tabpanel">
+        <FullPanel>
+          <PanelHead>
+            <HeadTitle>{t('Event timeline')}</HeadTitle>
+          </PanelHead>
+          <DiagnosticsTimeline snapshot={snapshot} />
+        </FullPanel>
+      </TabPanel>
+
+      <TabPanel hidden={tab !== 'compare'} role="tabpanel">
+        <FullPanel>
+          <PanelHead>
+            <HeadTitle>{t('Manual polling-mode comparison')}</HeadTitle>
+          </PanelHead>
+          <DiagnosticsComparison runs={runs} />
+        </FullPanel>
+      </TabPanel>
+    </>
   );
 };
 
 export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
   runs,
 }) => {
+  const {t} = useTranslation();
   const latestPerMode = [0, 1, 2, 3]
     .map((mode) => runs.find((run) => run.pollingMode === mode))
     .filter((run): run is UsbDiagnosticsRun => run !== undefined);
   if (latestPerMode.length === 0) {
     return (
       <Muted>
-        Complete tests are stored locally. Change polling mode manually, run
-        another test, and return here to compare results.
+        {t(
+          'Complete tests are stored locally. Change polling mode manually, run another test, and return here to compare results.',
+        )}
       </Muted>
     );
   }
@@ -780,44 +1014,51 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
   );
   return (
     <>
-      <Muted>
-        Latest non-aborted result for each manually selected mode. Firmware and
-        diagnostics protocol versions must match the current device.
-      </Muted>
+      {/* The one sentence that stops Avg/Max being read as a ranking stays on
+          screen. The reasoning behind it, and the row-matching rule, fold away. */}
+      <ExplainRow>
+        <CompareHint>
+          <Trans
+            i18nKey="Compare with <1>Spread</1>, Drops and Queue. Avg and Max shift on every replug."
+            components={{1: <strong />}}
+          />
+        </CompareHint>
+        <Explain>
+          <>
+            {t(
+              'Latest non-aborted result for each manually selected mode. Firmware and diagnostics protocol versions must match the current device.',
+            )}{' '}
+            <Trans
+              i18nKey="Compare runs with <1>Spread</1>, Drops and Queue. Avg and Max each carry a constant offset that is fixed when the keyboard enumerates and is re-drawn on every replug, so the same firmware in the same mode can report very different microseconds between runs. Spread (Max minus Min, in polling intervals) removes that offset and shows how many extra intervals reports had to wait. The p99 and > 2× columns are measured against each mode’s own interval, so they answer “did this mode stay inside its own budget?” rather than which mode is faster."
+              components={{1: <strong />}}
+            />
+          </>
+        </Explain>
+      </ExplainRow>
       {anyMismatch && (
         <Muted>
-          Rows marked “speed mismatch” enumerated at a USB speed the selected
-          mode cannot run at, so their normalized columns (p99 bound, &gt; 2×)
-          are not comparable with the other rows.
+          {t(
+            'Rows marked “speed mismatch” ran at a USB speed the selected mode cannot use, so their normalized columns (p99 bound, > 2×) are not comparable with the other rows.',
+          )}
         </Muted>
       )}
-      <Muted>
-        Compare runs with <strong>Spread</strong>, Drops and Queue. Avg and Max
-        each carry a constant offset that is fixed when the keyboard enumerates
-        and is re-drawn on every replug, so the same firmware in the same mode
-        can report very different microseconds between runs. Spread (Max minus
-        Min, in polling intervals) removes that offset and shows how many extra
-        intervals reports had to wait. The p99 and &gt; 2× columns are measured
-        against each mode’s own interval, so they answer “did this mode stay
-        inside its own budget?” rather than which mode is faster.
-      </Muted>
       <TableWrap>
         <ComparisonTable>
           <thead>
             <tr>
-              <th>Mode</th>
-              <th>Negotiated speed</th>
-              <th>Date</th>
-              <th>Duration</th>
-              <th>Drops</th>
-              <th>Queue</th>
-              <th>Spread</th>
-              <th>Avg</th>
-              <th>Max</th>
-              <th>p99 bound</th>
+              <th>{t('Mode')}</th>
+              <th>{t('Negotiated speed')}</th>
+              <th>{t('Date')}</th>
+              <th>{t('Duration')}</th>
+              <th>{t('Drops')}</th>
+              <th>{t('Queue')}</th>
+              <th>{t('Spread')}</th>
+              <th>{t('Avg')}</th>
+              <th>{t('Max')}</th>
+              <th>{t('p99 bound')}</th>
               <th>&gt; 2×</th>
-              <th>Loop max</th>
-              <th>USB resets</th>
+              <th>{t('Loop max')}</th>
+              <th>{t('USB resets')}</th>
             </tr>
           </thead>
           <tbody>
@@ -837,7 +1078,7 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
                   <td>{usbDiagnosticsPollingModeLabel(run.pollingMode)}</td>
                   <td>
                     {usbDiagnosticsSpeedLabel(run.speed)}
-                    {consistent ? '' : ' — speed mismatch'}
+                    {consistent ? '' : ` — ${t('speed mismatch')}`}
                   </td>
                   <td>{new Date(run.endedAt).toLocaleString()}</td>
                   <td>{run.durationSeconds}s</td>
@@ -846,7 +1087,7 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
                   <td>
                     {snapshot.reportSamples === 0 ||
                     snapshot.expectedIntervalUs === 0
-                      ? 'No samples'
+                      ? t('No samples')
                       : `${(
                           (snapshot.latencyMaxUs - snapshot.latencyMinUs) /
                           snapshot.expectedIntervalUs
@@ -854,17 +1095,17 @@ export const DiagnosticsComparison: FC<{runs: UsbDiagnosticsRun[]}> = ({
                   </td>
                   <td>
                     {snapshot.reportSamples === 0
-                      ? 'No samples'
+                      ? t('No samples')
                       : formatMicroseconds(snapshot.latencyAverageUs)}
                   </td>
                   <td>
                     {snapshot.reportSamples === 0
-                      ? 'No samples'
+                      ? t('No samples')
                       : formatMicroseconds(snapshot.latencyMaxUs)}
                   </td>
                   <td>
                     {estimateHistogramQuantile(snapshot.histogram, 0.99)
-                      ?.label ?? 'No samples'}
+                      ?.label ?? t('No samples')}
                   </td>
                   <td>
                     {total === 0

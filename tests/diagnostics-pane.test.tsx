@@ -1,12 +1,30 @@
 import {describe, expect, test} from 'bun:test';
-import {renderToStaticMarkup} from 'react-dom/server';
+import type {ReactElement} from 'react';
+import i18n from 'i18next';
+import {I18nextProvider, initReactI18next} from 'react-i18next';
+import {renderToStaticMarkup as renderMarkup} from 'react-dom/server';
 import {
   buildUsbDiagnosticsTrend,
+  DiagnosticsAdvanced,
   DiagnosticsComparison,
   DiagnosticsResultView,
 } from '../src/components/panes/diagnostics-results';
 import type {UsbDiagnosticsRun} from '../src/utils/usb-diagnostics-history';
 import {diagnosticSnapshot} from './usb-diagnostics-fixtures';
+
+// English is the key itself, so an empty catalogue renders the untranslated source
+// text. That is also what a user of an unsupported language sees, which is exactly
+// the string these assertions must keep factual.
+const translations = i18n.createInstance();
+await translations.use(initReactI18next).init({
+  lng: 'en',
+  resources: {en: {translation: {}}},
+});
+
+const renderToStaticMarkup = (element: ReactElement) =>
+  renderMarkup(
+    <I18nextProvider i18n={translations}>{element}</I18nextProvider>,
+  );
 
 const snapshots = [
   diagnosticSnapshot({
@@ -32,10 +50,9 @@ describe('USB diagnostics result UI', () => {
     const html = renderToStaticMarkup(
       <DiagnosticsResultView outcome="complete" snapshots={snapshots} />,
     );
-    expect(html).toContain(
-      'No report queue drops were observed during this test.',
-    );
-    expect(html).toContain('No USB reset, reconfiguration, suspend');
+    expect(html).toContain('Lost key presses');
+    expect(html).toContain('Not observed');
+    expect(html).toContain('USB link changes');
     expect(html).toContain('HID timing trend');
     expect(html).toContain('<polyline');
     expect(html).toContain('Normalized timing distribution');
@@ -68,10 +85,10 @@ describe('USB diagnostics result UI', () => {
     const html = renderToStaticMarkup(
       <DiagnosticsResultView outcome="complete" snapshots={[failed]} />,
     );
-    expect(html).toContain(
-      '2 report queue drop(s) were observed during this test.',
-    );
-    expect(html).toContain('1 USB hard event(s) were observed');
+    expect(html).toContain('Lost key presses');
+    expect(html).toContain('2 observed');
+    // The breakdown names which link event happened instead of only counting them.
+    expect(html).toContain('Dropped 1 · Reconnected 0 · Slept 0');
     expect(html).toContain('USB reset');
     expect(html).not.toMatch(/good|bad|stable|unstable/i);
   });
@@ -126,10 +143,10 @@ describe('USB diagnostics result UI', () => {
     );
     expect(html).toContain('Normalized values do not describe this mode');
     expect(html).toContain(
-      'HS 8K requires High Speed, but the link enumerated at Full Speed.',
+      'HS 8K needs High Speed, but this connection is Full Speed.',
     );
     expect(html).toContain(
-      'The raw microsecond values and the counters remain valid.',
+      'The microsecond readings and the counts are still good.',
     );
   });
 
@@ -172,7 +189,7 @@ describe('USB diagnostics result UI', () => {
     expect(html).toContain('Previously stored result — not this session');
     expect(html).toContain('HS 8K · 30s · complete · 8/23/2026');
     expect(html).toContain(
-      'Start a new test to measure the current connection',
+      'Start a new test to see the one you are plugged into now',
     );
   });
 
@@ -288,15 +305,20 @@ describe('USB diagnostics result UI', () => {
       />,
     );
     expect(html).toContain('-second test observed');
-    expect(html).toContain(
-      'No report queue drops were observed during this test.',
-    );
-    expect(html).toContain('No USB reset, reconfiguration, suspend');
-    expect(html).toContain('firmware main-loop gap');
-    expect(html).toContain('Report queue depth peaked at');
-    expect(html).toContain('which is the speed HS 8K requires');
+    // Each row names its topic in words a keyboard owner already uses, and the value
+    // is a fragment because the row name supplies the subject.
+    expect(html).toContain('Lost key presses');
+    expect(html).toContain('USB link changes');
+    expect(html).toContain('Firmware pauses (over 1.000 ms)');
+    expect(html).toContain('Most waiting to send');
+    expect(html).toContain('Connection speed');
+    expect(html).toContain('High Speed — matches HS 8K');
+    // "Not observed" still scopes the claim to what this test looked at.
+    expect(html).toContain('Not observed');
+    expect(html).toContain('everything this test looks at');
+    expect(html).not.toMatch(/\breports?\b|enumerat|queue depth/i);
     // "No failures observed" would cover categories this test never measured.
-    expect(html).toContain('Categories this test does not measure');
+    expect(html).toContain('everything this test looks at');
     expect(html).not.toMatch(
       /stability \d|health|quality score|perfect|certified/i,
     );
@@ -335,7 +357,7 @@ describe('USB diagnostics result UI', () => {
     );
     expect(html).toContain('Normalized values do not describe this mode');
     expect(html).toContain(
-      'HS 8K requires High Speed, but the link enumerated at Full Speed.',
+      'HS 8K needs High Speed, but this connection is Full Speed.',
     );
   });
 
@@ -368,9 +390,101 @@ describe('USB diagnostics result UI', () => {
         ]}
       />,
     );
-    expect(html).toContain(
-      'No HID keyboard reports were sent during this test',
+    expect(html).toContain('No keys were pressed during this test');
+  });
+
+  // A collapsed disclosure keeps its text in the page, so "still shipped" and "still
+  // on the screen" are different questions. These strip the collapsed bodies to ask
+  // the second one.
+  const visibleText = (html: string) =>
+    html.replace(/<p[^>]*hidden=""[^>]*>.*?<\/p>/gs, '');
+
+  const count = (html: string, pattern: RegExp) =>
+    (html.match(pattern) ?? []).length;
+
+  test('caveats stay in the page but stop occupying the screen', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsResultView
+        detail="summary"
+        outcome="complete"
+        snapshots={snapshots}
+      />,
     );
+    // The observation-scope limit is still shipped with the result...
+    expect(html).toContain('outside what it measures');
+    // ...but folded away, so the summary reads as answers rather than as prose.
+    expect(visibleText(html)).not.toContain('outside what it measures');
+    expect(count(html, /hidden=""/g)).toBeGreaterThan(0);
+  });
+
+  test('advanced metrics show one group at a time', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsAdvanced snapshots={snapshots} />,
+    );
+    expect(count(html, /role="tabpanel"/g)).toBe(4);
+    expect(count(html, /aria-selected="true"/g)).toBe(1);
+    // Three of the four groups are hidden rather than unmounted, so the chart keeps
+    // its layout and find-in-page still reaches every group.
+    expect(count(html, /hidden=""/g)).toBeGreaterThanOrEqual(3);
+    expect(html).toContain('HID timing trend');
+    expect(html).toContain('Event timeline');
+    expect(html).toContain('Since the keyboard powered on');
+  });
+
+  test('every advanced group can be selected', () => {
+    for (const tab of [
+      'measurements',
+      'timing',
+      'events',
+      'compare',
+    ] as const) {
+      const html = renderToStaticMarkup(
+        <DiagnosticsAdvanced defaultTab={tab} snapshots={snapshots} />,
+      );
+      expect({tab, selected: count(html, /aria-selected="true"/g)}).toEqual({
+        tab,
+        selected: 1,
+      });
+    }
+  });
+
+  test('the boot-counter warning stays on screen, not behind the disclosure', () => {
+    // Hardware validation twice concluded "suspend is not being counted" from these
+    // numbers, so the sentence that prevents it may not be one click away.
+    const html = renderToStaticMarkup(
+      <DiagnosticsAdvanced snapshots={snapshots} />,
+    );
+    expect(visibleText(html)).toContain(
+      'These were read when the test finished.',
+    );
+    expect(html).toContain('Applying a polling mode restarts the keyboard');
+  });
+
+  test('the phase-independent comparison rule stays on screen', () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticsComparison
+        runs={[
+          {
+            id: 'a',
+            vendorProductId: 0x45520030,
+            productName: 'BRICK60',
+            firmwareVersion: 'V260824R1',
+            protocolVersion: 1,
+            pollingMode: 3,
+            speed: 2,
+            durationSeconds: 30,
+            startedAt: '2026-08-23T00:00:00.000Z',
+            endedAt: '2026-08-23T00:00:01.000Z',
+            outcome: 'complete',
+            snapshots: [diagnosticSnapshot({})],
+          },
+        ]}
+      />,
+    );
+    expect(visibleText(html)).toContain('Compare with <strong>Spread</strong>');
+    expect(visibleText(html)).toContain('shift on every replug');
+    // The full reasoning is still shipped, one click away.
+    expect(html).toContain('re-drawn on every replug');
   });
 
   test('marks comparison rows whose negotiated speed cannot run the mode', () => {

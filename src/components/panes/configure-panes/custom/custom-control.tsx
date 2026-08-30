@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import styled from 'styled-components';
 import {PelpiKeycodeInput} from '../../../inputs/pelpi/keycode-input';
 import {AccentButton} from '../../../inputs/accent-button';
 import {AccentSlider} from '../../../inputs/accent-slider';
@@ -30,15 +31,14 @@ import {type MillisecondAdapter} from 'src/utils/millisecond-field';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getSelectedConnectedDevice,
-  getSelectedKeyboardAPI,
-  getSelectedDevicePath,
 } from 'src/store/devicesSlice';
 import {
-  getCustomMenuDataMap,
   getSelectedCustomMenuAvailability,
-  updateSelectedCustomMenuData,
+  updateCustomMenuValue,
 } from 'src/store/menusSlice';
-import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
+import {ExplainBody, useExplainDisclosure} from 'src/components/inputs/explain';
+import {findEraControlHelp} from 'src/utils/era-feature-help';
+import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
 
 type Props = {
   lightingData: LightingData;
@@ -56,23 +56,66 @@ type ControlMeta = [
 
 type AdvancedControlProps = Props & {meta: ControlMeta};
 
+// A row that carries its own help wraps: the label and its ⓘ stay in the left column,
+// the control stays in the right one, and the folded body gets a full-width line under
+// both. Rows without help keep the original two-column row untouched.
+const HelpfulControlRow = styled(ControlRow)`
+  flex-wrap: wrap;
+`;
+
+const LabelGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+// The 50px line box above already leaves a gap, so the body only needs room beneath it.
+const ControlExplainBody = styled(ExplainBody)`
+  margin: 0 0 12px;
+`;
+
 export const VIACustomItem = React.memo(
   (props: VIACustomControlProps & {_id: string}) => {
     const {t} = useTranslation();
+    const label = t(props.label);
+    // Matched on the firmware's own command name, so this never appears on an ordinary
+    // VIA keyboard. Most controls get nothing: see the rule in `era-feature-help.ts`.
+    const help = findEraControlHelp(
+      isCustomMenuCommandContent(props.content) ? props.content[0] : null,
+      props.label,
+    );
+    const {toggle, bodyProps} = useExplainDisclosure(
+      t('What this means: {{name}}', {name: label}),
+    );
+    const detail = (
+      <Detail>
+        {'type' in props ? (
+          <VIACustomControl
+            {...props}
+            value={props.value && Array.from(props.value)}
+          />
+        ) : (
+          props.content
+        )}
+      </Detail>
+    );
+    if (!help) {
+      return (
+        <ControlRow id={props._id}>
+          <Label>{label}</Label>
+          {detail}
+        </ControlRow>
+      );
+    }
     return (
-      <ControlRow id={props._id}>
-        <Label>{t(props.label)}</Label>
-        <Detail>
-          {'type' in props ? (
-            <VIACustomControl
-              {...props}
-              value={props.value && Array.from(props.value)}
-            />
-          ) : (
-            props.content
-          )}
-        </Detail>
-      </ControlRow>
+      <HelpfulControlRow id={props._id}>
+        <LabelGroup>
+          <Label>{label}</Label>
+          {toggle}
+        </LabelGroup>
+        {detail}
+        <ControlExplainBody {...bodyProps}>{t(help)}</ControlExplainBody>
+      </HelpfulControlRow>
     );
   },
 );
@@ -84,6 +127,16 @@ type ControlGetSet = {
     ...command: number[]
   ) => void | Promise<void>;
   updateRangeValue: (name: string, value: number) => void | Promise<void>;
+  updateContinuousValue: (
+    name: string,
+    ...command: number[]
+  ) => void | Promise<void>;
+  completeContinuousValue: (name: string) => void | Promise<void>;
+  updateContinuousRangeValue: (
+    name: string,
+    value: number,
+  ) => void | Promise<void>;
+  completeContinuousRangeValue: (name: string) => void | Promise<void>;
   rangeControls: RangeControlMap;
   menuData: Record<string, number[] | number[][]>;
 };
@@ -117,13 +170,10 @@ const ExactMillisecondControl = ({
   options?: number[];
 }) => {
   const dispatch = useAppDispatch();
-  const api = useAppSelector(getSelectedKeyboardAPI);
-  const devicePath = useAppSelector(getSelectedDevicePath);
   const device = useAppSelector(getSelectedConnectedDevice);
   const menuAvailability = useAppSelector(
     getSelectedCustomMenuAvailability,
   );
-  const menuData = useAppSelector(getCustomMenuDataMap);
   const channel = command[0];
   const id = command[1];
   const bounds = exactTermBoundsFromOptions(
@@ -132,18 +182,12 @@ const ExactMillisecondControl = ({
   );
   const currentMs = getRangeValue(value ?? [0, 0], bounds.maxMs);
   const writeContext = useRef({
-    api,
-    devicePath,
-    menuData,
     name,
     dispatch,
     currentMs,
     menuAvailability,
   });
   writeContext.current = {
-    api,
-    devicePath,
-    menuData,
     name,
     dispatch,
     currentMs,
@@ -155,60 +199,19 @@ const ExactMillisecondControl = ({
       maxMs: bounds.maxMs,
       async write(candidateMs: number) {
         const context = writeContext.current;
-        if (
-          !context.api ||
-          !context.devicePath ||
-          context.menuAvailability !== 'available'
-        ) {
+        if (context.menuAvailability !== 'available') {
           return context.currentMs;
         }
-        const connectionGeneration = context.api.getConnectionGeneration();
         const previousMs = context.currentMs;
-        const invalidateConfig = () => {
-          context.dispatch(
-            invalidateStateSyncDomain({
-              devicePath: context.devicePath as string,
-              connectionGeneration,
-              domain: 'config',
-            }),
-          );
-        };
-        try {
-          await context.api.setCustomMenuValue(
+        const accepted = await context.dispatch(
+          updateCustomMenuValue(
+            context.name,
             channel,
             id,
             ...shiftFrom16Bit(candidateMs),
-          );
-        } catch (error) {
-          console.warn('Setting exact-ms value failed', error);
-          invalidateConfig();
-          return previousMs;
-        }
-        invalidateConfig();
-        try {
-          await context.api.commitCustomMenu(channel);
-        } catch (error) {
-          console.warn('Saving exact-ms value failed', error);
-          invalidateConfig();
-        }
-        if (!context.api.isConnectionGenerationCurrent(connectionGeneration)) {
-          return previousMs;
-        }
-        const raw = await context.api.getCustomMenuValue([channel, id]);
-        const bytes = raw.slice(1);
-        if (!context.api.isConnectionGenerationCurrent(connectionGeneration)) {
-          return previousMs;
-        }
-        context.dispatch(
-          updateSelectedCustomMenuData({
-            devicePath: context.devicePath,
-            menuData: {
-              ...(context.menuData[context.devicePath] || {}),
-              [context.name]: bytes,
-            },
-          }),
+          ),
         );
-        return shiftTo16Bit([bytes[0] ?? 0, bytes[1] ?? 0]);
+        return accepted ? candidateMs : previousMs;
       },
     }),
     [bounds.maxMs, bounds.minMs, channel, id],
@@ -466,7 +469,15 @@ const VIACustomControl = (props: VIACustomControlProps) => {
           min={bounds.min}
           max={bounds.max}
           value={rangeValue}
-          onChange={(val: number) => props.updateRangeValue(name, val)}
+          onChange={(val: number) =>
+            props.updateContinuousRangeValue(name, val)
+          }
+          onInteractionComplete={() =>
+            props.completeContinuousRangeValue(name)
+          }
+          onInteractionCancel={() =>
+            props.completeContinuousRangeValue(name)
+          }
         />
       );
     }
@@ -557,7 +568,11 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       return (
         <ArrayColorPicker
           color={props.value as [number, number]}
-          setColor={(hue, sat) => props.updateValue(name, ...command, hue, sat)}
+          setColor={(hue, sat) =>
+            props.updateContinuousValue(name, ...command, hue, sat)
+          }
+          onInteractionComplete={() => props.completeContinuousValue(name)}
+          onInteractionCancel={() => props.completeContinuousValue(name)}
         />
       );
     }

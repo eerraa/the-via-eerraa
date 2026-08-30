@@ -124,18 +124,16 @@ export async function queryStateSync(
     padded[index + 1] = value;
   });
   try {
-    const response = (await api.getHID().exchange(
+    const response = (await api.exchangeHID(
       padded,
       (message: Uint8Array) => {
         if (message.length !== 32) {
           return false;
         }
         if (message[0] === 0xff) {
-          return (
-            message[1] === ERA_STATE_SYNC_SELECTOR &&
-            message[4] === ((tag >> 8) & 0xff) &&
-            message[5] === (tag & 0xff)
-          );
+          return requestBytes
+            .slice(1)
+            .every((value, index) => message[index + 1] === value);
         }
         return (
           message[0] === ERA_STATE_SYNC_COMMAND &&

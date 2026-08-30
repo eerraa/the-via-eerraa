@@ -8,6 +8,7 @@ import {
   splitTapDanceKeycodesFromRaw,
 } from '../src/utils/era-definition';
 import {mergeDefinitionLookup} from '../src/utils/definition-priority';
+import {findEraFeatureHelp} from '../src/utils/era-feature-help';
 
 type DefinitionEntry = {
   id: string;
@@ -59,6 +60,46 @@ const collectTermControls = (value: unknown, into: TermControl[] = []) => {
   }
   Object.values(record).forEach((item) => collectTermControls(item, into));
   return into;
+};
+
+const collectCommandControls = (
+  value: unknown,
+  into: {name: string; channel: number; id: number; label?: string}[] = [],
+) => {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectCommandControls(item, into));
+    return into;
+  }
+  if (!value || typeof value !== 'object') {
+    return into;
+  }
+  const record = value as {content?: unknown; label?: unknown};
+  if (
+    Array.isArray(record.content) &&
+    typeof record.content[0] === 'string' &&
+    typeof record.content[1] === 'number' &&
+    typeof record.content[2] === 'number'
+  ) {
+    into.push({
+      name: record.content[0],
+      channel: record.content[1],
+      id: record.content[2],
+      label: typeof record.label === 'string' ? record.label : undefined,
+    });
+  }
+  Object.values(record).forEach((item) => collectCommandControls(item, into));
+  return into;
+};
+
+const submenuLabels = (definition: Record<string, unknown>, menu: string) => {
+  const menus = (definition.menus ?? []) as {
+    label?: string;
+    content?: {label?: string}[];
+  }[];
+  const found = menus.find(
+    (entry) => entry && typeof entry === 'object' && entry.label === menu,
+  );
+  return (found?.content ?? []).map((entry) => entry.label);
 };
 
 const keycodeNames = (value: unknown) =>
@@ -302,6 +343,207 @@ describe('canonical ERA definition inventory', () => {
         ({name}) => !name.endsWith('_exact'),
       ),
     ).toEqual([]);
+  });
+
+  // The H7S firmware has implemented the mouse-key page since V260823R1, but on its
+  // own channel: the reference QMK number 13 is taken by USB POLLING there, so
+  // `via.h` assigns `id_qmk_mousekey = 17`. Value ids 1-6 match the reference.
+  test('gives every H7S definition the MOUSE page on channel 17', () => {
+    const h7s = manifest.definitions.filter(
+      ({usbDiagnostics}) => usbDiagnostics === true,
+    );
+    expect(h7s.map(({id}) => id).sort()).toEqual(
+      expectedUsbDiagnosticsDefinitionIds,
+    );
+    for (const entry of h7s) {
+      const definition = readJSON(entry.path);
+      expect(submenuLabels(definition, 'FEATURE')).toEqual([
+        'SOCD',
+        'KKUK',
+        'DEBOUNCE',
+        'TAPPING',
+        'MOUSE',
+      ]);
+      const mouse = collectCommandControls(definition).filter(({name}) =>
+        name.startsWith('id_qmk_mousekey_'),
+      );
+      expect(mouse.map(({channel}) => channel)).toEqual(
+        Array.from({length: mouse.length}, () => 17),
+      );
+      expect([...new Set(mouse.map(({id}) => id))].sort()).toEqual([
+        1, 2, 3, 4, 5, 6,
+      ]);
+      // Acceleration off swaps a single "Cursor Speed" row in for the start/top pair.
+      const serialized = JSON.stringify(definition);
+      expect(serialized).toContain(
+        '{id_qmk_mousekey_cursor_acceleration} == 0',
+      );
+      expect(serialized).toContain(
+        '{id_qmk_mousekey_cursor_acceleration} != 0',
+      );
+      // H7S is always 20-key rollover with no switch, so a toggle would be a lie.
+      expect(serialized).not.toContain('id_qmk_custom_nkro');
+    }
+  });
+
+  test('leaves the QMK definitions on the reference mouse channel', () => {
+    const era65 = collectCommandControls(
+      readJSON('era-definitions/custom/v3/era65/ERA65-VIA.json'),
+    ).filter(({name}) => name.startsWith('id_qmk_mousekey_'));
+    expect(era65.length).toBeGreaterThan(0);
+    expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
+  });
+
+  // The SOCD menu shipped without help for twenty-five definitions because the RP2040
+  // firmware calls it `id_qmk_socd_*` while H7S calls it `id_qmk_kill_switch_*`, and
+  // only the second prefix was registered. Nothing failed, because no test asked "does
+  // every ERA submenu actually resolve to help?". This one asks, and any submenu that
+  // legitimately has none has to be named here rather than passing silently.
+  const SUBMENUS_WITHOUT_HELP = ['Backlight'];
+
+  test('every ERA submenu resolves to feature help, or is listed as not having any', () => {
+    const uncovered = new Map<string, string[]>();
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const menus = (definition.menus ?? []) as {content?: unknown[]}[];
+      for (const menu of menus) {
+        if (!menu || typeof menu !== 'object' || !Array.isArray(menu.content)) {
+          continue;
+        }
+        for (const submenu of menu.content) {
+          if (
+            !submenu ||
+            typeof submenu !== 'object' ||
+            !('label' in submenu) ||
+            typeof (submenu as {label: unknown}).label !== 'string'
+          ) {
+            continue;
+          }
+          const label = (submenu as {label: string}).label;
+          const commands = collectCommandControls(submenu).map(
+            ({name}) => name,
+          );
+          if (commands.length === 0 || findEraFeatureHelp(commands)) {
+            continue;
+          }
+          uncovered.set(label, [...(uncovered.get(label) ?? []), entry.id]);
+        }
+      }
+    }
+    expect([...uncovered.keys()].sort()).toEqual(
+      [...SUBMENUS_WITHOUT_HELP].sort(),
+    );
+  });
+
+  test('both firmware families name the same SOCD feature', () => {
+    // H7S: id_qmk_kill_switch_*. RP2040: id_qmk_socd_*. Same feature, one explanation.
+    const h7s = findEraFeatureHelp(['id_qmk_kill_switch_enable_lr']);
+    const rp2040 = findEraFeatureHelp(['id_qmk_socd_lr_enable']);
+    expect(h7s).not.toBeNull();
+    expect(rp2040).toEqual(h7s!);
+  });
+
+  // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in
+  // its custom definition, while its own official VIA JSON and both sibling split
+  // boards had all three. Nothing failed, because no test asked which definitions carry
+  // which feature — a definition could quietly miss a menu the firmware supports and
+  // only the custom app's users would lose it. This table is the answer, written down.
+  // Adding a keyboard or a feature means editing it on purpose.
+  const FEATURE_COVERAGE: Record<string, string[]> = {
+    // Every ERA keyboard supports mouse keys. `brick65` is the ATmega32U4 exception
+    // documented in PROJECT_DIRECTION: stock VIA only, no ERA feature menus at all.
+    id_qmk_mousekey: [
+      'brick60-h7s',
+      'brick65-h7s',
+      'brick65s',
+      'chickpad',
+      'classicd-a1',
+      'classicd-a1-ug',
+      'classicd-core',
+      'classicd-coreless',
+      'divine',
+      'era65',
+      'et-tkl',
+      'fave65s',
+      'intigrity80-h7s',
+      'klein-hs',
+      'klein-sd',
+      'may65-h7s',
+      'n86',
+      'n87',
+      'n8x',
+      'newone-a1',
+      'newone-h1',
+      'newone-odessey60h',
+      'newone-odessey60s',
+      'sculpturei-h7s',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    // Every RP2040 keyboard has the toggle. H7S is always 20-key with no switch, so a
+    // toggle there would offer a choice the firmware does not have.
+    id_qmk_custom_nkro: [
+      'brick65s',
+      'chickpad',
+      'classicd-a1',
+      'classicd-a1-ug',
+      'classicd-core',
+      'classicd-coreless',
+      'divine',
+      'era65',
+      'et-tkl',
+      'fave65s',
+      'klein-hs',
+      'klein-sd',
+      'n86',
+      'n87',
+      'n8x',
+      'newone-a1',
+      'newone-h1',
+      'newone-odessey60h',
+      'newone-odessey60s',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    // Split-only: there is no cable to set a speed on, and nothing to sync, unless the
+    // keyboard comes in two units.
+    id_qmk_split_link: [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    id_qmk_eeprom_sync: [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+  };
+
+  test('each feature reaches exactly the definitions that are meant to have it', () => {
+    for (const [command, expectedIds] of Object.entries(FEATURE_COVERAGE)) {
+      const actual = manifest.definitions
+        .filter(({path}) => JSON.stringify(readJSON(path)).includes(command))
+        .map(({id}) => id)
+        .sort();
+      expect({command, ids: actual}).toEqual({
+        command,
+        ids: [...expectedIds].sort(),
+      });
+    }
   });
 
   test('opts only the five H7S definitions into USB diagnostics', () => {

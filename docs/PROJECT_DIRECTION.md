@@ -1,354 +1,279 @@
-# ERA VIA Fork project direction
+# ERA VIA Fork — 제품 방향
 
-> This is the durable project brief. Update it when goals or accepted architecture change; use `docs/adr/` for detailed decisions and the external handover for transient session state.
+Genre: contract
+Canonical for: 이 포크의 목적, 우선순위, 정의 소유권, Tap Dance와 exact-ms UI 계약,
+State Sync 제품 보장, 영구 비목표
 
-## Mission
+> 지속되는 프로젝트 브리프다. 제품이 무엇을 위한 것인지, 그리고 무엇이 절대 해서는
+> 안 되는지를 적는다. 어떤 사실이 어디에 살고 어느 쪽이 정본인지는 `docs/MAP.md`다.
+> 기각된 대안을 포함한 개별 결정은 `docs/adr/`에 있다. 일시적 상태는 어디에도
+> 기록하지 않는다 — `git log`와 검증 명령이 답한다.
 
-Build an unofficial, manufacturer-neutral VIA fork for ERA PCB and firmware work while retaining the experience and compatibility of upstream VIA. This is not a clean-sheet configurator and not a rebrand for SIRIND, NEWONE, Linx3, or another keyboard manufacturer. ERA/eerraa identifies the PCB/firmware platform and fork maintainer.
+## 사명
 
-Priority order:
+ERA PCB와 펌웨어 작업을 위한, 제조사에 속하지 않는 비공식 VIA 포크를 만들되
+upstream VIA의 경험과 호환성은 유지한다. 백지에서 다시 쓴 configurator가 아니고,
+SIRIND·NEWONE·Linx3 또는 다른 키보드 제조사를 위한 리브랜딩도 아니다.
+ERA/eerraa는 PCB/펌웨어 플랫폼과 포크 유지자를 가리킨다.
 
-1. Firmware remains the authoritative source of keyboard state.
-2. Supported keyboards work without manual JSON loading or page refreshes.
-3. Ordinary VIA keyboards and existing VIA V3 definition/command paths continue to work.
-4. Configurator control-plane traffic does not impair the 8 kHz input data-plane.
-5. Complexity is introduced only for a demonstrated correctness, recovery, or maintenance need.
+우선순위:
 
-Upstream diff minimization is useful but no longer an end in itself. A well-tested core improvement is preferable to an ERA-specific workaround when VIA's existing architecture is the actual limitation.
+1. 펌웨어가 키보드 상태의 authority로 남는다.
+2. 지원 키보드는 수동 JSON 로드나 페이지 새로고침 없이 동작한다.
+3. 일반 VIA 키보드와 기존 VIA V3 정의/명령 경로는 계속 동작한다.
+4. Configurator 제어면 트래픽이 8 kHz 입력 데이터면을 해치지 않는다.
+5. 복잡성은 입증된 정확성·복구·유지보수 필요가 있을 때만 도입한다.
 
-## Established direction and completed foundation
+upstream diff 최소화는 유용하지만 더 이상 그 자체가 목적은 아니다. VIA의 기존
+아키텍처가 실제 한계일 때, 잘 검증된 코어 개선이 ERA 전용 우회보다 낫다.
 
-### Definitions
+## 확정된 방향
 
-Definition ownership is explicit:
+### 정의
 
-- `era-definitions/custom/v3` in this app repository is the canonical ERA custom source. Tap Dance slots live in `tapdanceKeycodes`; `customKeycodes` remains the ordinary Custom tab and is omitted when empty. TD names must not be listed in `customKeycodes`.
-- `the-via/keyboards` `v3/` is the canonical official VIA source. The installed `via-keyboards` package is a pinned build snapshot, not a second source of truth.
-- QMK `keymaps/via` and H7S board-local `json` files are firmware-local compatibility, test, or release material. They are not app lookup sources and do not define official JSON ownership.
-- Design uploads are a last-resort local source. They are retained for the existing UX but cannot override a bundled ERA or official definition.
+정의 소유권은 명시적이다:
 
-Do not generate one canonical source from the other or maintain `era-definitions/v3` as a stock clone. VID/PID, command addresses, layout, and TD slot identity still require release-time compatibility review when app and firmware change together. The app manifest records only custom path, identity, split pair, and independent runtime capabilities. Normal app build and PR CI read the installed official snapshot and the ERA custom source; they do not fetch GitHub or inspect firmware repositories and do not emit remote-verifier provenance.
+- 이 앱 저장소의 `era-definitions/custom/v3`가 ERA 커스텀 정본이다. Tap Dance
+  슬롯은 `tapdanceKeycodes`에 두고, `customKeycodes`는 일반 Custom 탭으로 남기며
+  비어 있으면 생략한다. TD 이름을 `customKeycodes`에 넣지 않는다.
+- `the-via/keyboards`의 `v3/`가 공식 VIA 정본이다. 설치된 `via-keyboards` 패키지는
+  핀된 빌드 스냅샷일 뿐, 두 번째 정본이 아니다.
+- QMK `keymaps/via`와 H7S 보드 로컬 `json` 파일은 펌웨어 로컬 호환·테스트·릴리스
+  자료다. 앱 lookup 소스가 아니며 공식 JSON 소유권을 정하지 않는다.
+- Design 업로드는 최후의 로컬 소스다. 기존 UX를 위해 유지하되, 번들된 ERA 또는
+  공식 정의를 덮어쓰지 못한다.
 
-This fork's definition lookup order is:
+> **REFUSED:** 한쪽 정본을 다른 쪽에서 생성하거나 `era-definitions/v3`를 순정 복제로
+> 유지하기.
+> **WHY:** 커스텀과 공식은 서로 다른 소유권이고, 생성된 산출물은 어느 정본도 대체하지
+> 않는다.
+> **REOPENS:** 없다.
 
-1. Bundled `era-definitions/custom` (`/definitions/era/v3/{vpid}.json`).
-2. Installed official VIA snapshot (`/definitions/v3/{vpid}.json`).
-3. JSON the user uploaded in Design, only if neither built-in source has that version/VPID.
+앱과 펌웨어가 함께 바뀔 때 VID/PID, 명령 주소, 레이아웃, TD 슬롯 정체성은
+여전히 릴리스 시점 호환성 검토가 필요하다. 앱 매니페스트는 커스텀 경로, identity,
+split pair, 독립 런타임 capability만 기록한다. 통상 앱 빌드와 PR CI는 설치된 공식
+스냅샷과 ERA 커스텀 소스를 읽는다. GitHub를 fetch하거나 펌웨어 저장소를 검사하지
+않으며, remote-verifier provenance를 내보내지 않는다.
 
-No definition means unresolved. Stored uploads are re-evaluated through the same priority after app updates, upload replacement/unload, device selection changes, and reconnects.
+이 포크의 정의 lookup 순서는 다음과 같다:
 
-Firmware accepts both presentations: official VIA writes TD0–TD7 as `CUSTOM(n)` / `QK_KB_n`, and the custom app writes the same `QK_KB_n` bytes from `tapdanceKeycodes` via `TD(n)`.
+1. 번들된 `era-definitions/custom` (`/definitions/era/v3/{vpid}.json`).
+2. 설치된 공식 VIA 스냅샷 (`/definitions/v3/{vpid}.json`).
+3. Design에서 사용자가 업로드한 JSON. 앞의 두 built-in 소스에 그 version/VPID가
+   없을 때만.
 
-The app manifest currently contains 26 QMK ERA custom variants:
+정의가 없으면 unresolved다. 저장된 업로드는 앱 업데이트, 업로드 교체/해제, 장치
+선택 변경, 재연결 뒤에 같은 우선순위로 다시 평가한다.
 
-| Family    | VIA definitions                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `comm`    | `classicd_a1`, `classicd_a1_ug`, `classicd_core`, `classicd_coreless`, `et_tkl`                                             |
-| top-level | `divine`, `era65`                                                                                                           |
-| `linx3`   | `fave65s`, `n86`, `n87`, `n8x`                                                                                              |
-| `newone`  | `a1`, `h1`, `odessey60h`, `odessey60s`                                                                                      |
-| `sirind`  | `brick65`, `brick65s`, `chickpad`, `klein_hs`, `klein_sd`, `tomak` Left/Right, `tomak79h` Left/Right, `tomak79s` Left/Right |
+펌웨어는 두 표현을 모두 받는다. 공식 VIA는 TD0–TD7을 `CUSTOM(n)` / `QK_KB_n`으로
+쓰고, 커스텀 앱은 `tapdanceKeycodes`의 같은 `QK_KB_n` 바이트를 `TD(n)`으로 쓴다.
 
-Twenty-five RP2040 variants opt into the common tapping, Tap Dance, exact-ms, and State Sync units. `sirind/brick65` is the permanent ATmega32U4 exception: its 28,672-byte flash budget keeps stock VIA only and does not claim the common ERA tapping, Tap Dance, exact-ms, or State Sync capabilities. Its custom-tree definition therefore remains a separate stored file but exposes only what that firmware actually supports.
+인벤토리 자체 — 정의가 몇 개인지, 어느 보드가 어느 메뉴를 갖는지, 각 보드가 어느
+capability에 opt-in하는지 — 는 여기에 다시 쓰지 않는다.
+`config/era-definitions.manifest.json`과 정의 JSON이 정본이고,
+`tests/era-definition.test.ts`가 묶으며, `docs/MAP.md` §2가 숫자를 든다.
 
-`build:kbs` packages the installed official snapshot under `/definitions/v3` and emits the ERA overlay to `/definitions/era/v3/{vpid}.json`. It must preserve official files even when both sources contain the same VPID, and the merged V3 index is the unique union of the two namespaces. Generated output never replaces either canonical source and no provenance or app stock-source tree is produced.
+한 항목은 인벤토리가 아니라 지속되는 제품 결정이다. `sirind/brick65`는 영구
+ATmega32U4 예외다.
 
-TOMAK79H Left/Right and H7S BRICK60 have been confirmed on hardware to auto-load without manual JSON upload. Do not introduce a parallel runtime loader or external definition service.
+> **REFUSED:** `sirind/brick65`에 공통 ERA tapping·Tap Dance·exact-ms·State Sync
+> capability를 넣기.
+> **WHY:** 28,672 B 플래시 예산 때문에 순정 VIA만 유지하는 영구 ATmega32U4 예외다.
+> **REOPENS:** 없다. 하드웨어 예산이지 결함이 아니다.
 
-Firmware repositories remain authoritative for USB identity and protocol implementation, but not for official definition ownership. The app validates its custom overlay and installed official snapshot without duplicating firmware JSON or coupling ordinary builds to firmware Git history.
+`build:kbs`는 설치된 공식 스냅샷을 `/definitions/v3` 아래에 패키징하고 ERA
+overlay를 `/definitions/era/v3/{vpid}.json`으로 내보낸다. 두 소스에 같은 VPID가
+있어도 공식 파일을 보존해야 하며, 병합된 V3 인덱스는 두 네임스페이스의 unique
+union이다. 생성된 산출물은 어느 정본도 대체하지 않으며, provenance나 앱 순정
+소스 트리도 만들지 않는다.
+
+번들된 정의는 수동 JSON 업로드 없이 자동 로드된다. 실기에서 확인됐다.
+
+> **REFUSED:** 병렬 런타임 로더나 외부 정의 서비스.
+> **WHY:** 번들된 정의는 수동 JSON 업로드 없이 자동 로드되며 실기에서 확인됐다.
+> **REOPENS:** 없다.
+
+펌웨어 저장소는 USB identity와 프로토콜 구현의 authority로 남되, 공식 정의
+소유권의 authority는 아니다. 앱은 커스텀 overlay와 설치된 공식 스냅샷을 검증하며,
+펌웨어 JSON을 복제하거나 통상 빌드를 펌웨어 Git 이력에 묶지 않는다.
 
 ### Identity UI
 
-The approved global UI keeps VIA's visual language. The upper-right area contains language selection and a subtle, non-clickable `ERA` wordmark. Do not add manufacturer branding or redesign the overall interface.
+승인된 전역 UI는 VIA의 시각 언어를 유지한다. 오른쪽 위에는 언어 선택과 클릭할 수
+없는 은은한 `ERA` 워드마크가 있다.
+
+> **REFUSED:** 제조사 브랜딩 또는 전체 인터페이스 재디자인.
+> **WHY:** 이 포크는 백지 configurator도 제조사 리브랜딩도 아니며, 승인된 전역 UI는
+> VIA의 시각 언어를 유지한다.
+> **REOPENS:** 없다.
 
 ### Tap Dance
 
-TOMAK firmware and VIA V3 JSON implement TD0–TD7, their four action slots, tapping term, storage, and the engine. The custom-app UI contract is:
+TOMAK 펌웨어와 VIA V3 JSON이 TD0–TD7, 네 개의 액션 슬롯, tapping term, 저장,
+엔진을 구현한다. 커스텀 앱 UI 계약은 다음과 같다:
 
-- extract/reuse VIA's existing category/card keycode picker;
-- make V3 `keycode` controls open that picker;
-- support search, clear, modifiers, layers, Mod-Tap and Layer-Tap composition;
-- preserve unknown 16-bit values as hex and retain text/hex input as an advanced escape hatch.
+- VIA의 기존 category/card 키코드 피커를 추출·재사용한다
+- V3 `keycode` 컨트롤이 그 피커를 연다
+- 검색, 지우기, modifier, layer, Mod-Tap과 Layer-Tap 조합을 지원한다
+- 알 수 없는 16비트 값은 hex로 보존하고, 텍스트/hex 입력은 고급 escape hatch로
+  남긴다
 
-Keycode composition is a Layers-only, progressive flow. The user first chooses Layer-Tap,
-Mod-Tap, or Modifier, then explicitly selects a compatible Basic tap key and the required hold
-action. Picking that tap key from the grid only fills the composer; it never assigns the selected
-keyboard key. The Special-category Any card remains the advanced QMK/hex escape hatch. Do not
-infer a compose base from the previously assigned grid card or expose a permanent compose form in
-ordinary categories.
+키코드 조합은 Layers 전용, 점진적 흐름이다. 사용자는 먼저 Layer-Tap, Mod-Tap,
+또는 Modifier를 고른 뒤, 호환되는 Basic tap 키와 필요한 hold 액션을 명시적으로
+선택한다. 그리드에서 그 tap 키를 고르는 것은 composer만 채우며, 선택된 키보드
+키에 할당하지 않는다. Special 카테고리의 Any 카드는 고급 QMK/hex escape hatch로
+남는다. 이전에 할당된 그리드 카드에서 compose base를 추론하거나, 일반 카테고리에
+상시 compose 폼을 노출하지 않는다.
 
-V3 `keycode` action controls use a stable wide dialog with the same left-side category navigation
-and card grid as the ordinary keymap picker; dialog width must not depend on the selected category's
-content. The action picker exposes every keycode category enabled by the connected definition,
-including layer cards such as `MO(n)`, while retaining Any/hex as the advanced escape hatch. This
-does not relax the Basic-key-only operand rule inside `LT`/`MT`, and firmware remains authoritative
-for the runtime semantics of the selected 16-bit action.
+V3 `keycode` 액션 컨트롤은 일반 keymap 피커와 같은 왼쪽 카테고리 탐색과 카드
+그리드를 가진 고정 폭의 넓은 다이얼로그를 쓴다. 다이얼로그 폭은 선택된 카테고리의
+내용에 의존하지 않는다. 액션 피커는 연결된 정의가 활성화한 모든 키코드 카테고리를
+노출하며 `MO(n)` 같은 layer 카드도 포함하고, Any/hex는 고급 escape hatch로
+남긴다. 이것이 `LT`/`MT` 안의 Basic 키만 피연산자로 쓰는 규칙을 완화하지는
+않으며, 선택된 16비트 액션의 런타임 의미는 펌웨어가 authority다.
 
-Tapping-family time values must also be directly editable as integer milliseconds. The first
-scope is the global TAPPING term and the TD0–TD7 terms; boolean tapping options and unrelated
-debounce or anti-ghosting timings are not silently included. A representative non-step value
-such as `137 ms` must round-trip, persist, and drive runtime behavior without being snapped to
-the legacy 20 ms grid.
+Tapping 계열 시간 값은 정수 밀리초로 직접 편집할 수 있어야 한다. 첫 범위는
+글로벌 TAPPING term과 TD0–TD7 term이다. boolean tapping 옵션과 무관한 debounce나
+KKUK 타이밍은 조용히 포함하지 않는다. `137 ms` 같은 대표적 비스텝 값이
+round-trip되고 지속되며 런타임 동작을 구동해야 하고, 레거시 20 ms 그리드에
+스냅되지 않아야 한다.
 
-Firmware must keep working with the official VIA app (`www.usevia.app`) plus
-the official V3 definition. A path that only the custom app can speak is an error.
-Official VIA continues to use the existing legacy 1-byte dropdown (100–500 ms /
-20 ms grid) and the official exact range `options: [100, 500]`. Custom VIA JSON
-for QMK boards uses exact `options: [1, 65535]` (the uint16 maximum; 99999 does
-not fit) on the same 2-byte exact IDs. H7S stays on 100–500 in the official
-definition and app-owned custom JSON until its firmware is approved to match.
+펌웨어는 공식 VIA 앱(`www.usevia.app`)과 공식 V3 정의로 계속 동작해야 한다.
+커스텀 앱만 말할 수 있는 경로는 오류다. 공식 VIA는 기존 레거시 1바이트
+드롭다운(100–500 ms / 20 ms 그리드)과 공식 exact 범위 `options: [100, 500]`을
+계속 쓴다. QMK 보드의 커스텀 VIA JSON은 같은 2바이트 exact ID에서 exact
+`options: [1, 65535]`(uint16 최대값; 99999는 들어가지 않는다)를 쓴다. H7S는
+펌웨어가 맞춰지도록 승인될 때까지 공식 정의와 앱 소유 커스텀 JSON에서 100–500을
+유지한다.
 
-This is an additive exact-millisecond wire path, not removal of firmware legacy
-compatibility. Preserve every legacy value ID and official VIA behavior, while ERA custom
-JSON exposes only the nine exact controls and does not duplicate their legacy dropdowns.
-Generic official or uploaded definitions may still contain legacy controls. Custom JSON may add
-`tapdanceKeycodes` as an additional field; official JSON must not. The custom app should show a numeric `ms` input by default
-for these controls. Reuse that input for future TAPPING time fields only after
-their storage and wire semantics have been audited.
+이것은 펌웨어 레거시 호환을 제거하는 것이 아니라, additive exact-ms wire 경로다.
+모든 레거시 value ID와 공식 VIA 동작을 보존하되, ERA 커스텀 JSON은 아홉 개의
+exact 컨트롤만 노출하고 그 레거시 드롭다운을 복제하지 않는다. 일반 공식 정의나
+업로드된 정의는 레거시 컨트롤을 계속 가질 수 있다. 커스텀 JSON은
+`tapdanceKeycodes`를 추가 필드로 넣을 수 있고, 공식 JSON은 넣으면 안 된다.
+커스텀 앱은 이 컨트롤에 기본으로 숫자 `ms` 입력을 보여야 한다. 이후 TAPPING 시간
+필드에 그 입력을 재사용하려면 저장과 wire 의미를 감사한 뒤에만 한다.
 
-Use Vial only to study interaction design. Implement independently in VIA React code and do not copy license-incompatible or unclear source.
+Vial은 인터랙션 디자인을 참고하는 용도로만 쓴다.
 
-## State synchronization
+> **REFUSED:** 라이선스가 호환되지 않거나 불분명한 Vial 구현 코드 복사.
+> **WHY:** Vial은 인터랙션 디자인을 참고하는 용도이며 VIA React 코드에서 독립 구현한다.
+> **REOPENS:** 호환되고 검증된 라이선스 근거가 있을 때.
 
-### Observed failure
+## 상태 동기화
 
-VIA updates its cache when the UI writes a value, but keyboard-originated changes do not generally invalidate that cache. Upstream `UI_SYNC_REQUEST 0x16 v1` can request selective V3 Custom Menu reads, but it does not cover keymaps or provide lifecycle recovery.
+### 관측된 실패
 
-The reproduced TOMAK case is concrete:
+VIA는 UI가 값을 쓸 때 캐시를 갱신하지만, 키보드에서 시작된 변경은 대체로 그
+캐시를 무효화하지 않는다. Upstream `UI_SYNC_REQUEST 0x16 v1`은 선택적 V3 Custom
+Menu 읽기를 요청할 수 있으나, keymap을 다루지 않고 lifecycle 복구도 제공하지
+않는다.
 
-```text
-L keymap change
-  -> existing EEPROM SYNC commits it to R
-  -> R's previously loaded app cache remains marked complete
-  -> selecting R skips the keymap read
-  -> stale keymap remains until F5
-```
-
-The original freshness coordinator conflated firmware-observed revisions with revisions whose
-VIA GET snapshots had actually been accepted. It also let loaders publish candidates before the
-end bracket and gave poll and lifecycle refresh separate in-flight ownership. The implemented
-coordinator separates those responsibilities and uses a single path/generation owner.
-
-### Consistency contract
-
-The product needs current-state convergence, not exactly-once preservation of every intermediate setting event.
-
-- A change on the selected active device normally appears immediately.
-- A missed event is recovered automatically without F5.
-- Device selection, Configure entry, reconnect, and tab resume validate freshness before stale cache is presented as current.
-- Rapid intermediate changes may coalesce; the final readable firmware value must win.
-- A split peer is considered updated only after that peer finishes applying the state and can return it.
-- Hidden pages do not generate continuous traffic and catch up when active again.
-
-### Working architecture: polling-first revision validation
+재현된 TOMAK 사례는 구체적이다:
 
 ```text
-Selected, visible, explicitly opted-in capable device
-    -> read small RAM-only domain revisions at a measured low frequency
-    -> compare KEYMAP / MACRO / CONFIG equality tokens
-    -> reload only mismatched domains through existing VIA GET commands
-    -> commit a stable, revision-bracketed snapshot to that device's cache
-
-Reconnect, tab resume, or uncertain connection lifecycle
-    -> do not trust revision equality
-    -> perform the required full authoritative refresh
+L keymap 변경
+  -> 기존 EEPROM SYNC가 그것을 R에 커밋
+  -> R에 이미 로드된 앱 캐시는 complete로 남은 채
+  -> R을 선택하면 keymap 읽기를 건너뜀
+  -> F5 전까지 낡은 keymap이 남음
 ```
 
-Firmware remains the only value authority. Revision tokens indicate that an existing GET
-domain changed; they never carry setting values. The accepted domains are:
+### 일관성 계약
 
-- `KEYMAP`: dynamic keymap and encoder reads;
-- `MACRO`: dynamic macro reads;
-- `CONFIG`: applicable persistent keyboard values and V3 Custom Value reads.
+제품이 필요한 것은 현재 상태 수렴이지, 모든 중간 설정 이벤트의 exactly-once
+보존이 아니다.
 
-Never expose raw EEPROM addresses in the host protocol. QMK and H7S storage layouts differ, and existing VIA reads already provide authoritative serialization and normalization.
+- 선택된 활성 장치의 변경은 보통 즉시 나타난다.
+- 놓친 이벤트는 F5 없이 자동 복구된다.
+- 장치 선택, Configure 진입, 재연결, 탭 재개는 낡은 캐시를 현재로 보여주기 전에
+  freshness를 검증한다.
+- 빠른 중간 변경은 합쳐질 수 있다. 최종으로 읽을 수 있는 펌웨어 값이 이겨야
+  한다.
+- split peer는 그 peer가 상태를 적용하고 돌려줄 수 있게 된 뒤에만 갱신된 것으로
+  본다.
+- 숨은 페이지는 연속 트래픽을 만들지 않고, 다시 활성화되면 따라잡는다.
 
-Upstream `UI_SYNC_REQUEST 0x16 v1` remains an unchanged Custom Menu invalidation hint and
-keeps its existing all, channel-command, and command-id semantics. It is not reinterpreted
-as State Sync v2 and is not the sole correctness mechanism. Unsolicited advanced events,
-semantic/range event kinds, nonce, ARM/lease, event sequence, descriptor queues, ACK
-journals, and a second snapshot/value protocol are not part of the approved working
-direction. They may be reconsidered only if polling and refresh measurements demonstrate
-a concrete unmet requirement.
+### 구현된 메커니즘
 
-### Reliability boundary and implemented architecture
+위 계약을 충족하는 메커니즘 — `GET_KEYBOARD_VALUE` selector `0x06` 위의
+polling-first revision validation, 세 host domain, revision-bracketed atomic
+refresh, path별 transport ownership, 기각된 모든 대안과 그 이유 — 는
+[ADR 0001](adr/0001-state-sync-protocol.md)에 있다. 여기에 다시 쓰지 않는다.
 
-The transport layer owns one listener, serialized request/response queue, pending matcher,
-write timestamp, and connection generation per WebHID path. Strict `0x16 v1`
-demultiplexing and explicit-device async operations remain independent of State Sync.
-Untagged legacy-command timeout is fail-closed for that transport generation; the tagged
-State Sync query can reject one timed-out request without discarding an otherwise confirmed
-connection because a late response cannot match a later request tag.
+세 경계는 기록이 아니라 방향에 남긴다. State Sync와 무관한 작업까지 제약하기
+때문이다. 거절 세 줄은 [ADR 0001](adr/0001-state-sync-protocol.md)에 있다.
 
-State Sync adds canonical definition/build opt-in, runtime capability confirmation through
-`GET_KEYBOARD_VALUE` selector `0x06`, three RAM-only revision tokens, a 500 ms recovery poll,
-and revision-bracketed domain refresh. The freshness coordinator has one owner per
-path/connection generation across poll, selection, reconnect, and resume work. It keeps
-firmware-observed revision separate from the revision of the snapshot actually accepted into
-Redux. A revision observed for one domain may dirty another domain, but only that other
-domain's own stable GET bracket may advance its accepted revision.
+- 호스트 프로토콜에 raw EEPROM 주소를 노출하지 않는다.
+- `UI_SYNC_REQUEST 0x16 v1`은 기존 의미를 유지한다.
+- 더 넓은 Redux 상태는 이 계약이 요구하는 곳에서만 리팩터한다.
 
-Capability confirmation never blesses data loaded before the probe. It is followed by a full
-bracketed refresh before any implemented domain becomes fresh. After capability is confirmed,
-one malformed response or timeout keeps the connection capable, marks freshness dirty, and is
-retried by the next eligible poll. An initial unhandled, malformed, or timed-out probe cannot
-distinguish old firmware from a communication failure, so it marks only that connection
-generation as unverified rather than unsupported.
+실기기 검증은 소프트웨어만의 증거가 결정적 시뮬레이션, 호스트 테스트, 캡처된
+transcript 재생, 정적 ownership 증명으로 답할 수 없는 구체적 질문을 남길 때까지
+미룬다. 하드웨어 데이터가 없다는 사실은 명시적 불확실성으로 남아야 하며, 브라우저
+닫기/열기, USB 엔드포인트 flushing, 응답 지연, 8 kHz 성능에 대한 가정으로
+대체하면 안 된다.
 
-For the effective State-Sync ERA overlay, the tagged probe runs before any Custom Value GET.
-While confirmation is pending, raw Custom menu navigation remains visible and its panes show a
-loading state. If confirmation is unverified, the same panes remain visible and show “Unable to
-verify feature support. Reconnect the keyboard. If the problem persists, update to the latest
-firmware.” All Custom Menu GET/SET/SAVE, dynamic-name reads, and per-key RGB operations are
-blocked for that generation. A successful probe enables controls only after the first stable
-CONFIG candidate is accepted. Official definitions and Design uploads retain ordinary VIA
-behavior and are not put behind this ERA gate.
+## 호환성과 성능 기대
 
-The poll is a recovery mechanism, not high-rate full polling. It runs only while the device is
-selected and ready, Configure is visible, the document is visible, and that connection is
-capable. Hidden pages send no periodic traffic, ordinary keyboards receive no capability
-probe, and reconnect/resume perform full authoritative refresh without trusting revision
-equality.
+- 확장 없는 일반 키보드는 기존 VIA 경로를 그대로 쓴다.
+- v1 가능 펌웨어는 Custom Menu 동기화를 유지한다.
+- 고급 ERA 펌웨어는 unsolicited State Sync 트래픽을 보내지 않는다.
+- 공식 VIA 클라이언트는 기존 명령을 계속 쓰며 arm/subscription 흐름이 필요 없다.
+- 현재 펌웨어는 공식 VIA + 공식 정의의 유효한 장치로 남는다. 커스텀 앱만의
+  value ID, 범위, 인코딩은 허용되는 대체가 아니다.
+- Revision 카운터는 RAM에 남고 EEPROM 마모를 늘리지 않는다.
+- scan/ISR 경로에서 동기화 송신이 일어나지 않는다.
+- 숨은 페이지는 revision-poll 트래픽을 멈춘다.
+- H7S 검증은 8 kHz 입력 아래에서 polling off/on의 report interval, jitter,
+  queue overflow를 비교한다.
 
-Physical-device validation is deferred until software-only evidence leaves a concrete question
-that cannot be answered by deterministic simulation, host tests, captured transcript replay, or
-static ownership proof. Lack of hardware data must remain an explicit uncertainty and must not
-be replaced by assumptions about browser close/open, USB endpoint flushing, response latency,
-or 8 kHz performance.
+## State Sync 수락 기준
 
-### App responsibility
+- 같은 유닛의 물리 변경은 측정된 visible polling 한도 안에서 F5 없이 나타난다.
+- 반대 TOMAK 반쪽에서 커밋된 변경은 USB 쪽 UI에 F5 없이 수렴한다.
+- 빠른 변경은 최종 펌웨어 값으로 정착한다.
+- 놓친 `0x16 v1` hint는 고급 가능 펌웨어에서 revision 또는 lifecycle 검사로
+  복구된다.
+- 장치 전환, 뽑기/다시 꽂기, 탭 숨김/표시는 낡은 캐시를 현재로 표시한 채로 두지
+  않는다.
+- 일반 VIA와 v1-only 펌웨어 동작은 그대로다.
+- 숨은 상태는 진행 중인 revision-poll 트래픽이 없다.
+- polling이 켜진 상태에서 H7S 입력 타이밍과 큐에 의미 있는 8 kHz 회귀가 없다.
 
-The app provides a small generic state-sync layer rather than scattered ERA component hooks:
+timeout과 rate 값은 영구 추측이 아니라 측정된 파라미터로 다룬다.
 
-- each WebHID path owns its timestamp, listener, input diagnostics, pending matcher,
-  serialized command queue, and connection generation;
-- strict `0x16 v1` packets are routed to the owning device's Custom Menu adapter without
-  consuming the current command response;
-- malformed or unknown reports use a bounded diagnostic/drop path and never become a future
-  response;
-- an untagged legacy timeout poisons that transport generation because a late response cannot
-  safely be attributed to a retry, while the tagged State Sync query uses request-local timeout;
-- async keymap/menu operations capture an explicit path, API/transport, definition, and
-  generation, then revalidate them before committing Redux state;
-- previous-device completions may update only a still-valid cache for that same
-  path/generation and never the newly selected device's ready/current state;
-- each domain has `unknown | dirty | refreshing | fresh` status plus distinct observed and
-  accepted revisions;
-- keymap including encoders, macros, and CONFIG layout/menu values are read into isolated
-  candidates and committed once only after a stable start/end revision bracket;
-- each candidate also owns the definition identity/epoch used to interpret it, and a
-  sideload replace or unload that changes the selected device's effective definition
-  invalidates freshness and requests a full authoritative refresh;
-- a churned domain retries immediately three times in that owner/request, remains dirty
-  after that bound, and is retried by the next poll or a new lifecycle/full request even
-  when the next observed revision number equals the last observation;
-- a successful SET may update the visible value optimistically but invalidates advanced
-  freshness until a later query and authoritative GET verify it. Failed SET/SAVE rolls
-  back or keeps the domain dirty for readback rather than leaving intended values as
-  current.
+## 남은 결정 게이트
 
-Refactor broader Redux state only where these contracts require it.
+1. 받아들여진 `0x02`/`0x06`/v1 wire 봉투, 세 domain 모델, 500 ms eligibility
+   정책, 기존 VIA 값 authority, exact-ms 식별자를 보존한다.
+2. 물리 TOMAK split 수렴과 공식 클라이언트 transcript 검사를 완료하되, 자동화된
+   펌웨어 빌드를 플래시나 장치 관측의 대체로 취급하지 않는다.
+3. USB 진단 selector `0x07`의 읽기 전용·opt-in·RAM-only 경계와, polling mode·State
+   Sync 복구 결합 거절은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)가 정한다. Mode
+   선택은 항상 사용자의 것이다.
+4. semantic/range event, ACK, 추가 domain, 두 번째 값 프로토콜의 재검토 조건은
+   [ADR 0001](adr/0001-state-sync-protocol.md)의 REFUSED 블록이 정한다.
 
-Important code areas:
+펌웨어 저장소를 수정하거나 프로토콜을 고정하기 전에 필요성, 앱과 펌웨어 변경,
+호환성, 실패 동작, 하드웨어 테스트 계획을 보고한다. Cloudflare Pages, DNS,
+프로덕션 배포, 그 밖의 외부 서비스 변경도 명시적 승인이 필요하다.
 
-```text
-src/utils/keyboard-api.ts
-src/shims/node-hid.ts
-src/components/Home.tsx
-src/store/keymapSlice.ts
-src/store/menusSlice.ts
-src/store/devicesThunks.ts
-```
+## 영구 비목표
 
-### Firmware and split responsibility
+목록이지 거절 블록의 모음이 아니다. 세 줄은 결정이 있는 자리에 있다.
 
-Increment a domain revision only after the new value is readable through the
-corresponding VIA GET path. Firmware sends no unsolicited advanced State Sync packet.
+- 기존 V3 Custom Value 기능을 중복 React 상태나 프로토콜로 다시 만들지 않는다 —
+  [ADR 0001](adr/0001-state-sync-protocol.md)
+- Tap Dance 엔진이나 split EEPROM 동기화를 대체하지 않는다.
 
-For a local runtime change, this is after the semantic setter completes. For a split peer change:
+> **REFUSED:** Tap Dance 엔진이나 split EEPROM 동기화를 이 앱에서 대체하기.
+> **WHY:** 펌웨어가 키보드 상태의 authority로 남고, TOMAK 펌웨어와 VIA V3 JSON이 엔진·슬롯·저장을
+> 이미 구현한다.
+> **REOPENS:** 없다.
 
-```text
-source change
-  -> existing split/EEPROM synchronization
-  -> USB-side peer staged apply
-  -> write/readback or CRC success
-  -> required runtime reload
-  -> peer domain revision increment
-  -> app readback from that peer
-```
-
-The app must not infer peer success from the source half's intent. Existing firmware remains responsible for split replication and conflict handling.
-
-Peer revision bookkeeping is domain-precise when the receiver no longer knows the exact key.
-The app refresh remains atomic at full-domain precision. Add a finer
-domain or changed-range optimization only if measurement shows full-domain recovery is a
-real bottleneck.
-
-QMK revision bookkeeping belongs at semantic commit boundaries and must keep
-configurator control traffic out of scan and interrupt hot paths.
-
-Polling-first does not require an H7S unsolicited-event TX path. A future selector response
-must retain the existing ordinary VIA request/response owner; filling the current
-`raw_hid_send()` stub or adding a second producer could duplicate responses. Endpoint and
-queue ownership still require read-only trace and hardware measurement before H7S changes.
-
-## Compatibility and performance expectations
-
-- Ordinary keyboards without the extension use the existing VIA path unchanged.
-- v1-capable firmware retains Custom Menu synchronization.
-- Advanced ERA firmware sends no unsolicited State Sync traffic.
-- Official VIA clients continue using existing commands and never need an arm/subscription flow.
-- Current firmware remains a valid device for official VIA + the official definition. Custom-app-only
-  value IDs, ranges, or encodings are not acceptable substitutes.
-- Revision counters remain in RAM and never increase EEPROM wear.
-- No synchronization send occurs in scan/ISR paths.
-- Hidden pages stop revision-poll traffic.
-- H7S validation compares polling off/on report interval, jitter and queue overflow under 8 kHz input.
-
-## Acceptance criteria for State Sync
-
-- Same-unit physical changes appear within the measured visible polling bound without F5.
-- A change committed from the opposite TOMAK half converges on the USB-side UI without F5.
-- Rapid changes settle on the final firmware value.
-- Missed `0x16 v1` hints recover through revision or lifecycle checks on advanced-capable firmware.
-- Device switch, unplug/replug and tab hide/show never leave stale cache labeled as current.
-- Ordinary VIA and v1-only firmware behavior remains intact.
-- Hidden state has no ongoing revision-poll traffic.
-- H7S input timing and queues show no meaningful 8 kHz regression with polling enabled.
-
-Treat timeout and rate values as measured parameters rather than permanent guesses.
-
-## Remaining decision gates
-
-1. Preserve the accepted `0x02`/`0x06`/v1 wire envelope, three-domain model, 500 ms eligibility
-   policy, existing VIA value authority, and exact-millisecond identifiers.
-2. Complete physical TOMAK split convergence and official-client transcript checks without
-   treating the automated firmware builds as a substitute for flashing or device observation.
-3. H7S State Sync selector `0x06`은 기존 물리 검증 전까지 별도 범위로 유지한다. 승인된
-   USB Diagnostics selector `0x07`은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)의
-   read-only, opt-in, RAM-only 계약을 유지하고 polling mode나 recovery에 결합하지 않는다.
-4. Reconsider semantic/range events, ACK, extra domains, or a second value protocol only through
-   a new ADR after measured polling latency or refresh cost demonstrates a concrete failure.
-
-Before modifying a firmware repository or freezing a protocol, report the need, app and firmware changes, compatibility, failure behavior, and hardware test plan. Cloudflare Pages, DNS, production deployment and other external-service changes also require explicit approval.
-
-## H7S USB Diagnostics
-
-H7S USB Diagnostics는 State Sync와 독립된 read-only subsystem이다. Canonical ERA
-metadata에서 명시적으로 opt-in한 다섯 H7S definition만 versioned selector `0x07`을
-probe한다. Firmware는 실제 HID request-to-IN-completion timing, main-loop gap, queue drop,
-USB hard event를 RAM에서 aggregate하고 app은 약 1 Hz coherent snapshot만 읽는다.
-
-Mode 선택은 언제나 사용자 소유다. Firmware와 app은 automatic downgrade, automatic
-mode benchmark, EEPROM diagnostics history, synthetic stability score를 만들지 않는다.
-Host history는 device/firmware/protocol identity가 같은 수동 test끼리만 비교한다. 전체
-wire, failure, persistence, UX 계약은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)를 따른다.
-
-## Durable non-goals
-
-- Do not rebuild existing V3 Custom Value features as duplicate React state or protocols.
-- Do not replace the Tap Dance engine or split EEPROM synchronization.
-- Do not create an ERA-specific design system or manufacturer branding.
-- Do not maintain generated definitions as source.
-- Do not copy Vial implementation code without a compatible, verified license basis.
-- Do not optimize for small diffs at the expense of demonstrated correctness, but avoid speculative frameworks that have no measured need.
+- ERA 전용 디자인 시스템이나 제조사 브랜딩을 만들지 않는다 — 위 Identity UI
+- 생성된 정의를 소스로 유지하지 않는다 — 위 정의
+- 호환되고 검증된 라이선스 근거 없이 Vial 구현 코드를 복사하지 않는다 — 위 Tap Dance
+- 입증된 정확성을 희생하며 작은 diff를 최적화하지 않되, 측정된 필요가 없는
+  추측성 프레임워크도 피한다.

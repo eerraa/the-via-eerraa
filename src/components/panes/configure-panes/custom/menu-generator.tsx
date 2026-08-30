@@ -34,9 +34,13 @@ import {getSelectedDefinition} from 'src/store/definitionsSlice';
 import {
   getSelectedCustomMenuData,
   getSelectedCustomMenuAvailability,
-  getCustomRangeControls,
+  getCustomRangeControlsForSelectedDefinition,
+  completeCustomMenuRangeValueContinuous,
+  completeCustomMenuValueContinuous,
   updateCustomMenuValue,
+  updateCustomMenuValueContinuous,
   updateCustomMenuRangeValue,
+  updateCustomMenuRangeValueContinuous,
 } from 'src/store/menusSlice';
 import {useTranslation} from 'react-i18next';
 import {
@@ -44,6 +48,7 @@ import {
   isUsbPollingModeCommand,
 } from 'src/utils/custom-menu';
 import {UsbDiagnosticsSection} from './usb-diagnostics-section';
+import {FeatureHelp} from './feature-help';
 
 type Category = {
   label: string;
@@ -152,6 +157,12 @@ const MenuComponent = React.memo((props: any) => {
       isCustomMenuCommandContent(item.content) &&
       isDeferredApplyCommand(item.content[0]),
   );
+  // Every ERA feature menu gets one line saying what it is for, with the rest behind
+  // a disclosure. Keyed off the firmware's own command ids, so an ordinary VIA
+  // keyboard whose menu happens to share a label never picks up this text.
+  const commandNames = items
+    .filter((item: any) => isCustomMenuCommandContent(item.content))
+    .map((item: any) => item.content[0]);
   // The submenu that owns the boot polling-mode control also hosts the diagnostics
   // that measure it, so the measurement lives where the setting is changed instead of
   // in a separate top-level page the user has to know about first. The section itself
@@ -163,11 +174,20 @@ const MenuComponent = React.memo((props: any) => {
   );
   return (
     <DeferredApplyProvider deferred={deferred}>
+      <FeatureHelp commandNames={commandNames} />
       {items.map((itemProps: any) => (
         <VIACustomItem
           {...itemProps}
           updateValue={props.updateCustomMenuValue}
           updateRangeValue={props.updateCustomMenuRangeValue}
+          updateContinuousValue={props.updateCustomMenuValueContinuous}
+          completeContinuousValue={props.completeCustomMenuValueContinuous}
+          updateContinuousRangeValue={
+            props.updateCustomMenuRangeValueContinuous
+          }
+          completeContinuousRangeValue={
+            props.completeCustomMenuRangeValueContinuous
+          }
           rangeControls={props.rangeControls}
           menuData={props.selectedCustomMenuData}
           value={
@@ -236,7 +256,9 @@ export const Pane: React.FC<Props> = (props: any) => {
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const selectedCustomMenuData = useAppSelector(getSelectedCustomMenuData);
   const menuAvailability = useAppSelector(getSelectedCustomMenuAvailability);
-  const rangeControls = useAppSelector(getCustomRangeControls);
+  const rangeControls = useAppSelector(
+    getCustomRangeControlsForSelectedDefinition,
+  );
 
   const childProps = {
     ...props,
@@ -247,6 +269,16 @@ export const Pane: React.FC<Props> = (props: any) => {
       dispatch(updateCustomMenuValue(command, ...rest)),
     updateCustomMenuRangeValue: (command: string, value: number) =>
       dispatch(updateCustomMenuRangeValue(command, value)),
+    updateCustomMenuValueContinuous: (command: string, ...rest: number[]) =>
+      dispatch(updateCustomMenuValueContinuous(command, ...rest)),
+    completeCustomMenuValueContinuous: (command: string) =>
+      dispatch(completeCustomMenuValueContinuous(command)),
+    updateCustomMenuRangeValueContinuous: (
+      command: string,
+      value: number,
+    ) => dispatch(updateCustomMenuRangeValueContinuous(command, value)),
+    completeCustomMenuRangeValueContinuous: (command: string) =>
+      dispatch(completeCustomMenuRangeValueContinuous(command)),
   };
 
   const menus = categoryGenerator(childProps, t);

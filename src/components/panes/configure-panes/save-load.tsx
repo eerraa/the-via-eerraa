@@ -13,22 +13,19 @@ import {
   getBasicKeyToByte,
   getSelectedDefinition,
 } from 'src/store/definitionsSlice';
-import {
-  getSelectedRawLayers,
-  replaceEncoderMap,
-  saveRawKeymapToDevice,
-} from 'src/store/keymapSlice';
+import {getSelectedRawLayers} from 'src/store/keymapSlice';
 import {collectDefinitionKeys} from 'src/utils/via-definition-keys';
+import {normalizeLayoutMacros} from 'src/utils/layout-macros';
 import type {StateSyncEncoderMap} from 'src/store/stateSyncCandidateActions';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getSelectedConnectedDevice,
   getSelectedKeyboardAPI,
 } from 'src/store/devicesSlice';
-import {getExpressions, saveMacros} from 'src/store/macrosSlice';
+import {getExpressions} from 'src/store/macrosSlice';
 import {useTranslation} from 'react-i18next';
 import {getSelectedDefinitionName} from 'src/store/definitionNameSlice';
-import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
+import {importLayoutToDevice} from 'src/store/importLayoutThunks';
 
 type ViaSaveFile = {
   name: string;
@@ -123,7 +120,7 @@ export const Pane: FC = () => {
       const saveFile: ViaSaveFile = {
         name,
         vendorProductId,
-        macros: [...expressions],
+        macros: normalizeLayoutMacros(expressions, macros.macroCount),
         layers: rawLayers.map(
           (layer: {keymap: number[]}) =>
             layer.keymap.map(
@@ -194,14 +191,12 @@ export const Pane: FC = () => {
       }
 
       if (macros.isFeatureSupported && saveFile.macros) {
-        if (saveFile.macros.length !== expressions.length) {
+        if (saveFile.macros.length !== macros.macroCount) {
           setErrorMessage(
             t('Could not import layout: incorrect number of macros.'),
           );
           return;
         }
-
-        dispatch(saveMacros(selectedDevice, saveFile.macros));
       }
 
       const keymap: number[][] = saveFile.layers.map((layer) =>
@@ -210,73 +205,39 @@ export const Pane: FC = () => {
         ),
       );
 
-      // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-      await dispatch(saveRawKeymapToDevice(keymap, selectedDevice));
-
+      let encoderMap: StateSyncEncoderMap | undefined;
       if (saveFile.encoders) {
-        const connectionGeneration = api.getConnectionGeneration();
-        const encoderMap: StateSyncEncoderMap = {};
-        try {
-          await Promise.all(
-            saveFile.encoders.map((encoder, id) => {
-              encoderMap[id] = encoder.map((layer) => {
-                const counterclockwise = getByteForCode(
-                  `${deprecatedKeycodes[layer[0]] ?? layer[0]}`,
-                  basicKeyToByte,
-                );
-                const clockwise = getByteForCode(
-                  `${deprecatedKeycodes[layer[1]] ?? layer[1]}`,
-                  basicKeyToByte,
-                );
-                return [counterclockwise, clockwise] as [number, number];
-              });
-              return Promise.all(
-                encoder.map((layer, layerId) =>
-                  Promise.all([
-                    api.setEncoderValue(
-                      layerId,
-                      id,
-                      false,
-                      encoderMap[id][layerId][0],
-                    ),
-                    api.setEncoderValue(
-                      layerId,
-                      id,
-                      true,
-                      encoderMap[id][layerId][1],
-                    ),
-                  ]),
-                ),
-              );
-            }),
-          );
-        } catch (error) {
-          console.warn('Loading encoder values failed', error);
-          setErrorMessage(t('Failed to write encoder values to the keyboard.'));
-          dispatch(
-            invalidateStateSyncDomain({
-              devicePath: selectedDevice.path,
-              connectionGeneration,
-              domain: 'keymap',
-            }),
-          );
-          return;
-        }
-        if (api.isConnectionGenerationCurrent(connectionGeneration)) {
-          dispatch(
-            replaceEncoderMap({
-              devicePath: selectedDevice.path,
-              encoders: encoderMap,
-            }),
-          );
-          dispatch(
-            invalidateStateSyncDomain({
-              devicePath: selectedDevice.path,
-              connectionGeneration,
-              domain: 'keymap',
-            }),
-          );
-        }
+        encoderMap = {};
+        saveFile.encoders.forEach((encoder, id) => {
+          (encoderMap as StateSyncEncoderMap)[id] = encoder.map((layer) => {
+            const counterclockwise = getByteForCode(
+              `${deprecatedKeycodes[layer[0]] ?? layer[0]}`,
+              basicKeyToByte,
+            );
+            const clockwise = getByteForCode(
+              `${deprecatedKeycodes[layer[1]] ?? layer[1]}`,
+              basicKeyToByte,
+            );
+            return [counterclockwise, clockwise] as [number, number];
+          });
+        });
+      }
+
+      try {
+        await dispatch(
+          importLayoutToDevice(selectedDevice, {
+            keymap,
+            macros:
+              macros.isFeatureSupported && saveFile.macros
+                ? saveFile.macros
+                : undefined,
+            encoders: encoderMap,
+          }),
+        );
+      } catch (error) {
+        console.warn('Loading layout failed', error);
+        setErrorMessage(t('Failed to write the layout to the keyboard.'));
+        return;
       }
 
       setSuccessMessage(t('Successfully updated layout!'));

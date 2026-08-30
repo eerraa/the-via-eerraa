@@ -12,6 +12,11 @@ import {
 } from 'src/store/errorsSlice';
 import {KeyboardValue} from './keyboard-values';
 import {parseUISyncRequest, type UISyncRequest} from './ui-sync';
+import type {
+  HIDExchangeOptions,
+  HIDPathReservationOwner,
+  ResponseMatcher,
+} from '../shims/node-hid';
 export {KeyboardValue} from './keyboard-values';
 export {
   parseUISyncRequest,
@@ -86,6 +91,10 @@ const BACKLIGHT_COLOR_2 = 0x0d;
 // const BACKLIGHT_LAYER_3_INDICATOR_ROW_COL = 0x15;
 // const BACKLIGHT_ALPHAS_MODS = 0x16;
 const BACKLIGHT_CUSTOM_COLOR = 0x17;
+const MAX_VIA_BUFFER_PAYLOAD = 28;
+const MACRO_CLOSE_VERIFICATION_DEADLINE_MS = 5000;
+const MACRO_CLOSE_RETRY_DELAYS_MS = [25, 50, 100, 200] as const;
+const MACRO_CLOSE_RETRY_CAP_MS = 250;
 
 export const PROTOCOL_ALPHA = 7;
 export const PROTOCOL_BETA = 8;
@@ -137,6 +146,8 @@ export const canConnect = (device: Device) => {
 
 export class KeyboardAPI {
   kbAddr: HIDAddress;
+  private reservationOwner?: HIDPathReservationOwner;
+  private reservationGeneration?: number;
 
   constructor(path: string) {
     this.kbAddr = path;
@@ -144,6 +155,47 @@ export class KeyboardAPI {
       const device = initAndConnectDevice({path});
       cache[path] = {hid: device};
     }
+  }
+
+  private asReserved(
+    owner: HIDPathReservationOwner,
+    generation: number,
+  ): KeyboardAPI {
+    const api = new KeyboardAPI(this.kbAddr);
+    api.reservationOwner = owner;
+    api.reservationGeneration = generation;
+    return api;
+  }
+
+  async withPathReservation<T>(
+    expectedGeneration: number,
+    owner: HIDPathReservationOwner,
+    callback: (api: KeyboardAPI) => Promise<T>,
+  ): Promise<T> {
+    if (this.reservationOwner !== undefined) {
+      if (
+        this.reservationOwner !== owner ||
+        this.reservationGeneration !== expectedGeneration
+      ) {
+        throw new Error('Cannot nest a different HID path reservation owner');
+      }
+      return callback(this);
+    }
+    return this.getHID().withPathReservation(
+      expectedGeneration,
+      owner,
+      () => callback(this.asReserved(owner, expectedGeneration)),
+    );
+  }
+
+  private async withAutomaticPathReservation<T>(
+    callback: (api: KeyboardAPI) => Promise<T>,
+  ): Promise<T> {
+    if (this.reservationOwner !== undefined) {
+      return callback(this);
+    }
+    const generation = this.getConnectionGeneration();
+    return this.withPathReservation(generation, Symbol('via-operation'), callback);
   }
 
   refresh(kbAddr: HIDAddress) {
@@ -213,36 +265,18 @@ export class KeyboardAPI {
   ): Promise<number[]> {
     const length = rows * cols;
     const MAX_KEYCODES_PARTIAL = 14;
-    const bufferList = new Array<number>(
-      Math.ceil(length / MAX_KEYCODES_PARTIAL),
-    ).fill(0);
-    const {res: promiseRes} = bufferList.reduce(
-      ({res, remaining}: {res: Promise<number[]>[]; remaining: number}) =>
-        remaining < MAX_KEYCODES_PARTIAL
-          ? {
-              res: [
-                ...res,
-                this.getKeymapBuffer(
-                  layer * length * 2 + 2 * (length - remaining),
-                  remaining * 2,
-                ),
-              ],
-              remaining: 0,
-            }
-          : {
-              res: [
-                ...res,
-                this.getKeymapBuffer(
-                  layer * length * 2 + 2 * (length - remaining),
-                  MAX_KEYCODES_PARTIAL * 2,
-                ),
-              ],
-              remaining: remaining - MAX_KEYCODES_PARTIAL,
-            },
-      {res: [], remaining: length},
-    );
-    const yieldedRes = await Promise.all(promiseRes);
-    return yieldedRes.flatMap(shiftBufferTo16Bit);
+    const result: number[] = [];
+    for (let remaining = length; remaining > 0; ) {
+      const keycodeCount = Math.min(MAX_KEYCODES_PARTIAL, remaining);
+      const offset = layer * length * 2 + 2 * (length - remaining);
+      result.push(
+        ...shiftBufferTo16Bit(
+          await this.getKeymapBuffer(offset, keycodeCount * 2),
+        ),
+      );
+      remaining -= keycodeCount;
+    }
+    return result;
   }
 
   async slowReadRawMatrix(
@@ -250,48 +284,67 @@ export class KeyboardAPI {
     layer: number,
   ): Promise<number[]> {
     const length = rows * cols;
-    const res = new Array(length)
-      .fill(0)
-      .map((_, i) => this.getKey(layer, ~~(i / cols), i % cols));
-    return Promise.all(res);
+    const result: number[] = [];
+    for (let index = 0; index < length; index++) {
+      result.push(await this.getKey(layer, ~~(index / cols), index % cols));
+    }
+    return result;
   }
 
   async writeRawMatrix(
     matrixInfo: MatrixInfo,
     keymap: number[][],
   ): Promise<void> {
-    const version = await this.getProtocolVersion();
-    if (version >= PROTOCOL_BETA) {
-      return this.fastWriteRawMatrix(keymap);
-    }
-    if (version === PROTOCOL_ALPHA) {
-      return this.slowWriteRawMatrix(matrixInfo, keymap);
-    }
+    return this.withAutomaticPathReservation(async (api) => {
+      const version = await api.getProtocolVersion();
+      if (version >= PROTOCOL_BETA) {
+        return api.fastWriteRawMatrix(keymap);
+      }
+      if (version === PROTOCOL_ALPHA) {
+        return api.slowWriteRawMatrix(matrixInfo, keymap);
+      }
+      throw new Error('Unsupported protocol version');
+    });
   }
 
   async slowWriteRawMatrix(
     {cols}: MatrixInfo,
     keymap: number[][],
   ): Promise<void> {
-    keymap.forEach(async (layer, layerIdx) =>
-      layer.forEach(async (keycode, keyIdx) => {
-        await this.setKey(layerIdx, ~~(keyIdx / cols), keyIdx % cols, keycode);
-      }),
-    );
+    return this.withAutomaticPathReservation(async (api) => {
+      for (let layerIdx = 0; layerIdx < keymap.length; layerIdx++) {
+        for (let keyIdx = 0; keyIdx < keymap[layerIdx].length; keyIdx++) {
+          await api.setKey(
+            layerIdx,
+            ~~(keyIdx / cols),
+            keyIdx % cols,
+            keymap[layerIdx][keyIdx],
+          );
+        }
+      }
+    });
   }
 
   async fastWriteRawMatrix(keymap: number[][]): Promise<void> {
-    const data = keymap.flatMap((layer) => layer.map((key) => key));
-    const shiftedData = shiftBufferFrom16Bit(data);
-    const bufferSize = 28;
-    for (let offset = 0; offset < shiftedData.length; offset += bufferSize) {
-      const buffer = shiftedData.slice(offset, offset + bufferSize);
-      await this.hidCommand(APICommand.DYNAMIC_KEYMAP_SET_BUFFER, [
-        ...shiftFrom16Bit(offset),
-        buffer.length,
-        ...buffer,
-      ]);
-    }
+    return this.withAutomaticPathReservation(async (api) => {
+      const data = keymap.flatMap((layer) => layer.map((key) => key));
+      const shiftedData = shiftBufferFrom16Bit(data);
+      for (
+        let offset = 0;
+        offset < shiftedData.length;
+        offset += MAX_VIA_BUFFER_PAYLOAD
+      ) {
+        const buffer = shiftedData.slice(
+          offset,
+          offset + MAX_VIA_BUFFER_PAYLOAD,
+        );
+        await api.hidCommand(APICommand.DYNAMIC_KEYMAP_SET_BUFFER, [
+          ...shiftFrom16Bit(offset),
+          buffer.length,
+          ...buffer,
+        ]);
+      }
+    });
   }
 
   async getKeyboardValue(
@@ -350,20 +403,20 @@ export class KeyboardAPI {
   }
 
   async getPerKeyRGBMatrix(ledIndexMapping: number[]): Promise<number[][]> {
-    const res = await Promise.all(
-      ledIndexMapping.map((ledIndex) =>
-        this.hidCommand(
-          APICommand.CUSTOM_MENU_GET_VALUE,
-          [
-            ...PER_KEY_RGB_CHANNEL_COMMAND,
-            ledIndex,
-            1, // count
-          ],
-          'CUSTOM_MENU_GET_VALUE',
-        ),
-      ),
-    );
-    return res.map((r) => [...r.slice(5, 7)]);
+    const result: number[][] = [];
+    for (const ledIndex of ledIndexMapping) {
+      const response = await this.hidCommand(
+        APICommand.CUSTOM_MENU_GET_VALUE,
+        [
+          ...PER_KEY_RGB_CHANNEL_COMMAND,
+          ledIndex,
+          1, // count
+        ],
+        'CUSTOM_MENU_GET_VALUE',
+      );
+      result.push([...response.slice(5, 7)]);
+    }
+    return result;
   }
 
   async setPerKeyRGBMatrix(
@@ -504,65 +557,130 @@ export class KeyboardAPI {
   // From protocol: id_dynamic_keymap_macro_get_buffer <offset> <size> ^<data>
   // offset is 16bit. size is 8bit.
   async getMacroBytes(): Promise<number[]> {
-    const macroBufferSize = await this.getMacroBufferSize();
-    // Can only get 28 bytes at a time
-    const size = 28;
-    const bytesP = [];
-    for (let offset = 0; offset < macroBufferSize; offset += 28) {
-      bytesP.push(
-        this.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_GET_BUFFER, [
-          ...shiftFrom16Bit(offset),
-          size,
-        ]),
-      );
+    return this.withAutomaticPathReservation(async (api) => {
+      const macroBufferSize = await api.getMacroBufferSize();
+      if (macroBufferSize < 1) {
+        throw new Error('Macro buffer must contain a completion marker');
+      }
+
+      const logicalBytes: number[] = [];
+      for (let offset = 0; offset < macroBufferSize; ) {
+        const size = Math.min(
+          MAX_VIA_BUFFER_PAYLOAD,
+          macroBufferSize - offset,
+        );
+        logicalBytes.push(...(await api.getMacroBuffer(offset, size)));
+        offset += size;
+      }
+      if (logicalBytes.length !== macroBufferSize) {
+        throw new Error('Macro buffer response was shorter than requested');
+      }
+      if (logicalBytes[macroBufferSize - 1] !== 0) {
+        throw new Error('Macro buffer write is incomplete');
+      }
+      return logicalBytes.slice(0, macroBufferSize - 1);
+    });
+  }
+
+  private async getMacroBuffer(
+    offset: number,
+    size: number,
+    responseTimeoutMs?: number,
+  ): Promise<number[]> {
+    if (size < 1 || size > MAX_VIA_BUFFER_PAYLOAD) {
+      throw new Error('Macro buffer request size must be between 1 and 28');
     }
-    const allBytes = await Promise.all(bytesP);
-    return allBytes.flatMap((bytes) => bytes.slice(4));
+    const response = await this.hidCommand(
+      APICommand.DYNAMIC_KEYMAP_MACRO_GET_BUFFER,
+      [...shiftFrom16Bit(offset), size],
+      undefined,
+      responseTimeoutMs === undefined ? undefined : {responseTimeoutMs},
+    );
+    const bytes = response.slice(4, 4 + size);
+    if (bytes.length !== size) {
+      throw new Error('Macro buffer response was shorter than requested');
+    }
+    return bytes;
   }
 
   // From protocol: id_dynamic_keymap_macro_set_buffer <offset> <size> <data>
   // offset is 16bit. size is 8bit. data is ASCII characters and null (0x00) delimiters/terminator, maximum 28 bytes.
   // async setMacros(macros: Macros[]) {
-  async setMacroBytes(data: number[]) {
-    const macroBufferSize = await this.getMacroBufferSize();
-    const size = data.length;
-    if (size > macroBufferSize) {
-      throw new Error(
-        `Macro size (${size}) exceeds buffer size (${macroBufferSize})`,
-      );
-    }
+  async setMacroBytes(data: number[]): Promise<void> {
+    return this.withAutomaticPathReservation(async (api) => {
+      const macroBufferSize = await api.getMacroBufferSize();
+      if (macroBufferSize < 1) {
+        throw new Error('Macro buffer must contain a completion marker');
+      }
+      const payloadCapacity = macroBufferSize - 1;
+      if (data.length > payloadCapacity) {
+        throw new Error(
+          `Macro size (${data.length}) exceeds payload capacity (${payloadCapacity})`,
+        );
+      }
 
-    const lastOffset = macroBufferSize - 1;
-    const lastOffsetBytes = shiftFrom16Bit(lastOffset);
+      const markerOffset = macroBufferSize - 1;
 
-    // Clear the entire macro buffer before rewriting
-    await this.resetMacros();
-    try {
+      // RESET is a standalone mutation. A failed RESET/opener/payload must never
+      // be followed by the final zero marker.
+      await api.resetMacros();
       // set last byte in buffer to non-zero (0xFF) to indicate write-in-progress
-      await this.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_SET_BUFFER, [
-        ...shiftFrom16Bit(lastOffset),
+      await api.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_SET_BUFFER, [
+        ...shiftFrom16Bit(markerOffset),
         1,
         0xff,
       ]);
 
-      // Can only write 28 bytes at a time
-      const bufferSize = 28;
-      for (let offset = 0; offset < data.length; offset += bufferSize) {
-        const buffer = data.slice(offset, offset + bufferSize);
-        await this.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_SET_BUFFER, [
+      for (
+        let offset = 0;
+        offset < data.length;
+        offset += MAX_VIA_BUFFER_PAYLOAD
+      ) {
+        const buffer = data.slice(offset, offset + MAX_VIA_BUFFER_PAYLOAD);
+        await api.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_SET_BUFFER, [
           ...shiftFrom16Bit(offset),
           buffer.length,
           ...buffer,
         ]);
       }
-    } finally {
-      // set last byte in buffer to zero to indicate write finished
-      await this.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_SET_BUFFER, [
-        ...lastOffsetBytes,
+
+      await api.hidCommand(APICommand.DYNAMIC_KEYMAP_MACRO_SET_BUFFER, [
+        ...shiftFrom16Bit(markerOffset),
         1,
         0x00,
       ]);
-    }
+      const closeAcknowledgedAt = Date.now();
+      let retry = 0;
+      let isImmediateRead = true;
+      while (true) {
+        const remaining =
+          MACRO_CLOSE_VERIFICATION_DEADLINE_MS -
+          (Date.now() - closeAcknowledgedAt);
+        if (!isImmediateRead && remaining <= 0) {
+          throw new Error('Macro completion marker verification timed out');
+        }
+        const [marker] = await api.getMacroBuffer(
+          markerOffset,
+          1,
+          Math.max(1, remaining),
+        );
+        isImmediateRead = false;
+        if (marker === 0) {
+          return;
+        }
+
+        const elapsed = Date.now() - closeAcknowledgedAt;
+        if (elapsed >= MACRO_CLOSE_VERIFICATION_DEADLINE_MS) {
+          throw new Error('Macro completion marker verification timed out');
+        }
+        const delay =
+          MACRO_CLOSE_RETRY_DELAYS_MS[retry] ?? MACRO_CLOSE_RETRY_CAP_MS;
+        retry += 1;
+        await api.timeout(
+          Math.min(delay, MACRO_CLOSE_VERIFICATION_DEADLINE_MS - elapsed),
+        );
+      }
+    });
   }
 
   async resetMacros() {
@@ -570,7 +688,10 @@ export class KeyboardAPI {
   }
 
   async timeout(time: number) {
-    return this.getHID().enqueueDelay(time);
+    return this.getHID().enqueueDelay(time, {
+      reservationOwner: this.reservationOwner,
+      expectedGeneration: this.reservationGeneration,
+    });
   }
 
   isCommandQueueIdle() {
@@ -585,9 +706,10 @@ export class KeyboardAPI {
     command: Command,
     bytes: Array<number> = [],
     commandName?: string,
+    options?: HIDExchangeOptions,
   ): Promise<number[]> {
     try {
-      return await this._hidCommand(command, bytes, commandName);
+      return await this._hidCommand(command, bytes, commandName, options);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
       const deviceInfo = extractDeviceInfo(this.getHID());
@@ -625,10 +747,23 @@ export class KeyboardAPI {
     );
   }
 
+  async exchangeHID(
+    report: number[],
+    matches: ResponseMatcher,
+    options?: HIDExchangeOptions,
+  ): Promise<Uint8Array> {
+    return this.getHID().exchange(report, matches, {
+      ...options,
+      reservationOwner: this.reservationOwner,
+      expectedGeneration: this.reservationGeneration,
+    });
+  }
+
   async _hidCommand(
     command: Command,
     bytes: Array<number> = [],
     commandName?: string,
+    options?: HIDExchangeOptions,
   ): Promise<any> {
     const commandBytes = [...[COMMAND_START, command], ...bytes];
     const paddedArray = new Array(33).fill(0);
@@ -637,11 +772,12 @@ export class KeyboardAPI {
     });
 
     const requestBytes = commandBytes.slice(1);
-    const response = (await this.getHID().exchange(
+    const response = (await this.exchangeHID(
       paddedArray,
       (message: Uint8Array) =>
         message.length === 32 &&
         eqArr(requestBytes, Array.from(message.slice(0, requestBytes.length))),
+      options,
     )) as Uint8Array;
     const buffer = Array.from(response);
     const bufferCommandBytes = buffer.slice(0, requestBytes.length);

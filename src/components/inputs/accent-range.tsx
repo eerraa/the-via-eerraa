@@ -56,8 +56,16 @@ const StyledNumberInput = styled(NumberInput)`
 export const AccentRange: React.FC<
   Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> & {
     onChange: (x: number) => void;
+    onInteractionComplete?: () => void;
+    onInteractionCancel?: () => void;
   }
 > = (props) => {
+  const {
+    onChange,
+    onInteractionComplete,
+    onInteractionCancel,
+    ...inputProps
+  } = props;
   // Get the display mode from Redux store (0, 1, or 2)
   const displayMode = useAppSelector(getShowSliderValuesMode);
 
@@ -72,11 +80,20 @@ export const AccentRange: React.FC<
           : 0;
 
   const currentValue = Number(
-    props.value ?? props.defaultValue ?? props.min ?? 0,
+    inputProps.value ?? inputProps.defaultValue ?? inputProps.min ?? 0,
   );
   const [draftValue, setDraftValue] = useState(String(currentValue));
   const isEditing = useRef(false);
   const cancelDraft = useRef(false);
+  const completionRef = useRef(onInteractionComplete);
+  completionRef.current = onInteractionComplete;
+
+  useEffect(
+    () => () => {
+      completionRef.current?.();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!isEditing.current) {
@@ -86,7 +103,7 @@ export const AccentRange: React.FC<
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = +e.target.value;
-    props.onChange(newValue);
+    onChange(newValue);
   };
 
   const handleNumberInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,6 +115,7 @@ export const AccentRange: React.FC<
     if (cancelDraft.current) {
       cancelDraft.current = false;
       setDraftValue(String(currentValue));
+      (onInteractionCancel ?? onInteractionComplete)?.();
       return;
     }
 
@@ -108,16 +126,18 @@ export const AccentRange: React.FC<
       !Number.isInteger(parsedValue)
     ) {
       setDraftValue(String(currentValue));
+      onInteractionComplete?.();
       return;
     }
     if (parsedValue !== currentValue) {
       // Keep the controlled value authoritative. The parent may constrain the
       // requested value, including resolving it back to currentValue.
       setDraftValue(String(currentValue));
-      props.onChange(parsedValue);
+      onChange(parsedValue);
     } else {
       setDraftValue(String(currentValue));
     }
+    onInteractionComplete?.();
   };
 
   const handleNumberInputKeyDown = (
@@ -140,16 +160,57 @@ export const AccentRange: React.FC<
 
       {/* Always show slider */}
       <SliderInput
-        {...props}
+        {...inputProps}
         $mode={numericMode} /* Pass numeric mode here too */
         value={currentValue}
         onChange={handleSliderChange}
+        onPointerUp={(event: React.PointerEvent<HTMLInputElement>) => {
+          inputProps.onPointerUp?.(event);
+          onInteractionComplete?.();
+        }}
+        onPointerCancel={(event: React.PointerEvent<HTMLInputElement>) => {
+          inputProps.onPointerCancel?.(event);
+          (onInteractionCancel ?? onInteractionComplete)?.();
+        }}
+        onTouchEnd={(event: React.TouchEvent<HTMLInputElement>) => {
+          inputProps.onTouchEnd?.(event);
+          onInteractionComplete?.();
+        }}
+        onTouchCancel={(event: React.TouchEvent<HTMLInputElement>) => {
+          inputProps.onTouchCancel?.(event);
+          (onInteractionCancel ?? onInteractionComplete)?.();
+        }}
+        onMouseUp={(event: React.MouseEvent<HTMLInputElement>) => {
+          inputProps.onMouseUp?.(event);
+          onInteractionComplete?.();
+        }}
+        onKeyUp={(event: React.KeyboardEvent<HTMLInputElement>) => {
+          inputProps.onKeyUp?.(event);
+          if (
+            [
+              'ArrowLeft',
+              'ArrowRight',
+              'ArrowUp',
+              'ArrowDown',
+              'Home',
+              'End',
+              'PageUp',
+              'PageDown',
+            ].includes(event.key)
+          ) {
+            onInteractionComplete?.();
+          }
+        }}
+        onBlur={(event: React.FocusEvent<HTMLInputElement>) => {
+          inputProps.onBlur?.(event);
+          onInteractionComplete?.();
+        }}
       />
 
       {/* Mode 2: Show input field */}
       {numericMode === 2 && (
         <StyledNumberInput
-          {...props}
+          {...inputProps}
           type="number"
           value={draftValue}
           onFocus={() => {

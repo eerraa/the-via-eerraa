@@ -7,9 +7,13 @@ import type {
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
 const MAX_DIAGNOSTIC_REPORTS = 32;
 
-type ResponseMatcher = (message: Uint8Array) => boolean;
-type HIDExchangeOptions = {
+export type ResponseMatcher = (message: Uint8Array) => boolean;
+export type HIDPathReservationOwner = object | symbol;
+export type HIDExchangeOptions = {
   timeoutBehavior?: 'poison-generation' | 'preserve-generation';
+  responseTimeoutMs?: number;
+  reservationOwner?: HIDPathReservationOwner;
+  expectedGeneration?: number;
 };
 type UnsolicitedReportHandler = {
   generation: number;
@@ -33,6 +37,11 @@ type CommandQueueEntry = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
 };
+type ActivePathReservation = {
+  generation: number;
+  owner: HIDPathReservationOwner;
+  cancel: (error: Error) => void;
+};
 type TransportState = {
   path: string;
   device: HIDDevice;
@@ -47,6 +56,7 @@ type TransportState = {
   pending?: PendingResponse;
   commandQueue: CommandQueueEntry[];
   isFlushing: boolean;
+  activeReservation?: ActivePathReservation;
   activeCancel?: (error: Error) => void;
   lastWriteTimestamp: number;
   diagnostics: DiagnosticReport[];
@@ -109,9 +119,10 @@ const rejectTransportWork = (state: TransportState, error: Error) => {
     state.pending = undefined;
     clearTimeout(pending.timeoutId);
     pending.reject(error);
-  } else {
-    state.activeCancel?.(error);
   }
+  state.activeReservation?.cancel(error);
+  state.activeReservation = undefined;
+  state.activeCancel?.(error);
   state.activeCancel = undefined;
   state.commandQueue.splice(0).forEach((entry) => entry.reject(error));
 };
@@ -530,11 +541,23 @@ const ExtendedHID = {
       options?: HIDExchangeOptions,
     ): Promise<Uint8Array> {
       const state = this.state;
-      return enqueueTransportTask(state, async () => {
+      const run = async () => {
+        const expectedGeneration = options?.expectedGeneration;
+        if (
+          expectedGeneration !== undefined &&
+          !this.isConnectionGenerationCurrent(expectedGeneration)
+        ) {
+          throw makeTransportError(state.path, 'changed before request');
+        }
         await this.open();
-        const generation = state.generation;
+        const generation = expectedGeneration ?? state.generation;
         if (!this.isConnectionGenerationCurrent(generation)) {
           throw makeTransportError(state.path, 'changed before write');
+        }
+        if (state.pending) {
+          throw new HIDTransportError(
+            `HID transport ${state.path} already has a pending response`,
+          );
         }
 
         const responsePromise = new Promise<Uint8Array>((resolve, reject) => {
@@ -551,7 +574,7 @@ const ExtendedHID = {
             if (options?.timeoutBehavior === 'preserve-generation') {
               const pending = state.pending;
               state.pending = undefined;
-              pending.reject(error);
+              pending?.reject(error);
               return;
             }
             replaceGeneration(
@@ -563,7 +586,7 @@ const ExtendedHID = {
               },
               error,
             );
-          }, responseTimeoutMs);
+          }, options?.responseTimeoutMs ?? responseTimeoutMs);
           state.pending = {generation, matches, resolve, reject, timeoutId};
         });
         void responsePromise.catch(() => undefined);
@@ -604,25 +627,99 @@ const ExtendedHID = {
           }
           throw error;
         }
+      };
+
+      if (options?.reservationOwner !== undefined) {
+        const reservation = state.activeReservation;
+        if (
+          !reservation ||
+          reservation.owner !== options.reservationOwner ||
+          reservation.generation !== options.expectedGeneration ||
+          !this.isConnectionGenerationCurrent(reservation.generation)
+        ) {
+          throw makeTransportError(state.path, 'has no matching reservation');
+        }
+        return run();
+      }
+      return enqueueTransportTask(state, run);
+    }
+
+    async withPathReservation<T>(
+      expectedGeneration: number,
+      owner: HIDPathReservationOwner,
+      callback: () => Promise<T>,
+    ): Promise<T> {
+      const state = this.state;
+      const active = state.activeReservation;
+      if (
+        active?.owner === owner &&
+        active.generation === expectedGeneration &&
+        this.isConnectionGenerationCurrent(expectedGeneration)
+      ) {
+        return callback();
+      }
+      return enqueueTransportTask(state, async () => {
+        if (!this.isConnectionGenerationCurrent(expectedGeneration)) {
+          throw makeTransportError(state.path, 'changed before reservation');
+        }
+        if (state.activeReservation) {
+          throw new HIDTransportError(
+            `HID transport ${state.path} already has an active reservation`,
+          );
+        }
+
+        let rejectCancellation: (error: Error) => void = () => undefined;
+        const cancellation = new Promise<never>((_, reject) => {
+          rejectCancellation = reject;
+        });
+        const reservation: ActivePathReservation = {
+          generation: expectedGeneration,
+          owner,
+          cancel: rejectCancellation,
+        };
+        state.activeReservation = reservation;
+        try {
+          return await Promise.race([callback(), cancellation]);
+        } finally {
+          if (state.activeReservation === reservation) {
+            state.activeReservation = undefined;
+          }
+        }
       });
     }
 
-    async enqueueDelay(time: number) {
+    async enqueueDelay(
+      time: number,
+      options?: Pick<
+        HIDExchangeOptions,
+        'reservationOwner' | 'expectedGeneration'
+      >,
+    ) {
       const state = this.state;
-      return enqueueTransportTask(
-        state,
-        () =>
-          new Promise<void>((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
-              state.activeCancel = undefined;
-              resolve();
-            }, time);
-            state.activeCancel = (error) => {
-              clearTimeout(timeoutId);
-              reject(error);
-            };
-          }),
-      );
+      const run = () =>
+        new Promise<void>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            state.activeCancel = undefined;
+            resolve();
+          }, time);
+          state.activeCancel = (error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          };
+        });
+      if (options?.reservationOwner !== undefined) {
+        const reservation = state.activeReservation;
+        if (
+          !reservation ||
+          reservation.owner !== options.reservationOwner ||
+          reservation.generation !== options.expectedGeneration ||
+          !this.isConnectionGenerationCurrent(reservation.generation)
+        ) {
+          throw makeTransportError(state.path, 'has no matching reservation');
+        }
+        return run();
+      }
+      return enqueueTransportTask(state, run);
     }
 
     isCommandQueueIdle() {
@@ -691,6 +788,8 @@ export const getHIDTransportDebugState = (path: string) => {
       hasPendingResponse: Boolean(state.pending),
       commandQueueDepth: state.commandQueue.length,
       isFlushing: state.isFlushing,
+      hasActiveReservation: Boolean(state.activeReservation),
+      reservationGeneration: state.activeReservation?.generation,
       lastWriteTimestamp: state.lastWriteTimestamp,
       diagnosticCount: state.diagnostics.length,
       diagnostics: state.diagnostics.map((report) => ({

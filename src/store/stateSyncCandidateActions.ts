@@ -5,8 +5,10 @@ import type {RawKeycodeSequence} from '../utils/macro-api/types';
 type StableCandidateContext = {
   devicePath: string;
   connectionGeneration: number;
-  selectionGeneration?: number;
+  selectionGeneration: number;
+  definitionIdentity: string;
   revision: number;
+  mutationEpoch: number;
 };
 
 export type StateSyncEncoderMap = Record<number, [number, number][]>;

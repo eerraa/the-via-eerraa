@@ -7,6 +7,7 @@ import {
   type FC,
 } from 'react';
 import styled from 'styled-components';
+import {useTranslation} from 'react-i18next';
 import {AccentButton, PrimaryAccentButton} from '../../../inputs/accent-button';
 import {AccentSlider} from '../../../inputs/accent-slider';
 import {useAppSelector} from 'src/store/hooks';
@@ -47,9 +48,10 @@ import {
   type UsbDiagnosticsRunOutcome,
 } from 'src/utils/usb-diagnostics-history';
 import {
-  DiagnosticsComparison,
+  DiagnosticsAdvanced,
   DiagnosticsResultView,
 } from '../../diagnostics-results';
+import {Explain, ExplainRow} from '../../../inputs/explain';
 
 // The block lines up with the ControlRow width of the menu it is embedded in so the
 // polling-mode controls and the diagnostics that describe them read as one column.
@@ -59,20 +61,26 @@ const Section = styled.section({
   boxSizing: 'border-box',
   padding: '20px 5px 24px',
   color: 'var(--color_label)',
-  fontSize: 16,
+  fontSize: 15,
   lineHeight: 1.55,
 });
 
 const SectionTitle = styled.h2({
   color: 'var(--color_label-highlighted)',
-  fontSize: 20,
+  fontSize: 18,
   lineHeight: 1.3,
-  margin: '0 0 6px',
+  margin: 0,
+});
+
+const SectionHead = styled(ExplainRow)({
+  marginBottom: 12,
 });
 
 const Intro = styled.p({
   margin: '0 0 14px',
   maxWidth: 760,
+  fontSize: 14,
+  opacity: 0.85,
 });
 
 const Controls = styled.div({
@@ -80,17 +88,23 @@ const Controls = styled.div({
   alignItems: 'center',
   gap: 10,
   flexWrap: 'wrap',
+  '& button': {
+    height: 36,
+    lineHeight: '34px',
+    minWidth: 0,
+    fontSize: 15,
+  },
 });
 
 const Select = styled.select({
-  height: 40,
+  height: 36,
   minWidth: 120,
   padding: '0 10px',
   border: '1px solid var(--color_accent)',
   borderRadius: 5,
   color: 'var(--color_accent)',
   background: 'var(--bg_menu)',
-  fontSize: 16,
+  fontSize: 15,
 });
 
 const Note = styled.p({
@@ -98,6 +112,7 @@ const Note = styled.p({
   border: '1px solid var(--border_color_cell)',
   borderRadius: 10,
   padding: '12px 14px',
+  fontSize: 14,
   lineHeight: 1.55,
   margin: '14px 0 0',
 });
@@ -108,13 +123,25 @@ const NoteTitle = styled.strong({
   marginBottom: 4,
 });
 
+// The recovery and leftover-session actions live inside the note that explains the
+// situation they belong to. A button called "Read Device Result" has to carry the
+// whole explanation in its name; one called "Show It" under that sentence does not.
+const NoteActions = styled.span({
+  display: 'flex',
+  gap: 10,
+  flexWrap: 'wrap',
+  marginTop: 12,
+});
+
 const Muted = styled.p({
   opacity: 0.82,
+  fontSize: 13,
   margin: '10px 0 0',
 });
 
 const ErrorText = styled.p({
   color: 'var(--color_label-highlighted)',
+  fontSize: 14,
   margin: '12px 0 0',
 });
 
@@ -130,18 +157,11 @@ const AdvancedRow = styled.div({
 
 const AdvancedLabel = styled.span({
   color: 'var(--color_label)',
-  fontSize: 18,
+  fontSize: 15,
 });
 
 const AdvancedPanel = styled.div({
   marginTop: 4,
-});
-
-const AdvancedTitle = styled.h3({
-  color: 'var(--color_label-highlighted)',
-  fontSize: 18,
-  lineHeight: 1.3,
-  margin: '18px 0 8px',
 });
 
 type ActiveRun = {
@@ -162,39 +182,55 @@ type ActiveRun = {
 type CapabilityState =
   'loading' | 'supported' | 'unsupported' | 'unverified' | 'disconnected';
 
-const failureMessage = (failure: {
-  kind: UsbDiagnosticsFailureKind;
-  status?: number;
-}) => {
+// Keys are the English source text, so a missing translation degrades to readable
+// English rather than a raw identifier.
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+const failureMessage = (
+  t: Translate,
+  failure: {
+    kind: UsbDiagnosticsFailureKind;
+    status?: number;
+  },
+) => {
   if (
     failure.kind === 'unhandled' ||
     (failure.kind === 'status' &&
       failure.status === ERA_USB_DIAGNOSTICS_STATUS_UNSUPPORTED_VERSION)
   ) {
-    return 'USB Diagnostics are not supported by this firmware version.';
+    return t('USB Diagnostics are not supported by this firmware version.');
   }
   if (failure.kind === 'disconnected') {
-    return 'The keyboard disconnected. Reconnect it before starting another test.';
+    return t(
+      'The keyboard disconnected. Reconnect it before starting another test.',
+    );
   }
   if (failure.kind === 'timeout') {
-    return 'The diagnostic request timed out. Reconnect the keyboard and try again.';
+    return t(
+      'The diagnostic request timed out. Reconnect the keyboard and try again.',
+    );
   }
   if (
     failure.kind === 'status' &&
     failure.status === ERA_USB_DIAGNOSTICS_STATUS_BUSY
   ) {
-    return 'The firmware already has a diagnostic session in progress.';
+    return t('The keyboard is already running a test.');
   }
   if (failure.kind === 'stale') {
-    return 'The coherent snapshot changed before every chunk was read.';
+    return t(
+      'The keyboard replaced the reading halfway through. It will be retried.',
+    );
   }
-  return 'The diagnostic response was invalid. Reconnect the keyboard and verify that the app and firmware are current.';
+  return t(
+    'The keyboard sent something this app could not read. Reconnect it, and check that the app and the firmware are both up to date.',
+  );
 };
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds));
 
 export const UsbDiagnosticsSection: FC = () => {
+  const {t} = useTranslation();
   const device = useAppSelector(getSelectedConnectedDevice);
   const api = useAppSelector(getSelectedKeyboardAPI);
   const ready = useAppSelector(getIsSelectedDeviceReady);
@@ -223,6 +259,11 @@ export const UsbDiagnosticsSection: FC = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const activeRef = useRef<ActiveRun | null>(null);
   const mountedRef = useRef(true);
+  // Held in a ref, not closed over: adding `t` to the session callbacks' dependency
+  // arrays would change `finishActive`'s identity on a language change, and the
+  // cleanup effect that depends on it would then abort a running measurement.
+  const translate = useRef(t);
+  translate.current = t;
   const selectionRef = useRef({
     path: device?.path ?? null,
     generation: selectionGeneration,
@@ -277,7 +318,9 @@ export const UsbDiagnosticsSection: FC = () => {
         if (run && !saved) {
           // Silently dropping the result would look identical to a successful save.
           setCommandError(
-            'This result could not be written to local history. Browser storage may be full or blocked.',
+            translate.current(
+              'This result could not be saved. Your browser storage may be full or blocked, so it will not appear in the comparison later.',
+            ),
           );
         }
         if (run) {
@@ -348,7 +391,9 @@ export const UsbDiagnosticsSection: FC = () => {
         if (result.kind === 'ok') {
           if (result.value.sessionId !== active.sessionId) {
             setCommandError(
-              'The firmware returned a different diagnostic session.',
+              translate.current(
+                'The keyboard answered about a different test than the one this page started.',
+              ),
             );
             finishActive(active, 'aborted', 'Session identity changed.');
             return;
@@ -363,7 +408,11 @@ export const UsbDiagnosticsSection: FC = () => {
             return;
           }
           if (result.value.state !== 1) {
-            setCommandError('The firmware returned an invalid session state.');
+            setCommandError(
+              translate.current(
+                'The keyboard reported a state this app does not recognise.',
+              ),
+            );
             finishActive(active, 'aborted', 'Invalid session state.');
             return;
           }
@@ -372,7 +421,7 @@ export const UsbDiagnosticsSection: FC = () => {
         } else {
           consecutiveFailures += 1;
           if (result.kind === 'disconnected' || consecutiveFailures >= 3) {
-            setCommandError(failureMessage(result));
+            setCommandError(failureMessage(translate.current, result));
             finishActive(
               active,
               'aborted',
@@ -470,7 +519,7 @@ export const UsbDiagnosticsSection: FC = () => {
       } else {
         setCapabilityState('unverified');
       }
-      setCommandError(failureMessage(result));
+      setCommandError(failureMessage(translate.current, result));
     });
     return () => {
       cancelled = true;
@@ -519,7 +568,7 @@ export const UsbDiagnosticsSection: FC = () => {
       activeRef.current = null;
       active.saved = true;
       setCommandPending(false);
-      setCommandError(failureMessage(result));
+      setCommandError(failureMessage(translate.current, result));
       if (
         result.kind === 'status' &&
         result.status === ERA_USB_DIAGNOSTICS_STATUS_BUSY
@@ -538,7 +587,11 @@ export const UsbDiagnosticsSection: FC = () => {
       activeRef.current = null;
       active.saved = true;
       setCommandPending(false);
-      setCommandError('The firmware returned an invalid start response.');
+      setCommandError(
+        translate.current(
+          'The keyboard did not confirm the start properly, so no test is running.',
+        ),
+      );
       return;
     }
     active.sessionId = result.value.sessionId;
@@ -581,7 +634,7 @@ export const UsbDiagnosticsSection: FC = () => {
       const result = await stopUsbDiagnostics(api);
       setCommandPending(false);
       if (result.kind !== 'ok') {
-        setCommandError(failureMessage(result));
+        setCommandError(failureMessage(translate.current, result));
         return;
       }
       setCapabilities((previous) =>
@@ -594,7 +647,9 @@ export const UsbDiagnosticsSection: FC = () => {
           : previous,
       );
       setCommandError(
-        'The unmatched firmware session was stopped. Start a new test to capture a local result.',
+        translate.current(
+          'Stopped it. Start a new test and this page will record the result.',
+        ),
       );
       return;
     }
@@ -608,7 +663,7 @@ export const UsbDiagnosticsSection: FC = () => {
     if (stopResult.kind !== 'ok') {
       active.stopRequested = false;
       setCommandPending(false);
-      setCommandError(failureMessage(stopResult));
+      setCommandError(failureMessage(translate.current, stopResult));
       void pollActive(active);
       return;
     }
@@ -625,8 +680,10 @@ export const UsbDiagnosticsSection: FC = () => {
     } else {
       setCommandError(
         snapshotResult.kind === 'ok'
-          ? 'The final snapshot belonged to a different diagnostic session.'
-          : failureMessage(snapshotResult),
+          ? translate.current(
+              'The last reading belonged to a different test, so it was not kept.',
+            )
+          : failureMessage(translate.current, snapshotResult),
       );
       finishActive(
         active,
@@ -648,11 +705,15 @@ export const UsbDiagnosticsSection: FC = () => {
     const result = await getUsbDiagnosticsSnapshot(api);
     setCommandPending(false);
     if (result.kind !== 'ok') {
-      setCommandError(failureMessage(result));
+      setCommandError(failureMessage(translate.current, result));
       return;
     }
     if (result.value.state !== 2 && result.value.state !== 3) {
-      setCommandError('The keyboard no longer holds a finished session.');
+      setCommandError(
+        translate.current(
+          'The keyboard is not holding a finished result any more.',
+        ),
+      );
       return;
     }
     setRecoveredSnapshot(result.value);
@@ -678,7 +739,7 @@ export const UsbDiagnosticsSection: FC = () => {
     const result = await clearUsbDiagnostics(api);
     setCommandPending(false);
     if (result.kind !== 'ok') {
-      setCommandError(failureMessage(result));
+      setCommandError(failureMessage(translate.current, result));
       return;
     }
     setSnapshots([]);
@@ -736,14 +797,14 @@ export const UsbDiagnosticsSection: FC = () => {
   const recoveredRunLabel = recoveredSnapshot
     ? `${usbDiagnosticsPollingModeLabel(recoveredSnapshot.pollingMode)} · ${
         recoveredSnapshot.durationSeconds
-      }s · read from the keyboard, not from a test this page ran`
+      }s · ${t('read from the keyboard, not from a test this page ran')}`
     : undefined;
 
   const storedRunLabel =
     showingStoredRun && displayedRun
       ? `${usbDiagnosticsPollingModeLabel(displayedRun.pollingMode)} · ${
           displayedRun.durationSeconds
-        }s · ${displayedRun.outcome} · ${new Date(
+        }s · ${t(displayedRun.outcome)} · ${new Date(
           displayedRun.endedAt,
         ).toLocaleString()}`
       : undefined;
@@ -756,9 +817,9 @@ export const UsbDiagnosticsSection: FC = () => {
     }
     try {
       await navigator.clipboard.writeText(buildUsbDiagnosticReport(run));
-      setCopyStatus('Diagnostic report copied.');
+      setCopyStatus(translate.current('Diagnostic report copied.'));
     } catch {
-      setCopyStatus('Unable to access the clipboard.');
+      setCopyStatus(translate.current('Unable to access the clipboard.'));
     }
   }, [comparableRuns, currentRun, recoveredRun]);
 
@@ -775,24 +836,35 @@ export const UsbDiagnosticsSection: FC = () => {
   const deviceHoldsFinishedSession =
     capabilities?.sessionState === 2 || capabilities?.sessionState === 3;
   const hasResult = Boolean(displayedRun || recoveredRun);
+  // The keyboard is holding a session this page never followed to the end, or is
+  // showing the one it just recovered. Both are situations, not operations, so the
+  // actions live inside the sentence that describes them.
+  const keyboardResultNeedsAttention =
+    deviceHoldsFinishedSession && !running && snapshots.length === 0;
 
   return (
     <Section>
-      <SectionTitle>USB Delivery Diagnostics</SectionTitle>
+      <SectionHead>
+        <SectionTitle>{t('USB Polling Diagnostics')}</SectionTitle>
+        <Explain>
+          {t(
+            'It watches for three things while the test runs: key presses the keyboard failed to deliver, moments when the firmware stalled, and the USB connection dropping or changing speed. Nothing is written to the keyboard and the polling mode is left exactly as you set it.',
+          )}
+        </Explain>
+      </SectionHead>
       <Intro>
-        Run a short, read-only measurement of the polling mode this keyboard is
-        currently running. It never changes the selected mode and writes nothing
-        to keyboard EEPROM.
+        {t('Checks how the polling mode above actually behaves on this PC.')}
       </Intro>
 
       {(!ready || capabilityState === 'loading') && (
-        <Note>Checking whether this firmware supports diagnostics.</Note>
+        <Note>{t('Checking whether this firmware can run the test.')}</Note>
       )}
 
       {ready && capabilityState === 'unsupported' && (
         <Note>
-          USB Diagnostics are not supported by this firmware version. Every
-          other feature on this page is unaffected.
+          {t(
+            'This firmware version cannot run the test. Everything else on this page works as usual.',
+          )}
         </Note>
       )}
 
@@ -800,7 +872,7 @@ export const UsbDiagnosticsSection: FC = () => {
         (capabilityState === 'unverified' ||
           capabilityState === 'disconnected') && (
           <Note>
-            <NoteTitle>Unable to verify diagnostics support</NoteTitle>
+            <NoteTitle>{t('Unable to verify diagnostics support')}</NoteTitle>
             {commandError}
           </Note>
         )}
@@ -808,7 +880,9 @@ export const UsbDiagnosticsSection: FC = () => {
       {ready && capabilities && capabilityState === 'supported' && (
         <>
           <Controls>
-            <label htmlFor="usb-diagnostics-duration">Test duration</label>
+            <label htmlFor="usb-diagnostics-duration">
+              {t('Test duration')}
+            </label>
             <Select
               disabled={running || commandPending}
               id="usb-diagnostics-duration"
@@ -821,7 +895,7 @@ export const UsbDiagnosticsSection: FC = () => {
             >
               {capabilities.durations.map((candidate) => (
                 <option key={candidate} value={candidate}>
-                  {candidate} seconds
+                  {t('{{seconds}} seconds', {seconds: candidate})}
                 </option>
               ))}
             </Select>
@@ -831,99 +905,123 @@ export const UsbDiagnosticsSection: FC = () => {
               }
               onClick={handleStart}
             >
-              Start Test
+              {t('Start Test')}
             </PrimaryAccentButton>
-            {(running || capabilities.sessionState === 1) && (
+            {running && (
               <AccentButton disabled={commandPending} onClick={handleStop}>
-                {running ? 'Stop Test' : 'Stop Device Session'}
+                {t('Stop Test')}
               </AccentButton>
-            )}
-            {!running && deviceHoldsFinishedSession && (
-              <>
-                <AccentButton
-                  disabled={commandPending}
-                  onClick={handleReadDeviceResult}
-                >
-                  Read Device Result
-                </AccentButton>
-                <AccentButton disabled={commandPending} onClick={handleClear}>
-                  Clear Device Result
-                </AccentButton>
-              </>
             )}
             {hasResult && (
               <AccentButton disabled={running} onClick={handleCopy}>
-                Copy Diagnostic Report
+                {t('Copy Diagnostic Report')}
               </AccentButton>
             )}
             {copyStatus && <span>{copyStatus}</span>}
           </Controls>
 
-          {running && (
+          {running ? (
             <Note>
-              The test is running. Type normally or reproduce the workload you
-              want to observe. Leaving this menu, switching keyboards or
-              unplugging ends the test and stores only what was captured so far.
+              {t(
+                'Running. Type normally. Leaving this menu, switching keyboards or unplugging ends the test early.',
+              )}
+            </Note>
+          ) : (
+            !hasResult && (
+              <Muted>
+                {t('Pick a length, press Start Test, then type normally.')}
+              </Muted>
+            )
+          )}
+
+          {keyboardResultNeedsAttention && (
+            <Note>
+              <NoteTitle>
+                {recoveredSnapshot
+                  ? t('The result above is still stored on the keyboard')
+                  : t('A finished test is still on the keyboard')}
+              </NoteTitle>
+              {recoveredSnapshot
+                ? t('It stays there until a new test starts or you discard it.')
+                : t(
+                    'Sleep, a reload or unplugging interrupted it. The keyboard keeps the result until a new test starts.',
+                  )}
+              <NoteActions>
+                {!recoveredSnapshot && (
+                  <AccentButton
+                    disabled={commandPending}
+                    onClick={handleReadDeviceResult}
+                  >
+                    {t('Show It')}
+                  </AccentButton>
+                )}
+                <AccentButton disabled={commandPending} onClick={handleClear}>
+                  {t('Discard It')}
+                </AccentButton>
+              </NoteActions>
             </Note>
           )}
 
-          {deviceHoldsFinishedSession &&
-            !running &&
-            !recoveredSnapshot &&
-            snapshots.length === 0 && (
-              <Note>
-                <NoteTitle>Finished session still on the keyboard</NoteTitle>
-                The keyboard is holding the result of a session this page did
-                not follow to the end — for example one interrupted by sleep, a
-                reload, or a reconnect. Read Device Result shows it. Starting a
-                new test or Clear Device Result discards it.
-              </Note>
-            )}
-
           {capabilities.sessionState === 1 && !running && (
             <Note>
-              <NoteTitle>Unmatched firmware session</NoteTitle>A session was
-              already running when this page connected. Stop it, then start a
-              new test so local history has a known start time and identity.
+              <NoteTitle>
+                {t('A test was already running when this page connected')}
+              </NoteTitle>
+              {t(
+                'Another tab or a reload started it. Stop it before starting a new test.',
+              )}
+              <NoteActions>
+                <AccentButton disabled={commandPending} onClick={handleStop}>
+                  {t('Stop It')}
+                </AccentButton>
+              </NoteActions>
             </Note>
           )}
 
           {commandError && <ErrorText>{commandError}</ErrorText>}
 
-          {displayedSnapshots.length > 0 ? (
-            <DiagnosticsResultView
-              detail={showAdvanced ? 'full' : 'summary'}
-              outcome={
-                recoveredRun?.outcome ??
-                currentRun?.outcome ??
-                displayedRun?.outcome
-              }
-              snapshots={displayedSnapshots}
-              storedRunLabel={recoveredRunLabel ?? storedRunLabel}
-            />
-          ) : (
-            <Muted>
-              No result yet. Choose a duration and start a test. The app reads
-              one coherent aggregate from the keyboard about once per second
-              while it runs.
-            </Muted>
-          )}
+          {displayedSnapshots.length > 0 && (
+            <>
+              <DiagnosticsResultView
+                detail="summary"
+                outcome={
+                  recoveredRun?.outcome ??
+                  currentRun?.outcome ??
+                  displayedRun?.outcome
+                }
+                snapshots={displayedSnapshots}
+                storedRunLabel={recoveredRunLabel ?? storedRunLabel}
+              />
 
-          <AdvancedRow>
-            <AdvancedLabel>Advanced metrics and mode comparison</AdvancedLabel>
-            <AccentSlider isChecked={showAdvanced} onChange={setShowAdvanced} />
-          </AdvancedRow>
+              <AdvancedRow>
+                <AdvancedLabel>
+                  {t('Advanced metrics and mode comparison')}
+                </AdvancedLabel>
+                <AccentSlider
+                  isChecked={showAdvanced}
+                  onChange={setShowAdvanced}
+                />
+              </AdvancedRow>
 
-          {showAdvanced && (
-            <AdvancedPanel>
-              <AdvancedTitle>Manual polling-mode comparison</AdvancedTitle>
-              <DiagnosticsComparison runs={comparableRuns} />
-              <Muted>
-                Firmware {capabilities.firmwareVersion} · diagnostics protocol{' '}
-                {capabilities.protocolVersion} · recommended snapshot interval{' '}
-                {capabilities.recommendedSnapshotMs} ms
-              </Muted>
-            </AdvancedPanel>
+              {showAdvanced && (
+                <AdvancedPanel>
+                  <DiagnosticsAdvanced
+                    runs={comparableRuns}
+                    snapshots={displayedSnapshots}
+                  />
+                  <Muted>
+                    {t(
+                      'Firmware {{firmware}} · diagnostics protocol {{protocol}} · recommended snapshot interval {{interval}} ms',
+                      {
+                        firmware: capabilities.firmwareVersion,
+                        protocol: capabilities.protocolVersion,
+                        interval: capabilities.recommendedSnapshotMs,
+                      },
+                    )}
+                  </Muted>
+                </AdvancedPanel>
+              )}
+            </>
           )}
         </>
       )}

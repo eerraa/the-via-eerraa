@@ -387,7 +387,7 @@
           ]
         },
         {
-          "label": "Anti-Ghosting",
+          "label": "KKUK",
           "content": [
             {
               "label": "Enable",
@@ -1073,6 +1073,239 @@
                 "id_qmk_tapping_retro_tapping",
                 15,
                 4
+              ]
+            }
+          ]
+        },
+        {
+          "label": "MOUSE",
+          "content": [
+            {
+              "label": "Cursor Acceleration",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_acceleration",
+                17,
+                3
+              ],
+              "options": [
+                [
+                  "Off (constant speed)",
+                  0
+                ],
+                [
+                  "0.5 s",
+                  10
+                ],
+                [
+                  "0.75 s",
+                  15
+                ],
+                [
+                  "1.0 s",
+                  20
+                ],
+                [
+                  "1.25 s",
+                  25
+                ],
+                [
+                  "1.5 s",
+                  30
+                ],
+                [
+                  "2.0 s",
+                  40
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_mousekey_cursor_acceleration} == 0",
+              "label": "Cursor Speed",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_min_speed",
+                17,
+                1
+              ],
+              "options": [
+                [
+                  "2 px",
+                  2
+                ],
+                [
+                  "4 px",
+                  4
+                ],
+                [
+                  "6 px",
+                  6
+                ],
+                [
+                  "8 px",
+                  8
+                ],
+                [
+                  "10 px",
+                  10
+                ],
+                [
+                  "12 px",
+                  12
+                ],
+                [
+                  "16 px",
+                  16
+                ],
+                [
+                  "24 px",
+                  24
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_mousekey_cursor_acceleration} != 0",
+              "label": "Cursor Start Speed",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_min_speed",
+                17,
+                1
+              ],
+              "options": [
+                [
+                  "1 px",
+                  1
+                ],
+                [
+                  "2 px",
+                  2
+                ],
+                [
+                  "4 px",
+                  4
+                ],
+                [
+                  "8 px",
+                  8
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_mousekey_cursor_acceleration} != 0",
+              "label": "Cursor Top Speed",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_max_speed",
+                17,
+                2
+              ],
+              "options": [
+                [
+                  "8 px",
+                  8
+                ],
+                [
+                  "16 px",
+                  16
+                ],
+                [
+                  "24 px",
+                  24
+                ],
+                [
+                  "32 px",
+                  32
+                ],
+                [
+                  "48 px",
+                  48
+                ],
+                [
+                  "64 px",
+                  64
+                ]
+              ]
+            },
+            {
+              "label": "Cursor Steps Per Second",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_cursor_interval",
+                17,
+                4
+              ],
+              "options": [
+                [
+                  "200 /s (5 ms)",
+                  5
+                ],
+                [
+                  "125 /s (8 ms)",
+                  8
+                ],
+                [
+                  "100 /s (10 ms)",
+                  10
+                ],
+                [
+                  "63 /s (16 ms)",
+                  16
+                ],
+                [
+                  "50 /s (20 ms)",
+                  20
+                ]
+              ]
+            },
+            {
+              "label": "Wheel Rate",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_wheel_interval",
+                17,
+                5
+              ],
+              "options": [
+                [
+                  "50 /s (20 ms)",
+                  20
+                ],
+                [
+                  "25 /s (40 ms)",
+                  40
+                ],
+                [
+                  "13 /s (80 ms)",
+                  80
+                ],
+                [
+                  "6 /s (160 ms)",
+                  160
+                ]
+              ]
+            },
+            {
+              "label": "Wheel Acceleration",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_mousekey_wheel_acceleration",
+                17,
+                6
+              ],
+              "options": [
+                [
+                  "Off (constant speed)",
+                  0
+                ],
+                [
+                  "Mild",
+                  1
+                ],
+                [
+                  "Strong",
+                  2
+                ]
               ]
             }
           ]

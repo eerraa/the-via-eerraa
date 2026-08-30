@@ -32,6 +32,7 @@ import {PelpiKeycodeInput} from '../inputs/pelpi/keycode-input';
 import TextInput from '../inputs/text-input';
 import Layouts from '../Layouts';
 import {MacroRecorder} from './configure-panes/submenus/macros/macro-recorder';
+import {resetMacrosOnDevice} from 'src/store/macrosSlice';
 import {
   ControlRow,
   Detail,
@@ -183,6 +184,7 @@ const TestControls = () => {
 };
 
 export const Debug: FC = () => {
+  const dispatch = useDispatch();
   const api = useAppSelector(getSelectedKeyboardAPI);
   const connectedDevices = useAppSelector(getConnectedDevices);
 
@@ -309,7 +311,14 @@ export const Debug: FC = () => {
               <ControlRow>
                 <Label>Clear all macros</Label>
                 <Detail>
-                  <AccentButton onClick={() => api.resetMacros()}>
+                  <AccentButton
+                    onClick={() => {
+                      void (dispatch as any)(resetMacrosOnDevice()).catch(
+                        (error: unknown) =>
+                          console.warn('Clearing macros failed', error),
+                      );
+                    }}
+                  >
                     Clear
                   </AccentButton>
                 </Detail>
