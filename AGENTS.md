@@ -39,8 +39,8 @@ bun install --frozen-lockfile
   실제 게이트는 §3의 네 명령뿐이다.
 - **`git checkout --`으로 파일을 되돌리면 autocrlf가 CRLF로 되돌려 놓는다.** 되돌린 뒤
   줄바꿈이 바뀐 것처럼 보이는 것은 정상이고, `git diff`는 정규화 후 비교하므로 깨끗하다.
-- **PR CI는 `bun run build` 하나만 돈다.** 테스트를 돌리지 않는다. 커밋 전에 로컬에서
-  §3을 직접 돌려야 한다.
+- **PR CI는 `bun run build`와 `bun run test:p1`을 돈다.** `test:transport`와
+  `bun x tsc --noEmit`는 로컬 게이트다. 커밋 전에 로컬에서 §3을 직접 돌려야 한다.
 - **cwd를 이 앱 저장소에 둔다.** 펌웨어 저장소를 cwd로 세션을 열면 그쪽 규칙이
   `graphify update .`를 걸고, 과거에 그 경로로 이 저장소에 `graphify-out/` 75,000줄이
   잘못 커밋된 사고가 있다.

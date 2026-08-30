@@ -135,7 +135,8 @@ bun x tsc --noEmit       # 0
 bun run build            # typecheck:scripts → build:kbs → tsc → vite build
 ```
 
-- **PR CI는 `bun run build` 하나만 돈다.** 테스트는 로컬 전용 게이트다.
+- **PR CI는 `bun run build`와 `bun run test:p1`을 돈다.** `test:transport`와
+  `bun x tsc --noEmit`는 로컬 게이트다.
   (`.github/workflows/pr-build.yml`)
 - `bun run build`의 `tsc`는 `tsconfig.json`의 `noEmit: true`를 쓰므로 타입 검사를 겸한다.
 - `bun run dev`는 Vite 전에 정의를 다시 만든다. 정의 출력이 비었거나 낡은 채로 앱 빌드가
