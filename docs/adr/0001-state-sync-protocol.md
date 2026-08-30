@@ -7,22 +7,42 @@ reservation, foreground mutation epoch, CONFIG write authority와 UI continuity,
 macro·import·continuous-control transaction, exact-ms 규칙, 그리고 제거한 메커니즘 15종과
 각각을 제거한 이유
 
-Exact-ms는 2-byte big-endian `uint16` ms다. **채널/value id 표는
-`docs/MAP.md` §3이 정본이다.** 이 ADR은 규칙만 고정한다.
+Exact-ms is a 2-byte big-endian `uint16` on the existing Custom Value commands (`CUSTOM_MENU_SET_VALUE` `0x07`, `CUSTOM_MENU_GET_VALUE` `0x08`). Host encode/decode is `shiftFrom16Bit` / `shiftTo16Bit` in `src/utils/keyboard-api.ts`. `getRangeValue` in `src/components/panes/configure-panes/custom/custom-control.tsx` uses those two bytes whenever `max > 255`; both family maxima (500 and 65535) are above that. HID: command, channel, value id, then BE16. `99999` is not a uint16.
 
-- QMK exact SET 범위는 1–65535(uint16 최대값; 99999는 이 인코딩에 들어가지 않는다)이고
-  기존 exact ID에 additive다. H7S exact SET은 별도 승인 전까지 100–500이다.
-- 범위를 벗어난 exact SET은 거절한다.
-- 공식 VIA + 공식 정의는 계속 필수다. legacy ID는 1-byte × 10 ms의 100–500 / 20 ms 그리드로
-  남고 공식 exact `options`는 `[100, 500]`이다.
-- legacy GET은 floor-to-20 ms로 투영만 하고 exact 저장값을 다시 쓰지 않는다.
+Channel and value ids are the `docs/MAP.md` §3 table. This re-measure of custom JSON `_term_exact` `content` and `scripts/build-keyboards.ts` `expectedTermKeys`:
 
-> **REFUSED:** 공식 JSON의 exact `options`를 커스텀 앱 범위로 넓히기.
-> **WHY:** 공식 VIA + 공식 정의는 계속 필수이고, 공식 exact options는 `[100, 500]`의 레거시
-> 그리드로 남는다.
-> **REOPENS:** 없다. 커스텀 앱만 말할 수 있는 경로는 오류다.
+| Control | QMK (`exactMsFamily: qmk`) | H7S (`exactMsFamily: h7s`) |
+| --- | --- | --- |
+| Global TAPPING term exact | channel 15 / value 5 | channel 15 / value 5 |
+| TD0–TD7 term exact | channel 0 / value 72–79 | channel 16 / value 41–48 |
 
-Definition ownership은 이 wire 결정과 독립이다 — `docs/MAP.md` §1·§4를 따른다.
+Nine exact `range` controls per opted-in family: `id_qmk_tapping_global_term_exact` and `id_qmk_tapdance_1_term_exact` … `_8_` (`isExactTermCommand` in `src/utils/era-exact-ms.ts`). `brick65` has no `exactMsFamily` and no term controls.
+
+Exact value ids are additive to the legacy ids. Firmware still implements both. Global legacy is channel 15 / value 1, 1-byte × 10 ms, 100–500 / 20 ms grid. Custom JSON in this repo must not expose those legacy term dropdowns (`isLegacyTermCommand`; `scripts/build-keyboards.ts` rejects them).
+
+### SET range and which JSON owns it
+
+Loaded JSON `options` win (`exactTermBoundsFromOptions` in `src/utils/era-exact-ms.ts`). The host then clamps to `[1, 65535]`. Out-of-range, empty, decimal, and non-integer drafts do not write (`parseMillisecondDraft` in `src/utils/millisecond-field.ts`).
+
+| Definition | exact `options` | Host SET |
+| --- | --- | --- |
+| Custom QMK (`exactMsFamily: qmk`) | `[1, 65535]` | 1–65535 inclusive. 0 and 65536 are rejected. |
+| Custom H7S (`exactMsFamily: h7s`) | `[100, 500]` | 100–500 inclusive |
+| Family fallback when `options` are omitted | `qmk` → `QMK_EXACT_TAPPING_TERM_BOUNDS`; otherwise `DEFAULT_TAPPING_TERM_BOUNDS` `[100, 500]` | same as that fallback |
+| Stock-shaped exact range (fixture `exactGlobalTermControl`; JSON `[100, 500]` even on a `qmk` family) | `[100, 500]` | 100–500. Loaded options win over family. |
+| Installed official `via-keyboards` snapshot | no `_term_exact` controls | this host does not send exact-ms on that snapshot |
+
+H7S firmware (`eerraa-qmk-h7s-fw/src/ap/modules/qmk/quantum/via.h`, `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/tapping_term.c`, `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/tapdance.c`, `eerraa-qmk-h7s-fw/docs/contract_via.md` §3): the same ids; exact SET is 2-byte BE uint16, 100–500 only; out of range or fewer than two value bytes is refused and the store is unchanged. That matches this repo's H7S custom JSON.
+
+### Legacy GET projection
+
+Legacy GET returns 1-byte units of 10 ms. It floors the stored exact millisecond value onto the 100–500 / 20 ms grid and does not write the exact store. Legacy SET, not GET, is what snaps the store onto that grid.
+
+This host's custom JSON has no legacy term commands, so it does not issue that GET. A client using a definition that still has the dropdown does. Exact GET/SET of 137 does not snap (`tests/state-sync-transport.test.ts`).
+
+> **REFUSED:** widening official JSON exact `options` to the custom-app QMK range.
+> **WHY:** official VIA plus official definitions remain required; a custom-app-only path is an error. Stock-shaped exact `options` stay `[100, 500]`.
+> **REOPENS:** never.
 
 ## Context
 
