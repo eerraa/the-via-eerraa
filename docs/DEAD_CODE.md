@@ -78,7 +78,7 @@ Removed in PR #20: `download-definition.js`
 and `build-definitions.js` (`via-keyboards public/definitions`) from
 `scripts/`. Live definition pipeline stays `scripts/build-keyboards.ts`.
 
-### 2.3 GitHub gist OAuth — removed 2026-08-30
+### 2.3 GitHub gist OAuth — removed 2026-08-30, PR #21
 
 Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
 and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
@@ -86,7 +86,7 @@ and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
 names `GithubOAuth`. Vite copies `public/` into `dist/`; nothing imported the
 helper.
 
-Removed in this PR (number filled after open): `github.ts` (`authGithub`,
+Removed in PR #21: `github.ts` (`authGithub`,
 `getUser`, `getKLEFiles`; non-localhost redirect URI was `usevia.app`) from
 `src/utils/` and `github_oauth.html` from `public/` (posted to
 `/api/GithubOAuth`, which this host does not serve).
@@ -228,7 +228,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 
 1. §2.1 Azure / `fiber` — removed 2026-08-30, PR #19.
 2. §2.2 unused definition scripts — removed 2026-08-30, PR #20.
-3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30.
+3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30, PR #21.
 4. §2.4 unreferenced files (icons, `ExportScene`, `App.css`, empty
    `public/assets/404.html`, scaffold SVG/icns, `src/constants/routes.json`).
 5. §2.5 unused npm dependencies (`bun.lock` / `package-lock.json` together).
