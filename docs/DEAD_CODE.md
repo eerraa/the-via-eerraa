@@ -45,7 +45,7 @@ It does not pick between `malformed` (host parse of a non-32 IN) and `0xFF`
 Each cluster is one later session. Do not mix clusters in one commit unless
 they are the same proof.
 
-### 2.1 Azure Static Web Apps and GitHub `fiber` — removed 2026-08-30
+### 2.1 Azure Static Web Apps and GitHub `fiber` — removed 2026-08-30, PR #19
 
 Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
 and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
@@ -53,7 +53,7 @@ and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
 branch. Cloudflare workflow and PR CI call `bun run build`, not
 `build:azure`. Vite does not copy a repo-root SWA config into `dist/`.
 
-Removed in this PR (number filled after open): `staticwebapp.config.json`;
+Removed in PR #19: `staticwebapp.config.json`;
 `package.json` script `build:azure`; `.vscode/settings.json` (only
 `azureFunctions.*` plus Functions-attach `debug.internalConsoleOptions`);
 `.vscode/tasks.json`; `.vscode/launch.json`; Azure Functions recommendation
@@ -219,7 +219,7 @@ Looks unused; deleting is a regression.
 One cluster per session. Re-measure importers before deleting. Stop if a
 name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 
-1. §2.1 Azure / `fiber` — removed 2026-08-30 (this PR).
+1. §2.1 Azure / `fiber` — removed 2026-08-30, PR #19.
 2. §2.2 unused definition scripts.
 3. §2.3 GitHub OAuth pair (ts + html together).
 4. §2.4 unreferenced files (icons, `ExportScene`, `App.css`, empty
