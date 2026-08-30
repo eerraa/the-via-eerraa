@@ -124,7 +124,7 @@ Removed in PR #23:
 `@types/raf-schd` from `package.json`. `bun.lock` and `package-lock.json`
 refreshed together. `ts-prune` / `find-deadcode` stay.
 
-### 2.6 Unused TypeScript exports (file stays) — removed 2026-08-30
+### 2.6 Unused TypeScript exports (file stays) — removed 2026-08-30, PR #24
 
 Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
 and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
@@ -134,7 +134,7 @@ outside `tsconfig.json` `include` (`src`, `types`); grep showed no importer.
 `ts-prune` "used in module" on `disableGlobalHotKeys` / `enableGlobalHotKeys`
 is the slice `actions` destructure, not a dispatcher in `src/` or `tests/`.
 
-Removed in this PR (number filled after open):
+Removed in PR #24:
 `getSelectedRawLayer` from `src/store/keymapSlice.ts`;
 `updateCustomColor` from `src/store/lightingSlice.ts`;
 `getCommonMenusDataMap` from `src/store/menusSlice.ts`;
@@ -240,7 +240,7 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 3. §2.3 GitHub OAuth pair (ts + html together) — removed 2026-08-30, PR #21.
 4. §2.4 unreferenced files — removed 2026-08-30, PR #22.
 5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
-6. §2.6 unused exports — removed 2026-08-30. Keep files.
+6. §2.6 unused exports — removed 2026-08-30, PR #24. Keep files.
 7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
    green.
 8. §4 comment-only fixes (`public/_redirects` and docs-contract comment
