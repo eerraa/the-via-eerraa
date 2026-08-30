@@ -4,8 +4,8 @@ Status: Accepted
 Genre: contract
 Canonical for: selector `0x06` 봉투 v1, 세 host domain과 revision-bracketed refresh, per-path transport
 reservation, foreground mutation epoch, CONFIG write authority와 UI continuity, exact
-macro·import·continuous-control transaction, exact-ms 규칙, 그리고 제거한 메커니즘 15종과
-각각을 제거한 이유
+macro·import·continuous-control transaction, exact-ms 규칙, and the refused alternatives
+checked against this repo
 
 Exact-ms is a 2-byte big-endian `uint16` on the existing Custom Value commands (`CUSTOM_MENU_SET_VALUE` `0x07`, `CUSTOM_MENU_GET_VALUE` `0x08`). Host encode/decode is `shiftFrom16Bit` / `shiftTo16Bit` in `src/utils/keyboard-api.ts`. `getRangeValue` in `src/components/panes/configure-panes/custom/custom-control.tsx` uses those two bytes whenever `max > 255`; both family maxima (500 and 65535) are above that. HID: command, channel, value id, then BE16. `99999` is not a uint16.
 
@@ -95,52 +95,101 @@ Custom Menu의 빠른 invalidation hint로 그대로 유지하되 correctness의
 subscription state machine 없이 복구하고, 공식 VIA client에 unsolicited packet을
 보낼 가능성을 구조적으로 제거한다.
 
-> **REFUSED:** unsolicited semantic event와 그에 딸린 host nonce, ARM/lease, event
-> sequence, descriptor queue·overflow coalescing, H7S unsolicited-event TX dispatcher.
-> **WHY:** 마지막 event가 유실되면 correctness를 보장하는 것은 결국 periodic revision
-> query이고, unsolicited packet은 공식 VIA client에 advanced traffic을 구조적으로 만든다.
-> **REOPENS:** poll interval과 CONFIG refresh 비용이 실측상 수용 불가능할 때, event를
-> hint로 두는 후속 ADR.
+> **REFUSED:** unsolicited semantic events, event-only sync, host nonce, ARM/lease,
+> event sequence, descriptor queue / coalescing / overflow, and an H7S
+> unsolicited-event TX dispatcher.
+> **WHY:** this host's only unsolicited grammar is strict `0x16` v1
+> (`src/utils/ui-sync.ts`); State Sync is a tagged `GET_KEYBOARD_VALUE` `0x02` /
+> selector `0x06` query (`src/utils/era-state-sync.ts`), so a lost last event
+> would still need the 500 ms revision poll, and an unsolicited advanced packet
+> would reach an official VIA client.
+> **REOPENS:** a later ADR if that poll interval and CONFIG refresh cost fail
+> acceptance; any event then stays a hint.
 
-> **REFUSED:** ACK journal, subscription state machine, snapshot/value 프로토콜.
-> **WHY:** 현재-state 수렴은 revision invalidation + 기존 GET으로 충분하고, 이 경로들은
-> 펌웨어 GET 외에 두 번째 authority와 retained client state를 만든다.
-> **REOPENS:** 측정된 polling 지연이나 refresh 비용이 구체적 실패를 보여준 뒤, 새 ADR로만
-> 재검토한다.
+> **REFUSED:** a new top-level VIA command for State Sync.
+> **WHY:** `ERA_STATE_SYNC_COMMAND` is `0x02`; `APICommand` in
+> `src/utils/keyboard-api.ts` has no id past the existing `0x01..0x16` set, and
+> this host never sends `UI_SYNC_REQUEST`.
+> **REOPENS:** never.
 
-> **REFUSED:** 호스트 프로토콜에 raw EEPROM 주소를 노출하기.
-> **WHY:** QMK와 H7S 저장 레이아웃이 다르고, 기존 VIA 읽기가 이미 권위 있는 직렬화와
-> 정규화를 제공한다.
-> **REOPENS:** 없다.
+> **REFUSED:** range or cell hints that partial-GET a domain.
+> **WHY:** `readKeymapStateSyncCandidate` in `src/store/keymapSlice.ts` reads
+> every layer and encoder; `StateSyncDomain` is only `keymap` | `macro` |
+> `config`; `0x16` v1 command targeting is the kept Custom Menu hint, not a
+> keymap range grammar.
+> **REOPENS:** after domain refresh cost is measured, in a new ADR.
+
+> **REFUSED:** a single global revision token.
+> **WHY:** the v1 envelope carries three BE32 tokens and `parseStateSyncEnvelope`
+> treats any mask other than `0x07` as not capable (`src/utils/era-state-sync.ts`).
+> **REOPENS:** a new envelope version, approved separately.
+
+> **REFUSED:** a selected-layer provisional Redux patch on State Sync refresh.
+> **WHY:** `commitStableKeymapCandidate` writes every layer and encoder in one
+> action; `readKeymapStateSyncCandidate` does not dispatch `loadLayerSuccess`.
+> Ordinary connect still uses `loadKeymapFromDevice` per layer.
+> **REOPENS:** never.
+
+> **REFUSED:** an ACK journal, a firmware subscription state machine, and an extra
+> snapshot or value protocol beside existing VIA GET.
+> **WHY:** accepted cache moves only through revision-bracketed existing GET in
+> `src/store/stateSyncThunks.ts`; selector `0x07` snapshot chunks are USB
+> diagnostics ([ADR 0002](0002-h7s-usb-diagnostics.md)), not keyboard-state
+> authority.
+> **REOPENS:** a new ADR after measured poll latency or refresh cost shows a
+> concrete failure.
+
+> **REFUSED:** exposing raw EEPROM addresses on the host protocol.
+> **WHY:** this host addresses values as VIA channel/value ids and standard
+> commands; State Sync bytes 8–19 are RAM equality tokens
+> (`src/utils/era-state-sync.ts`), and `EEPROM_RESET` `0x0a` is the existing wipe
+> command, not an address space.
+> **REOPENS:** never.
+
+> **REFUSED:** extending `UI_SYNC_REQUEST` `0x16` to bidirectional v2, or treating
+> it as State Sync correctness.
+> **WHY:** `parseUISyncRequest` accepts only version `0x01` and a 32-byte payload
+> (`src/utils/ui-sync.ts`); version `0x02` is undefined, and this host never
+> sends `0x16`.
+> **REOPENS:** never. Keep the existing unsolicited v1 grammar.
+
+> **REFUSED:** a new split exact-range transport.
+> **WHY:** exact-ms uses existing `CUSTOM_MENU_SET_VALUE` /
+> `CUSTOM_MENU_GET_VALUE` (`0x07` / `0x08`) as a 2-byte BE uint16
+> (`src/utils/era-exact-ms.ts`); there is no split-range command in `APICommand`.
+> **REOPENS:** never.
+
+> **REFUSED:** rewriting Redux to carry this contract.
+> **WHY:** `src/store/index.ts` still uses the existing slices plus
+> `stateSyncSlice`; isolation is explicit path and generation on thunks.
+> **REOPENS:** when VIA core actually blocks correctness or maintainability.
+
+> **REFUSED:** putting an unmeasured five-second visible-event watchdog or a
+> 15-second ARM lease on this protocol.
+> **WHY:** no lease or event-watchdog symbol exists; periodic query is
+> `ERA_STATE_SYNC_POLL_INTERVAL_MS` (500). The 5000 ms values in
+> `src/shims/node-hid.ts` and `src/utils/keyboard-api.ts` are the existing HID
+> request timeout and the macro marker deadline, not event/lease constants.
+> **REOPENS:** a later ADR that cites measured timeout or rate values.
 
 ## Mechanism verdicts and five-question review
 
-각 행은 요구된 다섯 질문에 답한다. `지금/후속` 열은 지금 필요한지 또는 실측
-후 추가할지를, 마지막 열은 packet 유실·중복 시 최종 수렴을 설명한다.
+거절한 메커니즘은 위 REFUSED 세 줄이다. 아래 표는 유지하거나 단순화한 것만
+남긴다. 각 행은 요구된 다섯 질문에 답한다. `지금/후속` 열은 지금 필요한지
+또는 실측 후 추가할지를, 마지막 열은 packet 유실·중복 시 최종 수렴을 설명한다.
 
 | Mechanism                                                                            | 판정             | 1. 해결하는 실제 실패                                                                                     | 2. 기존 GET/lifecycle만으로 부족한 이유                                                                                                              | 3. 지금/후속                                                                          | 4. 추가 상태 복잡성                                                                                            | 5. 유실·중복 시 수렴                                                                                                                                                   |
 | ------------------------------------------------------------------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Canonical definition/build metadata opt-in                                           | **유지**         | 일반 keyboard나 임의 sideload definition에 extension probe가 나가는 것을 막는다.                          | GET은 어떤 장치에 probe해도 안전한지 알려주기 전에 이미 전송돼야 하므로 단독으로 해결할 수 없다.                                                     | 지금 필요하다.                                                                        | App build에 opt-in boolean과 생성된 trusted identity 목록만 추가한다. Firmware 상태는 없다.                    | Opt-in이 없으면 advanced 경로 자체가 없고 기존 VIA로 남는다.                                                                                                           |
 | Runtime capability confirmation                                                      | **단순화**       | Opt-in ERA VPID에 실제로 State Sync가 응답하는지를 연결 세대별로 확인한다.                                | Build metadata는 실제 flash된 firmware 기능을 증명하지 못하고, 무응답만으로 구형 firmware와 통신 오류를 구분할 수도 없다.                             | 별도 CAPABILITIES command 없이 첫 revision query의 정상 응답이 confirmation을 겸한다. | Connection generation별 `unknown \| probing \| unverified \| capable` 한 값이다.                               | 새 generation의 초기 unhandled/malformed/timeout은 확인 불가 안내와 Custom I/O 차단으로 끝낸다. 이미 capable이면 transient failure가 capability를 내리지 않고 freshness만 dirty로 둔다. |
 | 기존 `GET_KEYBOARD_VALUE (0x02)`의 새 read-only selector                             | **유지**         | 하나의 작은 request/response로 capability와 domain revision을 얻는다.                                     | 모든 값을 매 poll마다 GET하면 큰 keymap/macro를 불필요하게 읽는다.                                                                                   | 채택한 유일한 wire extension이다.                                                     | Firmware의 세 RAM token과 app의 observed/accepted token이다.                                                   | Query 실패는 cache를 dirty로 남긴다. 다음 visible poll/lifecycle refresh가 재시도한다.                                                                                 |
-| 별도 새 top-level command                                                            | **제거**         | 원안에서는 event/request/response를 분리하려 했다.                                                        | Event를 제거하면 기존 read-only Keyboard Value selector가 같은 일을 하며 새 command namespace가 필요 없다.                                           | 불필요하다. G1은 기존 namespace의 selector `0x06`을 확정했다.                         | 새 command classifier와 message-type table을 없앤다.                                                           | 해당 없음. 기존 `0x02` response 경로를 사용한다.                                                                                                                       |
 | 16-bit request tag (새 selector 내부)                                                | **유지**         | Query timeout 뒤 늦은 query response가 새 query로 귀속되는 것을 막는다.                                   | 기존 echoed prefix만으로 같은 query 세대를 구분할 수 없다.                                                                                           | 지금 필요하다.                                                                        | App의 connection별 증가 tag 하나, firmware는 echo만 한다.                                                      | 중복·늦은 tag는 pending matcher와 맞지 않아 drop된다. Wrap 전 stale buffer를 generation reset으로 비운다는 전제가 필요하다.                                            |
-| Host nonce                                                                           | **제거**         | 원안에서는 이전 client의 event를 현재 client event와 구분했다.                                            | Unsolicited event가 없고 response는 request tag와 connection generation으로 귀속된다.                                                                | Event를 다시 채택할 때만 재검토한다.                                                  | App/firmware nonce와 validation 분기를 모두 없앤다.                                                            | 해당 없음.                                                                                                                                                             |
-| Expiring ARM lease 및 disarm                                                         | **제거**         | 원안에서는 crash한 fork client 뒤에도 event가 계속 나가는 시간을 제한했다.                                | Firmware가 먼저 보내는 advanced packet이 없으므로 official client나 replacement client를 arm할 상태가 없다.                                          | 불필요하다.                                                                           | Deadline, renewal, expiry, pending-event clear가 사라진다.                                                     | 해당 없음.                                                                                                                                                             |
-| Event sequence                                                                       | **제거**         | 원안에서는 중간 event gap을 빨리 발견했다.                                                                | 마지막 event 유실은 sequence로 못 찾고 어차피 revision poll이 필요하다. Polling-first에는 event gap이 없다.                                          | Semantic event가 실측 후 승인될 때만 재검토한다.                                      | 16-bit sequence와 modulo ordering이 사라진다.                                                                  | Advanced event에 의존하지 않으므로 유실·중복·순서 변경이 correctness에 영향 없다.                                                                                      |
-| Semantic event kind                                                                  | **측정 후 결정** | Exact invalidation은 poll interval보다 빠른 visible update를 줄 수 있다.                                  | Final convergence는 revision poll + GET으로 해결된다. 지금 남는 이점은 latency뿐이다.                                                                | Poll latency/traffic 실측이 acceptance를 만족하지 못할 때만 후속 ADR로 결정한다.      | Firmware hook, event descriptor, app event router가 추가된다.                                                  | 채택하더라도 event는 hint여야 하며 revision poll이 최종 수렴을 담당해야 한다.                                                                                          |
-| Range/cell hint                                                                      | **제거**         | 큰 domain에서 부분 GET 비용을 줄일 수 있다.                                                               | Correctness에는 domain invalidation으로 충분하고, 현재 setter coverage와 split exact range가 검증되지 않았다.                                        | Domain refresh 비용을 먼저 측정한다.                                                  | Kind/argument grammar, range merge, partial freshness를 없앤다.                                                | Domain 전체 재읽기라 hint 유실·중복 문제가 없다.                                                                                                                       |
-| Event descriptor queue, coalescing, overflow flag                                    | **제거**         | Event burst가 TX queue를 넘을 때 정보를 축약하려 했다.                                                    | Event가 없고 revision token 자체가 coalesced final-state indicator다.                                                                                | 불필요하다.                                                                           | Firmware queue/flags/counters와 app overflow 분기가 사라진다.                                                  | Poll은 현재 revision만 읽으므로 중간 change 수와 무관하게 최종 상태로 간다.                                                                                            |
 | Visible event watchdog                                                               | **단순화**       | 마지막 event 유실과 selected device의 firmware-originated change를 찾는다.                                | Lifecycle full read만으로는 같은 visible session 중의 변경을 발견하지 못한다.                                                                        | Event watchdog이 아니라 eligible connection의 500 ms revision poll로 채택했다.        | App의 단일 timer와 path/generation coordinator owner만 추가한다. Firmware timer는 없다.                        | 각 poll은 현재 token을 읽으므로 유실 개념이 없다. 실패한 poll은 fresh를 연장하지 않는다.                                                                               |
 | 네 domain (`KEYMAP`, `MACRO`, `CUSTOM_MENU`, `KEYBOARD`)                             | **단순화**       | 서로 다른 읽기 비용을 격리한다.                                                                           | Global token 하나는 작은 config 변경에도 큰 keymap과 macro를 모두 다시 읽는다. 반대로 `CUSTOM_MENU`와 `KEYBOARD`를 반드시 나눠야 한다는 측정은 없다. | 처음에는 세 domain으로 시작하고 CONFIG 비용을 측정한다.                               | Counter/cache 네 개를 세 개로 줄이고 ambiguous `KEYBOARD` adapter를 없앤다.                                    | 각 domain은 독립 equality token이며 최종 GET으로 수렴한다.                                                                                                             |
-| Global revision 하나                                                                 | **제거**         | 최소 RAM/state로 어떤 변경이 있었다는 사실은 알린다.                                                      | 어떤 GET을 해야 하는지 모르므로 매 change마다 keymap+macro+config full read가 필요하다. RGB/config burst가 refresh starvation을 만들 수 있다.        | 사용하지 않는다.                                                                      | Counter는 하나지만 app I/O와 retry 상태가 오히려 커진다.                                                       | 이론상 수렴하지만 지속 config 변경 중 큰 domain refresh가 안정화되지 않는 실용 반례가 있다.                                                                            |
 | Per-device transport ownership와 connection generation                               | **유지**         | A/B 장치 traffic, old listener, late async completion이 서로의 cache/response를 오염시키는 문제를 막는다. | GET을 더 보내면 global timestamp와 selected coupling race가 더 커진다.                                                                               | 구현된 core correction이다.                                                           | Path별 listener, serialized queue, pending matcher, timestamp, generation을 둔다.                              | Disconnect와 untagged legacy timeout은 generation을 폐기한다. Tagged State Sync timeout은 request만 끝내고 freshness를 dirty로 둔다.                                   |
 | Legacy command timeout poisoning                                                     | **유지**         | Tag가 없는 동일 legacy command를 retry할 때 늦은 이전 response가 새 request로 오인되는 문제를 막는다.     | Prefix가 같은 두 response는 app만으로 구분할 수 없다.                                                                                                | 지금 필요하다.                                                                        | Timeout된 WebHID session을 더 이상 동일 command에 재사용하지 않는 terminal state가 추가된다.                   | Reopen이 USB pipe를 flush한다는 점을 검증하기 전에는 자동 retry하지 않고 fail closed한다. Reconnect 후 full refresh한다.                                               |
 | Revision-bracketed refresh와 atomic cache commit                                     | **유지**         | Multi-packet GET 도중 변경되어 torn snapshot을 fresh로 확정하는 것을 막는다.                              | Lifecycle read 한 번만으로는 read 도중 race를 검출하지 못한다.                                                                                       | 구현된 correctness 경계다.                                                            | Domain별 observed/accepted revision, `unknown \| dirty \| refreshing \| fresh`, isolated candidate가 추가된다. | Start/end token이 다르면 candidate를 버리고 즉시 세 번까지 재시도한다. 안정화되지 않으면 dirty로 남아 다음 poll이 다시 읽는다.                                         |
-| Selected-layer provisional Redux patch                                               | **제거**         | 큰 keymap에서 현재 layer를 먼저 보이려 했다.                                                              | Per-layer revision 없이 일부 layer만 현재값으로 쓰면 partial state를 current로 오인할 수 있다.                                                       | 사용하지 않는다.                                                                      | 별도 partial freshness와 merge race를 없앤다.                                                                  | 전체 keymap candidate가 안정된 뒤 한 번에 commit된다.                                                                                                                  |
 | TOMAK post-readback/post-reload revision hook                                        | **유지**         | Source intent를 target cache에 미리 반영하거나 target의 실제 durable apply를 놓치는 문제를 막는다.        | Source GET은 target 성공을 증명하지 못하고, target lifecycle full read만 기다리면 selected target의 자동 감지가 늦다.                                | QMK에 구현된 durable boundary다.                                                      | 기존 7 storage domain을 3 host domain에 매핑하고 target commit 뒤 token을 증가시킨다.                          | Wire notification은 없다. Revision query가 target의 증가한 token을 읽으며, lifecycle full read도 복구 경로다.                                                          |
-| H7S unsolicited-event TX dispatcher                                                  | **제거**         | 원안에서는 response와 event의 VIA-IN endpoint 소유권 충돌을 풀려 했다.                                    | Event가 없으므로 새 dispatcher가 해결할 failure도 없다. Query response는 기존 response queue를 사용한다.                                             | Event가 측정 후 다시 채택될 때만 별도 설계한다.                                       | 두-source queue/arbitration/counters가 사라진다.                                                               | Ordinary response만 존재하며 event가 response를 지연·유실시킬 수 없다.                                                                                                 |
-| ACK journal, subscription state machine, snapshot/value protocol, raw EEPROM address | **제거**         | Exactly-once/history/value 전송 또는 storage-level targeting을 제공한다.                                  | 현재-state convergence는 revision invalidation + 기존 GET으로 해결된다.                                                                              | 요구하지 않는다.                                                                      | 두 번째 authority와 retained client state를 만들므로 금지한다.                                                 | 없는 mechanism이며 final convergence는 firmware GET 하나만 authority로 둔다.                                                                                           |
 
 ## Consistency and freshness contract
 
@@ -560,33 +609,6 @@ keyboard interval/jitter, input queue overflow, VIA latency/timeout — 는 아�
 확인되지 않았다. 따라서 “기존 v1 유지”는 app compatibility 결론이며, 실제 배포
 ERA image의 v1 transcript와 advanced firmware에서의 병존은 hardware로 확인해야
 한다.
-
-## Excluded alternatives
-
-위 판정표가 제거한 메커니즘 외에 다음 설계도 제외한다. 표에 없는 것만 적는다.
-
-> **REFUSED:** `UI_SYNC_REQUEST 0x16`을 bidirectional v2로 확장하거나 State Sync 정확성
-> 근거로 재해석하기.
-> **WHY:** v1 unsolicited grammar와 response matching을 섞고 공식 VIA 동작을 바꾸며,
-> 마지막 `0x16` 유실은 이 grammar로 복구되지 않는다.
-> **REOPENS:** 없다. Advanced capability와 무관하게 기존 packet grammar를 유지한다.
-
-> **REFUSED:** event-only sync.
-> **WHY:** 마지막 event 유실을 복구하지 못한다.
-> **REOPENS:** 없다. 채택하더라도 event는 hint여야 하며 revision poll이 최종 수렴을 담당한다.
-
-> **REFUSED:** 새 split exact-range transport.
-> **WHY:** 기존 durable apply boundary와 three host domain mapping이면 correctness에
-> 충분하다.
-> **REOPENS:** 없다.
-
-> **REFUSED:** 이 계약을 이유로 Redux를 전면 재작성하기.
-> **WHY:** explicit-device thunk와 작은 freshness coordinator면 장치 격리를 충족한다.
-> **REOPENS:** VIA core가 정확성이나 유지보수성을 실제로 막는다는 증거가 있을 때.
-
-> **REFUSED:** 미측정 상수(five-second watchdog, 15-second lease)를 protocol에 넣기.
-> **WHY:** timeout과 rate는 측정된 파라미터로 다룬다.
-> **REOPENS:** 실측값이 생기면 그 값으로 후속 ADR에서 다룬다.
 
 ## Consequences
 
