@@ -246,10 +246,24 @@ dropdown. That is the official VIA path, not dead custom-app code.
 
 Live strings or comments that are wrong. Not deletion of the control.
 
+### 4.1 `_redirects` / docs-contract pane-config suffix — fixed 2026-08-30
+
+Not pending. Re-measured 2026-08-30 before edit: `src/utils/pane-config.ts`
+exists. Git history of that path starts as `.ts` (snowpack template); there is
+no rename from a `.tsx` file. `public/_redirects` header named that file with a
+`.tsx` suffix. `tests/docs-contract.test.ts` used the same `.tsx` path as an
+example of a comment that outlived a rename; the rename claim is also false.
+Other `_redirects` header paths exist (`src/components/panes/errors.tsx`,
+`src/utils/device-store.ts`, `public/404.html`). Rewrite rules `/test`
+`/design` `/settings` `/debug` `/console` `/errors` match `pane-config.ts` plus
+`ErrorsPaneConfig`. `/diagnostics` remains absent (`docs/MAP.md` §7).
+
+Fixed in this PR (number filled after open): `public/_redirects` suffix `.ts`.
+docs-contract example now cites `src/utils/pane-config.ts` and does not claim a
+`.tsx` rename.
+
 | Location | Fact |
 | --- | --- |
-| `public/_redirects` header | Comments that routes are declared in pane-config with a `.tsx` suffix. The file is `src/utils/pane-config.ts`. |
-| `tests/docs-contract.test.ts` comment | Same `.tsx` suffix as an example of a path that outlived a rename. |
 | Label `Breating Period` | Live `id_custom_breathing_period` label in eight custom JSON files (`era-definitions/custom/v3/a1`, `classicd_a1`, `classicd_a1_ug`, `classicd_core`, `classicd_coreless`, `era65`, `et_tkl`, `n8x`). Same eight QMK firmware-local JSON files. Typo, not unused. Changing it is a label change on both trees, not a DELETE. |
 | `src/components/panes/configure-panes/custom/satisfaction75/menu.tsx` TODO | Asks whether `SatisfactionMenu` can go now that V3 exists. V2 `CustomFeaturesV2.RotaryEncoder` in `src/components/panes/configure.tsx` still mounts it. KEEP the pane; the TODO is not proof. |
 
@@ -282,8 +296,8 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 5. §2.5 unused npm dependencies — removed 2026-08-30, PR #23.
 6. §2.6 unused exports — removed 2026-08-30, PR #24. Keep files.
 7. §2.7 unused locale keys — removed 2026-08-30, PR #25. Six catalogs in one commit.
-8. §4 comment-only fixes (`public/_redirects` and docs-contract comment
-   suffix). Separate from `Breating Period`, which is a live label.
+8. §4.1 `_redirects` / docs-contract pane-config suffix — fixed 2026-08-30.
+   Separate from `Breating Period`, which is a live label.
 
 Never in a deletion session from this ledger: §1 `0x06` short packet; §3
 legacy term ids or autodg; §5 dual-path / brick65 / H7S extras / satisfaction75

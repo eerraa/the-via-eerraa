@@ -36,9 +36,9 @@ const packageJson = readJSON('package.json') as {
 };
 
 // A repository path that quietly stops existing is the most common way a document turns
-// into a lie: `src/utils/pane-config.tsx` outlived the file by several renames because
-// nothing ever asked. A path that belongs to another repository has to carry that
-// repository's name, so this check can tell the two apart.
+// into a lie: comments cited `src/utils/pane-config.ts` with a `.tsx` suffix even though
+// the file was never `.tsx`, because nothing ever asked. A path that belongs to another
+// repository has to carry that repository's name, so this check can tell the two apart.
 const OWNED_PREFIXES = [
   'src/',
   'tests/',

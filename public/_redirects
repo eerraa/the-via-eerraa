@@ -1,6 +1,6 @@
 # ERA VIA fork - Cloudflare Pages / Netlify route rewrites.
 #
-# The app is a wouter SPA whose routes are declared in src/utils/pane-config.tsx
+# The app is a wouter SPA whose routes are declared in src/utils/pane-config.ts
 # and src/components/panes/errors.tsx. Only those paths are rewritten to
 # index.html so that a deep link keeps working after a full page load.
 #
