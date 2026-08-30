@@ -64,14 +64,19 @@ only). Prettier recommendation in `.vscode/extensions.json` stays.
 Root `README.md` still describes Azure. `docs/DEPLOYMENT.md` forbids editing
 it. That file is KEEP (upstream surface), not this cluster.
 
-### 2.2 Definition-build scripts the app does not run
+### 2.2 Definition-build scripts the app does not run — removed 2026-08-30
 
-`package.json` `build:kbs` runs `scripts/build-keyboards.ts` only.
+Not pending. Re-measured 2026-08-30 before delete: zero importers in `src/`
+and `tests/`; not a `FEATURE_COVERAGE` command; not a menu `content` id in
+`era-definitions/custom/v3`. `package.json` `build:kbs` is
+`node --import tsx scripts/build-keyboards.ts` only. PR CI and the Cloudflare
+deploy workflow call `bun run build`, which runs `build:kbs`.
+`tsconfig.scripts.json` includes `scripts/**/*.ts` only.
 
-| Path | Proof |
-| --- | --- |
-| `scripts/download-definition.js` | Zero importers. Fetches caniusevia.com `keyboards.v2.json` into a v2 definitions folder. Not in any script. |
-| `scripts/build-definitions.js` | Zero importers. Calls `via-keyboards public/definitions`. Superseded by `scripts/build-keyboards.ts`. |
+Removed in this PR (number filled after open): `download-definition.js`
+(fetched caniusevia.com `keyboards.v2.json` into a v2 definitions folder)
+and `build-definitions.js` (`via-keyboards public/definitions`) from
+`scripts/`. Live definition pipeline stays `scripts/build-keyboards.ts`.
 
 ### 2.3 GitHub gist OAuth
 
@@ -220,7 +225,7 @@ One cluster per session. Re-measure importers before deleting. Stop if a
 name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 
 1. §2.1 Azure / `fiber` — removed 2026-08-30, PR #19.
-2. §2.2 unused definition scripts.
+2. §2.2 unused definition scripts — removed 2026-08-30 (this PR).
 3. §2.3 GitHub OAuth pair (ts + html together).
 4. §2.4 unreferenced files (icons, `ExportScene`, `App.css`, empty
    `public/assets/404.html`, scaffold SVG/icns, `src/constants/routes.json`).
