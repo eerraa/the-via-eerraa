@@ -354,34 +354,15 @@ copy on the shared command id, and the absent ⓘ on `Global Tapping Term (ms)`.
 
 ## 8. Names follow behaviour
 
-### `Anti-Ghosting` → `KKUK`
+### `KKUK`
 
-The old name described the wrong layer. Two measurements on live
-`eerraa-qmk-h7s-fw` (not a worktree):
-
-1. `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/kkuk.c` has **zero** occurrences
-   of `matrix` / `scan` / `row` / `col`. It calls `keyboard_report`,
-   `clear_keys()`, `send_keyboard_report()`, `millis()`, `IS_BASIC_KEYCODE`,
-   `kill_switch_is_use`. It runs on the **HID report** after matrix and keymap
-   are already resolved.
-2. None of the five H7S board `config.h` files define `MATRIX_HAS_GHOST`.
-   Each switch has a diode; matrix ghosting does not occur.
-
-It is not anti-ghosting. With two or more basic keys held, after `delay_time`
-it sends a full-group-release report every `repeat_time` and restores the
-original report — holding `asd` types `asdasdasd`, not OS auto-repeat
-`asddddd`.
+With two or more basic keys held, after `delay_time` it sends a
+full-group-release report every `repeat_time` and restores the original
+report. Holding `asd` types `asdasdasd`, not OS auto-repeat `asddddd`.
 
 Five official H7S `json/*-VIA.JSON` files and this host's five H7S custom JSON
-files all label the submenu `KKUK`. No `Anti-Ghosting`. Peer
-`eerraa-qmk-h7s-fw/docs/readme.txt` records that rename (read-only).
-
-> **REFUSED:** menu names `Anti-Ghosting`, `HOLD CYCLE`, `REPEAT PULSE`.
-> **WHY:** it is not ghosting prevention, HOLD CYCLE is read as layer/hold
-> cycling, and REPEAT PULSE is jargon; firmware identifiers are already
-> `kkuk.c`, `KKUK_ENABLE`, `id_qmk_kkuk_*`, so code, JSON, docs, and this host
-> converge on one word.
-> **REOPENS:** none.
+files all label the submenu `KKUK`. Peer
+`eerraa-qmk-h7s-fw/docs/readme.txt` describes the same behavior and label.
 
 The label is the English token `KKUK` in every catalog (`"KKUK": "KKUK"`), so
 official `usevia.app` shows the same name. Recognition is carried by the
