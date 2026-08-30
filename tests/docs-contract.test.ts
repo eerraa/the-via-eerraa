@@ -86,7 +86,7 @@ describe('docs state the same counts the manifest does', () => {
   );
 
   const claims: [string, number][] = [
-    ['ERA 커스텀 정의', manifest.definitions.length],
+    ['ERA custom definitions', manifest.definitions.length],
     ['├ QMK (RP2040 + ATmega32U4)', manifest.definitions.length - h7s.length],
     ['└ H7S', h7s.length],
     [
@@ -94,18 +94,18 @@ describe('docs state the same counts the manifest does', () => {
       manifest.definitions.filter(({stateSync}) => stateSync).length,
     ],
     [
-      'exact-ms `qmk` 계열 (`options: [1, 65535]`)',
+      'exact-ms `qmk` family (`options: [1, 65535]`)',
       manifest.definitions.filter(({exactMsFamily}) => exactMsFamily === 'qmk')
         .length,
     ],
     [
-      'exact-ms `h7s` 계열 (`options: [100, 500]`)',
+      'exact-ms `h7s` family (`options: [100, 500]`)',
       manifest.definitions.filter(({exactMsFamily}) => exactMsFamily === 'h7s')
         .length,
     ],
-    ['USB 진단 opt-in (`usbDiagnostics: true`)', h7s.length],
+    ['USB diagnostics opt-in (`usbDiagnostics: true`)', h7s.length],
     [
-      'split pair 항목 (좌/우 각각)',
+      'split pair entries (left/right each)',
       manifest.definitions.filter(({pair}) => typeof pair === 'string').length,
     ],
   ];
@@ -119,9 +119,9 @@ describe('docs state the same counts the manifest does', () => {
     });
   }
 
-  test('ERA 메뉴 요약 count matches era-feature-help', async () => {
+  test('ERA menu summaries count matches era-feature-help', async () => {
     const {eraMenuSummaries} = await import('../src/utils/era-feature-help');
-    expect(mapTableValue('ERA 메뉴 요약')).toBe(eraMenuSummaries().length);
+    expect(mapTableValue('ERA menu summaries')).toBe(eraMenuSummaries().length);
   });
 
   test('official snapshot sizes match the installed package', () => {
@@ -167,10 +167,10 @@ describe('docs state the same counts the manifest does', () => {
     );
     expect(keyCounts.size).toBe(1);
     const documented = MAP.split('\n').find((line) =>
-      line.startsWith('| 로케일 |'),
+      line.startsWith('| Locales |'),
     );
     expect(documented).toContain(`${files.length} (`);
-    expect(documented).toContain(`${[...keyCounts][0]} 키`);
+    expect(documented).toContain(`${[...keyCounts][0]} keys`);
   });
 });
 
@@ -234,7 +234,7 @@ describe('docs state the same wire constants the source does', () => {
     // Global term shares one address across both families; the TD banks do not.
     expect(qmk.get('id_qmk_tapping_global_term_exact')).toBe('15:5');
     expect(h7s.get('id_qmk_tapping_global_term_exact')).toBe('15:5');
-    expect(MAP).toContain('| 글로벌 TAPPING term | 채널 15 / value 5 |');
+    expect(MAP).toContain('| Global TAPPING term | channel 15 / value 5 |');
 
     const bank = (
       found: Map<string, string>,
@@ -260,7 +260,7 @@ describe('docs state the same wire constants the source does', () => {
     const qmkBank = bank(qmk);
     const h7sBank = bank(h7s);
     expect(MAP).toContain(
-      `| TD0–TD7 term | 채널 ${qmkBank.channel} / value ${qmkBank.first}–${qmkBank.last} | 채널 ${h7sBank.channel} / value ${h7sBank.first}–${h7sBank.last} |`,
+      `| TD0–TD7 term | channel ${qmkBank.channel} / value ${qmkBank.first}–${qmkBank.last} | channel ${h7sBank.channel} / value ${h7sBank.first}–${h7sBank.last} |`,
     );
   });
 });
@@ -285,7 +285,9 @@ describe('docs only name commands and files that exist', () => {
           name,
           line: 'string',
         });
-        expect({script, name, states: line!.includes(`${files}개 파일`)}).toEqual(
+        const fileCountPhrase =
+          name === 'AGENTS.md' ? `${files}개 파일` : `${files} files`;
+        expect({script, name, states: line!.includes(fileCountPhrase)}).toEqual(
           {script, name, states: true},
         );
       }
