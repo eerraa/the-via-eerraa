@@ -7,9 +7,6 @@ reservation, foreground mutation epoch, CONFIG write authority와 UI continuity,
 macro·import·continuous-control transaction, exact-ms 규칙, 그리고 제거한 메커니즘 15종과
 각각을 제거한 이유
 
-Selector `GET_KEYBOARD_VALUE` **`0x06`**, envelope version `0x01`.
-Selected-visible-capable poll starts at 500 ms.
-
 Exact-ms는 2-byte big-endian `uint16` ms다. **채널/value id 표는
 `docs/MAP.md` §3이 정본이다.** 이 ADR은 규칙만 고정한다.
 
@@ -156,33 +153,23 @@ Firmware가 기존 VIA GET으로 반환하는 값만 authoritative value다. 새
 
 ### Initial three host domains
 
-Host domain은 EEPROM 주소가 아니라 existing GET family와 read cost의 경계다.
+A host domain is a GET-family boundary, not an EEPROM address.
 
-| Bit | Domain   | Authoritative existing reads                                                   | TOMAK storage mapping                                                                          |
-| --: | -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `0` | `KEYMAP` | dynamic keymap layer/buffer GET, encoder GET                                   | `DYNAMIC_KEYMAP`                                                                               |
-| `1` | `MACRO`  | macro count/size/buffer GET                                                    | `DYNAMIC_MACRO`                                                                                |
-| `2` | `CONFIG` | applicable persistent Keyboard Value/layout GET와 V3 Custom Value GET (`0x08`) | `ERA_CONFIG`, `QMK_RGB_MATRIX`, `QMK_KEYMAP_CONFIG`, `QMK_DEFAULT_LAYER`, `VIA_LAYOUT_OPTIONS` |
+| Bit | Mask | Domain | Authoritative existing reads |
+| --: | ---- | ------ | ---------------------------- |
+| `0` | `0x01` | `keymap` | `0x11` layer count, `0x12` keymap buffer, `0x14` encoder GET |
+| `1` | `0x02` | `macro` | `0x0c` count, `0x0d` size, `0x0e` buffer |
+| `2` | `0x04` | `config` | `GET_KEYBOARD_VALUE` + `LAYOUT_OPTIONS` (`0x02`); V3 Custom Value GET `0x08` (menus and per-key RGB) |
 
-Uptime, switch-matrix telemetry, firmware version처럼 cache freshness 대상이 아닌
-Keyboard Value는 CONFIG refresh에 포함하지 않는다. Firmware는 지원 mask를
-반환한다. 지원하지 않는 domain은 기존 VIA 동작을 유지하며 advanced freshness로
-거짓 표시하지 않는다.
+CONFIG refresh does not GET `UPTIME` (`0x01`), `SWITCH_MATRIX_STATE` (`0x03`), `FIRMWARE_VERSION` (`0x04`), or `DEVICE_INDICATION` (`0x05`).
 
-각 token은 nonzero 32-bit RAM equality token이다. Corresponding GET이 새 값을
-반환할 수 있는 commit boundary 뒤에 증가하고 wrap 시 zero를 건너뛴다. CONFIG의
-RAM-first VIA setter는 값이 실제로 바뀐 semantic SET에서 바로 증가하고, 그
-이미 공개된 runtime을 EEPROM에 쓰는 SAVE는 같은 전이를 다시 증가시키지 않는다.
-setter를 거치지 않는 직접 EEPROM/firmware 변경은 기존 changed-run 탐지를 유지한다. 숫자
-대소가 아니라 equality만 비교한다. Counter increment는 wrap 시 zero를 건너뛴다.
-32-bit 전체가 두 관측 사이에 정확히 한 바퀴 도는 경우는 이론적 alias 반례지만,
-500 ms poll 사이에 nonzero token 공간을 소진하려면 초당 약 86억 번의 semantic
-commit이 필요하므로 현재 control-plane에서 도달할 수 없는 전제 위반으로 취급한다.
+Each revision is a 32-bit big-endian RAM equality token. Comparison is equality, not magnitude. Capable requires mask `0x07` and three nonzero tokens. Extra mask bits fail parse. A subset mask or a zero token is not capable.
 
-`CUSTOM_MENU`와 `KEYBOARD` 분리는 correctness 경계가 아니다. CONFIG full refresh가
-실측상 크거나 layout change가 per-key RGB reread를 과도하게 유발하면 그때 네 번째
-domain을 추가한다. Domain 수 변경은 envelope version 변경 없이 reserved mask bit와
-후속 revision layout을 쓰지 말고, wire version을 올리는 별도 승인 대상으로 둔다.
+H7S firmware tokens start at `1` and skip `0` on wrap. A no-op SET does not bump. SAVE of an already-published runtime is not a second bump.
+
+> **REFUSED:** a fourth host domain, extra mask bits, or a later revision slot without raising envelope version.
+> **WHY:** the host parser treats bits outside `0x07` as malformed and treats any mask other than `0x07` as not capable.
+> **REOPENS:** a new envelope version, approved separately.
 
 ## Capability gates
 
@@ -216,44 +203,42 @@ per-key RGB I/O를 막고, 각 pane에 “지원 여부를 확인할 수 없습�
 
 ## Accepted 32-byte wire contract
 
-새 top-level command 대신 기존 read-only `GET_KEYBOARD_VALUE (0x02)`에 selector
-**`0x06`** 을 쓴다. G1에서 확정했다.
+Existing read-only `GET_KEYBOARD_VALUE` (`ERA_STATE_SYNC_COMMAND = 0x02`) + selector `ERA_STATE_SYNC_SELECTOR = 0x06`. Envelope version `ERA_STATE_SYNC_ENVELOPE_VERSION = 0x01`. Layout is the 32-byte VIA payload with WebHID report id `0` stripped. Integers are big-endian. Periodic query interval is `ERA_STATE_SYNC_POLL_INTERVAL_MS = 500` when the device is selected, ready, Configure-visible, not `document.hidden`, and capability is `capable`.
 
-WebHID report id `0`을 제외한 32-byte VIA payload 기준이다. Multi-byte integer는
-기존 VIA와 같이 big-endian이고 모든 reserved byte는 zero여야 한다.
+Host `KeyboardValue.KEYCODES_VERSION` is also `0x06`; that GET is protocol ≥ 13 and is a 4-byte version, not this envelope. H7S `id_era_state_sync` is `0x06` and `VIA_PROTOCOL_VERSION` is `0x000C`.
 
 ### Request
 
-|    Byte | Meaning                              |
-| ------: | ------------------------------------ |
-|     `0` | existing `GET_KEYBOARD_VALUE (0x02)` |
-|     `1` | `0x06` state-sync selector           |
-|     `2` | envelope version `0x01`              |
-|     `3` | zero                                 |
-|  `4..5` | host request tag                     |
-| `6..31` | zero                                 |
+|    Byte | Meaning |
+| ------: | ------- |
+|     `0` | `GET_KEYBOARD_VALUE` (`0x02`) |
+|     `1` | `0x06` |
+|     `2` | `0x01` |
+|     `3` | `0` |
+|  `4..5` | host request tag, BE16 |
+| `6..31` | `0` |
 
 ### Response
 
-|     Byte | Meaning                                              |
-| -------: | ---------------------------------------------------- |
-|   `0..2` | echoed command, selector, envelope version           |
-|      `3` | status: `OK=0`, `UNSUPPORTED_VERSION=1`, `INVALID=2` |
-|   `4..5` | echoed request tag                                   |
-|      `6` | supported-domain mask; initial known bits are `0..2` |
-|      `7` | zero                                                 |
-|  `8..11` | `KEYMAP` revision, or zero if unsupported            |
-| `12..15` | `MACRO` revision, or zero if unsupported             |
-| `16..19` | `CONFIG` revision, or zero if unsupported            |
-| `20..31` | zero                                                 |
+|     Byte | Meaning |
+| -------: | ------- |
+|      `0` | `0x02` |
+|      `1` | `0x06` |
+|      `2` | `0x01` (firmware writes envelope version, not the request version byte) |
+|      `3` | status. Capable requires `ERA_STATE_SYNC_STATUS_OK` (`0x00`). Firmware also defines `UNSUPPORTED_VERSION = 0x01`, `INVALID = 0x02` |
+|   `4..5` | echoed tag, BE16 |
+|      `6` | domain mask; capable requires `0x07` |
+|      `7` | `0` |
+|  `8..11` | keymap revision, BE32 |
+| `12..15` | macro revision, BE32 |
+| `16..19` | config revision, BE32 |
+| `20..31` | `0` |
 
-별도 CAPABILITIES, ARM, REVISIONS message type, feature bits, nonce, lease, event
-sequence, semantic kind, range argument는 없다. 정상 response 자체가 capability와
-세 revision을 한 번에 제공한다. Request tag는 새 selector에만 적용되며 tag 없는
-legacy VIA command의 timeout ambiguity를 해결한 것으로 간주하지 않는다.
+`0xFF` is not an envelope.
 
-이 단계는 이 wire에 새 command나 report shape, `BUSY` response, transaction ID,
-두 번째 macro marker, capability bit, protocol profile hierarchy를 추가하지 않는다.
+> **REFUSED:** `BUSY`, extra status codes, a second report shape, or a transaction id on this selector.
+> **WHY:** v1 has status `0`/`1`/`2` and one 32-byte layout; a second shape would be another protocol.
+> **REOPENS:** a new envelope version, approved separately.
 
 ## App transport and refresh algorithm
 
