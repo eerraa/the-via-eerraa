@@ -123,6 +123,92 @@ const connectFake = async (path: string, device = new FakeHIDDevice()) => {
   return {device, hid};
 };
 
+type MacroHarnessOptions = {
+  size: number;
+  logicalBytes?: number[];
+  verificationMarkers?: number[];
+  failAt?: 'reset' | 'opener' | 'payload' | 'closer';
+  dirtyPadding?: boolean;
+  onVerificationRead?: () => void;
+};
+
+const attachMacroHarness = (
+  device: FakeHIDDevice,
+  options: MacroHarnessOptions,
+) => {
+  const markerOffset = options.size - 1;
+  const logicalBytes = Array.from(
+    {length: Math.max(0, options.size)},
+    (_, index) => options.logicalBytes?.[index] ?? 0,
+  );
+  const verificationMarkers = [...(options.verificationMarkers ?? [0])];
+  const getRequests: {offset: number; size: number}[] = [];
+  let closeAcknowledged = false;
+  let verificationReadCount = 0;
+
+  device.onSend = (data) => {
+    if (data[0] === 0x0d) {
+      device.emit(payload(0x0d, (options.size >> 8) & 0xff, options.size & 0xff));
+      return;
+    }
+    if (data[0] === 0x10) {
+      if (options.failAt === 'reset') {
+        throw new Error('reset failed');
+      }
+      device.emit(payload(0x10));
+      return;
+    }
+    if (data[0] === 0x0f) {
+      const offset = (data[1] << 8) | data[2];
+      const size = data[3];
+      const bytes = Array.from(data.slice(4, 4 + size));
+      const isMarkerWrite = offset === markerOffset && size === 1;
+      const isOpener = isMarkerWrite && bytes[0] === 0xff;
+      const isCloser = isMarkerWrite && bytes[0] === 0;
+      if (
+        (options.failAt === 'opener' && isOpener) ||
+        (options.failAt === 'payload' && !isMarkerWrite) ||
+        (options.failAt === 'closer' && isCloser)
+      ) {
+        throw new Error(`${options.failAt} failed`);
+      }
+      bytes.forEach((value, index) => {
+        if (offset + index < logicalBytes.length) {
+          logicalBytes[offset + index] = value;
+        }
+      });
+      if (isCloser) {
+        closeAcknowledged = true;
+      }
+      device.emit(payload(...Array.from(data)));
+      return;
+    }
+    if (data[0] === 0x0e) {
+      const offset = (data[1] << 8) | data[2];
+      const size = data[3];
+      getRequests.push({offset, size});
+      const bytes = logicalBytes.slice(offset, offset + size);
+      if (closeAcknowledged && offset === markerOffset && size === 1) {
+        options.onVerificationRead?.();
+        bytes[0] =
+          verificationMarkers[
+            Math.min(verificationReadCount, verificationMarkers.length - 1)
+          ] ?? 0;
+        verificationReadCount += 1;
+      }
+      const response = payload(0x0e, data[1], data[2], size, ...bytes);
+      if (options.dirtyPadding) {
+        response.fill(0xa5, 4 + size);
+      }
+      device.emit(response);
+    }
+  };
+
+  return {getRequests, logicalBytes, get verificationReadCount() {
+    return verificationReadCount;
+  }};
+};
+
 beforeEach(() => {
   resetHIDTransportForTesting();
   configureHIDTransport({responseTimeoutMs: 200});
@@ -296,6 +382,450 @@ describe('per-device WebHID transport', () => {
     expect(Array.from(device.sentReports[0].data)).toEqual(
       Array.from(payload(0x01)),
     );
+  });
+
+  test('a reservation owns one path while other paths and owner-direct exchanges keep progressing', async () => {
+    const {device: deviceA, hid: hidA} = await connectFake('reserved-A');
+    const {device: deviceB, hid: hidB} = await connectFake('reserved-B');
+    const owner = Symbol('foreground-operation');
+    const generation = hidA.getConnectionGeneration();
+    let releaseOwner = () => undefined;
+    const ownerGate = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+
+    const reservation = hidA.withPathReservation(
+      generation,
+      owner,
+      async () => {
+        const first = hidA.exchange(report(0x31), matchesPrefix(0x31), {
+          reservationOwner: owner,
+          expectedGeneration: generation,
+        });
+        await waitUntil(() => deviceA.sentReports.length === 1);
+        deviceA.emit(payload(0x31, 0x01));
+        await first;
+        await ownerGate;
+        return hidA.withPathReservation(generation, owner, async () => {
+          const second = hidA.exchange(report(0x32), matchesPrefix(0x32), {
+            reservationOwner: owner,
+            expectedGeneration: generation,
+          });
+          await waitUntil(() => deviceA.sentReports.length === 2);
+          deviceA.emit(payload(0x32, 0x02));
+          return second;
+        });
+      },
+    );
+    await waitUntil(
+      () => getHIDTransportDebugState('reserved-A')?.hasActiveReservation === true,
+    );
+
+    await expect(
+      hidA.exchange(report(0x7e), matchesPrefix(0x7e), {
+        reservationOwner: Symbol('wrong-owner'),
+        expectedGeneration: generation,
+      }),
+    ).rejects.toThrow('no matching reservation');
+
+    const queuedA = hidA.exchange(report(0x33), matchesPrefix(0x33));
+    const independentB = hidB.exchange(report(0x41), matchesPrefix(0x41));
+    await waitUntil(() => deviceB.sentReports.length === 1);
+    deviceB.emit(payload(0x41, 0x0b));
+    expect(Array.from(await independentB).slice(0, 2)).toEqual([0x41, 0x0b]);
+    expect(deviceA.sentReports.map(({data}) => data[0])).toEqual([0x31]);
+
+    releaseOwner();
+    expect(Array.from(await reservation).slice(0, 2)).toEqual([0x32, 0x02]);
+    await waitUntil(() => deviceA.sentReports.length === 3);
+    expect(deviceA.sentReports.map(({data}) => data[0])).toEqual([
+      0x31, 0x32, 0x33,
+    ]);
+    deviceA.emit(payload(0x33, 0x03));
+    await queuedA;
+  });
+
+  test('a preserved timeout releases a reservation and later queued work runs', async () => {
+    configureHIDTransport({responseTimeoutMs: 15});
+    const {device, hid} = await connectFake('reservation-timeout');
+    const generation = hid.getConnectionGeneration();
+    const owner = Symbol('timing-out-operation');
+
+    const reservation = hid.withPathReservation(
+      generation,
+      owner,
+      () =>
+        hid.exchange(report(0x51), matchesPrefix(0x51), {
+          reservationOwner: owner,
+          expectedGeneration: generation,
+          timeoutBehavior: 'preserve-generation',
+        }),
+    );
+    const queued = hid.exchange(report(0x52), matchesPrefix(0x52));
+
+    await expect(reservation).rejects.toBeInstanceOf(HIDTransportTimeoutError);
+    await waitUntil(() => device.sentReports.length === 2);
+    expect(getHIDTransportDebugState('reservation-timeout')?.hasActiveReservation).toBe(
+      false,
+    );
+    device.emit(payload(0x52, 0x01));
+    await queued;
+  });
+
+  test('a malformed operation releases its reservation without stranding the path', async () => {
+    const {device, hid} = await connectFake('reservation-malformed');
+    const generation = hid.getConnectionGeneration();
+    const owner = Symbol('malformed-operation');
+    const reservation = hid.withPathReservation(
+      generation,
+      owner,
+      async () => {
+        const response = hid.exchange(report(0x61), matchesPrefix(0x61), {
+          reservationOwner: owner,
+          expectedGeneration: generation,
+        });
+        await waitUntil(() => device.sentReports.length === 1);
+        device.emit(payload(0x61, 0xff));
+        if ((await response)[1] !== 0) {
+          throw new Error('malformed response');
+        }
+      },
+    );
+    const queued = hid.exchange(report(0x62), matchesPrefix(0x62));
+
+    await expect(reservation).rejects.toThrow('malformed response');
+    await waitUntil(() => device.sentReports.length === 2);
+    device.emit(payload(0x62));
+    await queued;
+  });
+
+  test('disconnect rejects an active reservation and every waiter', async () => {
+    const device = new FakeHIDDevice();
+    const {hid} = await connectFake('reservation-replaced', device);
+    const generation = hid.getConnectionGeneration();
+    const owner = Symbol('replaced-operation');
+    const active = hid.withPathReservation(
+      generation,
+      owner,
+      () =>
+        hid.exchange(report(0x71), matchesPrefix(0x71), {
+          reservationOwner: owner,
+          expectedGeneration: generation,
+        }),
+    );
+    const waiter = hid.exchange(report(0x72), matchesPrefix(0x72));
+    const waitingReservation = hid.withPathReservation(
+      generation,
+      Symbol('waiting-operation'),
+      async () => undefined,
+    );
+    const activeResult = active.catch((error) => error as Error);
+    const waiterResult = waiter.catch((error) => error as Error);
+    const waitingResult = waitingReservation.catch((error) => error as Error);
+    await waitUntil(() => device.sentReports.length === 1);
+
+    disconnectHIDDeviceForTesting('reservation-replaced');
+    expect((await activeResult).message).toContain('disconnected');
+    expect((await waiterResult).message).toContain('disconnected');
+    expect((await waitingResult).message).toContain('disconnected');
+    expect(getHIDTransportDebugState('reservation-replaced')?.hasActiveReservation).toBe(
+      false,
+    );
+
+    registerHIDDeviceForTesting('reservation-replaced', asHIDDevice(device));
+    const replacement = new HID.HID('reservation-replaced');
+    await replacement.openPromise;
+    const next = replacement.exchange(report(0x73), matchesPrefix(0x73));
+    await waitUntil(() => device.sentReports.length === 2);
+    device.emit(payload(0x73));
+    await next;
+  });
+
+  test('generation replacement rejects active and waiting owners without a disconnect event', async () => {
+    const oldDevice = new FakeHIDDevice();
+    const {hid} = await connectFake('reservation-device-replaced', oldDevice);
+    const generation = hid.getConnectionGeneration();
+    const owner = Symbol('device-replaced-operation');
+    const active = hid.withPathReservation(
+      generation,
+      owner,
+      () =>
+        hid.exchange(report(0x74), matchesPrefix(0x74), {
+          reservationOwner: owner,
+          expectedGeneration: generation,
+        }),
+    );
+    const waitingReservation = hid.withPathReservation(
+      generation,
+      Symbol('device-replaced-waiter'),
+      async () => undefined,
+    );
+    const activeResult = active.catch((error) => error as Error);
+    const waitingResult = waitingReservation.catch((error) => error as Error);
+    await waitUntil(() => oldDevice.sentReports.length === 1);
+
+    const replacementDevice = new FakeHIDDevice();
+    registerHIDDeviceForTesting(
+      'reservation-device-replaced',
+      asHIDDevice(replacementDevice),
+    );
+
+    expect((await activeResult).message).toContain('was replaced');
+    expect((await waitingResult).message).toContain('was replaced');
+    expect(
+      getHIDTransportDebugState('reservation-device-replaced')
+        ?.hasActiveReservation,
+    ).toBe(false);
+
+    const replacement = new HID.HID('reservation-device-replaced');
+    await replacement.openPromise;
+    const next = replacement.exchange(report(0x75), matchesPrefix(0x75));
+    await waitUntil(() => replacementDevice.sentReports.length === 1);
+    replacementDevice.emit(payload(0x75));
+    await next;
+  });
+
+  test('slow keymap writes resolve only after every SET and propagate the first failure', async () => {
+    const {device} = await connectFake('slow-keymap-completion');
+    let setCount = 0;
+    device.onSend = (data) => {
+      if (data[0] !== 0x05) {
+        return;
+      }
+      setCount += 1;
+      if (setCount === 1) {
+        device.emit(payload(...Array.from(data)));
+      }
+    };
+    let settled = false;
+    const writing = new KeyboardAPI('slow-keymap-completion')
+      .slowWriteRawMatrix({rows: 1, cols: 2}, [[0x0101, 0x0202]])
+      .then(() => {
+        settled = true;
+      });
+    await waitUntil(() => device.sentReports.length === 2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    device.emit(payload(...Array.from(device.sentReports[1].data)));
+    await writing;
+    expect(settled).toBe(true);
+
+    const {device: failing} = await connectFake('slow-keymap-failure');
+    let failingSetCount = 0;
+    failing.onSend = (data) => {
+      if (data[0] !== 0x05) {
+        return;
+      }
+      failingSetCount += 1;
+      if (failingSetCount === 2) {
+        throw new Error('second key failed');
+      }
+      failing.emit(payload(...Array.from(data)));
+    };
+    await expect(
+      new KeyboardAPI('slow-keymap-failure').slowWriteRawMatrix(
+        {rows: 1, cols: 3},
+        [[0x0101, 0x0202, 0x0303]],
+      ),
+    ).rejects.toThrow('second key failed');
+    expect(failing.sentReports).toHaveLength(2);
+  });
+});
+
+describe('exact macro buffer transactions', () => {
+  test('writes RESET, FF, bounded payload chunks, zero, then an exact marker GET', async () => {
+    const {device} = await connectFake('macro-transcript');
+    const harness = attachMacroHarness(device, {size: 31});
+    const data = Array.from({length: 29}, (_, index) => index + 1);
+
+    await new KeyboardAPI('macro-transcript').setMacroBytes(data);
+
+    expect(device.sentReports.map(({data: reportData}) => reportData[0])).toEqual([
+      0x0d, 0x10, 0x0f, 0x0f, 0x0f, 0x0f, 0x0e,
+    ]);
+    const writes = device.sentReports
+      .filter(({data: reportData}) => reportData[0] === 0x0f)
+      .map(({data: reportData}) => ({
+        offset: (reportData[1] << 8) | reportData[2],
+        size: reportData[3],
+        bytes: Array.from(reportData.slice(4, 4 + reportData[3])),
+      }));
+    expect(writes).toEqual([
+      {offset: 30, size: 1, bytes: [0xff]},
+      {offset: 0, size: 28, bytes: data.slice(0, 28)},
+      {offset: 28, size: 1, bytes: data.slice(28)},
+      {offset: 30, size: 1, bytes: [0]},
+    ]);
+    expect(harness.getRequests).toEqual([{offset: 30, size: 1}]);
+  });
+
+  test('rejects B=0 before RESET and handles the B=1 empty-payload boundary', async () => {
+    const {device: invalid} = await connectFake('macro-size-zero');
+    attachMacroHarness(invalid, {size: 0});
+    await expect(
+      new KeyboardAPI('macro-size-zero').setMacroBytes([]),
+    ).rejects.toThrow('completion marker');
+    expect(invalid.sentReports.map(({data}) => data[0])).toEqual([0x0d]);
+
+    const {device: boundary} = await connectFake('macro-size-one');
+    const harness = attachMacroHarness(boundary, {size: 1});
+    const api = new KeyboardAPI('macro-size-one');
+    expect(await api.getMacroBytes()).toEqual([]);
+    await api.setMacroBytes([]);
+    expect(
+      boundary.sentReports
+        .filter(({data}) => data[0] === 0x0f)
+        .map(({data}) => data[4]),
+    ).toEqual([0xff, 0]);
+    expect(harness.getRequests.at(-1)).toEqual({offset: 0, size: 1});
+  });
+
+  test('never writes across the marker capacity', async () => {
+    const {device} = await connectFake('macro-capacity');
+    attachMacroHarness(device, {size: 4});
+
+    await expect(
+      new KeyboardAPI('macro-capacity').setMacroBytes([1, 2, 3, 4]),
+    ).rejects.toThrow('payload capacity (3)');
+    expect(device.sentReports.map(({data}) => data[0])).toEqual([0x0d]);
+  });
+
+  test('reads exactly B logical bytes, trims HID padding, and sizes the final request', async () => {
+    const {device} = await connectFake('macro-read-exact');
+    const payloadBytes = Array.from({length: 29}, (_, index) => index + 1);
+    const harness = attachMacroHarness(device, {
+      size: 30,
+      logicalBytes: [...payloadBytes, 0],
+      dirtyPadding: true,
+    });
+
+    expect(await new KeyboardAPI('macro-read-exact').getMacroBytes()).toEqual(
+      payloadBytes,
+    );
+    expect(harness.getRequests).toEqual([
+      {offset: 0, size: 28},
+      {offset: 28, size: 2},
+    ]);
+  });
+
+  test('rejects a nonzero logical completion marker', async () => {
+    const {device} = await connectFake('macro-open-read');
+    attachMacroHarness(device, {size: 3, logicalBytes: [65, 0, 0xff]});
+    await expect(
+      new KeyboardAPI('macro-open-read').getMacroBytes(),
+    ).rejects.toThrow('incomplete');
+  });
+
+  for (const failAt of ['reset', 'opener', 'payload'] as const) {
+    test(`${failAt} failure never sends the final zero`, async () => {
+      const {device} = await connectFake(`macro-fail-${failAt}`);
+      attachMacroHarness(device, {size: 3, failAt});
+      await expect(
+        new KeyboardAPI(`macro-fail-${failAt}`).setMacroBytes([65, 0]),
+      ).rejects.toThrow(`${failAt} failed`);
+      const markerWrites = device.sentReports
+        .filter(({data}) => {
+          const offset = (data[1] << 8) | data[2];
+          return data[0] === 0x0f && offset === 2 && data[3] === 1;
+        })
+        .map(({data}) => data[4]);
+      expect(markerWrites).not.toContain(0);
+    });
+  }
+
+  test('final-zero failure is attempted once and never retries a mutation', async () => {
+    const {device} = await connectFake('macro-fail-closer');
+    attachMacroHarness(device, {size: 3, failAt: 'closer'});
+    await expect(
+      new KeyboardAPI('macro-fail-closer').setMacroBytes([65, 0]),
+    ).rejects.toThrow('closer failed');
+    const commands = device.sentReports.map(({data}) => data[0]);
+    expect(commands).toEqual([0x0d, 0x10, 0x0f, 0x0f, 0x0f]);
+    expect(
+      device.sentReports.filter(
+        ({data}) => data[0] === 0x0f && data[4] === 0,
+      ),
+    ).toHaveLength(1);
+  });
+
+  test('retries marker-only GETs with no mutation retry until FF becomes zero', async () => {
+    const {device} = await connectFake('macro-marker-retry');
+    const harness = attachMacroHarness(device, {
+      size: 3,
+      verificationMarkers: [0xff, 0xff, 0xff, 0],
+    });
+    await new KeyboardAPI('macro-marker-retry').setMacroBytes([65, 0]);
+    expect(harness.verificationReadCount).toBe(4);
+    expect(
+      device.sentReports.filter(({data}) => data[0] === 0x0e),
+    ).toHaveLength(4);
+    expect(
+      device.sentReports.filter(({data}) => data[0] === 0x0f),
+    ).toHaveLength(3);
+  });
+
+  test('accepts one FF marker followed by zero using GET-only retry', async () => {
+    const {device} = await connectFake('macro-marker-one-retry');
+    const harness = attachMacroHarness(device, {
+      size: 3,
+      verificationMarkers: [0xff, 0],
+    });
+
+    await new KeyboardAPI('macro-marker-one-retry').setMacroBytes([65, 0]);
+
+    expect(harness.verificationReadCount).toBe(2);
+    expect(
+      device.sentReports.filter(({data}) => data[0] === 0x0e),
+    ).toHaveLength(2);
+    expect(
+      device.sentReports.filter(({data}) => data[0] === 0x0f),
+    ).toHaveLength(3);
+  });
+
+  test(
+    'a permanently open marker fails at the bounded verification deadline',
+    async () => {
+      const {device} = await connectFake('macro-marker-deadline');
+      const harness = attachMacroHarness(device, {
+        size: 1,
+        verificationMarkers: [0xff],
+      });
+      const startedAt = Date.now();
+      await expect(
+        new KeyboardAPI('macro-marker-deadline').setMacroBytes([]),
+      ).rejects.toThrow('verification timed out');
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4900);
+      expect(harness.verificationReadCount).toBeGreaterThan(5);
+      expect(
+        device.sentReports.filter(({data}) => data[0] === 0x0f),
+      ).toHaveLength(2);
+    },
+    7000,
+  );
+
+  test('malformed read timeout and generation replacement fail the operation', async () => {
+    configureHIDTransport({responseTimeoutMs: 15});
+    const {device: malformed} = await connectFake('macro-malformed');
+    malformed.onSend = (data) => {
+      if (data[0] === 0x0d) {
+        malformed.emit(payload(0x0d, 0x00, 0x02));
+      } else if (data[0] === 0x0e) {
+        malformed.emit(new Uint8Array(31));
+      }
+    };
+    await expect(
+      new KeyboardAPI('macro-malformed').getMacroBytes(),
+    ).rejects.toBeInstanceOf(HIDTransportTimeoutError);
+
+    const path = 'macro-generation-replaced';
+    const {device: replaced} = await connectFake(path);
+    attachMacroHarness(replaced, {
+      size: 1,
+      onVerificationRead: () => disconnectHIDDeviceForTesting(path),
+    });
+    await expect(
+      new KeyboardAPI(path).setMacroBytes([]),
+    ).rejects.toThrow('disconnected');
   });
 });
 

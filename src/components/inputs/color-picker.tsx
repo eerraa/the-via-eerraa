@@ -22,6 +22,8 @@ type Props = {
   onOpen?: () => void;
   onMouseUp?: (hue: number, sat: number) => void;
   onClose?: (hue: number, sat: number) => void;
+  onInteractionComplete?: () => void;
+  onInteractionCancel?: () => void;
 };
 
 type State = {
@@ -57,6 +59,7 @@ const ColorInner = styled.div`
 const ColorOuter = styled.div`
   width: 100%;
   height: 100%;
+  touch-action: none;
   background: linear-gradient(
     to right,
     red,
@@ -162,6 +165,7 @@ export class ColorPicker extends Component<Props, State> {
   componentWillUnmount() {
     document.removeEventListener('mousedown', this.onDocumentClick);
     document.removeEventListener('click', this.onDocumentClick);
+    this.props.onInteractionComplete?.();
   }
 
   componentDidUpdate({color}: {color: Color}, state: State) {
@@ -242,6 +246,62 @@ export class ColorPicker extends Component<Props, State> {
       const {hue, sat} = this.getLinearHueSat(this.state.offset);
       this.props.onMouseUp(hue, sat);
     }
+    this.props.onInteractionComplete?.();
+  };
+
+  updateFromClientPoint = (clientX: number, clientY: number) => {
+    if (!this.ref) {
+      return;
+    }
+    const rect = this.ref.getBoundingClientRect();
+    this.refWidth = rect.width;
+    this.refHeight = rect.height;
+    const offsetX = Math.min(rect.width, Math.max(0, clientX - rect.left));
+    const offsetY = Math.min(rect.height, Math.max(0, clientY - rect.top));
+    const lensTransform = `translate3d(${offsetX - 5}px, ${
+      offsetY - 5
+    }px, 0)`;
+    const offset = [offsetX, offsetY] as [number, number];
+    const {hue, sat} = this.getLinearHueSat(offset);
+    this.props.setColor(Math.round(255 * (hue / 360)), Math.round(255 * sat));
+    this.setState({
+      lensTransform,
+      offset,
+      hexColorCode: getHex(this.props.color),
+    });
+  };
+
+  onPointerDown: React.PointerEventHandler = (evt) => {
+    this.mouseDown = true;
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    this.updateFromClientPoint(evt.clientX, evt.clientY);
+    if (this.ref) {
+      this.ref.style.cursor = 'pointer';
+    }
+  };
+
+  onPointerMove: React.PointerEventHandler = (evt) => {
+    if (this.mouseDown) {
+      this.updateFromClientPoint(evt.clientX, evt.clientY);
+    }
+  };
+
+  onPointerUp: React.PointerEventHandler = (evt) => {
+    if (evt.currentTarget.hasPointerCapture?.(evt.pointerId)) {
+      evt.currentTarget.releasePointerCapture(evt.pointerId);
+    }
+    this.onMouseUp();
+  };
+
+  onPointerCancel: React.PointerEventHandler = (evt) => {
+    if (evt.currentTarget.hasPointerCapture?.(evt.pointerId)) {
+      evt.currentTarget.releasePointerCapture(evt.pointerId);
+    }
+    this.mouseDown = false;
+    if (this.ref) {
+      this.ref.style.cursor = 'auto';
+    }
+    (this.props.onInteractionCancel ?? this.props.onInteractionComplete)?.();
   };
 
   onThumbnailClick = () => {
@@ -267,6 +327,7 @@ export class ColorPicker extends Component<Props, State> {
         const {hue, sat} = this.getLinearHueSat(this.state.offset);
         this.props.onClose(hue, sat);
       }
+      this.props.onInteractionComplete?.();
       this.mouseDown = false;
       this.setState({
         showPicker: false,
@@ -298,6 +359,7 @@ export class ColorPicker extends Component<Props, State> {
 
   handleHexBlur: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     this.setState({hexColorCode: getHex(this.props.color)});
+    this.props.onInteractionComplete?.();
   };
 
   handleHexSubmit: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -313,8 +375,12 @@ export class ColorPicker extends Component<Props, State> {
         }
         const [h, s] = getHSV(hexString);
         this.props.setColor(Math.round(255 * (h / 360)), Math.round(255 * s));
+        this.props.onInteractionComplete?.();
       }
       this.setState({hexColorCode: getHex(this.props.color)});
+    } else if (e.key === 'Escape') {
+      this.setState({hexColorCode: getHex(this.props.color)});
+      (this.props.onInteractionCancel ?? this.props.onInteractionComplete)?.();
     }
   };
 
@@ -340,10 +406,7 @@ export class ColorPicker extends Component<Props, State> {
             }}
           />
           {this.state.showPicker && (
-            <PickerContainer
-              ref={this.pickerContainer}
-              onMouseUp={this.onMouseUp}
-            >
+            <PickerContainer ref={this.pickerContainer}>
               <ColorHexContainer>
                 <ColorHexInput
                   type="text"
@@ -356,8 +419,10 @@ export class ColorPicker extends Component<Props, State> {
               <ColorPreview style={{background: getRGB(this.props.color)}} />
               <Container>
                 <ColorOuter
-                  onMouseDown={this.onMouseDown}
-                  onMouseMove={this.onMouseMove}
+                  onPointerDown={this.onPointerDown}
+                  onPointerMove={this.onPointerMove}
+                  onPointerUp={this.onPointerUp}
+                  onPointerCancel={this.onPointerCancel}
                   ref={(ref) => (this.ref = ref)}
                 >
                   <ColorInner>
@@ -376,9 +441,16 @@ export class ColorPicker extends Component<Props, State> {
 export const ArrayColorPicker: React.FC<{
   color: [number, number];
   setColor: Props['setColor'];
+  onInteractionComplete?: Props['onInteractionComplete'];
+  onInteractionCancel?: Props['onInteractionCancel'];
 }> = (props) => {
-  const {color, setColor} = props;
+  const {color, setColor, onInteractionComplete, onInteractionCancel} = props;
   return (
-    <ColorPicker color={{hue: color[0], sat: color[1]}} setColor={setColor} />
+    <ColorPicker
+      color={{hue: color[0], sat: color[1]}}
+      setColor={setColor}
+      onInteractionComplete={onInteractionComplete}
+      onInteractionCancel={onInteractionCancel}
+    />
   );
 };

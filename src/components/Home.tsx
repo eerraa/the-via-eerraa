@@ -33,7 +33,7 @@ import {
   getSelectedDefinition,
   getSelectedKeyDefinitions,
 } from 'src/store/definitionsSlice';
-import {syncCustomMenuValuesFromRequest} from 'src/store/menusSlice';
+import {handleUISyncRequest} from 'src/store/stateSyncThunks';
 import {OVERRIDE_HID_CHECK} from 'src/utils/override';
 import {KeyboardAPI, KeyboardValue} from 'src/utils/keyboard-api';
 import {useTranslation} from 'react-i18next';
@@ -41,6 +41,7 @@ import {MessageDialog} from './inputs/message-dialog';
 import {formatNumberAsHex} from 'src/utils/format';
 import {addHIDTransportGenerationListener} from 'src/shims/node-hid';
 import {StateSyncRuntime} from './state-sync-runtime';
+import {failContinuousHIDTransactionsForPath} from 'src/utils/continuous-hid-transaction';
 
 const ErrorHome = styled.div`
   background: var(--bg_gradient);
@@ -169,6 +170,11 @@ export const Home: React.FC<HomeProps> = (props) => {
     startMonitoring();
     const removeGenerationListener = addHIDTransportGenerationListener(
       ({path, generation}) => {
+        failContinuousHIDTransactionsForPath(
+          path,
+          generation,
+          'Connection generation changed during a continuous HID transaction',
+        );
         dispatch(
           invalidateDeviceConnection({
             devicePath: path,
@@ -202,7 +208,7 @@ export const Home: React.FC<HomeProps> = (props) => {
       const connectionGeneration = deviceAPI.getConnectionGeneration();
       return deviceAPI.addUISyncRequestHandler((request) => {
         dispatch(
-          syncCustomMenuValuesFromRequest({
+          handleUISyncRequest({
             devicePath,
             connectionGeneration,
             request,

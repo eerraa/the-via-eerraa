@@ -16,6 +16,11 @@ import {
   getSelectedKeyboardAPI,
 } from './devicesSlice';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
+import {
+  completeContinuousHIDTransaction,
+  enqueueContinuousHIDUpdate,
+  type ContinuousHIDResult,
+} from 'src/utils/continuous-hid-transaction';
 
 type LightingMap = {[devicePath: string]: LightingData};
 
@@ -121,6 +126,147 @@ export const updateCustomColor =
 
     api.setCustomColor(idx, hue, sat);
     await api.saveLighting();
+  };
+
+const continuousLightingKey = (scope: string | number) => `lighting:${scope}`;
+
+const continuousLightingConfig = (
+  key: string,
+  connectedDevice: ConnectedDevice,
+  connectionGeneration: number,
+  dispatch: (action: any) => any,
+) => ({
+  key,
+  path: connectedDevice.path,
+  generation: connectionGeneration,
+  save: (reservedApi: KeyboardAPI) => reservedApi.saveLighting(),
+  onSettled: async (result: ContinuousHIDResult) => {
+    if (result.status === 'failed') {
+      console.warn('Continuous lighting transaction failed', result.error);
+      const api = new KeyboardAPI(connectedDevice.path);
+      if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+        await dispatch(updateLightingData(connectedDevice));
+      }
+    }
+  },
+});
+
+export const updateBacklightValueContinuous =
+  (command: LightingValue, ...rest: number[]): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+    if (!connectedDevice || !api) {
+      return;
+    }
+    const connectionGeneration = api.getConnectionGeneration();
+    const selectedLightingData = getSelectedLightingData(state);
+    const currentValue = selectedLightingData?.[command];
+    if (
+      Array.isArray(currentValue) &&
+      currentValue.length === rest.length &&
+      currentValue.every((value, index) => value === rest[index])
+    ) {
+      return;
+    }
+    const lightingData = {
+      ...selectedLightingData,
+      [command]: [...rest],
+    };
+    dispatch(
+      updateSelectedLightingData({
+        lightingData,
+        devicePath: connectedDevice.path,
+      }),
+    );
+    try {
+      await enqueueContinuousHIDUpdate(
+        continuousLightingConfig(
+          continuousLightingKey(`value:${command}`),
+          connectedDevice,
+          connectionGeneration,
+          dispatch,
+        ),
+        {
+          dedupeKey: rest.join(','),
+          execute: async (reservedApi) => {
+            await reservedApi.setBacklightValue(command, ...rest);
+            return ['lighting'];
+          },
+        },
+      );
+    } catch (error) {
+      console.warn('Continuous lighting SET failed', error);
+    }
+  };
+
+export const completeBacklightValueContinuous =
+  (command: LightingValue): AppThunk<Promise<void>> =>
+  async () => {
+    try {
+      await completeContinuousHIDTransaction(
+        continuousLightingKey(`value:${command}`),
+      );
+    } catch (error) {
+      console.warn('Continuous lighting SAVE failed', error);
+    }
+  };
+
+export const updateCustomColorContinuous =
+  (idx: number, hue: number, sat: number): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+    const oldLightingData = getSelectedLightingData(state);
+    if (!connectedDevice || !api || !oldLightingData) {
+      return;
+    }
+    const connectionGeneration = api.getConnectionGeneration();
+    const currentColor = oldLightingData.customColors?.[idx];
+    if (currentColor?.hue === hue && currentColor.sat === sat) {
+      return;
+    }
+    const customColors = [...(oldLightingData.customColors || [])];
+    customColors[idx] = {hue, sat};
+    dispatch(
+      updateSelectedLightingData({
+        lightingData: {...oldLightingData, customColors},
+        devicePath: connectedDevice.path,
+      }),
+    );
+    try {
+      await enqueueContinuousHIDUpdate(
+        continuousLightingConfig(
+          continuousLightingKey(`custom-color:${idx}`),
+          connectedDevice,
+          connectionGeneration,
+          dispatch,
+        ),
+        {
+          dedupeKey: `${hue},${sat}`,
+          execute: async (reservedApi) => {
+            await reservedApi.setCustomColor(idx, hue, sat);
+            return ['lighting'];
+          },
+        },
+      );
+    } catch (error) {
+      console.warn('Continuous custom color SET failed', error);
+    }
+  };
+
+export const completeCustomColorContinuous =
+  (idx: number): AppThunk<Promise<void>> =>
+  async () => {
+    try {
+      await completeContinuousHIDTransaction(
+        continuousLightingKey(`custom-color:${idx}`),
+      );
+    } catch (error) {
+      console.warn('Continuous custom color SAVE failed', error);
+    }
   };
 
 export const updateLightingData =

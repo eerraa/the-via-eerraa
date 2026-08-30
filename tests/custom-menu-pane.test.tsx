@@ -46,7 +46,20 @@ const device = {
   hasResolvedDefinition: true,
 } as const;
 
-const makeStore = (overrides: {era?: boolean; menuData?: object} = {}) => {
+type ConfigSyncOverride = {
+  status: 'dirty' | 'refreshing' | 'fresh';
+  observedRevision?: number;
+  acceptedRevision?: number;
+  foregroundWriteDepth?: number;
+};
+
+const makeStore = (
+  overrides: {
+    era?: boolean;
+    menuData?: object;
+    configSync?: ConfigSyncOverride;
+  } = {},
+) => {
   const definitionEntry = {[device.vendorProductId]: {v3: {}}};
   const state = {
     definitions: {
@@ -87,6 +100,30 @@ const makeStore = (overrides: {era?: boolean; menuData?: object} = {}) => {
       commonMenusMap: {},
       showKeyPainter: false,
     },
+    ...(overrides.configSync && {
+      stateSync: {
+        byPath: {
+          [device.path]: {
+            capability: 'capable',
+            generation: 0,
+            config: {
+              status: overrides.configSync.status,
+              observedRevision:
+                overrides.configSync.observedRevision ?? 2,
+              acceptedRevision:
+                overrides.configSync.acceptedRevision ?? 1,
+              mutationEpoch: 0,
+              foregroundWriteDepth:
+                overrides.configSync.foregroundWriteDepth ?? 0,
+              acceptedSelectionGeneration: 1,
+              acceptedDefinitionIdentity: `${device.vendorProductId}:v3:0`,
+            },
+          },
+        },
+        configureVisible: true,
+        documentHidden: false,
+      },
+    }),
   };
   return configureStore({reducer: () => state as any});
 };
@@ -102,16 +139,14 @@ const render = (store: ReturnType<typeof makeStore>, viaMenu: object) =>
 
 // Only the ERA H7S definitions opt into USB Diagnostics, and the section must not
 // exist — let alone probe selector 0x07 — for anything else.
-const optIn = (usbDiagnostics: boolean) =>
+const optIn = (usbDiagnostics: boolean, stateSync = false) =>
   setEraAdvancedMetadataForTesting({
     schemaVersion: 2,
     definitions: [
       {
         id: 'custom-menu-test',
         vendorProductId: device.vendorProductId,
-        // State Sync verification is a separate gate that would hold the menu in a
-        // checking state; this test is about the diagnostics opt-in only.
-        stateSync: false,
+        stateSync,
         usbDiagnostics,
         exactMsFamily: 'h7s',
       },
@@ -290,6 +325,34 @@ describe('Custom menu pane loading failure', () => {
 
     expect(html).toContain('role="status"');
     expect(html).toContain(loadFailureMessage);
+  });
+});
+
+describe('State Sync menu continuity', () => {
+  test('keeps the accepted controls mounted while external state reconciles', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {status: 'dirty'},
+      }),
+      {label: 'SYSTEM', content: [bootSubmenu]},
+    );
+
+    expect(html).toContain('Jump To BOOT');
+    expect(html).not.toContain('Loading...');
+  });
+
+  test('still uses the loading boundary before the first accepted snapshot', () => {
+    optIn(false, true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [bootSubmenu],
+    });
+
+    expect(html).toContain('Loading...');
+    expect(html).not.toContain('Jump To BOOT');
   });
 });
 

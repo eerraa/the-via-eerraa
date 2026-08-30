@@ -130,7 +130,7 @@ built-in source를 덮지 못한다. `mergeDefinitionLookup()`이 구현이고
 
 ```powershell
 bun run test:transport   # 7개 파일, 0 fail — 전송·State Sync·진단·커스텀 메뉴 배치
-bun run test:p1          # 6개 파일, 0 fail — 정의·로케일·피커·ms 입력·진단 기록·문서 정합
+bun run test:p1          # 7개 파일, 0 fail — 정의·로케일·피커·레이아웃 매크로·ms 입력·진단 기록·문서 정합
 bun x tsc --noEmit       # 0
 bun run build            # typecheck:scripts → build:kbs → tsc → vite build
 ```

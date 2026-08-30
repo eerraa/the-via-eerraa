@@ -34,9 +34,13 @@ import {getSelectedDefinition} from 'src/store/definitionsSlice';
 import {
   getSelectedCustomMenuData,
   getSelectedCustomMenuAvailability,
-  getCustomRangeControls,
+  getCustomRangeControlsForSelectedDefinition,
+  completeCustomMenuRangeValueContinuous,
+  completeCustomMenuValueContinuous,
   updateCustomMenuValue,
+  updateCustomMenuValueContinuous,
   updateCustomMenuRangeValue,
+  updateCustomMenuRangeValueContinuous,
 } from 'src/store/menusSlice';
 import {useTranslation} from 'react-i18next';
 import {
@@ -176,6 +180,14 @@ const MenuComponent = React.memo((props: any) => {
           {...itemProps}
           updateValue={props.updateCustomMenuValue}
           updateRangeValue={props.updateCustomMenuRangeValue}
+          updateContinuousValue={props.updateCustomMenuValueContinuous}
+          completeContinuousValue={props.completeCustomMenuValueContinuous}
+          updateContinuousRangeValue={
+            props.updateCustomMenuRangeValueContinuous
+          }
+          completeContinuousRangeValue={
+            props.completeCustomMenuRangeValueContinuous
+          }
           rangeControls={props.rangeControls}
           menuData={props.selectedCustomMenuData}
           value={
@@ -244,7 +256,9 @@ export const Pane: React.FC<Props> = (props: any) => {
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const selectedCustomMenuData = useAppSelector(getSelectedCustomMenuData);
   const menuAvailability = useAppSelector(getSelectedCustomMenuAvailability);
-  const rangeControls = useAppSelector(getCustomRangeControls);
+  const rangeControls = useAppSelector(
+    getCustomRangeControlsForSelectedDefinition,
+  );
 
   const childProps = {
     ...props,
@@ -255,6 +269,16 @@ export const Pane: React.FC<Props> = (props: any) => {
       dispatch(updateCustomMenuValue(command, ...rest)),
     updateCustomMenuRangeValue: (command: string, value: number) =>
       dispatch(updateCustomMenuRangeValue(command, value)),
+    updateCustomMenuValueContinuous: (command: string, ...rest: number[]) =>
+      dispatch(updateCustomMenuValueContinuous(command, ...rest)),
+    completeCustomMenuValueContinuous: (command: string) =>
+      dispatch(completeCustomMenuValueContinuous(command)),
+    updateCustomMenuRangeValueContinuous: (
+      command: string,
+      value: number,
+    ) => dispatch(updateCustomMenuRangeValueContinuous(command, value)),
+    completeCustomMenuRangeValueContinuous: (command: string) =>
+      dispatch(completeCustomMenuRangeValueContinuous(command)),
   };
 
   const menus = categoryGenerator(childProps, t);

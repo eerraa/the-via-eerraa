@@ -13,7 +13,7 @@ import path from 'node:path';
 
 const repoRoot = path.join(import.meta.dir, '..');
 const read = (relative: string) =>
-  readFileSync(path.join(repoRoot, relative), 'utf8');
+  readFileSync(path.join(repoRoot, relative), 'utf8').replaceAll('\r\n', '\n');
 const readJSON = (relative: string) => JSON.parse(read(relative));
 
 const MAP = read('docs/MAP.md');

@@ -10,7 +10,7 @@
     "build:kbs": "node --import tsx scripts/build-keyboards.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts tests/era-state-sync.test.ts tests/state-sync-transport.test.ts tests/era-exact-ms.test.ts tests/era-usb-diagnostics.test.ts tests/diagnostics-pane.test.tsx tests/custom-menu-pane.test.tsx",
-    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/locales.test.ts tests/era-definition.test.ts tests/usb-diagnostics-history.test.ts tests/docs-contract.test.ts",
+    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/layout-macros.test.ts tests/locales.test.ts tests/era-definition.test.ts tests/usb-diagnostics-history.test.ts tests/docs-contract.test.ts",
     "find-deadcode": "ts-prune"
   },
   "engines": {

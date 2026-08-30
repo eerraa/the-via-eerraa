@@ -1,6 +1,13 @@
 import {describe, expect, test} from 'bun:test';
+import {readFileSync} from 'node:fs';
 import {isDeferredApplyCommand} from '../src/components/panes/configure-panes/custom/deferred-apply';
 import {canApplyMillisecondDraft} from '../src/utils/millisecond-field';
+
+const source = (relativePath: string) =>
+  readFileSync(new URL(relativePath, import.meta.url), 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
 
 describe('deferred TAPPING/TAPDANCE apply', () => {
   test('recognizes tapping and tapdance commands and ignores other menus', () => {
@@ -18,5 +25,54 @@ describe('deferred TAPPING/TAPDANCE apply', () => {
     const adapter = {minMs: 1, maxMs: 65535};
     expect(canApplyMillisecondDraft('200', 200, adapter, false)).toBe(false);
     expect(canApplyMillisecondDraft('137', 200, adapter, false)).toBe(true);
+  });
+});
+
+describe('continuous control lifecycle wiring', () => {
+  test('range completion covers pointer, touch, keyboard, blur, cancel, and unmount', () => {
+    const range = source('../src/components/inputs/accent-range.tsx');
+
+    for (const handler of [
+      'onPointerUp',
+      'onPointerCancel',
+      'onTouchEnd',
+      'onTouchCancel',
+      'onKeyUp',
+      'onBlur',
+    ]) {
+      expect(range).toContain(handler);
+    }
+    expect(range).toContain('completionRef.current?.()');
+    expect(range).toContain('onInteractionCancel ?? onInteractionComplete');
+  });
+
+  test('color completion covers pointer release/cancel, close, blur, keyboard, and unmount', () => {
+    const picker = source('../src/components/inputs/color-picker.tsx');
+
+    expect(picker).toContain('onPointerUp={this.onPointerUp}');
+    expect(picker).toContain('onPointerCancel={this.onPointerCancel}');
+    expect(picker).toContain('handleHexBlur');
+    expect(picker).toContain("e.key === 'Enter'");
+    expect(picker).toContain("e.key === 'Escape'");
+    expect(picker).toContain('onDocumentClick');
+    expect(picker).toContain('componentWillUnmount()');
+    expect(picker).toContain('this.props.onInteractionComplete?.()');
+  });
+
+  test('only verified range/color paths are shaped', () => {
+    const custom = source(
+      '../src/components/panes/configure-panes/custom/custom-control.tsx',
+    );
+    const lighting = source(
+      '../src/components/panes/configure-panes/submenus/lighting/lighting-control.tsx',
+    );
+
+    expect(custom).toContain('<DeferredRangeControl');
+    expect(custom).toContain('props.updateContinuousRangeValue(name, val)');
+    expect(custom).toContain('props.updateContinuousValue(name, ...command, hue, sat)');
+    expect(custom).toContain('props.updateValue(name, ...command, +option.value)');
+    expect(custom).toContain('return null;');
+    expect(lighting).toContain('updateBacklightValueContinuous(command, val)');
+    expect(lighting).toContain('dispatch(updateBacklightValue(command, +val))');
   });
 });

@@ -1,6 +1,7 @@
 import {isEraVIADefinitionV3} from '../utils/era-definition';
 import type {DefinitionVersion} from '@the-via/reader';
 import type {ConnectedDevice} from '../types/types';
+import type {HIDPathReservationOwner} from '../shims/node-hid';
 import {KeyboardAPI} from '../utils/keyboard-api';
 import {
   isStateSyncOptIn,
@@ -13,6 +14,7 @@ import {
   queryStateSync,
   type StateSyncEnvelope,
 } from '../utils/era-state-sync';
+import type {UISyncRequest} from '../utils/ui-sync';
 import {
   getDefinitionForDevice,
   getDefinitionSourceForDevice,
@@ -30,11 +32,15 @@ import {
 import type {AppThunk, RootState} from './index';
 import {readKeymapStateSyncCandidate} from './keymapSlice';
 import {readMacrosStateSyncCandidate} from './macrosSlice';
-import {readV3MenuStateSyncCandidate} from './menusSlice';
+import {
+  readV3MenuStateSyncCandidate,
+  syncCustomMenuValuesFromRequest,
+} from './menusSlice';
 import {
   commitStableConfigCandidate,
   commitStableKeymapCandidate,
   commitStableMacroCandidate,
+  invalidateStateSyncDomain,
   type StateSyncConfigCandidate,
   type StateSyncKeymapCandidate,
   type StateSyncMacroCandidate,
@@ -51,7 +57,7 @@ import {
   type StateSyncDomain,
 } from './stateSyncSlice';
 
-type CoordinatorMode = 'poll' | 'full';
+type CoordinatorMode = 'poll' | 'full' | 'config';
 type DomainCandidate =
   StateSyncKeymapCandidate | StateSyncMacroCandidate | StateSyncConfigCandidate;
 
@@ -60,6 +66,7 @@ type CoordinatorOwner = {
   selectionGeneration: number;
   definitionIdentity: string;
   initialEnvelope?: StateSyncEnvelope;
+  transportOwner: HIDPathReservationOwner;
   promise: Promise<void>;
 };
 
@@ -157,18 +164,20 @@ const readDomainCandidate = async (
   device: ConnectedDevice,
   state: RootState,
   generation: number,
+  api: KeyboardAPI,
 ): Promise<DomainCandidate | null> => {
   if (domain === 'keymap') {
-    return readKeymapStateSyncCandidate(device, state, generation);
+    return readKeymapStateSyncCandidate(device, state, generation, api);
   }
   if (domain === 'macro') {
-    return readMacrosStateSyncCandidate(device, state, generation);
+    return readMacrosStateSyncCandidate(device, state, generation, api);
   }
 
   const layoutCandidate = await readLayoutOptionsStateSyncCandidate(
     device,
     state,
     generation,
+    api,
   );
   if (layoutCandidate === null) {
     return null;
@@ -181,6 +190,7 @@ const readDomainCandidate = async (
     device,
     state,
     generation,
+    api,
   );
   return menuCandidate === null ? null : {...layoutCandidate, ...menuCandidate};
 };
@@ -192,13 +202,17 @@ const commitStableCandidate = (
   selectionGeneration: number,
   domain: StateSyncDomain,
   revision: number,
+  definitionIdentity: string,
+  mutationEpoch: number,
   candidate: DomainCandidate,
 ) => {
   const context = {
     devicePath: device.path,
     connectionGeneration: generation,
     selectionGeneration,
+    definitionIdentity,
     revision,
+    mutationEpoch,
   };
   if (domain === 'keymap') {
     dispatch(
@@ -233,6 +247,7 @@ const refreshDomain = async (
   domain: StateSyncDomain,
   generation: number,
   selectionGeneration: number,
+  transportOwner: HIDPathReservationOwner,
 ): Promise<RefreshResult> => {
   const api = new KeyboardAPI(device.path);
   const definitionIdentity = getDefinitionSyncIdentity(getState(), device);
@@ -248,47 +263,121 @@ const refreshDomain = async (
     return 'abort';
   }
   for (let attempt = 0; attempt < ERA_STATE_SYNC_REFRESH_RETRIES; attempt++) {
-    if (getDefinitionSyncIdentity(getState(), device) !== definitionIdentity) {
-      dispatch(
-        setDomainStatus({
-          path: device.path,
-          generation,
-          domain,
-          status: 'dirty',
-        }),
-      );
-      return 'abort';
-    }
-    const startEnvelope = await queryCapableEnvelope(
-      dispatch,
-      getState,
-      api,
-      generation,
-      selectionGeneration,
-    );
-    if (!startEnvelope) {
-      return 'abort';
-    }
-    observeEnvelope(dispatch, device.path, generation, startEnvelope);
-    const startRevision = startEnvelope.revisions[domain];
-    dispatch(
-      setDomainStatus({
-        path: device.path,
-        generation,
-        domain,
-        status: 'refreshing',
-        revision: startRevision,
-      }),
-    );
-
-    let candidate: DomainCandidate | null;
     try {
-      candidate = await readDomainCandidate(
-        domain,
-        device,
-        getState(),
+      const result = await api.withPathReservation(
         generation,
+        transportOwner,
+        async (reservedApi): Promise<RefreshResult | 'retry'> => {
+          if (
+            getDefinitionSyncIdentity(getState(), device) !== definitionIdentity ||
+            !isSelectedContextCurrent(
+              getState,
+              reservedApi,
+              generation,
+              selectionGeneration,
+              definitionIdentity,
+            )
+          ) {
+            return 'abort';
+          }
+
+          const startEnvelope = await queryCapableEnvelope(
+            dispatch,
+            getState,
+            reservedApi,
+            generation,
+            selectionGeneration,
+          );
+          if (!startEnvelope) {
+            return 'abort';
+          }
+          observeEnvelope(dispatch, device.path, generation, startEnvelope);
+          const startRevision = startEnvelope.revisions[domain];
+          const startSync = getPathSyncState(getState(), device.path);
+          if (!startSync || startSync.generation !== generation) {
+            return 'abort';
+          }
+          const mutationEpoch = startSync[domain].mutationEpoch;
+          dispatch(
+            setDomainStatus({
+              path: device.path,
+              generation,
+              domain,
+              status: 'refreshing',
+              revision: startRevision,
+            }),
+          );
+
+          const candidate = await readDomainCandidate(
+            domain,
+            device,
+            getState(),
+            generation,
+            reservedApi,
+          );
+          if (
+            candidate === null ||
+            !isSelectedContextCurrent(
+              getState,
+              reservedApi,
+              generation,
+              selectionGeneration,
+              definitionIdentity,
+            )
+          ) {
+            return 'abort';
+          }
+
+          const endEnvelope = await queryCapableEnvelope(
+            dispatch,
+            getState,
+            reservedApi,
+            generation,
+            selectionGeneration,
+          );
+          if (!endEnvelope) {
+            return 'abort';
+          }
+          observeEnvelope(dispatch, device.path, generation, endEnvelope);
+          const endRevision = endEnvelope.revisions[domain];
+          const currentSync = getPathSyncState(getState(), device.path);
+          if (
+            startRevision !== endRevision ||
+            !currentSync ||
+            currentSync.generation !== generation ||
+            currentSync[domain].mutationEpoch !== mutationEpoch
+          ) {
+            return 'retry';
+          }
+          if (
+            !isSelectedContextCurrent(
+              getState,
+              reservedApi,
+              generation,
+              selectionGeneration,
+              definitionIdentity,
+            )
+          ) {
+            return 'abort';
+          }
+          commitStableCandidate(
+            dispatch,
+            device,
+            generation,
+            selectionGeneration,
+            domain,
+            endRevision,
+            definitionIdentity,
+            mutationEpoch,
+            candidate,
+          );
+          return 'stable';
+        },
       );
+      if (result === 'retry') {
+        continue;
+      }
+      return result;
     } catch {
       if (
         isSelectedContextCurrent(
@@ -310,55 +399,6 @@ const refreshDomain = async (
       }
       return 'abort';
     }
-    if (
-      candidate === null ||
-      !isSelectedContextCurrent(
-        getState,
-        api,
-        generation,
-        selectionGeneration,
-        definitionIdentity,
-      )
-    ) {
-      return 'abort';
-    }
-
-    const endEnvelope = await queryCapableEnvelope(
-      dispatch,
-      getState,
-      api,
-      generation,
-      selectionGeneration,
-    );
-    if (!endEnvelope) {
-      return 'abort';
-    }
-    observeEnvelope(dispatch, device.path, generation, endEnvelope);
-    const endRevision = endEnvelope.revisions[domain];
-    if (startRevision !== endRevision) {
-      continue;
-    }
-    if (
-      !isSelectedContextCurrent(
-        getState,
-        api,
-        generation,
-        selectionGeneration,
-        definitionIdentity,
-      )
-    ) {
-      return 'abort';
-    }
-    commitStableCandidate(
-      dispatch,
-      device,
-      generation,
-      selectionGeneration,
-      domain,
-      endRevision,
-      candidate,
-    );
-    return 'stable';
   }
 
   dispatch(
@@ -441,6 +481,7 @@ const runCoordinatorOwner = async (
       domain,
       generation,
       owner.selectionGeneration,
+      owner.transportOwner,
     );
     if (result === 'abort') {
       return;
@@ -477,6 +518,8 @@ const coordinate = async (
     ) {
       if (mode === 'full') {
         domainOrder.forEach((domain) => existing.fullPending.add(domain));
+      } else if (mode === 'config') {
+        existing.fullPending.add('config');
       }
       await existing.promise;
       return;
@@ -486,10 +529,13 @@ const coordinate = async (
   }
 
   const owner: CoordinatorOwner = {
-    fullPending: new Set(mode === 'full' ? domainOrder : []),
+    fullPending: new Set(
+      mode === 'full' ? domainOrder : mode === 'config' ? ['config'] : [],
+    ),
     selectionGeneration,
     definitionIdentity,
     initialEnvelope,
+    transportOwner: Symbol(`state-sync:${key}`),
     promise: Promise.resolve(),
   };
   coordinatorOwners.set(key, owner);
@@ -656,6 +702,78 @@ export const refreshAllDomains =
     }
     dispatch(markPathDirty({path: device.path, generation}));
     await coordinate(dispatch, getState, device, 'full');
+  };
+
+export const refreshConfigDomain =
+  (device: ConnectedDevice): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const api = new KeyboardAPI(device.path);
+    const generation = api.getConnectionGeneration();
+    const sync = getPathSyncState(getState(), device.path);
+    if (sync?.capability !== 'capable' || sync.generation !== generation) {
+      return;
+    }
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: device.path,
+        connectionGeneration: generation,
+        domain: 'config',
+      }),
+    );
+    await coordinate(dispatch, getState, device, 'config');
+  };
+
+export const handleUISyncRequest =
+  ({
+    devicePath,
+    connectionGeneration,
+    request,
+  }: {
+    devicePath: string;
+    connectionGeneration: number;
+    request: UISyncRequest;
+  }): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    await loadEraAdvancedMetadata();
+    const state = getState();
+    const device = state.devices.connectedDevicePaths[devicePath];
+    if (!device) {
+      return;
+    }
+    const api = new KeyboardAPI(devicePath);
+    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+      return;
+    }
+
+    const isTrustedOptIn =
+      getDefinitionSourceForDevice(state, device) === 'era' &&
+      isStateSyncOptIn(device.vendorProductId);
+    if (!isTrustedOptIn) {
+      await dispatch(
+        syncCustomMenuValuesFromRequest({
+          devicePath,
+          connectionGeneration,
+          request,
+        }),
+      );
+      return;
+    }
+
+    dispatch(ensurePathSync({path: devicePath, generation: connectionGeneration}));
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath,
+        connectionGeneration,
+        domain: 'config',
+      }),
+    );
+    const sync = getPathSyncState(getState(), devicePath);
+    if (
+      sync?.generation === connectionGeneration &&
+      sync.capability === 'capable'
+    ) {
+      await coordinate(dispatch, getState, device, 'config');
+    }
   };
 
 export const syncPolling = (): AppThunk => (dispatch, getState) => {

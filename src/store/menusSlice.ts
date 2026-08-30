@@ -25,23 +25,36 @@ import type {CommonMenusMap, ConnectedDevice} from '../types/types';
 import {
   getDefinitionForDevice,
   getDefinitionSourceForDevice,
+  getDefinitionSyncIdentity,
   getSelectedDefinition,
 } from './definitionsSlice';
 import {collectMaxLedIndex} from '../utils/via-definition-keys';
 import {isEraVIADefinitionV3} from '../utils/era-definition';
 import {
   getConnectedDevices,
+  getSelectedConnectionGeneration,
   getSelectedConnectedDevice,
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
+  getSelectionGeneration,
 } from './devicesSlice';
 import type {AppThunk, RootState} from './index';
 import {
   getFirmwareVersionMap,
   getSelectedFirmwareVersion,
 } from './firmwareSlice';
-import {getPathSyncState} from './stateSyncSlice';
+import {
+  beginForegroundMutation,
+  beginForegroundWriteSession,
+  endForegroundWriteSession,
+  getPathSyncState,
+} from './stateSyncSlice';
 import {isStateSyncOptIn} from 'src/utils/era-advanced-metadata';
+import {
+  completeContinuousHIDTransaction,
+  enqueueContinuousHIDUpdate,
+  hasContinuousHIDTransaction,
+} from 'src/utils/continuous-hid-transaction';
 import {
   commitStableConfigCandidate,
   invalidateStateSyncDomain,
@@ -65,7 +78,66 @@ type PendingCustomMenuSync = {
   ids: Set<string>;
 };
 
-type CustomMenuAvailability = 'available' | 'checking' | 'unverified';
+type CustomMenuAvailability =
+  | 'available'
+  | 'reconciling'
+  | 'checking'
+  | 'unverified';
+
+const isSameCustomMenuValue = (
+  current: number[] | number[][] | undefined,
+  next: number[] | number[][] | undefined,
+): boolean => {
+  if (current === next) {
+    return true;
+  }
+  if (!current || !next) {
+    return false;
+  }
+  const currentIsFlat = current.every((value) => typeof value === 'number');
+  const nextIsFlat = next.every((value) => typeof value === 'number');
+  if (currentIsFlat && nextIsFlat) {
+    // Authoritative GETs retain the zero padding from the 32-byte VIA report,
+    // while an optimistic SET stores only its semantic payload.
+    const length = Math.max(current.length, next.length);
+    for (let index = 0; index < length; index++) {
+      if ((current[index] ?? 0) !== (next[index] ?? 0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (current.length !== next.length) {
+    return false;
+  }
+  return current.every((value, index) => {
+    const nextValue = next[index];
+    if (Array.isArray(value)) {
+      return Array.isArray(nextValue) && isSameCustomMenuValue(value, nextValue);
+    }
+    return typeof nextValue === 'number' && value === nextValue;
+  });
+};
+
+const isSameCustomMenuData = (
+  current: CustomMenuData | undefined,
+  next: CustomMenuData,
+) => {
+  if (!current) {
+    return false;
+  }
+  const currentKeys = Object.keys(current);
+  const nextKeys = Object.keys(next);
+  return (
+    currentKeys.length === nextKeys.length &&
+    nextKeys.every((key) => isSameCustomMenuValue(current[key], next[key]))
+  );
+};
+
+const isSameNumberArray = (
+  current: number[] | number[][] | undefined,
+  next: number[],
+) => isSameCustomMenuValue(current, next);
 
 const requiresEraCustomMenuVerification = (
   state: RootState,
@@ -85,16 +157,73 @@ export const getCustomMenuAvailabilityForDevice = (
   if (sync?.capability === 'unverified') {
     return 'unverified';
   }
-  if (
+  const definitionIdentity = getDefinitionSyncIdentity(
+    state,
+    connectedDevice,
+  );
+  const hasCurrentSnapshot =
     sync?.capability === 'capable' &&
-    sync.config.acceptedRevision !== 0
+    sync.generation === getSelectedConnectionGeneration(state) &&
+    connectedDevice.path === getSelectedDevicePath(state) &&
+    sync.config.acceptedRevision !== 0 &&
+    sync.config.acceptedSelectionGeneration === getSelectionGeneration(state) &&
+    definitionIdentity !== null &&
+    sync.config.acceptedDefinitionIdentity === definitionIdentity;
+  if (!hasCurrentSnapshot) {
+    return 'checking';
+  }
+  if (
+    (sync.config.status === 'fresh' &&
+      sync.config.acceptedRevision === sync.config.observedRevision) ||
+    sync.config.foregroundWriteDepth > 0
   ) {
     return 'available';
   }
-  return 'checking';
+  return 'reconciling';
 };
 
 const pendingCustomMenuSyncs: Record<string, PendingCustomMenuSync> = {};
+
+const reconcileCapableConfig = async (
+  dispatch: (action: any) => any,
+  connectedDevice: ConnectedDevice,
+  api: KeyboardAPI,
+  connectionGeneration: number,
+) => {
+  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+    return;
+  }
+  const {refreshConfigDomain} = await import('./stateSyncThunks');
+  await dispatch(refreshConfigDomain(connectedDevice));
+};
+
+const beginConfigWriteSession = (
+  dispatch: (action: any) => any,
+  path: string,
+  generation: number,
+) => {
+  dispatch(
+    beginForegroundWriteSession({
+      path,
+      generation,
+      domains: ['config'],
+    }),
+  );
+};
+
+const endConfigWriteSession = (
+  dispatch: (action: any) => any,
+  path: string,
+  generation: number,
+) => {
+  dispatch(
+    endForegroundWriteSession({
+      path,
+      generation,
+      domains: ['config'],
+    }),
+  );
+};
 
 const getPendingCustomMenuSyncKey = (
   devicePath: string,
@@ -131,11 +260,42 @@ const menusSlice = createSlice({
     updateCustomMenuData: (state, action: PayloadAction<CustomMenuDataMap>) => {
       state.customMenuDataMap = {...state.customMenuDataMap, ...action.payload};
     },
+    rollbackCustomMenuData: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        expected: CustomMenuData;
+        previous: CustomMenuData;
+      }>,
+    ) => {
+      const {devicePath, expected, previous} = action.payload;
+      const current = state.customMenuDataMap[devicePath];
+      if (!current) {
+        return;
+      }
+      Object.entries(expected).forEach(([command, expectedValue]) => {
+        if (!isSameCustomMenuValue(current[command], expectedValue)) {
+          return;
+        }
+        const previousValue = previous[command];
+        if (previousValue === undefined) {
+          delete current[command];
+        } else {
+          current[command] = previousValue;
+        }
+      });
+    },
   },
   extraReducers: (builder) => {
     builder.addCase(commitStableConfigCandidate, (state, action) => {
       const {devicePath, candidate} = action.payload;
-      if (candidate.menuData !== undefined) {
+      if (
+        candidate.menuData !== undefined &&
+        !isSameCustomMenuData(
+          state.customMenuDataMap[devicePath],
+          candidate.menuData,
+        )
+      ) {
         state.customMenuDataMap[devicePath] = candidate.menuData;
       }
     });
@@ -146,12 +306,13 @@ export const {
   updateShowKeyPainter,
   updateSelectedCustomMenuData,
   updateCustomMenuData,
+  rollbackCustomMenuData,
 } = menusSlice.actions;
 
 export default menusSlice.reducer;
 
 export const updateCustomMenuValue =
-  (command: string, ...rest: number[]): AppThunk<Promise<void>> =>
+  (command: string, ...rest: number[]): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
@@ -160,21 +321,32 @@ export const updateCustomMenuValue =
       getCustomMenuAvailabilityForDevice(state, connectedDevice) !==
         'available'
     ) {
-      return;
+      return false;
     }
 
     const menuData = getSelectedCustomMenuData(state);
     const commands = getCustomCommands(state);
     const commandBytes = commands[command];
     if (!commandBytes) {
-      return;
+      return false;
     }
     const previous: CustomMenuData = menuData || {};
+    const nextValue = [...rest.slice(commandBytes.length)];
     const data = {
       ...previous,
-      [command]: [...rest.slice(commandBytes.length)],
+      [command]: nextValue,
     };
     const {path} = connectedDevice;
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
+    const connectionGeneration = api.getConnectionGeneration();
+    beginConfigWriteSession(dispatch, path, connectionGeneration);
+    dispatch(
+      beginForegroundMutation({
+        path,
+        generation: connectionGeneration,
+        domains: ['config'],
+      }),
+    );
     dispatch(
       updateSelectedCustomMenuData({
         menuData: data,
@@ -182,8 +354,6 @@ export const updateCustomMenuValue =
       }),
     );
 
-    const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
-    const connectionGeneration = api.getConnectionGeneration();
     const invalidateConfig = () => {
       dispatch(
         invalidateStateSyncDomain({
@@ -193,26 +363,48 @@ export const updateCustomMenuValue =
         }),
       );
     };
+    let setCompleted = false;
     try {
-      await api.setCustomMenuValue(...rest.slice(0));
-    } catch (error) {
-      console.warn('Setting custom menu value failed', error);
-      dispatch(
-        updateSelectedCustomMenuData({
-          menuData: previous,
-          devicePath: path,
-        }),
+      const owner = Symbol(`custom-menu:${command}`);
+      await api.withPathReservation(
+        connectionGeneration,
+        owner,
+        async (reservedApi) => {
+          await reservedApi.setCustomMenuValue(...rest.slice(0));
+          setCompleted = true;
+          await reservedApi.commitCustomMenu(rest[0]);
+        },
       );
-      invalidateConfig();
-      return;
-    }
-    invalidateConfig();
-    try {
-      const channel = rest[0];
-      await api.commitCustomMenu(channel);
+      return true;
     } catch (error) {
-      console.warn('Saving custom menu value failed', error);
+      console.warn(
+        setCompleted
+          ? 'Saving custom menu value failed'
+          : 'Setting custom menu value failed',
+        error,
+      );
+      if (!setCompleted) {
+        dispatch(
+          rollbackCustomMenuData({
+            devicePath: path,
+            expected: {[command]: nextValue},
+            previous,
+          }),
+        );
+      }
+      return setCompleted;
+    } finally {
       invalidateConfig();
+      try {
+        await reconcileCapableConfig(
+          dispatch,
+          connectedDevice,
+          api,
+          connectionGeneration,
+        );
+      } finally {
+        endConfigWriteSession(dispatch, path, connectionGeneration);
+      }
     }
   };
 
@@ -261,6 +453,19 @@ export const updateCustomMenuRangeValue =
       return;
     }
 
+    beginConfigWriteSession(
+      dispatch,
+      connectedDevice.path,
+      connectionGeneration,
+    );
+    dispatch(
+      beginForegroundMutation({
+        path: connectedDevice.path,
+        generation: connectionGeneration,
+        domains: ['config'],
+      }),
+    );
+
     const updatedMenuData = {...menuData};
     updates.forEach(([id, value]) => {
       updatedMenuData[id] = encodeRangeValue(
@@ -268,6 +473,13 @@ export const updateCustomMenuRangeValue =
         rangeControls[id].options[1],
       );
     });
+    const expectedMenuData = updates.reduce<CustomMenuData>(
+      (expected, [id]) => {
+        expected[id] = updatedMenuData[id];
+        return expected;
+      },
+      {},
+    );
     const previousMenuData = menuData;
     dispatch(
       updateSelectedCustomMenuData({
@@ -286,36 +498,308 @@ export const updateCustomMenuRangeValue =
       );
     };
     const channels = new Set<number>();
+    let setsCompleted = false;
     try {
-      for (const [id, value] of updates) {
-        const command = encodeRangeCommand(
-          rangeControls[id].content,
-          value,
-          rangeControls[id].options[1],
-        );
-        const channel = command[0];
-        await api.setCustomMenuValue(...command);
-        channels.add(channel);
-      }
-    } catch (error) {
-      console.warn('Setting custom menu range value failed', error);
-      dispatch(
-        updateSelectedCustomMenuData({
-          menuData: previousMenuData,
-          devicePath: connectedDevice.path,
-        }),
+      const owner = Symbol(`custom-range:${command}`);
+      await api.withPathReservation(
+        connectionGeneration,
+        owner,
+        async (reservedApi) => {
+          for (const [id, value] of updates) {
+            const encodedCommand = encodeRangeCommand(
+              rangeControls[id].content,
+              value,
+              rangeControls[id].options[1],
+            );
+            const channel = encodedCommand[0];
+            await reservedApi.setCustomMenuValue(...encodedCommand);
+            channels.add(channel);
+          }
+          setsCompleted = true;
+          for (const channel of channels) {
+            await reservedApi.commitCustomMenu(channel);
+          }
+        },
       );
+    } catch (error) {
+      console.warn(
+        setsCompleted
+          ? 'Saving custom menu range value failed'
+          : 'Setting custom menu range value failed',
+        error,
+      );
+      if (!setsCompleted) {
+        dispatch(
+          rollbackCustomMenuData({
+            devicePath: connectedDevice.path,
+            expected: expectedMenuData,
+            previous: previousMenuData,
+          }),
+        );
+      }
+    } finally {
       invalidateConfig();
+      try {
+        await reconcileCapableConfig(
+          dispatch,
+          connectedDevice,
+          api,
+          connectionGeneration,
+        );
+      } finally {
+        endConfigWriteSession(
+          dispatch,
+          connectedDevice.path,
+          connectionGeneration,
+        );
+      }
+    }
+  };
+
+const continuousMenuKey = (kind: 'range' | 'color', command: string) =>
+  `custom-menu:${kind}:${command}`;
+
+const continuousConfig = (
+  key: string,
+  dispatch: (action: any) => any,
+  connectedDevice: ConnectedDevice,
+  api: KeyboardAPI,
+  connectionGeneration: number,
+) => ({
+  key,
+  path: connectedDevice.path,
+  generation: connectionGeneration,
+  onStarted: () => {
+    beginConfigWriteSession(
+      dispatch,
+      connectedDevice.path,
+      connectionGeneration,
+    );
+    dispatch(
+      beginForegroundMutation({
+        path: connectedDevice.path,
+        generation: connectionGeneration,
+        domains: ['config'],
+      }),
+    );
+  },
+  save: (reservedApi: KeyboardAPI, channel: string) =>
+    reservedApi.commitCustomMenu(Number(channel)),
+  onSettled: async () => {
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: connectedDevice.path,
+        connectionGeneration,
+        domain: 'config',
+      }),
+    );
+    try {
+      await reconcileCapableConfig(
+        dispatch,
+        connectedDevice,
+        api,
+        connectionGeneration,
+      );
+    } finally {
+      endConfigWriteSession(
+        dispatch,
+        connectedDevice.path,
+        connectionGeneration,
+      );
+    }
+  },
+  onInterrupted: () => {
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: connectedDevice.path,
+        connectionGeneration,
+        domain: 'config',
+      }),
+    );
+  },
+});
+
+export const updateCustomMenuValueContinuous =
+  (command: string, ...rest: number[]): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+    if (!connectedDevice || !api) {
       return;
     }
-    invalidateConfig();
+    const connectionGeneration = api.getConnectionGeneration();
+    const key = continuousMenuKey('color', command);
+    const active = hasContinuousHIDTransaction(
+      key,
+      connectedDevice.path,
+      connectionGeneration,
+    );
+    if (
+      !active &&
+      getCustomMenuAvailabilityForDevice(state, connectedDevice) !== 'available'
+    ) {
+      return;
+    }
+    const commands = getCustomCommandsForSelectedDefinition(state);
+    const commandBytes = commands[command];
+    if (!commandBytes) {
+      return;
+    }
+    const menuData = getSelectedCustomMenuData(state) || {};
+    const nextValue = rest.slice(commandBytes.length);
+    if (isSameNumberArray(menuData[command], nextValue)) {
+      return;
+    }
     try {
-      for (const channel of channels) {
-        await api.commitCustomMenu(channel);
-      }
+      const update = enqueueContinuousHIDUpdate(
+        continuousConfig(
+          key,
+          dispatch,
+          connectedDevice,
+          api,
+          connectionGeneration,
+        ),
+        {
+          dedupeKey: rest.join(','),
+          execute: async (reservedApi) => {
+            await reservedApi.setCustomMenuValue(...rest);
+            return [String(rest[0])];
+          },
+        },
+      );
+      dispatch(
+        updateSelectedCustomMenuData({
+          devicePath: connectedDevice.path,
+          menuData: {
+            ...menuData,
+            [command]: [...nextValue],
+          },
+        }),
+      );
+      await update;
     } catch (error) {
-      console.warn('Saving custom menu range value failed', error);
-      invalidateConfig();
+      console.warn('Continuous custom menu SET failed', error);
+    }
+  };
+
+export const completeCustomMenuValueContinuous =
+  (command: string): AppThunk<Promise<void>> =>
+  async () => {
+    try {
+      await completeContinuousHIDTransaction(
+        continuousMenuKey('color', command),
+      );
+    } catch (error) {
+      console.warn('Continuous custom menu SAVE failed', error);
+    }
+  };
+
+export const updateCustomMenuRangeValueContinuous =
+  (command: string, requestedValue: number): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+    const menuData = getSelectedCustomMenuData(state);
+    const rangeControls = getCustomRangeControlsForSelectedDefinition(state);
+    const control = rangeControls[command];
+    if (!connectedDevice || !api || !menuData || !control) {
+      return;
+    }
+    const connectionGeneration = api.getConnectionGeneration();
+    const key = continuousMenuKey('range', command);
+    const active = hasContinuousHIDTransaction(
+      key,
+      connectedDevice.path,
+      connectionGeneration,
+    );
+    if (
+      !active &&
+      getCustomMenuAvailabilityForDevice(state, connectedDevice) !== 'available'
+    ) {
+      return;
+    }
+    const logicalValues = Object.entries(rangeControls).reduce<
+      Record<string, number>
+    >((values, [id, range]) => {
+      const rawValue = menuData[id];
+      if (Array.isArray(rawValue) && typeof rawValue[0] === 'number') {
+        values[id] = decodeRangeValue(rawValue as number[], range.options[1]);
+      }
+      return values;
+    }, {});
+    const resolvedValues = resolveRangeChange(
+      command,
+      requestedValue,
+      rangeControls,
+      logicalValues,
+    );
+    const updates = Object.entries(resolvedValues).filter(
+      ([id, value]) => logicalValues[id] !== value && rangeControls[id],
+    );
+    if (!updates.length) {
+      return;
+    }
+    const updatedMenuData = {...menuData};
+    updates.forEach(([id, value]) => {
+      updatedMenuData[id] = encodeRangeValue(
+        value,
+        rangeControls[id].options[1],
+      );
+    });
+    const encodedUpdates = updates.map(([id, value]) => ({
+      id,
+      command: encodeRangeCommand(
+        rangeControls[id].content,
+        value,
+        rangeControls[id].options[1],
+      ),
+    }));
+    try {
+      const update = enqueueContinuousHIDUpdate(
+        continuousConfig(
+          key,
+          dispatch,
+          connectedDevice,
+          api,
+          connectionGeneration,
+        ),
+        {
+          dedupeKey: encodedUpdates
+            .map(({id, command: bytes}) => `${id}:${bytes.join(',')}`)
+            .join('|'),
+          execute: async (reservedApi) => {
+            const channels = new Set<string>();
+            for (const {command: bytes} of encodedUpdates) {
+              await reservedApi.setCustomMenuValue(...bytes);
+              channels.add(String(bytes[0]));
+            }
+            return channels;
+          },
+        },
+      );
+      dispatch(
+        updateSelectedCustomMenuData({
+          devicePath: connectedDevice.path,
+          menuData: updatedMenuData,
+        }),
+      );
+      await update;
+    } catch (error) {
+      console.warn('Continuous custom range SET failed', error);
+    }
+  };
+
+export const completeCustomMenuRangeValueContinuous =
+  (command: string): AppThunk<Promise<void>> =>
+  async () => {
+    try {
+      await completeContinuousHIDTransaction(
+        continuousMenuKey('range', command),
+      );
+    } catch (error) {
+      console.warn('Continuous custom range SAVE failed', error);
     }
   };
 
@@ -511,9 +995,10 @@ export const readV3MenuStateSyncCandidate = async (
   connectedDevice: ConnectedDevice,
   state: RootState,
   connectionGeneration: number,
+  reservedApi?: KeyboardAPI,
 ): Promise<StateSyncConfigCandidate | null> => {
   const definition = getDefinitionForDevice(state, connectedDevice);
-  const api = new KeyboardAPI(connectedDevice.path);
+  const api = reservedApi ?? new KeyboardAPI(connectedDevice.path);
   if (!isEraVIADefinitionV3(definition)) {
     throw new Error('V3 menus are only compatible with V3 VIA definitions.');
   }
@@ -537,20 +1022,13 @@ export const readV3MenuStateSyncCandidate = async (
     return {};
   }
 
-  const commandRequests = commands.map(([name, channelId, ...command]) => ({
-    command: name,
-    promise: api.getCustomMenuValue([channelId].concat(command)),
-  }));
-  const commandResponses = await Promise.all(
-    commandRequests.map(({promise}) => promise),
-  );
-  const menuData = commandRequests.reduce<CustomMenuData>(
-    (result, request, index) => ({
-      ...result,
-      [request.command]: commandResponses[index].slice(1),
-    }),
-    {},
-  );
+  const menuData: CustomMenuData = {};
+  for (const [name, channelId, ...command] of commands) {
+    const response = await api.getCustomMenuValue(
+      [channelId].concat(command),
+    );
+    menuData[name] = response.slice(1);
+  }
 
   const maxLedIndex = collectMaxLedIndex(definition);
   if (maxLedIndex >= 0) {
@@ -719,13 +1197,12 @@ export const getV3MenuComponents = createSelector(
     ) as ReturnType<typeof makeCustomMenus>,
 );
 
-export const getCustomCommands = createSelector(
+const getCustomCommandsForSelectedDefinition = createSelector(
   getSelectedDefinition,
   getSelectedFirmwareVersion,
   getV3Menus,
-  getSelectedCustomMenuAvailability,
-  (definition, firmwareVersion, v3Menus, availability) => {
-    if (!definition || availability !== 'available') {
+  (definition, firmwareVersion, v3Menus) => {
+    if (!definition) {
       return {};
     }
     if (isVIADefinitionV2(definition)) {
@@ -735,12 +1212,11 @@ export const getCustomCommands = createSelector(
   },
 );
 
-export const getCustomRangeControls = createSelector(
+export const getCustomRangeControlsForSelectedDefinition = createSelector(
   getSelectedDefinition,
   getV3Menus,
-  getSelectedCustomMenuAvailability,
-  (definition, v3Menus, availability) => {
-    if (!definition || availability !== 'available') {
+  (definition, v3Menus) => {
+    if (!definition) {
       return {};
     }
     const menus = isVIADefinitionV2(definition)
@@ -748,6 +1224,18 @@ export const getCustomRangeControls = createSelector(
       : v3Menus;
     return collectRangeControls(menus);
   },
+);
+
+export const getCustomCommands = createSelector(
+  getCustomCommandsForSelectedDefinition,
+  getSelectedCustomMenuAvailability,
+  (commands, availability) => (availability === 'available' ? commands : {}),
+);
+
+export const getCustomRangeControls = createSelector(
+  getCustomRangeControlsForSelectedDefinition,
+  getSelectedCustomMenuAvailability,
+  (controls, availability) => (availability === 'available' ? controls : {}),
 );
 
 const compileMenu = (partial: string, depth = 0, val: any, idx: number) => {

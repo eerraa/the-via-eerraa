@@ -17,6 +17,8 @@ import {
   getSelectedConnectedDevice,
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
+  getSelectionGeneration,
+  isSelectedDeviceOperationCurrent,
   selectDevice,
 } from './devicesSlice';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
@@ -26,6 +28,7 @@ import {
   type StateSyncEncoderMap,
   type StateSyncKeymapCandidate,
 } from './stateSyncCandidateActions';
+import {beginForegroundMutation} from './stateSyncSlice';
 
 type KeymapState = {
   rawDeviceMap: DeviceLayerMap;
@@ -223,9 +226,10 @@ export const readKeymapStateSyncCandidate = async (
   connectedDevice: ConnectedDevice,
   state: RootState,
   connectionGeneration: number,
+  reservedApi?: KeyboardAPI,
 ): Promise<StateSyncKeymapCandidate | null> => {
   const {path} = connectedDevice;
-  const api = new KeyboardAPI(path);
+  const api = reservedApi ?? new KeyboardAPI(path);
   const definition = getDefinitionForDevice(state, connectedDevice);
   if (!definition || !api.isConnectionGenerationCurrent(connectionGeneration)) {
     return null;
@@ -250,10 +254,16 @@ export const readKeymapStateSyncCandidate = async (
     for (const encoderId of encoderIds) {
       encoders[encoderId] = [];
       for (let layerIndex = 0; layerIndex < numberOfLayers; layerIndex++) {
-        const [counterclockwise, clockwise] = await Promise.all([
-          api.getEncoderValue(layerIndex, encoderId, false),
-          api.getEncoderValue(layerIndex, encoderId, true),
-        ]);
+        const counterclockwise = await api.getEncoderValue(
+          layerIndex,
+          encoderId,
+          false,
+        );
+        const clockwise = await api.getEncoderValue(
+          layerIndex,
+          encoderId,
+          true,
+        );
         if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
           return null;
         }
@@ -324,42 +334,98 @@ export const loadKeymapFromDevice =
 
 // TODO: why isn't this keymap of type Keymap i.e. number[]?
 // TODO: should this be using the current selected device? not sure
+export type SaveRawKeymapOptions = {
+  api?: KeyboardAPI;
+  mutationEpochAlreadyAdvanced?: boolean;
+  reconcileOnFailure?: boolean;
+};
+
 export const saveRawKeymapToDevice =
-  (keymap: number[][], connectedDevice: ConnectedDevice): AppThunk =>
+  (
+    keymap: number[][],
+    connectedDevice: ConnectedDevice,
+    options: SaveRawKeymapOptions = {},
+  ): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const state = getState();
     const {path} = connectedDevice;
-    const api = new KeyboardAPI(path);
+    const api = options.api ?? new KeyboardAPI(path);
     const connectionGeneration = api.getConnectionGeneration();
+    const selectionGeneration = getSelectionGeneration(state);
     const definition = getDefinitionForDevice(state, connectedDevice);
     if (!path || !definition) {
-      return;
+      throw new Error('Cannot write keymap without a resolved definition');
+    }
+    if (
+      !isSelectedDeviceOperationCurrent(
+        state,
+        path,
+        connectionGeneration,
+        selectionGeneration,
+      )
+    ) {
+      throw new Error('Keymap write does not belong to the current device');
     }
 
     const {matrix} = definition;
-
-    await api.writeRawMatrix(matrix, keymap);
-    if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
-      return;
+    if (!options.mutationEpochAlreadyAdvanced) {
+      dispatch(
+        beginForegroundMutation({
+          path,
+          generation: connectionGeneration,
+          domains: ['keymap'],
+        }),
+      );
     }
-    const layers = keymap.map((layer) => ({
-      keymap: layer,
-      isLoaded: true,
-    }));
-    dispatch(
-      saveKeymapSuccess({
-        layers,
-        devicePath: path,
-        connectionGeneration,
-      }),
-    );
-    dispatch(
-      invalidateStateSyncDomain({
-        devicePath: path,
-        connectionGeneration,
-        domain: 'keymap',
-      }),
-    );
+
+    try {
+      await api.writeRawMatrix(matrix, keymap);
+      if (
+        !api.isConnectionGenerationCurrent(connectionGeneration) ||
+        !isSelectedDeviceOperationCurrent(
+          getState(),
+          path,
+          connectionGeneration,
+          selectionGeneration,
+        )
+      ) {
+        throw new Error('Keymap write context changed before completion');
+      }
+      const layers = keymap.map((layer) => ({
+        keymap: layer,
+        isLoaded: true,
+      }));
+      dispatch(
+        saveKeymapSuccess({
+          layers,
+          devicePath: path,
+          connectionGeneration,
+        }),
+      );
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: path,
+          connectionGeneration,
+          domain: 'keymap',
+        }),
+      );
+    } catch (error) {
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: path,
+          connectionGeneration,
+          domain: 'keymap',
+        }),
+      );
+      if (
+        options.reconcileOnFailure !== false &&
+        api.isConnectionGenerationCurrent(connectionGeneration)
+      ) {
+        const {refreshAllDomains} = await import('./stateSyncThunks');
+        await dispatch(refreshAllDomains(connectedDevice));
+      }
+      throw error;
+    }
   };
 
 export const updateKey =
@@ -418,6 +484,13 @@ export const updateEncoderValue =
       return;
     }
     const connectionGeneration = api.getConnectionGeneration();
+    dispatch(
+      beginForegroundMutation({
+        path: connectedDevice.path,
+        generation: connectionGeneration,
+        domains: ['keymap'],
+      }),
+    );
     try {
       await api.setEncoderValue(layerIndex, encoderId, isClockwise, value);
     } catch (error) {

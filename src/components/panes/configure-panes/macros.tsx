@@ -49,7 +49,7 @@ export const Pane: FC = () => {
         i === selectedMacro ? macro : oldMacro,
       );
 
-      dispatch(saveMacros(selectedDevice, newMacros));
+      return dispatch(saveMacros(selectedDevice, newMacros));
     },
     [
       macroExpressions,

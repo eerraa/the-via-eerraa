@@ -13,15 +13,19 @@ import {
 } from './stateSyncCandidateActions';
 
 export type StateSyncDomain = keyof StateSyncRevisions;
-type DomainFreshness = 'unknown' | 'dirty' | 'refreshing' | 'fresh';
+export type DomainFreshness = 'unknown' | 'dirty' | 'refreshing' | 'fresh';
 
-type DomainState = {
+export type DomainState = {
   status: DomainFreshness;
   observedRevision: number;
   acceptedRevision: number;
+  mutationEpoch: number;
+  foregroundWriteDepth: number;
+  acceptedSelectionGeneration: number | null;
+  acceptedDefinitionIdentity: string | null;
 };
 
-type PathSyncState = {
+export type PathSyncState = {
   capability: StateSyncCapability;
   generation: number;
   keymap: DomainState;
@@ -41,6 +45,10 @@ const initialDomain = (): DomainState => ({
   status: 'unknown',
   observedRevision: 0,
   acceptedRevision: 0,
+  mutationEpoch: 0,
+  foregroundWriteDepth: 0,
+  acceptedSelectionGeneration: null,
+  acceptedDefinitionIdentity: null,
 });
 
 const initialPathSyncState = (generation: number): PathSyncState => ({
@@ -66,15 +74,34 @@ const acceptStableRevision = (
   },
   domain: StateSyncDomain,
 ) => {
-  const {devicePath, connectionGeneration, revision} = payload;
+  const {
+    devicePath,
+    connectionGeneration,
+    revision,
+    selectionGeneration,
+    definitionIdentity,
+    mutationEpoch,
+  } = payload as typeof payload & {
+    selectionGeneration: number;
+    definitionIdentity: string;
+    mutationEpoch: number;
+  };
   const current = state.byPath[devicePath];
-  if (!current || current.generation !== connectionGeneration) {
+  if (
+    !current ||
+    current.generation !== connectionGeneration ||
+    current[domain].mutationEpoch !== mutationEpoch
+  ) {
     return;
   }
   current[domain] = {
     status: 'fresh',
     observedRevision: revision,
     acceptedRevision: revision,
+    mutationEpoch,
+    foregroundWriteDepth: current[domain].foregroundWriteDepth,
+    acceptedSelectionGeneration: selectionGeneration,
+    acceptedDefinitionIdentity: definitionIdentity,
   };
 };
 
@@ -147,6 +174,64 @@ const stateSyncSlice = createSlice({
         current[domain].status = 'dirty';
       });
     },
+    beginForegroundMutation: (
+      state,
+      action: PayloadAction<{
+        path: string;
+        generation: number;
+        domains: StateSyncDomain[];
+      }>,
+    ) => {
+      const {path, generation, domains: affectedDomains} = action.payload;
+      const current = state.byPath[path];
+      if (!current || current.generation !== generation) {
+        if (current && current.generation > generation) {
+          return;
+        }
+        state.byPath[path] = initialPathSyncState(generation);
+      }
+      affectedDomains.forEach((domain) => {
+        state.byPath[path][domain].mutationEpoch += 1;
+        state.byPath[path][domain].status = 'dirty';
+      });
+    },
+    beginForegroundWriteSession: (
+      state,
+      action: PayloadAction<{
+        path: string;
+        generation: number;
+        domains: StateSyncDomain[];
+      }>,
+    ) => {
+      const {path, generation, domains: affectedDomains} = action.payload;
+      const current = state.byPath[path];
+      if (!current || current.generation !== generation) {
+        return;
+      }
+      affectedDomains.forEach((domain) => {
+        current[domain].foregroundWriteDepth += 1;
+      });
+    },
+    endForegroundWriteSession: (
+      state,
+      action: PayloadAction<{
+        path: string;
+        generation: number;
+        domains: StateSyncDomain[];
+      }>,
+    ) => {
+      const {path, generation, domains: affectedDomains} = action.payload;
+      const current = state.byPath[path];
+      if (!current || current.generation !== generation) {
+        return;
+      }
+      affectedDomains.forEach((domain) => {
+        current[domain].foregroundWriteDepth = Math.max(
+          0,
+          current[domain].foregroundWriteDepth - 1,
+        );
+      });
+    },
     setDomainStatus: (
       state,
       action: PayloadAction<{
@@ -196,6 +281,9 @@ export const {
   setPathCapability,
   observePathRevisions,
   markPathDirty,
+  beginForegroundMutation,
+  beginForegroundWriteSession,
+  endForegroundWriteSession,
   setDomainStatus,
 } = stateSyncSlice.actions;
 

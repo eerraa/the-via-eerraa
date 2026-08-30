@@ -23,6 +23,7 @@ import {
   invalidateStateSyncDomain,
   type StateSyncMacroCandidate,
 } from './stateSyncCandidateActions';
+import {beginForegroundMutation} from './stateSyncSlice';
 
 type MacrosStatus = 'idle' | 'loading' | 'ready';
 
@@ -141,9 +142,7 @@ const macrosSlice = createSlice({
           action.payload;
         state.ownerPath = devicePath;
         state.ownerConnectionGeneration = connectionGeneration;
-        if (selectionGeneration !== undefined) {
-          state.ownerSelectionGeneration = selectionGeneration;
-        }
+        state.ownerSelectionGeneration = selectionGeneration;
         state.ast = candidate.ast;
         state.macroBufferSize = candidate.macroBufferSize;
         state.macroCount = candidate.macroCount;
@@ -166,8 +165,9 @@ export const readMacrosStateSyncCandidate = async (
   connectedDevice: ConnectedDevice,
   state: RootState,
   connectionGeneration: number,
+  reservedApi?: KeyboardAPI,
 ): Promise<StateSyncMacroCandidate | null> => {
-  const api = new KeyboardAPI(connectedDevice.path);
+  const api = reservedApi ?? new KeyboardAPI(connectedDevice.path);
   if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
     return null;
   }
@@ -267,11 +267,21 @@ export const loadMacros =
     }
   };
 
+export type SaveMacrosOptions = {
+  api?: KeyboardAPI;
+  mutationEpochAlreadyAdvanced?: boolean;
+  reconcileOnFailure?: boolean;
+};
+
 export const saveMacros =
-  (connectedDevice: ConnectedDevice, macros: string[]): AppThunk =>
+  (
+    connectedDevice: ConnectedDevice,
+    macros: string[],
+    options: SaveMacrosOptions = {},
+  ): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const state = getState();
-    const api = new KeyboardAPI(connectedDevice.path);
+    const api = options.api ?? new KeyboardAPI(connectedDevice.path);
     const connectionGeneration = api.getConnectionGeneration();
     const selectionGeneration = getSelectionGeneration(state);
     const keycodesVersion = getKeycodesVersionMap(state)[connectedDevice.path];
@@ -284,33 +294,106 @@ export const saveMacros =
       macroState.ownerSelectionGeneration === selectionGeneration &&
       macroState.status === 'ready';
     if (!isCurrentOwner) {
-      return;
+      throw new Error('Macro state does not belong to the current device');
     }
-    if (macroApi) {
-      const sequences = macros.map((expression) => {
-        const optimizedSequence = expressionToSequence(expression);
-        const rawSequence = optimizedSequenceToRawSequence(optimizedSequence);
-        return rawSequence;
-      });
+    const sequences = macros.map((expression) => {
+      const optimizedSequence = expressionToSequence(expression);
+      const rawSequence = optimizedSequenceToRawSequence(optimizedSequence);
+      return rawSequence;
+    });
+
+    if (!options.mutationEpochAlreadyAdvanced) {
+      dispatch(
+        beginForegroundMutation({
+          path: connectedDevice.path,
+          generation: connectionGeneration,
+          domains: ['macro'],
+        }),
+      );
+    }
+
+    try {
       await macroApi.writeRawKeycodeSequences(sequences);
       if (
-        api.isConnectionGenerationCurrent(connectionGeneration) &&
-        isSelectedDeviceOperationCurrent(
+        !api.isConnectionGenerationCurrent(connectionGeneration) ||
+        !isSelectedDeviceOperationCurrent(
           getState(),
           connectedDevice.path,
           connectionGeneration,
           selectionGeneration,
         )
       ) {
-        dispatch(saveMacrosSuccess({ast: sequences}));
-        dispatch(
-          invalidateStateSyncDomain({
-            devicePath: connectedDevice.path,
-            connectionGeneration,
-            domain: 'macro',
-          }),
-        );
+        throw new Error('Macro write context changed before completion');
       }
+      dispatch(saveMacrosSuccess({ast: sequences}));
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: connectedDevice.path,
+          connectionGeneration,
+          domain: 'macro',
+        }),
+      );
+    } catch (error) {
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: connectedDevice.path,
+          connectionGeneration,
+          domain: 'macro',
+        }),
+      );
+      if (
+        options.reconcileOnFailure !== false &&
+        api.isConnectionGenerationCurrent(connectionGeneration)
+      ) {
+        const {refreshAllDomains} = await import('./stateSyncThunks');
+        await dispatch(refreshAllDomains(connectedDevice));
+      }
+      throw error;
+    }
+  };
+
+export const resetMacrosOnDevice = (): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    if (!connectedDevice) {
+      return;
+    }
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    dispatch(
+      beginForegroundMutation({
+        path: connectedDevice.path,
+        generation: connectionGeneration,
+        domains: ['macro'],
+      }),
+    );
+    try {
+      await api.resetMacros();
+    } catch (error) {
+      dispatch(
+        invalidateStateSyncDomain({
+          devicePath: connectedDevice.path,
+          connectionGeneration,
+          domain: 'macro',
+        }),
+      );
+      if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+        const {refreshAllDomains} = await import('./stateSyncThunks');
+        await dispatch(refreshAllDomains(connectedDevice));
+      }
+      throw error;
+    }
+    dispatch(
+      invalidateStateSyncDomain({
+        devicePath: connectedDevice.path,
+        connectionGeneration,
+        domain: 'macro',
+      }),
+    );
+    if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+      const {refreshAllDomains} = await import('./stateSyncThunks');
+      await dispatch(refreshAllDomains(connectedDevice));
     }
   };
 

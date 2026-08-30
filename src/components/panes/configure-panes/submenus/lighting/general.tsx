@@ -11,9 +11,11 @@ import {
 import {LightingControl} from './lighting-control';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
+  completeBacklightValueContinuous,
+  completeCustomColorContinuous,
   getSelectedLightingData,
-  updateBacklightValue,
-  updateCustomColor,
+  updateBacklightValueContinuous,
+  updateCustomColorContinuous,
 } from 'src/store/lightingSlice';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
 import {useTranslation} from 'react-i18next';
@@ -125,7 +127,7 @@ export const GeneralPane: FC = () => {
           .fill(1)
           .map((val, idx) => val + idx)
           .map((val) => {
-            let color, setColor;
+            let color, setColor, completeColor;
             const command =
               val === 1
                 ? LightingValue.BACKLIGHT_COLOR_1
@@ -135,7 +137,8 @@ export const GeneralPane: FC = () => {
               [color, setColor] = [
                 lightingData.customColors[val - 1],
                 (hue: number, sat: number) =>
-                  dispatch(updateCustomColor(val - 1, hue, sat)),
+                  dispatch(updateCustomColorContinuous(val - 1, hue, sat)),
+                () => dispatch(completeCustomColorContinuous(val - 1)),
               ];
             } else if (valArr) {
               [color, setColor] = [
@@ -144,7 +147,10 @@ export const GeneralPane: FC = () => {
                   sat: valArr[1],
                 },
                 (hue: number, sat: number) =>
-                  dispatch(updateBacklightValue(command, hue, sat)),
+                  dispatch(
+                    updateBacklightValueContinuous(command, hue, sat),
+                  ),
+                () => dispatch(completeBacklightValueContinuous(command)),
               ];
             } else {
               return null;
@@ -154,7 +160,12 @@ export const GeneralPane: FC = () => {
               <ControlRow key={val}>
                 <Label>{t('Color')} {val}</Label>
                 <Detail>
-                  <ColorPicker color={color} setColor={setColor} />
+                  <ColorPicker
+                    color={color}
+                    setColor={setColor}
+                    onInteractionComplete={completeColor}
+                    onInteractionCancel={completeColor}
+                  />
                 </Detail>
               </ControlRow>
             );

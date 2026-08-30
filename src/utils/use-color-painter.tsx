@@ -11,6 +11,7 @@ import {
   getSelectedCustomMenuData,
 } from 'src/store/menusSlice';
 import {invalidateStateSyncDomain} from 'src/store/stateSyncCandidateActions';
+import {beginForegroundMutation} from 'src/store/stateSyncSlice';
 import {getHSVFrom256} from './color-math';
 
 export const keyColorsFromPerKeyRGB = (
@@ -53,15 +54,21 @@ export const useColorPainter = (
 
   const onKeycapPointerHandler = useCallback(
     (evt: ThreeEvent<MouseEvent> | React.MouseEvent, idx: number) => {
-      if (evt.buttons === 1 && api && menuAvailability === 'available') {
+      if (
+        evt.buttons === 1 &&
+        api &&
+        selectedDevice &&
+        menuAvailability === 'available'
+      ) {
         const hue = Math.round((selectedPaletteColor[0] * 255) / 360);
         const sat = Math.round(selectedPaletteColor[1] * 255);
         const ledIndex = keys[idx].li;
         if (ledIndex !== undefined) {
-          const previousColors = keyColors;
+          const previousColors = [...keyColors];
           setKeyColors((colors) => {
-            colors[idx] = selectedPaletteColor;
-            return [...colors];
+            const nextColors = [...colors];
+            nextColors[idx] = selectedPaletteColor;
+            return nextColors;
           });
           const connectionGeneration = api.getConnectionGeneration();
           let didSet = false;
@@ -76,23 +83,40 @@ export const useColorPainter = (
               );
             }
           };
-          void api
-            .setPerKeyRGBMatrix(ledIndex, hue, sat)
-            .then(() => {
-              didSet = true;
-              invalidateConfig();
-              return api.commitCustomMenu(0);
-            })
-            .then(() => {
-              invalidateConfig();
-            })
-            .catch((error) => {
+          dispatch(
+            beginForegroundMutation({
+              path: selectedDevice.path,
+              generation: connectionGeneration,
+              domains: ['config'],
+            }),
+          );
+          void (async () => {
+            try {
+              const owner = Symbol(`per-key-rgb:${ledIndex}`);
+              await api.withPathReservation(
+                connectionGeneration,
+                owner,
+                async (reservedApi) => {
+                  await reservedApi.setPerKeyRGBMatrix(ledIndex, hue, sat);
+                  didSet = true;
+                  await reservedApi.commitCustomMenu(0);
+                },
+              );
+            } catch (error) {
               console.warn('Setting per-key RGB failed', error);
               if (!didSet) {
                 setKeyColors(previousColors);
               }
+            } finally {
               invalidateConfig();
-            });
+              if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+                const {refreshConfigDomain} = await import(
+                  'src/store/stateSyncThunks'
+                );
+                await dispatch(refreshConfigDomain(selectedDevice));
+              }
+            }
+          })();
         }
       }
     },
