@@ -27,6 +27,7 @@ bun install --frozen-lockfile
 | H7S USB 진단 wire·계측 | `docs/adr/0002-h7s-usb-diagnostics.md` | `docs/MAP.md` §3 | `tests/era-usb-diagnostics.test.ts` |
 | ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` | `docs/MAP.md` §1 | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | 공개 배포 | `docs/DEPLOYMENT.md` | `docs/MAP.md` §5·§7 | `bun run build` |
+| 죽은 코드·은퇴 아키텍처 장부 | `docs/DEAD_CODE.md` | — | `tests/docs-contract.test.ts` |
 
 ## 2. 먼저 알아야 손해를 안 보는 것
 
