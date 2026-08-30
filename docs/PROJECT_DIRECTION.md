@@ -43,8 +43,13 @@ upstream diff 최소화는 유용하지만 더 이상 그 자체가 목적은 �
 - Design 업로드는 최후의 로컬 소스다. 기존 UX를 위해 유지하되, 번들된 ERA 또는
   공식 정의를 덮어쓰지 못한다.
 
-한쪽 정본을 다른 쪽에서 생성하거나 `era-definitions/v3`를 순정 복제로 유지하지
-않는다. 앱과 펌웨어가 함께 바뀔 때 VID/PID, 명령 주소, 레이아웃, TD 슬롯 정체성은
+> **REFUSED:** 한쪽 정본을 다른 쪽에서 생성하거나 `era-definitions/v3`를 순정 복제로
+> 유지하기.
+> **WHY:** 커스텀과 공식은 서로 다른 소유권이고, 생성된 산출물은 어느 정본도 대체하지
+> 않는다.
+> **REOPENS:** 없다.
+
+앱과 펌웨어가 함께 바뀔 때 VID/PID, 명령 주소, 레이아웃, TD 슬롯 정체성은
 여전히 릴리스 시점 호환성 검토가 필요하다. 앱 매니페스트는 커스텀 경로, identity,
 split pair, 독립 런타임 capability만 기록한다. 통상 앱 빌드와 PR CI는 설치된 공식
 스냅샷과 ERA 커스텀 소스를 읽는다. GitHub를 fetch하거나 펌웨어 저장소를 검사하지
@@ -69,9 +74,12 @@ capability에 opt-in하는지 — 는 여기에 다시 쓰지 않는다.
 `tests/era-definition.test.ts`가 묶으며, `docs/MAP.md` §2가 숫자를 든다.
 
 한 항목은 인벤토리가 아니라 지속되는 제품 결정이다. `sirind/brick65`는 영구
-ATmega32U4 예외다. 28,672 B 플래시 예산 때문에 순정 VIA만 유지하므로, 공통 ERA
-tapping·Tap Dance·exact-ms·State Sync capability를 하나도 주장하지 않는다.
-하드웨어 예산이지 결함이 아니며, "고치면" 안 된다.
+ATmega32U4 예외다.
+
+> **REFUSED:** `sirind/brick65`에 공통 ERA tapping·Tap Dance·exact-ms·State Sync
+> capability를 넣기.
+> **WHY:** 28,672 B 플래시 예산 때문에 순정 VIA만 유지하는 영구 ATmega32U4 예외다.
+> **REOPENS:** 없다. 하드웨어 예산이지 결함이 아니다.
 
 `build:kbs`는 설치된 공식 스냅샷을 `/definitions/v3` 아래에 패키징하고 ERA
 overlay를 `/definitions/era/v3/{vpid}.json`으로 내보낸다. 두 소스에 같은 VPID가
@@ -79,8 +87,11 @@ overlay를 `/definitions/era/v3/{vpid}.json`으로 내보낸다. 두 소스에 �
 union이다. 생성된 산출물은 어느 정본도 대체하지 않으며, provenance나 앱 순정
 소스 트리도 만들지 않는다.
 
-번들된 정의는 수동 JSON 업로드 없이 자동 로드된다. 실기에서 확인됐다. 병렬 런타임
-로더나 외부 정의 서비스를 도입하지 않는다.
+번들된 정의는 수동 JSON 업로드 없이 자동 로드된다. 실기에서 확인됐다.
+
+> **REFUSED:** 병렬 런타임 로더나 외부 정의 서비스.
+> **WHY:** 번들된 정의는 수동 JSON 업로드 없이 자동 로드되며 실기에서 확인됐다.
+> **REOPENS:** 없다.
 
 펌웨어 저장소는 USB identity와 프로토콜 구현의 authority로 남되, 공식 정의
 소유권의 authority는 아니다. 앱은 커스텀 overlay와 설치된 공식 스냅샷을 검증하며,
@@ -89,8 +100,12 @@ union이다. 생성된 산출물은 어느 정본도 대체하지 않으며, pro
 ### Identity UI
 
 승인된 전역 UI는 VIA의 시각 언어를 유지한다. 오른쪽 위에는 언어 선택과 클릭할 수
-없는 은은한 `ERA` 워드마크가 있다. 제조사 브랜딩을 넣거나 전체 인터페이스를 다시
-디자인하지 않는다.
+없는 은은한 `ERA` 워드마크가 있다.
+
+> **REFUSED:** 제조사 브랜딩 또는 전체 인터페이스 재디자인.
+> **WHY:** 이 포크는 백지 configurator도 제조사 리브랜딩도 아니며, 승인된 전역 UI는
+> VIA의 시각 언어를 유지한다.
+> **REOPENS:** 없다.
 
 ### Tap Dance
 
@@ -139,8 +154,11 @@ exact 컨트롤만 노출하고 그 레거시 드롭다운을 복제하지 않�
 커스텀 앱은 이 컨트롤에 기본으로 숫자 `ms` 입력을 보여야 한다. 이후 TAPPING 시간
 필드에 그 입력을 재사용하려면 저장과 wire 의미를 감사한 뒤에만 한다.
 
-Vial은 인터랙션 디자인을 참고하는 용도로만 쓴다. VIA React 코드에서 독립적으로
-구현하며, 라이선스가 호환되지 않거나 불분명한 소스를 복사하지 않는다.
+Vial은 인터랙션 디자인을 참고하는 용도로만 쓴다.
+
+> **REFUSED:** 라이선스가 호환되지 않거나 불분명한 Vial 구현 코드 복사.
+> **WHY:** Vial은 인터랙션 디자인을 참고하는 용도이며 VIA React 코드에서 독립 구현한다.
+> **REOPENS:** 호환되고 검증된 라이선스 근거가 있을 때.
 
 ## 상태 동기화
 
@@ -184,17 +202,11 @@ refresh, path별 transport ownership, 기각된 모든 대안과 그 이유 — 
 [ADR 0001](adr/0001-state-sync-protocol.md)에 있다. 여기에 다시 쓰지 않는다.
 
 세 경계는 기록이 아니라 방향에 남긴다. State Sync와 무관한 작업까지 제약하기
-때문이다.
+때문이다. 거절 세 줄은 [ADR 0001](adr/0001-state-sync-protocol.md)에 있다.
 
-- **호스트 프로토콜에 raw EEPROM 주소를 노출하지 않는다.** QMK와 H7S 저장
-  레이아웃이 다르고, 기존 VIA 읽기가 이미 권위 있는 직렬화와 정규화를 제공한다.
-- **`UI_SYNC_REQUEST 0x16 v1`은 기존 의미를 유지한다** — all, channel-command,
-  command-id 의미를 바꾸지 않는다. State Sync v2로 재해석하지 않으며, 유일한
-  정확성 메커니즘도 아니다. Unsolicited event, semantic/range event 종류, nonce,
-  ARM/lease, event sequence, descriptor queue, ACK journal, 두 번째
-  snapshot/value 프로토콜은 승인된 방향 밖이다. 실측이 구체적 미충족 요구를
-  보여준 뒤에만, 새 ADR을 통해 재검토한다.
-- **더 넓은 Redux 상태는 이 계약이 요구하는 곳에서만 리팩터한다.**
+- 호스트 프로토콜에 raw EEPROM 주소를 노출하지 않는다.
+- `UI_SYNC_REQUEST 0x16 v1`은 기존 의미를 유지한다.
+- 더 넓은 Redux 상태는 이 계약이 요구하는 곳에서만 리팩터한다.
 
 실기기 검증은 소프트웨어만의 증거가 결정적 시뮬레이션, 호스트 테스트, 캡처된
 transcript 재생, 정적 ownership 증명으로 답할 수 없는 구체적 질문을 남길 때까지
@@ -237,14 +249,11 @@ timeout과 rate 값은 영구 추측이 아니라 측정된 파라미터로 다�
    정책, 기존 VIA 값 authority, exact-ms 식별자를 보존한다.
 2. 물리 TOMAK split 수렴과 공식 클라이언트 transcript 검사를 완료하되, 자동화된
    펌웨어 빌드를 플래시나 장치 관측의 대체로 취급하지 않는다.
-3. USB 진단 selector `0x07`은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)대로
-   읽기 전용, opt-in, RAM-only로 두고, **polling mode나 State Sync 복구에 절대
-   결합하지 않는다.** Mode 선택은 항상 사용자의 것이다. 펌웨어와 앱은 자동
-   다운그레이드, 자동 mode 벤치마크, EEPROM 진단 이력, 합성 안정성 점수를
-   만들지 않는다. 호스트 이력은 장치·펌웨어·프로토콜 identity가 동일한 수동
-   테스트만 비교한다.
-4. semantic/range event, ACK, 추가 domain, 두 번째 값 프로토콜은 측정된 polling
-   지연이나 refresh 비용이 구체적 실패를 보여준 뒤에만, 새 ADR을 통해 재검토한다.
+3. USB 진단 selector `0x07`의 읽기 전용·opt-in·RAM-only 경계와, polling mode·State
+   Sync 복구 결합 거절은 [ADR 0002](adr/0002-h7s-usb-diagnostics.md)가 정한다. Mode
+   선택은 항상 사용자의 것이다.
+4. semantic/range event, ACK, 추가 domain, 두 번째 값 프로토콜의 재검토 조건은
+   [ADR 0001](adr/0001-state-sync-protocol.md)의 REFUSED 블록이 정한다.
 
 펌웨어 저장소를 수정하거나 프로토콜을 고정하기 전에 필요성, 앱과 펌웨어 변경,
 호환성, 실패 동작, 하드웨어 테스트 계획을 보고한다. Cloudflare Pages, DNS,
@@ -252,10 +261,19 @@ timeout과 rate 값은 영구 추측이 아니라 측정된 파라미터로 다�
 
 ## 영구 비목표
 
-- 기존 V3 Custom Value 기능을 중복 React 상태나 프로토콜로 다시 만들지 않는다.
+목록이지 거절 블록의 모음이 아니다. 세 줄은 결정이 있는 자리에 있다.
+
+- 기존 V3 Custom Value 기능을 중복 React 상태나 프로토콜로 다시 만들지 않는다 —
+  [ADR 0001](adr/0001-state-sync-protocol.md)
 - Tap Dance 엔진이나 split EEPROM 동기화를 대체하지 않는다.
-- ERA 전용 디자인 시스템이나 제조사 브랜딩을 만들지 않는다.
-- 생성된 정의를 소스로 유지하지 않는다.
-- 호환되고 검증된 라이선스 근거 없이 Vial 구현 코드를 복사하지 않는다.
+
+> **REFUSED:** Tap Dance 엔진이나 split EEPROM 동기화를 이 앱에서 대체하기.
+> **WHY:** 펌웨어가 키보드 상태의 authority로 남고, TOMAK 펌웨어와 VIA V3 JSON이 엔진·슬롯·저장을
+> 이미 구현한다.
+> **REOPENS:** 없다.
+
+- ERA 전용 디자인 시스템이나 제조사 브랜딩을 만들지 않는다 — 위 Identity UI
+- 생성된 정의를 소스로 유지하지 않는다 — 위 정의
+- 호환되고 검증된 라이선스 근거 없이 Vial 구현 코드를 복사하지 않는다 — 위 Tap Dance
 - 입증된 정확성을 희생하며 작은 diff를 최적화하지 않되, 측정된 필요가 없는
   추측성 프레임워크도 피한다.

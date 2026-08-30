@@ -23,14 +23,23 @@ wire와 계측은 [ADR 0002](0002-h7s-usb-diagnostics.md), 정의 소유권은
   "일반 VIA 키보드의 시각 언어와 workflow를 보존한다"는 포크 계약과 어긋난다.
 
 Modal은 기능을 한 단계 더 숨기고, session이 열려 있어야 하는 10/30/60초 동안 실수로 닫으면
-firmware session만 남는 위험을 키운다. Accordion도 같은 이유로 발견성 이득이 줄어 둘 다
-탈락했다.
+firmware session만 남는 위험을 키운다. Accordion도 같은 이유로 발견성 이득이 줄어든다.
 
-**정의 JSON은 바꾸지 않는다.** `menu-generator.tsx`가 그 submenu의 item 중
-`id_qmk_usb_bootmode` command가 있는지만 보고 `UsbDiagnosticsSection`을 렌더링하며, section
-자체가 다시 `shouldProbeUsbDiagnostics()`로 ERA 소스 + `usbDiagnostics: true` opt-in을
-확인한다. 이중 게이트이므로 공식 스냅샷이나 Design 업로드로 열린 같은 키보드에는 selector
-`0x07`이 나가지 않는다.
+> **REFUSED:** 최상위 `/diagnostics` 페이지, modal, accordion.
+> **WHY:** 최상위 탭은 다섯 H7S에서만 의미 있는데 모든 키보드에 보였고, mode를 바꾼 화면에서
+> 효과를 찾을 수 없었으며, modal/accordion은 10/30/60초 session을 실수로 닫거나 접어
+> firmware session만 남긴다.
+> **REOPENS:** 없다. 일반 VIA 키보드의 시각 언어와 workflow를 보존한다.
+
+> **REFUSED:** 진단 블록 배치를 정의 JSON 메뉴 항목으로 넣기.
+> **WHY:** `menu-generator.tsx`가 `id_qmk_usb_bootmode` 존재와 `usbDiagnostics` opt-in의
+> 이중 게이트로 렌더링하므로, 공식 스냅샷이나 Design 업로드로 열린 같은 키보드에는
+> selector `0x07`이 나가지 않는다.
+> **REOPENS:** 없다.
+
+`menu-generator.tsx`가 그 submenu의 item 중 `id_qmk_usb_bootmode` command가 있는지만 보고
+`UsbDiagnosticsSection`을 렌더링하며, section 자체가 다시 `shouldProbeUsbDiagnostics()`로
+ERA 소스 + `usbDiagnostics: true` opt-in을 확인한다.
 
 부수 효과 두 가지가 남는다.
 
@@ -41,9 +50,9 @@ firmware session만 남는 위험을 키운다. Accordion도 같은 이유로 �
   있었다. 인라인 배치에서는 Configure가 보이는 상태로 측정하므로 그 poll이 진단 snapshot
   읽기와 **같은 직렬 WebHID queue에서 함께 돈다.** 제어 트래픽이 초당 약 2건 늘고
   main-loop에서 처리되므로 `loop max`/stall count의 baseline이 올라갈 수 있다.
-  측정 창을 위해 recovery 동작을 바꾸지는 않는다 — `docs/PROJECT_DIRECTION.md`가 selector
-  `0x07`을 polling mode나 recovery에 결합하지 않는다고 못박았다. 대신 이전 배치에서 저장된
-  run과 loop timing을 직접 비교하지 않는다.
+  측정 창을 위해 recovery 동작을 바꾸지는 않는다 — selector `0x07`을 polling mode나
+  recovery에 결합하지 않는 거절은 [ADR 0002](0002-h7s-usb-diagnostics.md)에 있다. 대신
+  이전 배치에서 저장된 run과 loop timing을 직접 비교하지 않는다.
 
 `/diagnostics` route는 `/`로 redirect만 남긴다. 열려 있던 탭이나 북마크가 빈 화면이 되지
 않게 하는 용도이며 global icon bar에서는 사라진다. (배포 호스트의 콜드 딥링크는 이 redirect에
@@ -51,9 +60,11 @@ firmware session만 남는 위험을 키운다. Accordion도 같은 이유로 �
 
 ## 2. 결과 화면: 기본은 요약, 고급은 요청할 때
 
-패널 9개를 한 번에 보여주던 화면은 일반 사용자가 읽을 수 없었다. 정보를 지우는 안은
-채택하지 않았다 — 비교표를 복사-붙여넣기 텍스트로 옮기면 기능 자체가 죽고, `Spread`/`Queue`
-열이 사라지면 §3이 막는 오독이 그대로 돌아온다.
+패널 9개를 한 번에 보여주던 화면은 일반 사용자가 읽을 수 없었다.
+
+> **REFUSED:** 고급 지표를 지우거나 비교표를 복사-붙여넣기 텍스트로만 옮기기.
+> **WHY:** `Spread`/`Queue` 열이 사라지면 위상 의존 지표를 비교하는 오독이 그대로 돌아온다.
+> **REOPENS:** 없다. 기본은 요약이고 고급은 요청할 때 본다.
 
 **기본 요약 뷰 + `Advanced metrics and mode comparison` 토글.** VIA Settings의
 `Show Diagnostic Information` 토글과 같은 계열의 기존 패턴이다.
@@ -208,12 +219,11 @@ submenu 상단 ⓘ 하나로는 DEBOUNCE를 설명할 수 없다. 세 안 중 **
 택했다: `Debounce Mode` 드롭다운의 ⓘ가 세 모드를 한자리에서 비교하고, 그 아래 `showIf`로
 살아남은 ms 행의 ⓘ가 그 행만 설명한다.
 
-- **(A) 상단 ⓘ 본문 확장 — 탈락.** 한 문단에 다섯 ms 항목과 세 모드를 모두 넣으면 독자가
-  자기가 보고 있는 행에 해당하는 문장을 그 안에서 찾아내야 한다. TAPPING에서는 더 나쁘다 —
-  토글 세 개가 각각 증상→처방 2~3문장을 요구하므로 한 문단이 여덟 문장이 된다.
-- **(B) 모드별 조건부 상단 설명 — 탈락.** "내가 보고 있는 ms 항목의 의미"는 풀지만
-  **"세 모드의 차이"는 풀지 못한다.** 아직 고르지 않은 모드의 설명이 화면에 없으면 비교가
-  불가능하고, 모드를 고르는 순간이 바로 비교가 필요한 순간이다.
+> **REFUSED:** submenu 상단 ⓘ 본문 확장(A)과 모드별 조건부 상단 설명(B).
+> **WHY:** (A)는 독자가 보고 있는 행의 문장을 한 문단에서 찾아내야 하고 TAPPING에서는 한
+> 문단이 여덟 문장이 되며, (B)는 비교가 필요한 순간에 아직 고르지 않은 모드의 설명이
+> 화면에 없다.
+> **REOPENS:** 없다.
 
 ### 부착 기준
 
@@ -288,10 +298,11 @@ submenu 상단 ⓘ 하나로는 DEBOUNCE를 설명할 수 없다. 세 안 중 **
 `repeat_time`마다 묶음 전체를 뗀 리포트를 보내고 곧바로 원래 리포트를 복원하는 것이다 —
 `asd`를 누르고 있으면 OS 자동 반복의 `asddddd`가 아니라 `asdasdasd`가 들어간다.
 
-`KKUK`을 고른 이유는 펌웨어 식별자가 이미 `kkuk.c`, `KKUK_ENABLE`, `id_qmk_kkuk_*`이어서
-**코드·JSON·문서·앱이 한 단어로 수렴**하기 때문이다. `HOLD CYCLE`은 서술적이지만 레이어/홀드
-순환으로 오독될 여지가 있고 펌웨어 내부 이름과 계속 어긋난다. `REPEAT PULSE`는 옵션 이름과는
-맞지만 일반 사용자에게 "펄스"가 기술적이다.
+> **REFUSED:** 메뉴 이름 `Anti-Ghosting`, `HOLD CYCLE`, `REPEAT PULSE`.
+> **WHY:** 고스팅 방지가 아니고, HOLD CYCLE은 레이어/홀드 순환으로 오독되며 REPEAT PULSE는
+> 일반 사용자에게 기술적이다. 펌웨어 식별자가 이미 `kkuk.c`, `KKUK_ENABLE`,
+> `id_qmk_kkuk_*`이라 코드·JSON·문서·앱이 한 단어로 수렴한다.
+> **REOPENS:** 없다.
 
 라벨 자체는 영어 `KKUK` 하나이므로 공식 `usevia.app`에서도 같은 이름이 보인다. 인식의 부담은
 요약의 `asdasdasd` 예시가 혼자 진다 — 예시는 언어와 무관하게 읽히고 추상적 서술보다 짧다.
@@ -326,8 +337,11 @@ H7S 5종에 MOUSE 메뉴를 채널 17로 추가했다. 펌웨어는 마우스 �
 MOUSE가 보이고 공식 `usevia.app`에서는 보이지 않으며, 그것은 §"커스텀 앱만 말할 수 있는
 경로는 오류다"에 걸린다.
 
-**NKRO는 H7S에 넣지 않는다.** 그 키보드는 전환 없이 항상 20키 동시 입력이고 켜고 끄는 옵션
-자체가 없다. 토글을 만들면 없는 선택지를 있는 것처럼 보이게 하는 거짓말이 된다.
+> **REFUSED:** H7S에 NKRO 토글 넣기.
+> **WHY:** 그 키보드는 전환 없이 항상 20키 동시 입력이고 켜고 끄는 옵션 자체가 없다. 토글을
+> 만들면 없는 선택지를 있는 것처럼 보이게 하는 거짓말이 된다.
+> **REOPENS:** 없다.
+
 `tests/era-definition.test.ts`가 H7S 5종에 `id_qmk_custom_nkro`가 없는지 검사한다.
 
 ## 10. Verification
