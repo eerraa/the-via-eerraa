@@ -25,7 +25,7 @@ import {
 } from './stateSyncCandidateActions';
 import {beginForegroundMutation} from './stateSyncSlice';
 
-type MacrosStatus = 'idle' | 'loading' | 'ready';
+type MacrosStatus = 'idle' | 'metadata' | 'loading' | 'ready';
 
 type MacrosState = {
   ast: RawKeycodeSequence[];
@@ -66,6 +66,24 @@ const macrosSlice = createSlice({
       state.macroCount = 0;
       state.isFeatureSupported = true;
       state.status = 'loading';
+      state.ownerPath = action.payload.path;
+      state.ownerConnectionGeneration = action.payload.connectionGeneration;
+      state.ownerSelectionGeneration = action.payload.selectionGeneration;
+    },
+    macroMetadataLoaded: (
+      state,
+      action: PayloadAction<{
+        macroCount: number;
+        path: string;
+        connectionGeneration: number;
+        selectionGeneration: number;
+      }>,
+    ) => {
+      state.ast = [];
+      state.macroBufferSize = 0;
+      state.macroCount = action.payload.macroCount;
+      state.isFeatureSupported = true;
+      state.status = 'metadata';
       state.ownerPath = action.payload.path;
       state.ownerConnectionGeneration = action.payload.connectionGeneration;
       state.ownerSelectionGeneration = action.payload.selectionGeneration;
@@ -154,6 +172,7 @@ const macrosSlice = createSlice({
 
 export const {
   macrosLoadStarted,
+  macroMetadataLoaded,
   loadMacrosSuccess,
   saveMacrosSuccess,
   setMacrosNotSupported,
@@ -352,6 +371,57 @@ export const saveMacros =
     }
   };
 
+export const loadMacroMetadata =
+  (connectedDevice: ConnectedDevice): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    const selectionGeneration = getSelectionGeneration(getState());
+    const isCurrentSelection = () =>
+      api.isConnectionGenerationCurrent(connectionGeneration) &&
+      isSelectedDeviceOperationCurrent(
+        getState(),
+        connectedDevice.path,
+        connectionGeneration,
+        selectionGeneration,
+      );
+    if (connectedDevice.protocol < 8) {
+      if (isCurrentSelection()) {
+        dispatch(
+          setMacrosNotSupported({
+            path: connectedDevice.path,
+            connectionGeneration,
+            selectionGeneration,
+          }),
+        );
+      }
+      return;
+    }
+    try {
+      const macroCount = await api.getMacroCount();
+      if (isCurrentSelection()) {
+        dispatch(
+          macroMetadataLoaded({
+            macroCount,
+            path: connectedDevice.path,
+            connectionGeneration,
+            selectionGeneration,
+          }),
+        );
+      }
+    } catch {
+      if (isCurrentSelection()) {
+        dispatch(
+          setMacrosNotSupported({
+            path: connectedDevice.path,
+            connectionGeneration,
+            selectionGeneration,
+          }),
+        );
+      }
+    }
+  };
+
 export const resetMacrosOnDevice = (): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const state = getState();
@@ -410,6 +480,18 @@ export const getIsMacrosReady = (state: RootState) => {
   );
 };
 
+const getIsMacroStateCurrent = (state: RootState) => {
+  const device = getSelectedConnectedDevice(state);
+  const macros = state.macros;
+  return (
+    !!device &&
+    macros.status !== 'idle' &&
+    macros.ownerPath === device.path &&
+    macros.ownerConnectionGeneration === getSelectedConnectionGeneration(state) &&
+    macros.ownerSelectionGeneration === getSelectionGeneration(state)
+  );
+};
+
 export const getIsMacroFeatureSupported = (state: RootState) =>
   state.macros.isFeatureSupported;
 
@@ -420,7 +502,7 @@ export const getAST = (state: RootState) =>
 export const getMacroBufferSize = (state: RootState) =>
   getIsMacrosReady(state) ? state.macros.macroBufferSize : 0;
 export const getMacroCount = (state: RootState) =>
-  getIsMacrosReady(state) ? state.macros.macroCount : 0;
+  getIsMacroStateCurrent(state) ? state.macros.macroCount : 0;
 
 export const getExpressions = createSelector(getAST, (sequences) =>
   sequences.map((sequence) => {

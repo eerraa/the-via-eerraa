@@ -74,13 +74,13 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Configures speed when using mouse-control keys.',
       detail:
-        'Nothing here does anything unless your keymap has mouse keys on it. The values interact, so change one at a time.',
+        'These settings have no effect unless your keymap contains mouse keys. The values affect one another, so adjusting one at a time is recommended.',
     },
   ],
   [
     'id_qmk_custom_nkro_',
     {
-      summary: 'Expands simultaneous key input without a limit.',
+      summary: 'Removes the six-key rollover limit for simultaneous key input.',
       detail:
         'Turn it off if an old BIOS or a KVM switch cannot see your typing. Off, the keyboard falls back to 6KRO and registers six keys at once.',
     },
@@ -114,7 +114,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Link speed of the cable between the two units.',
       detail:
-        'Apply does nothing if that speed is already running; changing it restarts both units. Three long red LED pulses mean the split cable is not good enough — replace it. Default is High.',
+        'Apply does nothing if that speed is already running; changing it restarts both units.\n\nThree long red LED pulses mean the split cable is not good enough — replace it. Default is High.',
     },
   ],
   [
@@ -126,7 +126,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     },
   ],
   [
-    'id_qmk_rgb_sleep_timeout_exact',
+    'id_qmk_rgb_sleep_timeout',
     {
       summary: 'Turns RGB off after a period with no key input.',
       detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
@@ -145,7 +145,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'LED for Caps Lock, Scroll Lock and Num Lock.',
       detail:
-        'Pick what each indicator watches, then set its brightness and colour. It takes over that LED only while the lock is on.',
+        'Choose which lock each indicator follows, then set its brightness and colour. While that lock is on, the indicator display takes priority on that LED.',
     },
   ],
   // The badge menu is gated on `id_custom_badge_only`, the one command in it that no
@@ -283,7 +283,7 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
   },
   {
     command: 'id_qmk_debounce_time_single',
-    help: 'One value for both directions. Nothing is reported until the switch has been quiet this long, so this is also how much later every key registers. 5 to 10 ms covers most switches.',
+    help: 'One value for both press and release. A change is reported only after the switch signal has remained stable for this long, so this is also the added input delay. 5 to 10 ms covers most switches.',
   },
   {
     command: 'id_qmk_debounce_time_post',
@@ -303,19 +303,19 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
       'Release - delay before and after release (pre+post window)',
       'Release Delay',
     ],
-    help: 'The release side. Letting go is reported only after the switch has been quiet this long. It delays the release, not the press.',
+    help: 'The release side. A release is reported only after the switch signal has remained stable for this long. It delays release, not press.',
   },
   {
     command: 'id_qmk_tapping_permissive_hold',
-    help: 'For holds that do not take when you type fast. On, the key becomes a hold as soon as another key is pressed and released while you are still holding it. Hold on Other Key Press decides earlier — on the other key going down rather than coming back up.',
+    help: 'Use this when a tap-hold key is still treated as a tap during fast typing. When enabled, it becomes a hold after another key is pressed and released while you are still holding it. Hold on Other Key Press decides earlier: when the other key is pressed rather than when it is released.',
   },
   {
     command: 'id_qmk_tapping_hold_on_other_key_press',
-    help: 'The strongest of the three: the key becomes a hold the moment any other key goes down. Turn it on if holds still come out as letters with Permissive Hold on. It costs rolls, which hurts most on a home-row Mod-Tap.',
+    help: 'The key becomes a hold as soon as any other key is pressed. Enable this if a key you intend to hold is still treated as a tap with Permissive Hold enabled. The trade-off is that rolling key presses can turn intended taps into holds, especially with home-row Mod-Tap keys.',
   },
   {
     command: 'id_qmk_tapping_retro_tapping',
-    help: 'For letters that vanish when you rest on a key too long. On, a tap-hold key held past the term and released with nothing pressed in between still sends the tap.',
+    help: 'Use this when a tap-hold key held past the term is released without another key press and would otherwise produce no tap. When enabled, that release still sends the tap.',
   },
   {
     command: 'id_qmk_mousekey_cursor_acceleration',
@@ -346,6 +346,10 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
   {
     command: 'id_qmk_mousekey_wheel_acceleration',
     help: 'How much scrolling speeds up while you hold the key. Off keeps it steady.',
+  },
+  {
+    command: 'id_qmk_split_link_level',
+    help: 'High — 460800 bps; 1 ms polling for DUAL-HOST layer sharing.\n\nMedium — 230400 bps; 2 ms polling for DUAL-HOST layer sharing.\n\nLow — 115200 bps; 4 ms polling for DUAL-HOST layer sharing.\n\nMaster–Slave (HOST-PEER) operation changes very little. The practical difference is mainly DUAL-HOST layer-sharing response time.',
   },
   {
     command: 'id_qmk_eeprom_sync_requested',

@@ -57,12 +57,19 @@ import {
   type StateSyncDomain,
 } from './stateSyncSlice';
 
-type CoordinatorMode = 'poll' | 'full' | 'config';
+type CoordinatorMode =
+  | 'poll'
+  | 'full'
+  | 'keymap'
+  | 'macro'
+  | 'config';
 type DomainCandidate =
   StateSyncKeymapCandidate | StateSyncMacroCandidate | StateSyncConfigCandidate;
 
 type CoordinatorOwner = {
   fullPending: Set<StateSyncDomain>;
+  processDirtyAfterPending: boolean;
+  requireReady: boolean;
   selectionGeneration: number;
   definitionIdentity: string;
   initialEnvelope?: StateSyncEnvelope;
@@ -70,7 +77,10 @@ type CoordinatorOwner = {
   promise: Promise<void>;
 };
 
-const domainOrder: StateSyncDomain[] = ['keymap', 'macro', 'config'];
+// Initial/foreground UX prioritises the immediately-visible keymap and custom
+// controls. The large macro buffer is intentionally last and remains lazy until
+// the Macro pane requests its first authoritative snapshot.
+const domainOrder: StateSyncDomain[] = ['keymap', 'config', 'macro'];
 const coordinatorOwners = new Map<string, CoordinatorOwner>();
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -82,12 +92,13 @@ const isSelectedContextCurrent = (
   connectionGeneration: number,
   selectionGeneration: number,
   definitionIdentity?: string | null,
+  requireReady = true,
 ) => {
   const state = getState();
   const device = getSelectedConnectedDevice(state);
   return (
     api.isConnectionGenerationCurrent(connectionGeneration) &&
-    getIsSelectedDeviceReady(state) &&
+    (!requireReady || getIsSelectedDeviceReady(state)) &&
     isSelectedDeviceOperationCurrent(
       state,
       api.kbAddr,
@@ -138,10 +149,18 @@ const queryCapableEnvelope = async (
   api: KeyboardAPI,
   generation: number,
   selectionGeneration: number,
+  requireReady = true,
 ): Promise<StateSyncEnvelope | null> => {
   const result = await queryStateSync(api);
   if (
-    !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+    !isSelectedContextCurrent(
+      getState,
+      api,
+      generation,
+      selectionGeneration,
+      undefined,
+      requireReady,
+    )
   ) {
     return null;
   }
@@ -248,6 +267,7 @@ const refreshDomain = async (
   generation: number,
   selectionGeneration: number,
   transportOwner: HIDPathReservationOwner,
+  requireReady: boolean,
 ): Promise<RefreshResult> => {
   const api = new KeyboardAPI(device.path);
   const definitionIdentity = getDefinitionSyncIdentity(getState(), device);
@@ -276,6 +296,7 @@ const refreshDomain = async (
               generation,
               selectionGeneration,
               definitionIdentity,
+              requireReady,
             )
           ) {
             return 'abort';
@@ -287,6 +308,7 @@ const refreshDomain = async (
             reservedApi,
             generation,
             selectionGeneration,
+            requireReady,
           );
           if (!startEnvelope) {
             return 'abort';
@@ -323,6 +345,7 @@ const refreshDomain = async (
               generation,
               selectionGeneration,
               definitionIdentity,
+              requireReady,
             )
           ) {
             return 'abort';
@@ -334,6 +357,7 @@ const refreshDomain = async (
             reservedApi,
             generation,
             selectionGeneration,
+            requireReady,
           );
           if (!endEnvelope) {
             return 'abort';
@@ -356,6 +380,7 @@ const refreshDomain = async (
               generation,
               selectionGeneration,
               definitionIdentity,
+              requireReady,
             )
           ) {
             return 'abort';
@@ -386,6 +411,7 @@ const refreshDomain = async (
           generation,
           selectionGeneration,
           definitionIdentity,
+          requireReady,
         )
       ) {
         dispatch(
@@ -430,6 +456,7 @@ const runCoordinatorOwner = async (
         api,
         generation,
         owner.selectionGeneration,
+        owner.requireReady,
       )) ?? undefined;
   }
   if (!envelope) {
@@ -445,6 +472,8 @@ const runCoordinatorOwner = async (
       api,
       generation,
       owner.selectionGeneration,
+      owner.definitionIdentity,
+      owner.requireReady,
     )
   ) {
     const sync = getPathSyncState(getState(), device.path);
@@ -454,16 +483,26 @@ const runCoordinatorOwner = async (
     const fullDomain = domainOrder.find((candidateDomain) =>
       owner.fullPending.has(candidateDomain),
     );
-    const domain =
-      fullDomain ??
-      domainOrder.find(
-        (candidateDomain) =>
-          !processedPollDomains.has(candidateDomain) &&
-          !exhaustedDomains.has(candidateDomain) &&
-          (sync[candidateDomain].status !== 'fresh' ||
-            sync[candidateDomain].acceptedRevision !==
-              sync[candidateDomain].observedRevision),
-      );
+    const pollDomain = owner.processDirtyAfterPending
+      ? domainOrder.find((candidateDomain) => {
+          const candidate = sync[candidateDomain];
+          // The macro buffer can be very large. Before the Macro pane has ever
+          // requested an authoritative snapshot, revision polling observes its
+          // token but does not eagerly pull the whole stock VIA buffer.
+          const lazyMacroIsUninitialised =
+            candidateDomain === 'macro' &&
+            candidate.acceptedRevision === 0 &&
+            candidate.mutationEpoch === 0;
+          return (
+            !lazyMacroIsUninitialised &&
+            !processedPollDomains.has(candidateDomain) &&
+            !exhaustedDomains.has(candidateDomain) &&
+            (candidate.status !== 'fresh' ||
+              candidate.acceptedRevision !== candidate.observedRevision)
+          );
+        })
+      : undefined;
+    const domain = fullDomain ?? pollDomain;
     if (!domain) {
       return;
     }
@@ -482,6 +521,7 @@ const runCoordinatorOwner = async (
       generation,
       owner.selectionGeneration,
       owner.transportOwner,
+      owner.requireReady,
     );
     if (result === 'abort') {
       return;
@@ -498,6 +538,7 @@ const coordinate = async (
   device: ConnectedDevice,
   mode: CoordinatorMode,
   initialEnvelope?: StateSyncEnvelope,
+  requireReady = true,
 ): Promise<void> => {
   const api = new KeyboardAPI(device.path);
   const generation = api.getConnectionGeneration();
@@ -505,7 +546,14 @@ const coordinate = async (
   const definitionIdentity = getDefinitionSyncIdentity(getState(), device);
   if (
     !definitionIdentity ||
-    !isSelectedContextCurrent(getState, api, generation, selectionGeneration)
+    !isSelectedContextCurrent(
+      getState,
+      api,
+      generation,
+      selectionGeneration,
+      definitionIdentity,
+      requireReady,
+    )
   ) {
     return;
   }
@@ -518,20 +566,33 @@ const coordinate = async (
     ) {
       if (mode === 'full') {
         domainOrder.forEach((domain) => existing.fullPending.add(domain));
-      } else if (mode === 'config') {
-        existing.fullPending.add('config');
+      } else if (mode !== 'poll') {
+        existing.fullPending.add(mode);
       }
+      if (mode === 'full' || mode === 'poll') {
+        existing.processDirtyAfterPending = true;
+      }
+      existing.requireReady = existing.requireReady && requireReady;
       await existing.promise;
       return;
     }
     await existing.promise;
-    return coordinate(dispatch, getState, device, mode, initialEnvelope);
+    return coordinate(
+      dispatch,
+      getState,
+      device,
+      mode,
+      initialEnvelope,
+      requireReady,
+    );
   }
 
   const owner: CoordinatorOwner = {
     fullPending: new Set(
-      mode === 'full' ? domainOrder : mode === 'config' ? ['config'] : [],
+      mode === 'full' ? domainOrder : mode === 'poll' ? [] : [mode],
     ),
+    processDirtyAfterPending: mode === 'full' || mode === 'poll',
+    requireReady,
     selectionGeneration,
     definitionIdentity,
     initialEnvelope,
@@ -551,41 +612,28 @@ const coordinate = async (
   await owner.promise;
 };
 
-export const probeStateSyncForDevice =
-  (connectedDevice: ConnectedDevice): AppThunk<Promise<void>> =>
+export const probeStateSyncCapabilityForDevice =
+  (connectedDevice: ConnectedDevice): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
     await loadEraAdvancedMetadata();
     if (
       !isStateSyncOptIn(connectedDevice.vendorProductId) ||
       getDefinitionSourceForDevice(getState(), connectedDevice) !== 'era'
     ) {
-      return;
+      return false;
     }
     const api = new KeyboardAPI(connectedDevice.path);
     const generation = api.getConnectionGeneration();
     const existing = getPathSyncState(getState(), connectedDevice.path);
     if (existing?.generation === generation) {
       if (existing.capability === 'unverified') {
-        return;
+        return false;
       }
       if (existing.capability === 'capable') {
-        const selectionGeneration = getSelectionGeneration(getState());
-        if (
-          isSelectedContextCurrent(
-            getState,
-            api,
-            generation,
-            selectionGeneration,
-          )
-        ) {
-          dispatch(markPathDirty({path: connectedDevice.path, generation}));
-          await coordinate(dispatch, getState, connectedDevice, 'full');
-        }
-        dispatch(syncPolling());
-        return;
+        return true;
       }
       if (existing.capability === 'probing') {
-        return;
+        return false;
       }
     }
 
@@ -599,7 +647,7 @@ export const probeStateSyncForDevice =
     );
     const result = await queryStateSync(api);
     if (!api.isConnectionGenerationCurrent(generation)) {
-      return;
+      return false;
     }
     if (
       result.kind !== 'envelope' ||
@@ -612,7 +660,7 @@ export const probeStateSyncForDevice =
           capability: 'unverified',
         }),
       );
-      return;
+      return false;
     }
 
     dispatch(
@@ -628,16 +676,30 @@ export const probeStateSyncForDevice =
       generation,
       result.envelope,
     );
+    return true;
+  };
+
+export const probeStateSyncForDevice =
+  (connectedDevice: ConnectedDevice): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const capable = await dispatch(
+      probeStateSyncCapabilityForDevice(connectedDevice),
+    );
+    if (!capable) {
+      return;
+    }
+    const api = new KeyboardAPI(connectedDevice.path);
+    const generation = api.getConnectionGeneration();
     const selectionGeneration = getSelectionGeneration(getState());
     if (
       isSelectedContextCurrent(getState, api, generation, selectionGeneration)
     ) {
+      dispatch(markPathDirty({path: connectedDevice.path, generation}));
       await coordinate(
         dispatch,
         getState,
         connectedDevice,
         'full',
-        result.envelope,
       );
     }
     dispatch(syncPolling());
@@ -653,6 +715,57 @@ export const pollStateSync =
       await coordinate(dispatch, getState, device, 'poll');
     }
   };
+
+const isAcceptedDomainCurrent = (
+  state: RootState,
+  device: ConnectedDevice,
+  domain: StateSyncDomain,
+) => {
+  const api = new KeyboardAPI(device.path);
+  const generation = api.getConnectionGeneration();
+  const selectionGeneration = getSelectionGeneration(state);
+  const definitionIdentity = getDefinitionSyncIdentity(state, device);
+  const sync = getPathSyncState(state, device.path);
+  const domainState = sync?.[domain];
+  return (
+    !!definitionIdentity &&
+    sync?.capability === 'capable' &&
+    sync.generation === generation &&
+    domainState?.status === 'fresh' &&
+    domainState.acceptedRevision !== 0 &&
+    domainState.acceptedRevision === domainState.observedRevision &&
+    domainState.acceptedSelectionGeneration === selectionGeneration &&
+    domainState.acceptedDefinitionIdentity === definitionIdentity
+  );
+};
+
+export const refreshStateSyncDomain =
+  (
+    device: ConnectedDevice,
+    domain: StateSyncDomain,
+    options: {allowBeforeReady?: boolean} = {},
+  ): AppThunk<Promise<boolean>> =>
+  async (dispatch, getState) => {
+    const api = new KeyboardAPI(device.path);
+    const generation = api.getConnectionGeneration();
+    const sync = getPathSyncState(getState(), device.path);
+    if (sync?.capability !== 'capable' || sync.generation !== generation) {
+      return false;
+    }
+    await coordinate(
+      dispatch,
+      getState,
+      device,
+      domain,
+      undefined,
+      !options.allowBeforeReady,
+    );
+    return isAcceptedDomainCurrent(getState(), device, domain);
+  };
+
+export const refreshMacroDomain =
+  (device: ConnectedDevice): AppThunk<Promise<boolean>> =>
+  (dispatch) => dispatch(refreshStateSyncDomain(device, 'macro'));
 
 export const refreshAfterDefinitionChange =
   (vendorProductId: number): AppThunk<Promise<void>> =>
