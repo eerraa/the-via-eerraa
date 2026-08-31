@@ -78,6 +78,7 @@ const LabelGroup = styled.div`
 // The 50px line box above already leaves a gap, so the body only needs room beneath it.
 const ControlExplainBody = styled(ExplainBody)`
   margin: 0 0 12px;
+  white-space: pre-line;
 `;
 
 export const VIACustomItem = React.memo(
