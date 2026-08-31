@@ -603,5 +603,7 @@
   "How much scrolling speeds up while you hold the key. Off keeps it steady.": "Wie stark das Scrollen beschleunigt, während Sie die Taste halten. Off hält es gleichmäßig.",
   "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.": "Einige Sekunden nach einer gespeicherten Änderung erscheint eine Anzeige und beide Einheiten gleichen den Wert ab. INPUT SYNC und RGB SYNC brauchen dies eingeschaltet, um vollständig zu arbeiten.",
   "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.": "Sind beide Einheiten am PC angeschlossen, teilen sie Ebenenzustand und Tastenentscheidungen und verhalten sich wie eine Tastatur.",
-  "Lines the lighting up across both units, reactive effects included.": "Richtet die Beleuchtung beider Einheiten aufeinander aus, reaktive Effekte eingeschlossen."
+  "Lines the lighting up across both units, reactive effects included.": "Richtet die Beleuchtung beider Einheiten aufeinander aus, reaktive Effekte eingeschlossen.",
+  "Turns RGB off after a period with no key input.": "Schaltet RGB nach einer Zeit ohne Tasteneingabe aus.",
+  "Default is 10 minutes. Pressing a key wakes the RGB. In DUAL-HOST each unit uses its own timeout and activity; in HOST-PEER both units follow the HOST. USB suspend or lost USB frames can turn RGB off sooner.": "Standard sind 10 Minuten. Ein Tastendruck weckt RGB wieder auf. Im DUAL-HOST nutzt jede Einheit ihren eigenen Timeout und ihre eigene Aktivität; im HOST-PEER folgen beide Einheiten dem HOST. USB Suspend oder fehlende USB Frames können RGB früher ausschalten."
 }

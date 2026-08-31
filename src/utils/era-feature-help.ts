@@ -126,6 +126,14 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     },
   ],
   [
+    'id_qmk_rgb_sleep_timeout_exact',
+    {
+      summary: 'Turns RGB off after a period with no key input.',
+      detail:
+        'Default is 10 minutes. Pressing a key wakes the RGB. In DUAL-HOST each unit uses its own timeout and activity; in HOST-PEER both units follow the HOST. USB suspend or lost USB frames can turn RGB off sooner.',
+    },
+  ],
+  [
     'id_qmk_ver_',
     {
       summary: 'Firmware version on this keyboard.',
