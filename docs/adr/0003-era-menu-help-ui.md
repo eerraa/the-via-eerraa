@@ -4,7 +4,8 @@ Status: Accepted
 Genre: contract
 Canonical for: diagnostics-block placement and information architecture,
 observation-copy constraints, word choice and type scale, locale rules, per-control
-ⓘ attach rules for ERA menu help, and menu-name decisions
+ⓘ attach rules for ERA menu help, menu-name decisions, and VERSION read-only
+presentation
 
 ERA-only menus shipped as labels with no explanation. USB diagnostics is the
 screen with the most copy. Both use the same disclosure
@@ -425,6 +426,38 @@ not the suffix. Menu-name tokens `KKUK` / `MOUSE` / absence of `NKRO` and the
 Badge `RGB-Only` / `Indicator-Only` labels match the firmware-local VIA JSON.
 Debounce spelled-out labels match official JSON.
 
+### VERSION is one read-only value
+
+Both firmware families use the `VERSION` submenu, the same summary and folded
+detail from `src/utils/era-feature-help.ts`, and the same `FirmwareVersion`
+row in
+`src/components/panes/configure-panes/custom/firmware-version.tsx`. The row is
+`Current Version` plus one value in the ordinary custom-menu type scale. It has
+no input, SET action, or SAVE action.
+
+The wire adapters differ because the shipped firmware contracts differ.
+Twenty-five RP2040 definitions carry one `label` command,
+`id_qmk_ver_ascii` at channel 8 / id 1; its GET data is a NUL-terminated ASCII
+version. The ATmega32U4 `brick65` definition is excluded because it does not
+run the ERA common layer. The five H7S definitions retain their four
+zero-based dropdown commands `id_qmk_ver_yy` / `_mm` / `_dd` / `_rv` at
+channel 8 / ids 1–4. The custom pane recognizes that complete command set,
+decodes its GET values, and renders the same row instead of the four dropdowns.
+The definitions therefore continue to describe the existing H7S addresses;
+only this app's presentation is read-only.
+
+`src/utils/era-firmware-version.ts` is the display grammar. RP2040 data must
+contain printable ASCII, the NUL terminator, and a valid `YYMMDDRn` value.
+Bytes after that NUL belong to the surrounding HID report and are ignored.
+For H7S, the first byte of each GET value must be an integer inside its
+definition range; later report bytes are likewise ignored. Malformed data
+renders an em dash, never a partial or guessed release.
+The displayed release is always decoded from the selected keyboard's Custom
+Value GET snapshot; no release string in definition JSON or component source
+may stand in for firmware data. A static string goes stale as soon as another
+firmware is connected, while editable dropdowns falsely promise that firmware
+identity can be changed from the configurator.
+
 ## 9. Do not invent a toggle the firmware does not have
 
 H7S five definitions expose MOUSE on channel 17. Firmware already implemented
@@ -454,6 +487,10 @@ This repo:
   `tests/locales.test.ts`
 - help coverage, MOUSE channel, NKRO absence, `FEATURE_COVERAGE` —
   `tests/era-definition.test.ts`
+- VERSION decoders and the shared non-editable row —
+  `tests/custom-menu-pane.test.tsx`
+- VERSION definition count, H7S address preservation, split-pair equality and
+  `brick65` exclusion — `tests/era-definition.test.ts`
 
 `test:p1` includes the locale, definition, and docs-contract files.
 `test:transport` includes the pane and custom-menu files.

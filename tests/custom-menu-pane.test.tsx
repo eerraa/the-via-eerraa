@@ -9,6 +9,12 @@ import {
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
 } from '../src/shims/node-hid';
+import {
+  decodeEraFirmwareVersion,
+  decodeH7sFirmwareVersion,
+  ERA_FIRMWARE_VERSION_COMMAND,
+  H7S_FIRMWARE_VERSION_COMMANDS,
+} from '../src/utils/era-firmware-version';
 
 const loadPane = async () => {
   const originalWarn = console.warn;
@@ -185,6 +191,58 @@ const bootSubmenu = {
       type: 'toggle',
       _id: '-0-0',
       content: ['id_qmk_system_dfu', 9, 1],
+    },
+  ],
+};
+
+const eraVersionSubmenu = {
+  label: 'VERSION',
+  _id: '-0',
+  content: [
+    {
+      label: 'Current Version',
+      type: 'label',
+      _id: '-0-0',
+      content: [ERA_FIRMWARE_VERSION_COMMAND, 8, 1],
+    },
+  ],
+};
+
+const h7sVersionSubmenu = {
+  label: 'VERSION',
+  _id: '-0',
+  content: [
+    {
+      label: 'Year',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: [H7S_FIRMWARE_VERSION_COMMANDS.year, 8, 1],
+      options: ['24', '25', '26', '27', '28', '29', '30', '31', '32', '33'],
+    },
+    {
+      label: 'Month',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: [H7S_FIRMWARE_VERSION_COMMANDS.month, 8, 2],
+      options: Array.from({length: 12}, (_, index) =>
+        String(index + 1).padStart(2, '0'),
+      ),
+    },
+    {
+      label: 'Day',
+      type: 'dropdown',
+      _id: '-0-2',
+      content: [H7S_FIRMWARE_VERSION_COMMANDS.day, 8, 3],
+      options: Array.from({length: 31}, (_, index) =>
+        String(index + 1).padStart(2, '0'),
+      ),
+    },
+    {
+      label: 'Rev.',
+      type: 'dropdown',
+      _id: '-0-3',
+      content: [H7S_FIRMWARE_VERSION_COMMANDS.revision, 8, 4],
+      options: Array.from({length: 9}, (_, index) => `R${index + 1}`),
     },
   ],
 };
@@ -470,6 +528,94 @@ registerHIDDeviceForTesting(device.path, {
 afterAll(() => {
   setEraAdvancedMetadataForTesting(null);
   resetHIDTransportForTesting();
+});
+
+describe('read-only ERA firmware version', () => {
+  const ascii = (value: string, tail: unknown[] = [0]) => [
+    ...new TextEncoder().encode(value),
+    ...tail,
+  ];
+
+  test('decodes the two live GET formats and rejects malformed or out-of-range values', () => {
+    expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 0, 0]))).toBe(
+      '260901R1',
+    );
+    expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 0xa5, 1]))).toBe(
+      '260901R1',
+    );
+    expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 'ignored']))).toBe(
+      '260901R1',
+    );
+    expect(decodeEraFirmwareVersion(ascii('260901R1', []))).toBeNull();
+    expect(decodeEraFirmwareVersion(ascii('261301R1'))).toBeNull();
+    expect(decodeEraFirmwareVersion([0x32, 0x80, 0])).toBeNull();
+    expect(decodeEraFirmwareVersion('260901R1')).toBeNull();
+
+    expect(decodeH7sFirmwareVersion([2], [8], [0], [0])).toBe('260901R1');
+    expect(
+      decodeH7sFirmwareVersion(
+        [2, 'ignored'],
+        [8, 'ignored'],
+        [0, 'ignored'],
+        [0, 'ignored'],
+      ),
+    ).toBe('260901R1');
+    const malformedValues: [unknown, unknown, unknown, unknown][] = [
+      [10, [8], [0], [0]],
+      [[10], [8], [0], [0]],
+      [[2], [12], [0], [0]],
+      [[2], [8], [31], [0]],
+      [[2], [8], [0], [9]],
+      [['2', 'tail'], [8], [0], [0]],
+      [[2.5], [8], [0], [0]],
+      [[], [8], [0], [0]],
+    ];
+    for (const malformed of malformedValues) {
+      expect(decodeH7sFirmwareVersion(...malformed)).toBeNull();
+    }
+  });
+
+  test('renders both adapters through one visible, non-editable presentation', () => {
+    optIn(false);
+    const era = render(
+      makeStore({
+        era: true,
+        menuData: {
+          [ERA_FIRMWARE_VERSION_COMMAND]: ascii('260901R1', [0, 0xa5]),
+        },
+      }),
+      {label: 'SYSTEM', content: [eraVersionSubmenu]},
+    );
+    const h7s = render(
+      makeStore({
+        era: true,
+        menuData: {
+          [H7S_FIRMWARE_VERSION_COMMANDS.year]: [2, 0xa5],
+          [H7S_FIRMWARE_VERSION_COMMANDS.month]: [8, 0xa5],
+          [H7S_FIRMWARE_VERSION_COMMANDS.day]: [0, 0xa5],
+          [H7S_FIRMWARE_VERSION_COMMANDS.revision]: [0, 0xa5],
+        },
+      }),
+      {label: 'SYSTEM', content: [h7sVersionSubmenu]},
+    );
+
+    for (const html of [era, h7s]) {
+      expect((html.match(/260901R1/g) ?? []).length).toBe(1);
+      expect(html).toContain('data-era-firmware-version="true"');
+      expect(html).toContain('Firmware version on this keyboard.');
+      expect(html).toContain('Current Version');
+      expect(html).not.toContain('<input');
+      expect(html).not.toContain('role="combobox"');
+      expect((html.match(/<button/g) ?? []).length).toBe(1);
+      expect(html).toContain('aria-label="What this means"');
+      expect(html).not.toContain('>Save<');
+      expect(html).not.toContain('>Apply<');
+    }
+    expect(h7s).not.toContain('>Year<');
+    expect(h7s).not.toContain('>Month<');
+    expect(h7s).not.toContain('>Day<');
+    expect(h7s).not.toContain('>Rev.<');
+  });
 });
 
 describe('Custom menu pane loading failure', () => {

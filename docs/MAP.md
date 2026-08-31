@@ -23,7 +23,9 @@ looks right, report it; do not silently invert the table.
 | Which board has which feature | the same JSON | `FEATURE_COVERAGE` in that file |
 | Per-board capability opt-in (state sync / exact-ms / diagnostics / split pair) | `config/era-definitions.manifest.json` | `tests/era-definition.test.ts` |
 | Official VIA V3 definitions | `the-via/keyboards` — the installed `node_modules/via-keyboards` is a pinned snapshot only | `Verify build output` in the deploy workflow |
+| Explicit validation of firmware-local VIA V3 files | `scripts/validate-external-v3.ts`, using the app's `@the-via/reader` guard and transform | `tests/validate-external-v3.test.ts` |
 | Wire selector values and envelopes | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
+| VERSION wire adapters and displayed value grammar | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | What the diagnostics screen may and must not say | `src/locales/*.json` | `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
 | ERA menu help copy and attach targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx` | none — `public/_redirects` is hand-matched (§7) |
@@ -74,6 +76,8 @@ GET projection, and refused alternatives are
 | `0x16` v1 | upstream Custom Menu invalidation hint. Do not change its meaning | `src/utils/ui-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
 | V3 Custom Value channel 9 / id 10 | TOMAK RGB sleep stock preset, one-byte minutes 1/3/5/10/30/60 | firmware-local VIA definition | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
 | V3 Custom Value channel 9 / id 11 | TOMAK RGB sleep exact seconds, BE16 1..65535 | `era-definitions/custom/v3/tomak*` + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
+| V3 Custom Value channel 8 / id 1 | RP2040 VERSION, NUL-terminated ASCII; one read-only label on 25 definitions | `src/utils/era-firmware-version.ts` + `era-definitions/custom/v3` | [ADR 0003](adr/0003-era-menu-help-ui.md) |
+| V3 Custom Value channel 8 / ids 1–4 | H7S VERSION, zero-based year/month/day/revision dropdown GET values; rendered as one read-only string | `src/utils/era-firmware-version.ts` + five H7S custom JSON files | [ADR 0003](adr/0003-era-menu-help-ui.md) |
 
 exact-ms channel and value ids differ by family. The checker re-reads them from
 custom JSON `_term_exact` `content`.
@@ -128,15 +132,26 @@ implemented by `mergeDefinitionLookup()` and locked by the lookup matrix in
 `tests/era-definition.test.ts`. Product rules for that order:
 `docs/PROJECT_DIRECTION.md`.
 
-`era-definitions/v3` (a stock clone tree) and a remote firmware verifier are
-**intentional absences**. `tests/era-definition.test.ts` forbids provenance
+`era-definitions/v3` (a stock clone tree) remains an **intentional absence**.
+`scripts/validate-external-v3.ts` is an explicit, read-only adapter for release
+audits: it accepts caller-owned JSON paths, runs the same authoritative V3 guard
+and transform as the app, and neither copies those definitions nor records
+their provenance. `tests/era-definition.test.ts` still forbids provenance
 fields returning on the manifest.
+
+```powershell
+bun scripts/validate-external-v3.ts --format json -- <one-or-more JSON paths>
+```
+
+The command emits a canonical JSON array in input order, one result per path.
+It returns nonzero for read, parse, schema, or transform failures and is not
+part of the ordinary app build.
 
 ## 5. Verification commands and what they actually run
 
 ```powershell
 bun run test:transport   # 7 files, 0 fail — transport, State Sync, diagnostics, custom-menu layout
-bun run test:p1          # 7 files, 0 fail — definitions, locales, picker, layout macros, ms input, diagnostic records, docs contract
+bun run test:p1          # 8 files, 0 fail — definitions, locales, picker, layout macros, ms input, diagnostic records, external V3 validation, docs contract
 bun x tsc --noEmit       # 0
 bun run build            # typecheck:scripts → build:kbs → tsc → vite build
 ```
@@ -206,9 +221,11 @@ session start.
 - Firmware `*-VIA.json` files are firmware-local copies, not an app lookup
   source. Adding a feature still requires **both sides** — a custom-app-only
   path is an error (`docs/PROJECT_DIRECTION.md`).
-- With the remote firmware verifier removed, CI will not catch
-  cross-repository drift if firmware wire/identity and app custom JSON change
-  separately. A release that changes both needs a local compatibility audit.
+- Ordinary app CI does not invoke the external V3 validator, so it still will
+  not catch cross-repository drift automatically. A release audit passes its
+  extracted firmware-local JSON paths explicitly to
+  `scripts/validate-external-v3.ts`; wire and identity compatibility still
+  require their separate review.
 
 ## 9. Document rules
 

@@ -13,6 +13,7 @@ import {findEraFeatureHelp} from '../src/utils/era-feature-help';
 type DefinitionEntry = {
   id: string;
   path: string;
+  pair?: string;
   stateSync: boolean;
   usbDiagnostics?: boolean;
   exactMsFamily?: 'qmk' | 'h7s';
@@ -69,6 +70,7 @@ const collectCommandControls = (
     channel: number;
     id: number;
     label?: string;
+    type?: string;
     options?: unknown;
   }[] = [],
 ) => {
@@ -79,7 +81,12 @@ const collectCommandControls = (
   if (!value || typeof value !== 'object') {
     return into;
   }
-  const record = value as {content?: unknown; label?: unknown; options?: unknown};
+  const record = value as {
+    content?: unknown;
+    label?: unknown;
+    type?: unknown;
+    options?: unknown;
+  };
   if (
     Array.isArray(record.content) &&
     typeof record.content[0] === 'string' &&
@@ -91,6 +98,7 @@ const collectCommandControls = (
       channel: record.content[1],
       id: record.content[2],
       label: typeof record.label === 'string' ? record.label : undefined,
+      type: typeof record.type === 'string' ? record.type : undefined,
       options: record.options,
     });
   }
@@ -160,6 +168,10 @@ const expectedQmkDefinitionIds = [
   'tomak79s-left',
   'tomak79s-right',
 ].sort();
+
+const expectedRp2040DefinitionIds = expectedQmkDefinitionIds.filter(
+  (id) => id !== 'brick65',
+);
 
 const expectedUsbDiagnosticsDefinitionIds = [
   'brick60-h7s',
@@ -333,6 +345,94 @@ describe('canonical ERA definition inventory', () => {
       ).toEqual(Array.from({length: 9}, () => [1, 65535]));
     });
   }
+
+  test('gives exactly the 25 RP2040 definitions one live VERSION label and excludes brick65', () => {
+    const actual: string[] = [];
+    for (const entry of qmkEntries) {
+      const definition = readJSON(entry.path);
+      const versionControls = collectCommandControls(definition).filter(
+        ({name}) => name === 'id_qmk_ver_ascii',
+      );
+      expect(JSON.stringify(definition)).not.toContain('260901R1');
+      if (entry.id === 'brick65') {
+        expect(submenuLabels(definition, 'SYSTEM')).not.toContain('VERSION');
+        expect(versionControls).toEqual([]);
+        continue;
+      }
+      actual.push(entry.id);
+      expect(
+        submenuLabels(definition, 'SYSTEM').filter(
+          (label) => label === 'VERSION',
+        ),
+      ).toEqual(['VERSION']);
+      expect(versionControls).toEqual([
+        {
+          name: 'id_qmk_ver_ascii',
+          channel: 8,
+          id: 1,
+          label: 'Current Version',
+          type: 'label',
+          options: undefined,
+        },
+      ]);
+    }
+    expect(actual).toHaveLength(25);
+    expect(actual.sort()).toEqual(expectedRp2040DefinitionIds);
+  });
+
+  test('keeps the VERSION definition identical across each RP2040 split pair', () => {
+    const pairs = new Map<string, unknown[]>();
+    for (const entry of manifest.definitions.filter(({pair}) => pair)) {
+      const definition = readJSON(entry.path);
+      const system = ((definition.menus ?? []) as {
+        label?: string;
+        content?: unknown[];
+      }[]).find(({label}) => label === 'SYSTEM');
+      const version = (system?.content ?? []).find(
+        (submenu) =>
+          !!submenu &&
+          typeof submenu === 'object' &&
+          'label' in submenu &&
+          (submenu as {label: unknown}).label === 'VERSION',
+      );
+      pairs.set(entry.pair!, [...(pairs.get(entry.pair!) ?? []), version]);
+    }
+    expect([...pairs.keys()].sort()).toEqual([
+      'tomak-tkl',
+      'tomak79h',
+      'tomak79s',
+    ]);
+    for (const versions of pairs.values()) {
+      expect(versions).toHaveLength(2);
+      expect(versions[0]).toEqual(versions[1]);
+    }
+  });
+
+  test('preserves all five H7S VERSION dropdown address sets', () => {
+    const h7s = manifest.definitions.filter(
+      ({exactMsFamily}) => exactMsFamily === 'h7s',
+    );
+    expect(h7s.map(({id}) => id).sort()).toEqual(
+      expectedUsbDiagnosticsDefinitionIds,
+    );
+    for (const entry of h7s) {
+      const definition = readJSON(entry.path);
+      expect(
+        submenuLabels(definition, 'SYSTEM').filter(
+          (label) => label === 'VERSION',
+        ),
+      ).toEqual(['VERSION']);
+      const versionControls = collectCommandControls(definition)
+        .filter(({name}) => name.startsWith('id_qmk_ver_'))
+        .map(({name, channel, id, type}) => ({name, channel, id, type}));
+      expect(versionControls).toEqual([
+        {name: 'id_qmk_ver_yy', channel: 8, id: 1, type: 'dropdown'},
+        {name: 'id_qmk_ver_mm', channel: 8, id: 2, type: 'dropdown'},
+        {name: 'id_qmk_ver_dd', channel: 8, id: 3, type: 'dropdown'},
+        {name: 'id_qmk_ver_rv', channel: 8, id: 4, type: 'dropdown'},
+      ]);
+    }
+  });
 
   test('preserves the H7S 100-500 custom exact-ms exception', () => {
     const entry = manifest.definitions.find(
@@ -543,6 +643,35 @@ describe('canonical ERA definition inventory', () => {
     // Every RP2040 keyboard has the toggle. H7S is always 20-key with no switch, so a
     // toggle there would offer a choice the firmware does not have.
     id_qmk_custom_nkro: [
+      'brick65s',
+      'chickpad',
+      'classicd-a1',
+      'classicd-a1-ug',
+      'classicd-core',
+      'classicd-coreless',
+      'divine',
+      'era65',
+      'et-tkl',
+      'fave65s',
+      'klein-hs',
+      'klein-sd',
+      'n86',
+      'n87',
+      'n8x',
+      'newone-a1',
+      'newone-h1',
+      'newone-odessey60h',
+      'newone-odessey60s',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    // The shared RP2040 layer exposes one NUL-terminated read-only ASCII value.
+    // brick65 is the stock-VIA ATmega exception and does not run that layer.
+    id_qmk_ver_ascii: [
       'brick65s',
       'chickpad',
       'classicd-a1',

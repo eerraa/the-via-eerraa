@@ -52,7 +52,7 @@ bun install --frozen-lockfile
 
 ```powershell
 bun run test:transport   # 7개 파일, 0 fail
-bun run test:p1          # 7개 파일, 0 fail
+bun run test:p1          # 8개 파일, 0 fail
 bun x tsc --noEmit       # 0
 bun run build            # ERA 정의 31종
 ```

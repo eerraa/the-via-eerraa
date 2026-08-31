@@ -2017,6 +2017,20 @@
               ]
             }
           ]
+        },
+        {
+          "label": "VERSION",
+          "content": [
+            {
+              "label": "Current Version",
+              "type": "label",
+              "content": [
+                "id_qmk_ver_ascii",
+                8,
+                1
+              ]
+            }
+          ]
         }
       ]
     }
