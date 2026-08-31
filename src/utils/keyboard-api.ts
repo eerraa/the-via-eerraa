@@ -5,13 +5,13 @@ import {initAndConnectDevice} from './usb-hid';
 import {store} from 'src/store/index';
 import {
   extractDeviceInfo,
-  getErrorTimestamp,
   getMessageFromError,
   logAppError,
   logKeyboardAPIError,
 } from 'src/store/errorsSlice';
 import {KeyboardValue} from './keyboard-values';
 import {parseUISyncRequest, type UISyncRequest} from './ui-sync';
+import {isHIDTransportDeviceIOError} from '../shims/node-hid';
 import type {
   HIDExchangeOptions,
   HIDPathReservationOwner,
@@ -99,8 +99,11 @@ const MACRO_CLOSE_RETRY_CAP_MS = 250;
 export const PROTOCOL_ALPHA = 7;
 export const PROTOCOL_BETA = 8;
 export const PROTOCOL_GAMMA = 9;
+export const isSupportedVIAProtocolVersion = (version: number) =>
+  version >= PROTOCOL_ALPHA;
 
 const cache: {[addr: string]: {hid: any}} = {};
+const deferredTransportErrorLogs = new WeakSet<Error>();
 
 const eqArr = <T>(arr1: T[], arr2: T[]) => {
   if (arr1.length !== arr2.length) {
@@ -207,12 +210,8 @@ export class KeyboardAPI {
   }
 
   async getProtocolVersion() {
-    try {
-      const [, hi, lo] = await this.hidCommand(APICommand.GET_PROTOCOL_VERSION);
-      return shiftTo16Bit([hi, lo]);
-    } catch (e) {
-      return -1;
-    }
+    const [, hi, lo] = await this.hidCommand(APICommand.GET_PROTOCOL_VERSION);
+    return shiftTo16Bit([hi, lo]);
   }
 
   async getKey(layer: Layer, row: Row, col: Column) {
@@ -708,11 +707,39 @@ export class KeyboardAPI {
     commandName?: string,
     options?: HIDExchangeOptions,
   ): Promise<number[]> {
+    const connectionGeneration =
+      this.reservationGeneration ?? this.getConnectionGeneration();
     try {
       return await this._hidCommand(command, bytes, commandName, options);
     } catch (e) {
+      const lifecycleCancellation =
+        await this.getHID().classifyLifecycleCancellation(
+          e,
+          connectionGeneration,
+        );
+      if (lifecycleCancellation) {
+        throw lifecycleCancellation;
+      }
       const error = e instanceof Error ? e : new Error(String(e));
       const deviceInfo = extractDeviceInfo(this.getHID());
+      if (isHIDTransportDeviceIOError(error)) {
+        if (!deferredTransportErrorLogs.has(error)) {
+          deferredTransportErrorLogs.add(error);
+          void this.getHID()
+            .confirmLifecycleCancellation(error, connectionGeneration)
+            .then((confirmedCancellation: unknown) => {
+              if (!confirmedCancellation) {
+                store.dispatch(
+                  logAppError({
+                    message: getMessageFromError(error),
+                    deviceInfo,
+                  }),
+                );
+              }
+            });
+        }
+        throw e;
+      }
       store.dispatch(
         logAppError({
           message: getMessageFromError(error),
