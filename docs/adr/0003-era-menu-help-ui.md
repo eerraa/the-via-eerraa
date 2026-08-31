@@ -268,6 +268,10 @@ Registering only one left twenty-five definitions with no help and nothing
 failed — no test asked whether every ERA submenu actually resolves. 
 `tests/era-definition.test.ts` asks, and a submenu that is allowed to have
 none must be named in `SUBMENUS_WITHOUT_HELP` (currently `Backlight` only).
+TOMAK `SLEEP` is intentionally not an exception: its summary says that the
+number is an input-idle RGB timeout, while the folded detail carries the
+10-minute default and DUAL-HOST/HOST-PEER ownership that the seconds unit alone
+cannot explain.
 
 ## 7. Per-control ⓘ
 

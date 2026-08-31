@@ -1,6 +1,7 @@
 import {describe, expect, test} from 'bun:test';
 import {readFileSync} from 'node:fs';
 import {isDeferredApplyCommand} from '../src/components/panes/configure-panes/custom/deferred-apply';
+import {canApplyIntegerDraft} from '../src/utils/integer-field';
 import {canApplyMillisecondDraft} from '../src/utils/millisecond-field';
 
 const source = (relativePath: string) =>
@@ -9,14 +10,15 @@ const source = (relativePath: string) =>
     '\n',
   );
 
-describe('deferred TAPPING/TAPDANCE apply', () => {
-  test('recognizes tapping and tapdance commands and ignores other menus', () => {
+describe('deferred TAPPING/TAPDANCE/SLEEP apply', () => {
+  test('recognizes the three deferred command families and ignores other menus', () => {
     expect(isDeferredApplyCommand('id_qmk_tapping_hold_on_other_key_press')).toBe(
       true,
     );
     expect(isDeferredApplyCommand('id_qmk_tapping_global_term_exact')).toBe(true);
     expect(isDeferredApplyCommand('id_qmk_tapdance_1_tap')).toBe(true);
     expect(isDeferredApplyCommand('id_qmk_tapdance_1_term_exact')).toBe(true);
+    expect(isDeferredApplyCommand('id_qmk_rgb_sleep_timeout_exact')).toBe(true);
     expect(isDeferredApplyCommand('id_qmk_rgb_matrix_brightness')).toBe(false);
     expect(isDeferredApplyCommand(undefined)).toBe(false);
   });
@@ -25,6 +27,14 @@ describe('deferred TAPPING/TAPDANCE apply', () => {
     const adapter = {minMs: 1, maxMs: 65535};
     expect(canApplyMillisecondDraft('200', 200, adapter, false)).toBe(false);
     expect(canApplyMillisecondDraft('137', 200, adapter, false)).toBe(true);
+  });
+
+  test('SLEEP Apply stays off at the saved seconds and on only for a different valid value', () => {
+    const adapter = {min: 1, max: 65535};
+    expect(canApplyIntegerDraft('600', 600, adapter, false)).toBe(false);
+    expect(canApplyIntegerDraft('601', 600, adapter, false)).toBe(true);
+    expect(canApplyIntegerDraft('0', 600, adapter, false)).toBe(false);
+    expect(canApplyIntegerDraft('65536', 600, adapter, false)).toBe(false);
   });
 });
 

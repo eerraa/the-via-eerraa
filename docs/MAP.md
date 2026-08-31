@@ -48,8 +48,8 @@ computed from code, the test goes red.
 | exact-ms `h7s` family (`options: [100, 500]`) | 5 |
 | USB diagnostics opt-in (`usbDiagnostics: true`) | 5 |
 | split pair entries (left/right each) | 6 |
-| Locales | 6 (`de en es ja ko zh`), 605 keys each |
-| ERA menu summaries | 16 |
+| Locales | 6 (`de en es ja ko zh`), 607 keys each |
+| ERA menu summaries | 17 |
 
 Only `brick65` has no opt-in. That is the durable ATmega32U4 stock-VIA exception
 in `docs/PROJECT_DIRECTION.md`, not a defect.
@@ -72,6 +72,8 @@ GET projection, and refused alternatives are
 | `GET_KEYBOARD_VALUE 0x02` + selector `0x06` | State Sync revision envelope v1 | `src/utils/era-state-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
 | `0x02`/`SET_KEYBOARD_VALUE 0x03` + selector `0x07` | H7S USB diagnostics session v1 | `src/utils/era-usb-diagnostics.ts` | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) |
 | `0x16` v1 | upstream Custom Menu invalidation hint. Do not change its meaning | `src/utils/ui-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
+| V3 Custom Value channel 9 / id 10 | TOMAK RGB sleep stock preset, one-byte minutes 1/3/5/10/30/60 | firmware-local VIA definition | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
+| V3 Custom Value channel 9 / id 11 | TOMAK RGB sleep exact seconds, BE16 1..65535 | `era-definitions/custom/v3/tomak*` + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
 
 exact-ms channel and value ids differ by family. The checker re-reads them from
 custom JSON `_term_exact` `content`.
@@ -163,6 +165,7 @@ speak the same HID bytes. Product rules:
 | Dual copy | Official | Custom |
 | --- | --- | --- |
 | tapping/TD term | legacy 1-byte × 10 ms, 100–500 / 20 ms grid | exact 2-byte `uint16` |
+| TOMAK RGB sleep | fixed 1/3/5/10/30/60-minute dropdown | exact 1..65535-second `uint16` |
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
 

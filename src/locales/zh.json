@@ -603,5 +603,7 @@
   "How much scrolling speeds up while you hold the key. Off keeps it steady.": "按住键期间滚动加速的幅度。选 Off 则保持匀速。",
   "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.": "保存的设置改变几秒后，会伴随指示灯让两个单元同步该值。INPUT SYNC 和 RGB SYNC 需要先开启它才能完整生效。",
   "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.": "当两个单元都连接到电脑时，共享层状态和按键判定，使其像一把键盘那样工作。",
-  "Lines the lighting up across both units, reactive effects included.": "让两个单元的灯光像一把键盘那样对齐，包含反应式效果。"
+  "Lines the lighting up across both units, reactive effects included.": "让两个单元的灯光像一把键盘那样对齐，包含反应式效果。",
+  "Turns RGB off after a period with no key input.": "一段时间没有按键输入后关闭 RGB。",
+  "Default is 10 minutes. Pressing a key wakes the RGB. In DUAL-HOST each unit uses its own timeout and activity; in HOST-PEER both units follow the HOST. USB suspend or lost USB frames can turn RGB off sooner.": "默认值为 10 分钟。按下按键会唤醒 RGB。DUAL-HOST 下每个单元使用自己的超时和输入活动；HOST-PEER 下两个单元都跟随 HOST。USB Suspend 或 USB frame 丢失时，RGB 可能会更早关闭。"
 }
