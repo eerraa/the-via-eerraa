@@ -603,5 +603,7 @@
   "How much scrolling speeds up while you hold the key. Off keeps it steady.": "キーを押し続けている間にスクロールがどれだけ速くなるかです。Off なら一定のままです。",
   "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.": "保存される設定が変わってから数秒後、インジケーターとともに両ユニットが値を合わせます。INPUT SYNC と RGB SYNC を完全に機能させるには、まずこれをオンにしておく必要があります。",
   "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.": "両ユニットを PC に接続したとき、レイヤーとキー入力の判定を共有して 1 台のキーボードのように動作させます。",
-  "Lines the lighting up across both units, reactive effects included.": "両ユニットのライティングを 1 台のキーボードのようにそろえます。リアクティブなエフェクトも含みます。"
+  "Lines the lighting up across both units, reactive effects included.": "両ユニットのライティングを 1 台のキーボードのようにそろえます。リアクティブなエフェクトも含みます。",
+  "Turns RGB off after a period with no key input.": "キー入力がない時間が続くと RGB を消灯します。",
+  "Default is 10 minutes. Pressing a key wakes the RGB. In DUAL-HOST each unit uses its own timeout and activity; in HOST-PEER both units follow the HOST. USB suspend or lost USB frames can turn RGB off sooner.": "既定は 10 分です。キーを押すと RGB が復帰します。DUAL-HOST では各ユニットが自分のタイムアウトと入力時間を使い、HOST-PEER では両ユニットとも HOST に従います。USB Suspend や USB frame の消失では、この時間より早く RGB が消えることがあります。"
 }

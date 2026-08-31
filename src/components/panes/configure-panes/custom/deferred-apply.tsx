@@ -13,7 +13,9 @@ import {PrimaryAccentButton} from '../../../inputs/accent-button';
 
 export const isDeferredApplyCommand = (name: string | undefined) =>
   typeof name === 'string' &&
-  (name.startsWith('id_qmk_tapping_') || name.startsWith('id_qmk_tapdance_'));
+  (name.startsWith('id_qmk_tapping_') ||
+    name.startsWith('id_qmk_tapdance_') ||
+    name === 'id_qmk_rgb_sleep_timeout_exact');
 
 type DeferredApplyHandle = {
   canApply: boolean;

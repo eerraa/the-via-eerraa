@@ -2,7 +2,7 @@
 
 Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
-lookup order, the brick65 exception, Tap Dance and exact-ms product rules, State
+lookup order, the brick65 exception, Tap Dance and exact-ms/exact-sec product rules, State
 Sync product guarantees, and the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
@@ -226,6 +226,30 @@ definitions may still contain legacy controls. Custom JSON may add
 `tapdanceKeycodes` as an additional field; official JSON must not.
 `splitTapDanceKeycodesFromRaw` strips that field so official V3 validation can
 run.
+
+### TOMAK RGB sleep exact-sec
+
+The six TOMAK split definitions expose the same persisted RGB idle timeout in
+two client-compatible forms. Firmware-local stock VIA definitions use SYSTEM
+channel 9 / value 10 as a one-byte fixed-minute dropdown (1/3/5/10/30/60).
+Custom ERA definitions use value 11 as a two-byte big-endian exact-second range,
+1..65535 inclusive. Both setters update the same firmware value; exact GET/SET
+does not snap to the stock menu, while stock GET only projects the exact value
+down to the nearest supported preset and never mutates it. Firmware defaults the
+setting, including legacy zero migration, to 600 seconds / 10 minutes.
+
+This is the same dual-surface compatibility principle as exact-ms, but the two
+encodings require separate value ids because a 32-byte V3 Custom Value request
+does not identify which definition/client produced it. The exact id is additive,
+not a custom-app-only substitute: official/usevia-compatible firmware JSON still
+offers the complete feature through the preset id. `src/utils/era-exact-sec.ts`
+selects the exact control; `src/components/inputs/integer-input.tsx` supplies the
+shared integer editor used by the seconds field and the millisecond wrapper.
+The SLEEP submenu uses the same deferred-Apply contract as TAPPING/TAPDANCE:
+editing the field does not write immediately, Apply is disabled while the draft
+matches the authoritative value, and becomes available only for a different
+valid 1..65535-second draft. It also participates in the normal ERA submenu
+summary + folded-detail help surface.
 
 Use Vial only to study interaction design.
 

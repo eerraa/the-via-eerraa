@@ -64,7 +64,13 @@ const collectTermControls = (value: unknown, into: TermControl[] = []) => {
 
 const collectCommandControls = (
   value: unknown,
-  into: {name: string; channel: number; id: number; label?: string}[] = [],
+  into: {
+    name: string;
+    channel: number;
+    id: number;
+    label?: string;
+    options?: unknown;
+  }[] = [],
 ) => {
   if (Array.isArray(value)) {
     value.forEach((item) => collectCommandControls(item, into));
@@ -73,7 +79,7 @@ const collectCommandControls = (
   if (!value || typeof value !== 'object') {
     return into;
   }
-  const record = value as {content?: unknown; label?: unknown};
+  const record = value as {content?: unknown; label?: unknown; options?: unknown};
   if (
     Array.isArray(record.content) &&
     typeof record.content[0] === 'string' &&
@@ -85,6 +91,7 @@ const collectCommandControls = (
       channel: record.content[1],
       id: record.content[2],
       label: typeof record.label === 'string' ? record.label : undefined,
+      options: record.options,
     });
   }
   Object.values(record).forEach((item) => collectCommandControls(item, into));
@@ -394,6 +401,34 @@ describe('canonical ERA definition inventory', () => {
     expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
   });
 
+  test('gives only the six TOMAK halves the exact-second RGB sleep control', () => {
+    const expected = [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ].sort();
+    const actual: string[] = [];
+    for (const entry of manifest.definitions) {
+      const controls = collectCommandControls(readJSON(entry.path)).filter(
+        ({name}) => name === 'id_qmk_rgb_sleep_timeout_exact',
+      );
+      if (controls.length === 0) {
+        continue;
+      }
+      actual.push(entry.id);
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toMatchObject({
+        channel: 9,
+        id: 11,
+        options: [1, 65535],
+      });
+    }
+    expect(actual.sort()).toEqual(expected);
+  });
+
   // The SOCD menu shipped without help for twenty-five definitions because the RP2040
   // firmware calls it `id_qmk_socd_*` while H7S calls it `id_qmk_kill_switch_*`, and
   // only the second prefix was registered. Nothing failed, because no test asked "does
@@ -524,6 +559,14 @@ describe('canonical ERA definition inventory', () => {
       'tomak79s-right',
     ],
     id_qmk_eeprom_sync: [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    id_qmk_rgb_sleep_timeout_exact: [
       'tomak-tkl-left',
       'tomak-tkl-right',
       'tomak79h-left',

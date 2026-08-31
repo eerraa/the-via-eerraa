@@ -1951,6 +1951,24 @@
           ]
         },
         {
+          "label": "SLEEP",
+          "content": [
+            {
+              "label": "RGB Sleep Timeout (s)",
+              "type": "range",
+              "content": [
+                "id_qmk_rgb_sleep_timeout_exact",
+                9,
+                11
+              ],
+              "options": [
+                1,
+                65535
+              ]
+            }
+          ]
+        },
+        {
           "label": "BOOT",
           "content": [
             {

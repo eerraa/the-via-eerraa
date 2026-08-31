@@ -201,6 +201,7 @@ const menuData = {
   id_qmk_tapping_global_term_exact: [0, 200],
   id_qmk_tapping_permissive_hold: [0],
   id_qmk_mousekey_cursor_acceleration: [20],
+  id_qmk_rgb_sleep_timeout_exact: [0x02, 0x58],
 };
 
 // The ms rows a DEBOUNCE mode shows are not the ones another mode shows, and Fast and
@@ -291,6 +292,20 @@ const mouseSubmenu = {
         ['Off (constant speed)', 0],
         ['1.0 s', 20],
       ],
+    },
+  ],
+};
+
+const sleepSubmenu = {
+  label: 'SLEEP',
+  _id: '-0',
+  content: [
+    {
+      label: 'RGB Sleep Timeout (s)',
+      type: 'range',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_sleep_timeout_exact', 9, 11],
+      options: [1, 65535],
     },
   ],
 };
@@ -420,6 +435,32 @@ describe('ERA feature help', () => {
 
     expect(html).toContain('Speed of the mouse keys on the keymap');
     expect(html).toContain('Cursor Acceleration');
+  });
+});
+
+describe('ERA exact-second input', () => {
+  test('renders the TOMAK sleep timeout with the same feature-help and deferred-input surface', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {
+          status: 'fresh',
+          observedRevision: 2,
+          acceptedRevision: 2,
+        },
+      }),
+      {label: 'SYSTEM', content: [sleepSubmenu]},
+    );
+
+    expect(html).toContain('Turns RGB off after a period with no key input.');
+    expect(html).toContain('Default is 10 minutes.');
+    expect(html).toContain('hidden=""');
+    expect(html).toContain('RGB Sleep Timeout (s)');
+    expect(html).toContain('value="600"');
+    expect(html).toContain('>s</span>');
+    expect(html).not.toContain('type="range"');
   });
 });
 
