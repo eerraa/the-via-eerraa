@@ -263,6 +263,42 @@ describe('docs state the same wire constants the source does', () => {
       `| TD0–TD7 term | channel ${qmkBank.channel} / value ${qmkBank.first}–${qmkBank.last} | channel ${h7sBank.channel} / value ${h7sBank.first}–${h7sBank.last} |`,
     );
   });
+
+  test('H7S RGB sleep address matches MAP and the H7S definitions', () => {
+    const found: Array<{channel: number; id: number}> = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      const content = (node as {content?: unknown}).content;
+      if (
+        Array.isArray(content) &&
+        content[0] === 'id_qmk_rgb_sleep_timeout' &&
+        typeof content[1] === 'number' &&
+        typeof content[2] === 'number'
+      ) {
+        found.push({channel: content[1], id: content[2]});
+      }
+      Object.values(node as Record<string, unknown>).forEach(walk);
+    };
+    walk(
+      JSON.parse(
+        read(
+          manifest.definitions.find(({exactMsFamily}) => exactMsFamily === 'h7s')!
+            .path,
+        ),
+      ),
+    );
+    expect(found).toEqual([{channel: 18, id: 1}]);
+    expect(MAP).toContain(
+      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | FEATURE channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |',
+    );
+    expect(MAP).toContain('V3 Custom Value channel 18 / id 1');
+  });
 });
 
 describe('docs only name commands and files that exist', () => {

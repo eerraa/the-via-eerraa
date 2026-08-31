@@ -19,6 +19,7 @@ describe('deferred TAPPING/TAPDANCE/SLEEP apply', () => {
     expect(isDeferredApplyCommand('id_qmk_tapdance_1_tap')).toBe(true);
     expect(isDeferredApplyCommand('id_qmk_tapdance_1_term_exact')).toBe(true);
     expect(isDeferredApplyCommand('id_qmk_rgb_sleep_timeout_exact')).toBe(true);
+    expect(isDeferredApplyCommand('id_qmk_rgb_sleep_timeout')).toBe(false);
     expect(isDeferredApplyCommand('id_qmk_rgb_matrix_brightness')).toBe(false);
     expect(isDeferredApplyCommand(undefined)).toBe(false);
   });
