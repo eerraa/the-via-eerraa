@@ -2,8 +2,9 @@
 
 Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
-lookup order, the brick65 exception, Tap Dance and exact-ms/exact-sec product rules, State
-Sync product guarantees, and the durable non-goals
+lookup order, the brick65 exception, Tap Dance and exact-ms/exact-sec product rules,
+H7S RGB sleep minute-dropdown overlay rules, State Sync product guarantees, and
+the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
 > it. Where a fact lives and which side is canonical is `docs/MAP.md`. Individual
@@ -250,6 +251,25 @@ editing the field does not write immediately, Apply is disabled while the draft
 matches the authoritative value, and becomes available only for a different
 valid 1..65535-second draft. It also participates in the normal ERA submenu
 summary + folded-detail help surface.
+
+### H7S RGB sleep minute dropdown
+
+The five H7S definitions expose RGB idle timeout as FEATURE channel 18 / value 1
+(`id_qmk_rgb_sleep_timeout`), a one-byte minute dropdown 1/3/5/10/30/60 matching
+the firmware-local official VIA JSON. Firmware stores seconds (default 600 / 10
+minutes); official GET floors onto the menu without writing. This is not the
+TOMAK dual-surface: H7S has no exact-seconds value id and is not SYSTEM
+channel 9. The overlay must not diverge on channel, value id, or range.
+Firmware persists the timeout on VIA SAVE, not on SET. The submenu uses the
+ordinary dropdown write path, not deferred-Apply. Help copy is the same
+idle-timeout object as TOMAK exact-seconds
+(`src/utils/era-feature-help.ts`).
+
+> **REFUSED:** copying TOMAK `id_qmk_rgb_sleep_timeout_exact` / channel 9 /
+> value 11 onto H7S, or inventing a custom-app-only selector.
+> **WHY:** firmware already ships the complete feature on official usevia.app
+> JSON; a second wire would be a custom-app-only path.
+> **REOPENS:** never while H7S firmware exposes only the minute preset.
 
 Use Vial only to study interaction design.
 
