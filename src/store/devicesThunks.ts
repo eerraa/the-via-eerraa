@@ -6,7 +6,10 @@ import {
   syncStore,
 } from '../utils/device-store';
 import {getRecognisedDevices, getVendorProductId} from '../utils/hid-keyboards';
-import {KeyboardAPI} from '../utils/keyboard-api';
+import {
+  isSupportedVIAProtocolVersion,
+  KeyboardAPI,
+} from '../utils/keyboard-api';
 import type {AppThunk} from './index';
 import {
   reloadDefinitions,
@@ -18,7 +21,7 @@ import {
 } from './definitionsSlice';
 import {loadKeymapFromDevice} from './keymapSlice';
 import {updateLightingData} from './lightingSlice';
-import {loadMacros} from './macrosSlice';
+import {loadMacroMetadata, loadMacros} from './macrosSlice';
 import {updateV3MenuData} from './menusSlice';
 import {
   clearAllDevices,
@@ -51,7 +54,11 @@ import {extractDeviceInfo, logAppError} from './errorsSlice';
 import {tryForgetDevice} from 'src/shims/node-hid';
 import {isAuthorizedDeviceConnected} from 'src/utils/type-predicates';
 import {loadFirmwareVersion, loadKeycodesVersion} from './firmwareSlice';
-import {probeStateSyncForDevice} from './stateSyncThunks';
+import {
+  probeStateSyncCapabilityForDevice,
+  refreshStateSyncDomain,
+  syncPolling,
+} from './stateSyncThunks';
 import {
   isStateSyncOptIn,
   loadEraAdvancedMetadata,
@@ -61,7 +68,6 @@ import {
   loadDefinitionName,
 } from './definitionNameSlice';
 import {KeycodesVersionProtocolError} from 'src/utils/keycodes-version';
-import {getPathSyncState} from './stateSyncSlice';
 
 const selectConnectedDeviceRetry = createRetry(8, 100);
 
@@ -100,17 +106,24 @@ const selectConnectedDevice =
       const requiresCustomMenuVerification =
         getDefinitionSourceForDevice(getState(), connectedDevice) === 'era' &&
         isStateSyncOptIn(connectedDevice.vendorProductId);
-      if (requiresCustomMenuVerification) {
-        await dispatch(probeStateSyncForDevice(connectedDevice));
-        if (!isCurrentSelection()) return;
-      }
+      const stateSyncCapable = requiresCustomMenuVerification
+        ? await dispatch(probeStateSyncCapabilityForDevice(connectedDevice))
+        : false;
+      if (!isCurrentSelection()) return;
 
       await dispatch(loadKeycodesVersion(connectedDevice));
       if (!isCurrentSelection()) return;
-      // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-      await dispatch(loadMacros(connectedDevice));
-      if (!isCurrentSelection()) return;
-      await dispatch(loadLayoutOptions(connectedDevice));
+      if (stateSyncCapable) {
+        // The keycode picker only needs the count. Keep the stock full-capacity
+        // macro read lazy until the Macro pane is actually opened.
+        await dispatch(loadMacroMetadata(connectedDevice));
+      } else {
+        // Ordinary VIA and unverifiable ERA firmware keep the upstream load
+        // transcript unchanged.
+        await dispatch(loadMacros(connectedDevice));
+        if (!isCurrentSelection()) return;
+        await dispatch(loadLayoutOptions(connectedDevice));
+      }
       if (!isCurrentSelection()) return;
 
       const {protocol} = connectedDevice;
@@ -120,9 +133,7 @@ const selectConnectedDevice =
           await dispatch(updateLightingData(connectedDevice));
         } else if (protocol >= 11) {
           const advancedCommandsVerified =
-            !requiresCustomMenuVerification ||
-            getPathSyncState(getState(), connectedDevice.path)?.capability ===
-              'capable';
+            !requiresCustomMenuVerification || stateSyncCapable;
           if (advancedCommandsVerified) {
             await dispatch(loadDefinitionName(connectedDevice));
             if (!isCurrentSelection()) return;
@@ -139,17 +150,30 @@ const selectConnectedDevice =
           }
         }
       } catch (e) {
-        dispatch(
-          logAppError({
-            message: 'Loading lighting/menu data failed',
-            deviceInfo,
-          }),
-        );
+        if (isCurrentSelection()) {
+          dispatch(
+            logAppError({
+              message: 'Loading lighting/menu data failed',
+              deviceInfo,
+            }),
+          );
+        }
       }
       if (!isCurrentSelection()) return;
 
-      // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-      await dispatch(loadKeymapFromDevice(connectedDevice));
+      if (stateSyncCapable) {
+        const keymapReady = await dispatch(
+          refreshStateSyncDomain(connectedDevice, 'keymap', {
+            allowBeforeReady: true,
+          }),
+        );
+        if (!keymapReady) {
+          throw new Error('State Sync keymap did not reach a stable snapshot');
+        }
+      } else {
+        // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
+        await dispatch(loadKeymapFromDevice(connectedDevice));
+      }
       if (!isCurrentSelection()) return;
       dispatch(
         markDeviceReady({
@@ -158,8 +182,12 @@ const selectConnectedDevice =
           selectionGeneration,
         }),
       );
-      if (requiresCustomMenuVerification) {
-        await dispatch(probeStateSyncForDevice(connectedDevice));
+      if (stateSyncCapable) {
+        // CONFIG is much cheaper than the large macro domain and backs all of
+        // Lighting/FEATURE/TAPDANCE/SYSTEM. Prefetch it immediately without
+        // delaying the first interactive keymap frame.
+        void dispatch(refreshStateSyncDomain(connectedDevice, 'config'));
+        dispatch(syncPolling());
       }
       selectConnectedDeviceRetry.clear();
     } catch (e) {
@@ -213,15 +241,30 @@ export const reloadConnectedDevices =
       forceRequest,
     );
 
-    const protocolVersions = await Promise.all(
-      recognisedDevices.map((device) =>
-        new KeyboardAPI(device.path).getProtocolVersion(),
-      ),
+    const protocolProbes = await Promise.all(
+      recognisedDevices.map(async (device) => {
+        try {
+          return {
+            device,
+            protocol: await new KeyboardAPI(device.path).getProtocolVersion(),
+          } as const;
+        } catch (error) {
+          // hidCommand owns user-facing logging for genuine transport failures.
+          // Lifecycle cancellations are deliberately silent and simply remove
+          // the disappeared device from this reload generation.
+          return {device, error} as const;
+        }
+      }),
     );
-
-    const recognisedDevicesWithBadProtocol = recognisedDevices.filter(
-      (_, i) => protocolVersions[i] === -1,
+    const successfulProtocolProbes = protocolProbes.filter(
+      (
+        probe,
+      ): probe is Extract<(typeof protocolProbes)[number], {protocol: number}> =>
+        'protocol' in probe,
     );
+    const recognisedDevicesWithBadProtocol = successfulProtocolProbes
+      .filter(({protocol}) => !isSupportedVIAProtocolVersion(protocol))
+      .map(({device}) => device);
 
     if (recognisedDevicesWithBadProtocol.length) {
       // Should we exit early??
@@ -260,11 +303,10 @@ export const reloadConnectedDevices =
       ),
     );
 
-    const authorizedDevices: AuthorizedDevice[] = recognisedDevices
-      .filter((_, i) => protocolVersions[i] !== -1)
-      .map((device, idx) => {
+    const authorizedDevices: AuthorizedDevice[] = successfulProtocolProbes
+      .filter(({protocol}) => isSupportedVIAProtocolVersion(protocol))
+      .map(({device, protocol}) => {
         const {path, productId, vendorId, productName} = device;
-        const protocol = protocolVersions[idx];
         return {
           path,
           productId,

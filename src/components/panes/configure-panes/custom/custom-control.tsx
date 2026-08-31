@@ -23,6 +23,12 @@ import {
 } from 'src/utils/era-exact-ms';
 import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
 import {MillisecondInput} from '../../../inputs/millisecond-input';
+import {IntegerInput} from '../../../inputs/integer-input';
+import {type IntegerAdapter} from 'src/utils/integer-field';
+import {
+  EXACT_SECOND_BOUNDS,
+  isExactSecondCommand,
+} from 'src/utils/era-exact-sec';
 import {
   useDeferredApplyMode,
   useDeferredApplyRegistration,
@@ -72,6 +78,7 @@ const LabelGroup = styled.div`
 // The 50px line box above already leaves a gap, so the body only needs room beneath it.
 const ControlExplainBody = styled(ExplainBody)`
   margin: 0 0 12px;
+  white-space: pre-line;
 `;
 
 export const VIACustomItem = React.memo(
@@ -221,6 +228,68 @@ const ExactMillisecondControl = ({
       adapter={adapter}
       ariaLabel={name}
       savedMs={currentMs}
+    />
+  );
+};
+
+const ExactSecondControl = ({
+  name,
+  command,
+  value,
+}: {
+  name: string;
+  command: number[];
+  value: number[];
+}) => {
+  const dispatch = useAppDispatch();
+  const menuAvailability = useAppSelector(getSelectedCustomMenuAvailability);
+  const channel = command[0];
+  const id = command[1];
+  const currentSeconds = getRangeValue(
+    value ?? [0, 0],
+    EXACT_SECOND_BOUNDS.max,
+  );
+  const writeContext = useRef({
+    name,
+    dispatch,
+    currentSeconds,
+    menuAvailability,
+  });
+  writeContext.current = {
+    name,
+    dispatch,
+    currentSeconds,
+    menuAvailability,
+  };
+  const adapter: IntegerAdapter = useMemo(
+    () => ({
+      min: EXACT_SECOND_BOUNDS.min,
+      max: EXACT_SECOND_BOUNDS.max,
+      async write(candidateSeconds: number) {
+        const context = writeContext.current;
+        if (context.menuAvailability !== 'available') {
+          return context.currentSeconds;
+        }
+        const previousSeconds = context.currentSeconds;
+        const accepted = await context.dispatch(
+          updateCustomMenuValue(
+            context.name,
+            channel,
+            id,
+            ...shiftFrom16Bit(candidateSeconds),
+          ),
+        );
+        return accepted ? candidateSeconds : previousSeconds;
+      },
+    }),
+    [channel, id],
+  );
+  return (
+    <IntegerInput
+      adapter={adapter}
+      ariaLabel={name}
+      savedValue={currentSeconds}
+      suffix="s"
     />
   );
 };
@@ -433,6 +502,15 @@ const VIACustomControl = (props: VIACustomControlProps) => {
             command={command}
             value={props.value}
             options={options}
+          />
+        );
+      }
+      if (isExactSecondCommand(name)) {
+        return (
+          <ExactSecondControl
+            name={name}
+            command={command}
+            value={props.value}
           />
         );
       }

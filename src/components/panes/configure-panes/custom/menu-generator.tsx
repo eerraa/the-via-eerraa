@@ -47,8 +47,11 @@ import {
   isCustomMenuCommandContent,
   isUsbPollingModeCommand,
 } from 'src/utils/custom-menu';
+import {getEraFirmwareVersionSource} from 'src/utils/era-firmware-version';
 import {UsbDiagnosticsSection} from './usb-diagnostics-section';
 import {FeatureHelp} from './feature-help';
+import {FirmwareVersion} from './firmware-version';
+import {ConfigureStatusMessage} from '../status-message';
 
 type Category = {
   label: string;
@@ -68,22 +71,11 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
-const StatusMessage = styled.div`
-  padding: 40px 20px;
-  max-width: 640px;
-  text-align: center;
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--color_label);
-  word-break: keep-all;
-  white-space: pre-line;
-`;
-
 const MenuStatus: React.FC<{message: string}> = ({message}) => (
   <SpanOverflowCell>
     <CustomPane>
       <Container>
-        <StatusMessage role="status">{message}</StatusMessage>
+        <ConfigureStatusMessage role="status">{message}</ConfigureStatusMessage>
       </Container>
     </CustomPane>
   </SpanOverflowCell>
@@ -163,6 +155,7 @@ const MenuComponent = React.memo((props: any) => {
   const commandNames = items
     .filter((item: any) => isCustomMenuCommandContent(item.content))
     .map((item: any) => item.content[0]);
+  const firmwareVersionSource = getEraFirmwareVersionSource(commandNames);
   // The submenu that owns the boot polling-mode control also hosts the diagnostics
   // that measure it, so the measurement lives where the setting is changed instead of
   // in a separate top-level page the user has to know about first. The section itself
@@ -175,28 +168,35 @@ const MenuComponent = React.memo((props: any) => {
   return (
     <DeferredApplyProvider deferred={deferred}>
       <FeatureHelp commandNames={commandNames} />
-      {items.map((itemProps: any) => (
-        <VIACustomItem
-          {...itemProps}
-          updateValue={props.updateCustomMenuValue}
-          updateRangeValue={props.updateCustomMenuRangeValue}
-          updateContinuousValue={props.updateCustomMenuValueContinuous}
-          completeContinuousValue={props.completeCustomMenuValueContinuous}
-          updateContinuousRangeValue={
-            props.updateCustomMenuRangeValueContinuous
-          }
-          completeContinuousRangeValue={
-            props.completeCustomMenuRangeValueContinuous
-          }
-          rangeControls={props.rangeControls}
+      {firmwareVersionSource ? (
+        <FirmwareVersion
+          source={firmwareVersionSource}
           menuData={props.selectedCustomMenuData}
-          value={
-            isCustomMenuCommandContent(itemProps.content)
-              ? props.selectedCustomMenuData[itemProps.content[0]]
-              : undefined
-          }
         />
-      ))}
+      ) : (
+        items.map((itemProps: any) => (
+          <VIACustomItem
+            {...itemProps}
+            updateValue={props.updateCustomMenuValue}
+            updateRangeValue={props.updateCustomMenuRangeValue}
+            updateContinuousValue={props.updateCustomMenuValueContinuous}
+            completeContinuousValue={props.completeCustomMenuValueContinuous}
+            updateContinuousRangeValue={
+              props.updateCustomMenuRangeValueContinuous
+            }
+            completeContinuousRangeValue={
+              props.completeCustomMenuRangeValueContinuous
+            }
+            rangeControls={props.rangeControls}
+            menuData={props.selectedCustomMenuData}
+            value={
+              isCustomMenuCommandContent(itemProps.content)
+                ? props.selectedCustomMenuData[itemProps.content[0]]
+                : undefined
+            }
+          />
+        ))
+      )}
       <DeferredApplyButton />
       {hasPollingModeControl && <UsbDiagnosticsSection />}
     </DeferredApplyProvider>
@@ -323,9 +323,9 @@ export const Pane: React.FC<Props> = (props: any) => {
       <SpanOverflowCell>
         <CustomPane>
           <Container>
-            <StatusMessage role="status">
+            <ConfigureStatusMessage role="status">
               {t('No features available for this firmware version.')}
-            </StatusMessage>
+            </ConfigureStatusMessage>
           </Container>
         </CustomPane>
       </SpanOverflowCell>

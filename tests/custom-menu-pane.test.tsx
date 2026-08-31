@@ -9,6 +9,10 @@ import {
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
 } from '../src/shims/node-hid';
+import {
+  decodeEraFirmwareVersion,
+  ERA_FIRMWARE_VERSION_COMMAND,
+} from '../src/utils/era-firmware-version';
 
 const loadPane = async () => {
   const originalWarn = console.warn;
@@ -189,6 +193,32 @@ const bootSubmenu = {
   ],
 };
 
+const eraVersionSubmenu = {
+  label: 'VERSION',
+  _id: '-0',
+  content: [
+    {
+      label: 'Current Version',
+      type: 'label',
+      _id: '-0-0',
+      content: [ERA_FIRMWARE_VERSION_COMMAND, 8, 1],
+    },
+  ],
+};
+
+const h7sVersionSubmenu = {
+  label: 'VERSION',
+  _id: '-0',
+  content: [
+    {
+      label: 'Current Version',
+      type: 'label',
+      _id: '-0-0',
+      content: [ERA_FIRMWARE_VERSION_COMMAND, 8, 5],
+    },
+  ],
+};
+
 const menuData = {
   id_qmk_usb_bootmode: [0],
   id_qmk_usb_bootmode_apply: [0],
@@ -198,9 +228,25 @@ const menuData = {
   id_qmk_debounce_time_single: [5],
   id_qmk_debounce_time_pre: [5],
   id_qmk_debounce_time_post: [5],
+  id_qmk_kkuk_enable: [1],
+  id_qmk_kkuk_repeat_time: [8],
+  id_qmk_kkuk_delay_time: [20],
   id_qmk_tapping_global_term_exact: [0, 200],
   id_qmk_tapping_permissive_hold: [0],
   id_qmk_mousekey_cursor_acceleration: [20],
+  id_qmk_rgb_matrix_effect: [1],
+  id_qmk_rgb_matrix_brightness: [128],
+  id_qmk_rgblight_effect: [1],
+  id_qmk_rgblight_brightness: [128],
+  id_qmk_velocikey_toggle: [1],
+  id_custom_backlight_brightness: [5],
+  id_custom_badge_only: [1],
+  id_custom_indicator_toggle: [1],
+  id_custom_indicator_override: [0],
+  id_qmk_rgb_sleep_timeout_exact: [0x02, 0x58],
+  id_qmk_rgb_sleep_timeout: [10],
+  id_qmk_split_link_level: [0],
+  id_qmk_split_link_apply: [0],
 };
 
 // The ms rows a DEBOUNCE mode shows are not the ones another mode shows, and Fast and
@@ -228,7 +274,7 @@ const debounceSubmenu = {
     },
     {
       showIf: '{id_qmk_debounce_mode} == 0',
-      label: 'Press & Release - delay before and after (same value)',
+      label: 'Press & Release Delay',
       type: 'dropdown',
       _id: '-0-1',
       content: ['id_qmk_debounce_time_single', 14, 2],
@@ -236,7 +282,7 @@ const debounceSubmenu = {
     },
     {
       showIf: '{id_qmk_debounce_mode} == 1',
-      label: 'Press & Release - delay after change (post-only)',
+      label: 'Press & Release Cooldown',
       type: 'dropdown',
       _id: '-0-2',
       content: ['id_qmk_debounce_time_post', 14, 4],
@@ -244,7 +290,7 @@ const debounceSubmenu = {
     },
     {
       showIf: '{id_qmk_debounce_mode} == 2',
-      label: 'Release - delay before and after release (pre+post window)',
+      label: 'Release Delay',
       type: 'dropdown',
       _id: '-0-3',
       content: ['id_qmk_debounce_time_post', 14, 4],
@@ -295,6 +341,183 @@ const mouseSubmenu = {
   ],
 };
 
+const kkukSubmenu = {
+  label: 'KKUK',
+  _id: '-0',
+  content: [
+    {
+      label: 'Enable',
+      type: 'toggle',
+      _id: '-0-0',
+      content: ['id_qmk_kkuk_enable', 12, 1],
+    },
+    {
+      label: 'First Delay Time',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_kkuk_delay_time', 12, 2],
+      options: [['200 ms', 20]],
+    },
+    {
+      label: 'Repeat Time',
+      type: 'dropdown',
+      _id: '-0-2',
+      content: ['id_qmk_kkuk_repeat_time', 12, 3],
+      options: [['80 ms', 8]],
+    },
+  ],
+};
+
+const rgbMatrixSubmenu = {
+  label: 'RGB Matrix',
+  _id: '-0',
+  content: [
+    {
+      label: 'Brightness',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_matrix_brightness', 3, 1],
+      options: [['128', 128]],
+    },
+    {
+      label: 'Effect',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_rgb_matrix_effect', 3, 2],
+      options: [['Solid Color', 1]],
+    },
+  ],
+};
+
+const rgbLightSubmenu = {
+  label: 'RGB ROW',
+  _id: '-0',
+  content: [
+    {
+      label: 'Brightness',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_rgblight_brightness', 2, 1],
+      options: [['128', 128]],
+    },
+    {
+      label: 'Effect',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_rgblight_effect', 2, 2],
+      options: [['Solid Color', 1]],
+    },
+    {
+      label: 'Velocikey',
+      type: 'toggle',
+      _id: '-0-2',
+      content: ['id_qmk_velocikey_toggle', 2, 5],
+    },
+  ],
+};
+
+const backlightSubmenu = {
+  label: 'Backlight',
+  _id: '-0',
+  content: [
+    {
+      label: 'Backlight Brightness',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_custom_backlight_brightness', 0, 0],
+      options: [['5', 5]],
+    },
+  ],
+};
+
+const badgeSubmenu = {
+  label: 'Badge Lighting',
+  _id: '-0',
+  content: [
+    {
+      label: 'RGB-Only',
+      type: 'toggle',
+      _id: '-0-0',
+      content: ['id_custom_badge_only', 0, 4],
+    },
+    {
+      label: 'Lock Indicator',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_custom_indicator_toggle', 0, 0],
+      options: [
+        ['Off', 0],
+        ['Caps Lock', 1],
+      ],
+    },
+    {
+      label: 'Indicator-Only',
+      type: 'toggle',
+      _id: '-0-2',
+      content: ['id_custom_indicator_override', 0, 1],
+    },
+  ],
+};
+
+const sleepSubmenu = {
+  label: 'SLEEP',
+  _id: '-0',
+  content: [
+    {
+      label: 'RGB Sleep Timeout (s)',
+      type: 'range',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_sleep_timeout_exact', 9, 11],
+      options: [1, 65535],
+    },
+  ],
+};
+
+const h7sSleepSubmenu = {
+  label: 'SLEEP',
+  _id: '-0',
+  content: [
+    {
+      label: 'RGB Sleep Timeout',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_sleep_timeout', 18, 1],
+      options: [
+        ['1 min', 1],
+        ['3 min', 3],
+        ['5 min', 5],
+        ['10 min', 10],
+        ['30 min', 30],
+        ['60 min', 60],
+      ],
+    },
+  ],
+};
+
+const linkSubmenu = {
+  label: 'LINK',
+  _id: '-0',
+  content: [
+    {
+      label: 'Split Link Speed',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_split_link_level', 9, 8],
+      options: [
+        ['High', 0],
+        ['Medium', 1],
+        ['Low', 2],
+      ],
+    },
+    {
+      label: 'Apply',
+      type: 'toggle',
+      _id: '-0-1',
+      content: ['id_qmk_split_link_apply', 9, 9],
+    },
+  ],
+};
+
 // A collapsed disclosure keeps its text in the page, so "shipped" and "on the screen"
 // are different questions. This strips the collapsed bodies to ask the second one.
 const visibleText = (html: string) =>
@@ -317,6 +540,68 @@ registerHIDDeviceForTesting(device.path, {
 afterAll(() => {
   setEraAdvancedMetadataForTesting(null);
   resetHIDTransportForTesting();
+});
+
+describe('read-only ERA firmware version', () => {
+  const ascii = (value: string, tail: unknown[] = [0]) => [
+    ...new TextEncoder().encode(value),
+    ...tail,
+  ];
+
+  test('decodes the shared live GET format and rejects malformed values', () => {
+    expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 0, 0]))).toBe(
+      '260901R1',
+    );
+    expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 0xa5, 1]))).toBe(
+      '260901R1',
+    );
+    expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 'ignored']))).toBe(
+      '260901R1',
+    );
+    expect(decodeEraFirmwareVersion(ascii('260901R1', []))).toBeNull();
+    expect(decodeEraFirmwareVersion(ascii('261301R1'))).toBeNull();
+    expect(decodeEraFirmwareVersion([0x32, 0x80, 0])).toBeNull();
+    expect(decodeEraFirmwareVersion('260901R1')).toBeNull();
+  });
+
+  test('renders both firmware definitions through one visible, non-editable presentation', () => {
+    optIn(false);
+    const era = render(
+      makeStore({
+        era: true,
+        menuData: {
+          [ERA_FIRMWARE_VERSION_COMMAND]: ascii('260901R1', [0, 0xa5]),
+        },
+      }),
+      {label: 'SYSTEM', content: [eraVersionSubmenu]},
+    );
+    const h7s = render(
+      makeStore({
+        era: true,
+        menuData: {
+          [ERA_FIRMWARE_VERSION_COMMAND]: ascii('260901R1', [0, 0xa5]),
+        },
+      }),
+      {label: 'SYSTEM', content: [h7sVersionSubmenu]},
+    );
+
+    for (const html of [era, h7s]) {
+      expect((html.match(/260901R1/g) ?? []).length).toBe(1);
+      expect(html).toContain('data-era-firmware-version="true"');
+      expect(html).toContain('Firmware version on this keyboard.');
+      expect(html).toContain('Current Version');
+      expect(html).not.toContain('<input');
+      expect(html).not.toContain('role="combobox"');
+      expect((html.match(/<button/g) ?? []).length).toBe(1);
+      expect(html).toContain('aria-label="What this means"');
+      expect(html).not.toContain('>Save<');
+      expect(html).not.toContain('>Apply<');
+    }
+    expect(h7s).not.toContain('>Year<');
+    expect(h7s).not.toContain('>Month<');
+    expect(h7s).not.toContain('>Day<');
+    expect(h7s).not.toContain('>Rev.<');
+  });
 });
 
 describe('Custom menu pane loading failure', () => {
@@ -418,8 +703,95 @@ describe('ERA feature help', () => {
       content: [mouseSubmenu],
     });
 
-    expect(html).toContain('Speed of the mouse keys on the keymap');
+    expect(html).toContain('Configures speed when using mouse-control keys');
     expect(html).toContain('Cursor Acceleration');
+  });
+
+  test('keeps lighting summaries direct and puts Velocikey help only on RGBLight', () => {
+    optIn(true);
+    const matrix = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [rgbMatrixSubmenu],
+    });
+    const rgbLight = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [rgbLightSubmenu],
+    });
+    const backlight = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [backlightSubmenu],
+    });
+
+    expect(matrix).toContain(
+      'Configures switch RGB brightness, effects, speed and color.',
+    );
+    expect(matrix).not.toContain('Velocikey');
+    expect(matrix).not.toContain('What this means');
+    expect(rgbLight).toContain(
+      'Configures RGB lighting brightness, effects, speed and color.',
+    );
+    expect(rgbLight).toContain('Velocikey');
+    expect(rgbLight).toContain('What this means: Velocikey');
+    expect(backlight).toContain('Configures backlight brightness and effects.');
+    expect(backlight).not.toContain('What this means');
+  });
+
+  test('moves badge explanations from the heading to the controls', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [badgeSubmenu],
+    });
+
+    expect(html).toContain('Configures badge lighting and lock indicators.');
+    expect(html).toContain('What this means: RGB-Only');
+    expect(html).toContain('What this means: Lock Indicator');
+    expect(html).toContain('What this means: Indicator-Only');
+    expect(html).toContain('Applies RGB effects only to the badge area.');
+    expect(html).not.toContain('Badge-Only RGB');
+  });
+});
+
+describe('ERA exact-second input', () => {
+  test('renders the TOMAK sleep timeout with the same feature-help and deferred-input surface', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {
+          status: 'fresh',
+          observedRevision: 2,
+          acceptedRevision: 2,
+        },
+      }),
+      {label: 'SYSTEM', content: [sleepSubmenu]},
+    );
+
+    expect(html).toContain('Turns RGB off after a period with no key input.');
+    expect(html).toContain('Default is 10 minutes.');
+    expect(html).toContain('hidden=""');
+    expect(html).toContain('RGB Sleep Timeout (s)');
+    expect(html).toContain('value="600"');
+    expect(html).toContain('>s</span>');
+    expect(html).not.toContain('type="range"');
+  });
+
+  test('renders the H7S minute sleep dropdown with the same help and no exact-seconds field', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'SYSTEM',
+      content: [h7sSleepSubmenu],
+    });
+
+    expect(html).toContain('Turns RGB off after a period with no key input.');
+    expect(html).toContain('Default is 10 minutes.');
+    expect(html).toContain('hidden=""');
+    expect(html).toContain('RGB Sleep Timeout');
+    expect(html).toContain('10 min');
+    expect(html).not.toContain('RGB Sleep Timeout (s)');
+    expect(html).not.toContain('value="600"');
+    expect(html).not.toContain('>s</span>');
   });
 });
 
@@ -435,9 +807,9 @@ describe('ERA per-control help', () => {
     });
 
     expect(html).toContain('Debounce Mode');
-    expect(html).toContain('Start with Balanced');
+    expect(html).toContain('Balanced — The most stable default');
     // Shipped with the row, folded away until asked for.
-    expect(visibleText(html)).not.toContain('Start with Balanced');
+    expect(visibleText(html)).not.toContain('Balanced — The most stable default');
     // Label, then the button beside it, then the body on the line under both. Put the
     // body before the control and the wrapping row pushes the control onto a third
     // line, which is what the ordering here is guarding.
@@ -445,8 +817,52 @@ describe('ERA per-control help', () => {
       html.indexOf('What this means: Debounce Mode'),
     );
     expect(html.indexOf('What this means: Debounce Mode')).toBeLessThan(
-      html.indexOf('Start with Balanced'),
+      html.indexOf('Balanced — The most stable default'),
     );
+  });
+
+  test('explains split-link rates beside the short speed dropdown', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {
+          status: 'fresh',
+          observedRevision: 2,
+          acceptedRevision: 2,
+        },
+      }),
+      {
+        label: 'SYSTEM',
+        content: [linkSubmenu],
+      },
+    );
+
+    expect(html).toContain('What this means: Split Link Speed');
+    expect(html).toContain('High — 460800 bps; 1 ms polling');
+    expect(html).toContain('Medium — 230400 bps; 2 ms polling');
+    expect(html).toContain('Low — 115200 bps; 4 ms polling');
+    expect(html).toContain('Master–Slave (HOST-PEER) operation changes very little');
+    expect(html).toContain('DUAL-HOST layer-sharing response time');
+    expect(html).toMatch(/singleValue[^>]*>High<\/div>/);
+    expect(html).not.toContain('High - 460800');
+    expect(html).toContain(
+      'DUAL-HOST layer sharing.\n\nMedium — 230400 bps',
+    );
+  });
+
+  test('keeps KKUK timing help on the two actual settings', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'FEATURE',
+      content: [kkukSubmenu],
+    });
+
+    expect(html).toContain('Repeats multiple keys while they remain held.');
+    expect(html).toContain('What this means: First Delay Time');
+    expect(html).toContain('What this means: Repeat Time');
+    expect(html).not.toContain('Report Pulse');
   });
 
   test('reads the same command id differently on either side of the mode', () => {
@@ -477,7 +893,9 @@ describe('ERA per-control help', () => {
     // The three switches each need their own answer; the term does not, because the
     // line above the controls is already about it.
     expect(html).toContain('Permissive Hold');
-    expect(html).toContain('For holds that do not take when you type fast');
+    expect(html).toContain(
+      'Use this when a tap-hold key is still treated as a tap during fast typing',
+    );
     expect(html).toContain('Global Tapping Term (ms)');
     expect(html).not.toContain('What this means: Global Tapping Term (ms)');
   });
@@ -507,7 +925,7 @@ describe('ERA per-control help', () => {
     });
 
     expect(html).toContain('Debounce Mode');
-    expect(html).not.toContain('Start with Balanced');
+    expect(html).not.toContain('Balanced — The most stable default');
     expect(html).not.toContain('What this means');
   });
 });

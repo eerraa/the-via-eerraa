@@ -37,6 +37,8 @@ import {saveKeymapSuccess} from '../src/store/keymapSlice';
 import macrosReducer, {
   getExpressions,
   getIsMacrosReady,
+  getMacroCount,
+  loadMacroMetadata,
   loadMacros,
   loadMacrosSuccess,
   resetMacrosOnDevice,
@@ -76,9 +78,12 @@ import {commitStableKeymapCandidate} from '../src/store/stateSyncCandidateAction
 import {
   handleUISyncRequest,
   pollStateSync,
+  probeStateSyncCapabilityForDevice,
   probeStateSyncForDevice,
   refreshAfterDefinitionChange,
   refreshAllDomains,
+  refreshMacroDomain,
+  refreshStateSyncDomain,
   syncPolling,
   stopStateSyncPollingForTesting,
   unloadCustomDefinitionWithRefresh,
@@ -1065,6 +1070,64 @@ describe('state-sync probe isolation', () => {
         ({data}) => data[0] === 0x02 && data[1] === ERA_STATE_SYNC_SELECTOR,
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe('progressive State Sync initial load', () => {
+  test('opens on a stable keymap, prefetches CONFIG, and keeps the stock macro buffer lazy', async () => {
+    const {device} = await connectFake('progressive-initial');
+    const firmware = new FakeStateSyncFirmware(device);
+    device.onSend = firmware.onSend;
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = makeConnectedDevice('progressive-initial', TOMAK_VPID);
+    installEraDefinition(store, makeV3Definition(true));
+    dispatch(updateConnectedDevices({[connected.path]: connected}));
+    const generation = new KeyboardAPI(
+      connected.path,
+    ).getConnectionGeneration();
+    dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+
+    expect(await dispatch(probeStateSyncCapabilityForDevice(connected))).toBe(
+      true,
+    );
+    await dispatch(loadMacroMetadata(connected));
+    expect(getMacroCount(store.getState())).toBe(1);
+    expect(getIsMacrosReady(store.getState())).toBe(false);
+    expect(firmware.macroBufferReads).toBe(0);
+
+    expect(
+      await dispatch(
+        refreshStateSyncDomain(connected, 'keymap', {allowBeforeReady: true}),
+      ),
+    ).toBe(true);
+    expect(getLoadProgress(store.getState())).toBe(1);
+    expect(firmware.keymapReads).toBeGreaterThan(0);
+    expect(firmware.layoutReads).toBe(0);
+    expect(firmware.menuReads).toBe(0);
+    expect(firmware.macroBufferReads).toBe(0);
+
+    dispatch(
+      markDeviceReady({
+        devicePath: connected.path,
+        connectionGeneration: generation,
+        selectionGeneration: store.getState().devices.selectionGeneration,
+      }),
+    );
+    dispatch(setConfigureVisible(true));
+    await dispatch(pollStateSync());
+
+    expect(firmware.layoutReads).toBeGreaterThan(0);
+    expect(firmware.menuReads).toBeGreaterThan(0);
+    expect(firmware.macroBufferReads).toBe(0);
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'available',
+    );
+
+    expect(await dispatch(refreshMacroDomain(connected))).toBe(true);
+    expect(firmware.macroBufferReads).toBeGreaterThan(0);
+    expect(getIsMacrosReady(store.getState())).toBe(true);
+    expect(getExpressions(store.getState())).toEqual(['A']);
   });
 });
 

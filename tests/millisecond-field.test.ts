@@ -10,6 +10,11 @@ import {
 } from '../src/utils/millisecond-field';
 import {FakeMillisecondDevice} from './fixtures/millisecond-fake';
 import {
+  canApplyIntegerDraft,
+  commitIntegerDraft,
+  parseIntegerDraft,
+} from '../src/utils/integer-field';
+import {
   customExactGlobalTermControl,
   exactGlobalTermControl,
   LEGACY_TAPPING_TERM_OPTIONS,
@@ -94,6 +99,48 @@ describe('parseMillisecondDraft', () => {
       reason: 'out_of_range',
     });
     expect(parseFailureMessage('out_of_range')).toBe('Out of range');
+  });
+});
+
+describe('exact integer duration field', () => {
+  test('accepts the exact-second uint16 range and rejects zero or overflow', async () => {
+    expect(parseIntegerDraft('1', 1, 65535)).toEqual({ok: true, value: 1});
+    expect(parseIntegerDraft('65535', 1, 65535)).toEqual({
+      ok: true,
+      value: 65535,
+    });
+    expect(parseIntegerDraft('0', 1, 65535)).toEqual({
+      ok: false,
+      reason: 'out_of_range',
+    });
+    expect(parseIntegerDraft('65536', 1, 65535)).toEqual({
+      ok: false,
+      reason: 'out_of_range',
+    });
+
+    const writes: number[] = [];
+    const adapter = {
+      min: 1,
+      max: 65535,
+      async write(value: number) {
+        writes.push(value);
+        return value;
+      },
+    };
+    expect(canApplyIntegerDraft('137', 3600, adapter, false)).toBe(true);
+    const result = await commitIntegerDraft(
+      '137',
+      {
+        authoritativeValue: 3600,
+        draft: '137',
+        inFlight: false,
+        error: null,
+      },
+      adapter,
+    );
+    expect(result.wrote).toBe(true);
+    expect(result.next.authoritativeValue).toBe(137);
+    expect(writes).toEqual([137]);
   });
 });
 

@@ -19,17 +19,17 @@
 export type EraFeatureHelp = {
   /** One line, always visible above the controls. Names the setting, does not narrate it. */
   summary: string;
-  /** Shown when the reader opens the disclosure. On/off behaviour, then stop. */
-  detail: string;
+  /** Shown when the reader opens the disclosure. Omit when the summary is the whole answer. */
+  detail?: string;
 };
 
 // The SOCD menu is the same feature under two command families: H7S firmware names it
 // `id_qmk_kill_switch_*`, the RP2040 firmware `id_qmk_socd_*`. One object, two prefixes,
 // so the two families cannot drift apart into two different explanations.
 const SOCD_HELP: EraFeatureHelp = {
-  summary: 'Only the key pressed last counts.',
+  summary: 'Resolves simultaneous input between two opposing keys.',
   detail:
-    'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first.',
+    'A normal keyboard can report opposing keys such as A and D at the same time. With SOCD enabled, the key pressed later takes priority while both are held. Releasing it restores the key that is still physically held. This is mainly useful when a game needs unambiguous directional input.',
 };
 
 // Ordered: the first prefix that matches a command in the submenu wins, so more
@@ -48,23 +48,23 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_kkuk_',
     {
-      summary: 'Cycles the keys held down, so a, s, d gives "asdasdasd".',
+      summary: 'Repeats multiple keys while they remain held.',
       detail:
-        'Hold two or more ordinary keys still and the whole group is released and pressed again on a timer, so all of them keep arriving instead of only the last one. First Delay Time is the hold before it starts, Repeat Time the interval after. SOCD keys are excluded.',
+        'While two or more ordinary keys remain held, KKUK periodically releases the held key group and presses it again. For example, holding A, S and D usually produces "asdasdasd..." instead of the ordinary "asdddd..." auto-repeat. Keys assigned to SOCD are excluded.',
     },
   ],
   [
     'id_qmk_debounce_',
     {
-      summary: 'Filters chatter so one press types once.',
+      summary: 'Configures debounce to prevent switch chatter.',
       detail:
-        'Leave it alone unless one press sometimes types twice. If it does, raise the time a little at a time. Balanced at 5 to 10 ms suits most switches. Only the time boxes that mode affects appear.',
+        'If one physical press sometimes produces multiple inputs, increase the relevant delay a little at a time. If there is no chatter, keeping the default settings is recommended.',
     },
   ],
   [
     'id_qmk_tapping_',
     {
-      summary: 'Hold time for tap-hold keys.',
+      summary: 'Sets how tap-hold keys distinguish taps from holds.',
       detail:
         'For Mod-Tap and Layer-Tap keys, 200 ms by default. Shorter triggers the hold sooner but turns fast typing into accidental holds; longer is safer but the hold arrives late. The three switches below change what happens when you press another key first.',
     },
@@ -72,15 +72,15 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_mousekey_',
     {
-      summary: 'Speed of the mouse keys on the keymap.',
+      summary: 'Configures speed when using mouse-control keys.',
       detail:
-        'Nothing here does anything unless your keymap has mouse keys on it. The values interact, so change one at a time.',
+        'These settings have no effect unless your keymap contains mouse keys. The values affect one another, so adjusting one at a time is recommended.',
     },
   ],
   [
     'id_qmk_custom_nkro_',
     {
-      summary: 'Expands simultaneous key input without a limit.',
+      summary: 'Removes the six-key rollover limit for simultaneous key input.',
       detail:
         'Turn it off if an old BIOS or a KVM switch cannot see your typing. Off, the keyboard falls back to 6KRO and registers six keys at once.',
     },
@@ -114,7 +114,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Link speed of the cable between the two units.',
       detail:
-        'Apply does nothing if that speed is already running; changing it restarts both units. Three long red LED pulses mean the split cable is not good enough — replace it. Default is High.',
+        'Apply does nothing if that speed is already running; changing it restarts both units.\n\nThree long red LED pulses mean the split cable is not good enough — replace it. Default is High.',
     },
   ],
   [
@@ -123,6 +123,13 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
       summary: 'Makes the two units behave as one keyboard.',
       detail:
         'All three are on by default, and each covers a different part of what the two units share.',
+    },
+  ],
+  [
+    'id_qmk_rgb_sleep_timeout',
+    {
+      summary: 'Turns RGB off after a period with no key input.',
+      detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
     },
   ],
   [
@@ -138,7 +145,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'LED for Caps Lock, Scroll Lock and Num Lock.',
       detail:
-        'Pick what each indicator watches, then set its brightness and colour. It takes over that LED only while the lock is on.',
+        'Choose which lock each indicator follows, then set its brightness and colour. While that lock is on, the indicator display takes priority on that LED.',
     },
   ],
   // The badge menu is gated on `id_custom_badge_only`, the one command in it that no
@@ -147,25 +154,25 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_custom_badge_only',
     {
-      summary: 'Lighting and lock indicator for the badge.',
-      detail:
-        'Badge-Only RGB lights the badge and nothing else. Indicator Only stops the badge showing effects so it works as a lock indicator alone.',
+      summary: 'Configures badge lighting and lock indicators.',
+    },
+  ],
+  [
+    'id_custom_backlight_',
+    {
+      summary: 'Configures backlight brightness and effects.',
     },
   ],
   [
     'id_qmk_rgblight_',
     {
-      summary: 'Brightness, effect, speed and colour for the lighting.',
-      detail:
-        'Only the lighting this keyboard has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider.',
+      summary: 'Configures RGB lighting brightness, effects, speed and color.',
     },
   ],
   [
     'id_qmk_rgb_matrix_',
     {
-      summary: 'Brightness, effect, speed and colour for the lighting.',
-      detail:
-        'Only the lighting this keyboard has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider.',
+      summary: 'Configures switch RGB brightness, effects, speed and color.',
     },
   ],
 ];
@@ -243,16 +250,40 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
     help: 'The keycode sent when a tap is followed by holding the key down.',
   },
   {
-    command: 'id_qmk_kkuk_mode',
-    help: 'Report Pulse is the only behaviour the firmware has, and it is what the rest of this menu describes. Anything else you pick is ignored.',
+    command: 'id_qmk_kkuk_delay_time',
+    help: 'How long to wait after multiple keys are held before repeating begins.',
+  },
+  {
+    command: 'id_qmk_kkuk_repeat_time',
+    help: 'How often the held key group repeats. A shorter value repeats it faster.',
   },
   {
     command: 'id_qmk_debounce_mode',
-    help: 'Balanced waits for the switch to settle before sending, on press and on release alike, so every key registers that much later. Fast sends the instant the switch changes, then ignores that key for the set time — no added delay. Advanced sends the press immediately and waits on the release, with a separate time for each. Start with Balanced.',
+    help: 'Balanced — The most stable default. A press or release is applied only after the switch has remained settled for the configured time, so both directions are delayed by that amount.\n\nFast — Prioritizes response speed. The first press or release change is applied immediately, then further changes from that key are ignored for the configured time. It adds almost no input delay, but leaves the least margin for chatter.\n\nAdvanced — Treats press and release differently. A press is applied immediately, then further press-side changes are ignored for Press Delay. A release is applied only after the signal remains settled for Release Delay. Use this when you want immediate press response with more conservative release filtering.\n\nBalanced is recommended as the starting point.',
+  },
+  {
+    command: 'id_custom_badge_only',
+    help: 'Applies RGB effects only to the badge area.',
+  },
+  {
+    command: 'id_custom_indicator_toggle',
+    help: 'Selects which lock indicator the badge area shows.',
+  },
+  {
+    command: 'id_custom_indicator_override',
+    help: 'Uses the badge area only as an indicator. RGB effects do not affect it.',
+  },
+  {
+    command: 'id_qmk_velocikey_toggle',
+    help: 'Changes RGBLight effect speed according to typing speed while enabled.',
+  },
+  {
+    command: 'id_qmk_custom_velocikey_enable',
+    help: 'Changes RGBLight effect speed according to typing speed while enabled.',
   },
   {
     command: 'id_qmk_debounce_time_single',
-    help: 'One value for both directions. Nothing is reported until the switch has been quiet this long, so this is also how much later every key registers. 5 to 10 ms covers most switches.',
+    help: 'One value for both press and release. A change is reported only after the switch signal has remained stable for this long, so this is also the added input delay. 5 to 10 ms covers most switches.',
   },
   {
     command: 'id_qmk_debounce_time_post',
@@ -272,19 +303,19 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
       'Release - delay before and after release (pre+post window)',
       'Release Delay',
     ],
-    help: 'The release side. Letting go is reported only after the switch has been quiet this long. It delays the release, not the press.',
+    help: 'The release side. A release is reported only after the switch signal has remained stable for this long. It delays release, not press.',
   },
   {
     command: 'id_qmk_tapping_permissive_hold',
-    help: 'For holds that do not take when you type fast. On, the key becomes a hold as soon as another key is pressed and released while you are still holding it. Hold on Other Key Press decides earlier — on the other key going down rather than coming back up.',
+    help: 'Use this when a tap-hold key is still treated as a tap during fast typing. When enabled, it becomes a hold after another key is pressed and released while you are still holding it. Hold on Other Key Press decides earlier: when the other key is pressed rather than when it is released.',
   },
   {
     command: 'id_qmk_tapping_hold_on_other_key_press',
-    help: 'The strongest of the three: the key becomes a hold the moment any other key goes down. Turn it on if holds still come out as letters with Permissive Hold on. It costs rolls, which hurts most on a home-row Mod-Tap.',
+    help: 'The key becomes a hold as soon as any other key is pressed. Enable this if a key you intend to hold is still treated as a tap with Permissive Hold enabled. The trade-off is that rolling key presses can turn intended taps into holds, especially with home-row Mod-Tap keys.',
   },
   {
     command: 'id_qmk_tapping_retro_tapping',
-    help: 'For letters that vanish when you rest on a key too long. On, a tap-hold key held past the term and released with nothing pressed in between still sends the tap.',
+    help: 'Use this when a tap-hold key held past the term is released without another key press and would otherwise produce no tap. When enabled, that release still sends the tap.',
   },
   {
     command: 'id_qmk_mousekey_cursor_acceleration',
@@ -317,6 +348,10 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
     help: 'How much scrolling speeds up while you hold the key. Off keeps it steady.',
   },
   {
+    command: 'id_qmk_split_link_level',
+    help: 'High — 460800 bps; 1 ms polling for DUAL-HOST layer sharing.\n\nMedium — 230400 bps; 2 ms polling for DUAL-HOST layer sharing.\n\nLow — 115200 bps; 4 ms polling for DUAL-HOST layer sharing.\n\nMaster–Slave (HOST-PEER) operation changes very little. The practical difference is mainly DUAL-HOST layer-sharing response time.',
+  },
+  {
     command: 'id_qmk_eeprom_sync_requested',
     help: 'A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.',
   },
@@ -341,10 +376,9 @@ export const eraMenuSummaries = (): string[] => [
 ];
 
 export const eraHelpStrings = (): string[] => [
-  ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) => [
-    summary,
-    detail,
-  ]),
+  ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) =>
+    detail ? [summary, detail] : [summary],
+  ),
   ...HELP_BY_CONTROL.map(({help}) => help),
 ];
 

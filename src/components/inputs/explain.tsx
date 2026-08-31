@@ -38,6 +38,7 @@ export const ExplainBody = styled.p({
   opacity: 0.82,
   fontSize: 13,
   lineHeight: 1.6,
+  whiteSpace: 'pre-line',
   margin: '8px 0 0',
 });
 

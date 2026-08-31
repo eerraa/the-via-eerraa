@@ -36,9 +36,9 @@ const packageJson = readJSON('package.json') as {
 };
 
 // A repository path that quietly stops existing is the most common way a document turns
-// into a lie: `src/utils/pane-config.tsx` outlived the file by several renames because
-// nothing ever asked. A path that belongs to another repository has to carry that
-// repository's name, so this check can tell the two apart.
+// into a lie: comments cited `src/utils/pane-config.ts` with a `.tsx` suffix even though
+// the file was never `.tsx`, because nothing ever asked. A path that belongs to another
+// repository has to carry that repository's name, so this check can tell the two apart.
 const OWNED_PREFIXES = [
   'src/',
   'tests/',
@@ -86,7 +86,7 @@ describe('docs state the same counts the manifest does', () => {
   );
 
   const claims: [string, number][] = [
-    ['ERA 커스텀 정의', manifest.definitions.length],
+    ['ERA custom definitions', manifest.definitions.length],
     ['├ QMK (RP2040 + ATmega32U4)', manifest.definitions.length - h7s.length],
     ['└ H7S', h7s.length],
     [
@@ -94,18 +94,18 @@ describe('docs state the same counts the manifest does', () => {
       manifest.definitions.filter(({stateSync}) => stateSync).length,
     ],
     [
-      'exact-ms `qmk` 계열 (`options: [1, 65535]`)',
+      'exact-ms `qmk` family (`options: [1, 65535]`)',
       manifest.definitions.filter(({exactMsFamily}) => exactMsFamily === 'qmk')
         .length,
     ],
     [
-      'exact-ms `h7s` 계열 (`options: [100, 500]`)',
+      'exact-ms `h7s` family (`options: [100, 500]`)',
       manifest.definitions.filter(({exactMsFamily}) => exactMsFamily === 'h7s')
         .length,
     ],
-    ['USB 진단 opt-in (`usbDiagnostics: true`)', h7s.length],
+    ['USB diagnostics opt-in (`usbDiagnostics: true`)', h7s.length],
     [
-      'split pair 항목 (좌/우 각각)',
+      'split pair entries (left/right each)',
       manifest.definitions.filter(({pair}) => typeof pair === 'string').length,
     ],
   ];
@@ -119,9 +119,9 @@ describe('docs state the same counts the manifest does', () => {
     });
   }
 
-  test('ERA 메뉴 요약 count matches era-feature-help', async () => {
+  test('ERA menu summaries count matches era-feature-help', async () => {
     const {eraMenuSummaries} = await import('../src/utils/era-feature-help');
-    expect(mapTableValue('ERA 메뉴 요약')).toBe(eraMenuSummaries().length);
+    expect(mapTableValue('ERA menu summaries')).toBe(eraMenuSummaries().length);
   });
 
   test('official snapshot sizes match the installed package', () => {
@@ -167,10 +167,10 @@ describe('docs state the same counts the manifest does', () => {
     );
     expect(keyCounts.size).toBe(1);
     const documented = MAP.split('\n').find((line) =>
-      line.startsWith('| 로케일 |'),
+      line.startsWith('| Locales |'),
     );
     expect(documented).toContain(`${files.length} (`);
-    expect(documented).toContain(`${[...keyCounts][0]} 키`);
+    expect(documented).toContain(`${[...keyCounts][0]} keys`);
   });
 });
 
@@ -234,7 +234,7 @@ describe('docs state the same wire constants the source does', () => {
     // Global term shares one address across both families; the TD banks do not.
     expect(qmk.get('id_qmk_tapping_global_term_exact')).toBe('15:5');
     expect(h7s.get('id_qmk_tapping_global_term_exact')).toBe('15:5');
-    expect(MAP).toContain('| 글로벌 TAPPING term | 채널 15 / value 5 |');
+    expect(MAP).toContain('| Global TAPPING term | channel 15 / value 5 |');
 
     const bank = (
       found: Map<string, string>,
@@ -260,8 +260,44 @@ describe('docs state the same wire constants the source does', () => {
     const qmkBank = bank(qmk);
     const h7sBank = bank(h7s);
     expect(MAP).toContain(
-      `| TD0–TD7 term | 채널 ${qmkBank.channel} / value ${qmkBank.first}–${qmkBank.last} | 채널 ${h7sBank.channel} / value ${h7sBank.first}–${h7sBank.last} |`,
+      `| TD0–TD7 term | channel ${qmkBank.channel} / value ${qmkBank.first}–${qmkBank.last} | channel ${h7sBank.channel} / value ${h7sBank.first}–${h7sBank.last} |`,
     );
+  });
+
+  test('H7S RGB sleep address matches MAP and the H7S definitions', () => {
+    const found: Array<{channel: number; id: number}> = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      const content = (node as {content?: unknown}).content;
+      if (
+        Array.isArray(content) &&
+        content[0] === 'id_qmk_rgb_sleep_timeout' &&
+        typeof content[1] === 'number' &&
+        typeof content[2] === 'number'
+      ) {
+        found.push({channel: content[1], id: content[2]});
+      }
+      Object.values(node as Record<string, unknown>).forEach(walk);
+    };
+    walk(
+      JSON.parse(
+        read(
+          manifest.definitions.find(({exactMsFamily}) => exactMsFamily === 'h7s')!
+            .path,
+        ),
+      ),
+    );
+    expect(found).toEqual([{channel: 18, id: 1}]);
+    expect(MAP).toContain(
+      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |',
+    );
+    expect(MAP).toContain('V3 Custom Value channel 18 / id 1');
   });
 });
 
@@ -285,7 +321,9 @@ describe('docs only name commands and files that exist', () => {
           name,
           line: 'string',
         });
-        expect({script, name, states: line!.includes(`${files}개 파일`)}).toEqual(
+        const fileCountPhrase =
+          name === 'AGENTS.md' ? `${files}개 파일` : `${files} files`;
+        expect({script, name, states: line!.includes(fileCountPhrase)}).toEqual(
           {script, name, states: true},
         );
       }

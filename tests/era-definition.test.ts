@@ -13,6 +13,7 @@ import {findEraFeatureHelp} from '../src/utils/era-feature-help';
 type DefinitionEntry = {
   id: string;
   path: string;
+  pair?: string;
   stateSync: boolean;
   usbDiagnostics?: boolean;
   exactMsFamily?: 'qmk' | 'h7s';
@@ -64,7 +65,14 @@ const collectTermControls = (value: unknown, into: TermControl[] = []) => {
 
 const collectCommandControls = (
   value: unknown,
-  into: {name: string; channel: number; id: number; label?: string}[] = [],
+  into: {
+    name: string;
+    channel: number;
+    id: number;
+    label?: string;
+    type?: string;
+    options?: unknown;
+  }[] = [],
 ) => {
   if (Array.isArray(value)) {
     value.forEach((item) => collectCommandControls(item, into));
@@ -73,7 +81,12 @@ const collectCommandControls = (
   if (!value || typeof value !== 'object') {
     return into;
   }
-  const record = value as {content?: unknown; label?: unknown};
+  const record = value as {
+    content?: unknown;
+    label?: unknown;
+    type?: unknown;
+    options?: unknown;
+  };
   if (
     Array.isArray(record.content) &&
     typeof record.content[0] === 'string' &&
@@ -85,6 +98,8 @@ const collectCommandControls = (
       channel: record.content[1],
       id: record.content[2],
       label: typeof record.label === 'string' ? record.label : undefined,
+      type: typeof record.type === 'string' ? record.type : undefined,
+      options: record.options,
     });
   }
   Object.values(record).forEach((item) => collectCommandControls(item, into));
@@ -100,6 +115,22 @@ const submenuLabels = (definition: Record<string, unknown>, menu: string) => {
     (entry) => entry && typeof entry === 'object' && entry.label === menu,
   );
   return (found?.content ?? []).map((entry) => entry.label);
+};
+
+const submenuControlLabels = (
+  definition: Record<string, unknown>,
+  menu: string,
+  submenu: string,
+) => {
+  const menus = (definition.menus ?? []) as {
+    label?: string;
+    content?: {label?: string; content?: {label?: string}[]}[];
+  }[];
+  const foundMenu = menus.find((entry) => entry?.label === menu);
+  const foundSubmenu = (foundMenu?.content ?? []).find(
+    (entry) => entry?.label === submenu,
+  );
+  return (foundSubmenu?.content ?? []).map((entry) => entry.label);
 };
 
 const keycodeNames = (value: unknown) =>
@@ -153,6 +184,10 @@ const expectedQmkDefinitionIds = [
   'tomak79s-left',
   'tomak79s-right',
 ].sort();
+
+const expectedRp2040DefinitionIds = expectedQmkDefinitionIds.filter(
+  (id) => id !== 'brick65',
+);
 
 const expectedUsbDiagnosticsDefinitionIds = [
   'brick60-h7s',
@@ -327,6 +362,107 @@ describe('canonical ERA definition inventory', () => {
     });
   }
 
+  test('gives exactly the 25 RP2040 definitions one live VERSION label and excludes brick65', () => {
+    const actual: string[] = [];
+    for (const entry of qmkEntries) {
+      const definition = readJSON(entry.path);
+      const versionControls = collectCommandControls(definition).filter(
+        ({name}) => name === 'id_qmk_ver_ascii',
+      );
+      expect(JSON.stringify(definition)).not.toContain('260901R1');
+      if (entry.id === 'brick65') {
+        expect(submenuLabels(definition, 'SYSTEM')).not.toContain('VERSION');
+        expect(versionControls).toEqual([]);
+        continue;
+      }
+      actual.push(entry.id);
+      expect(submenuLabels(definition, 'SYSTEM')[0]).toBe('VERSION');
+      expect(
+        submenuLabels(definition, 'SYSTEM').filter(
+          (label) => label === 'VERSION',
+        ),
+      ).toEqual(['VERSION']);
+      expect(versionControls).toEqual([
+        {
+          name: 'id_qmk_ver_ascii',
+          channel: 8,
+          id: 1,
+          label: 'Current Version',
+          type: 'label',
+          options: undefined,
+        },
+      ]);
+    }
+    expect(actual).toHaveLength(25);
+    expect(actual.sort()).toEqual(expectedRp2040DefinitionIds);
+  });
+
+  test('keeps the VERSION definition identical across each RP2040 split pair', () => {
+    const pairs = new Map<string, unknown[]>();
+    for (const entry of manifest.definitions.filter(({pair}) => pair)) {
+      const definition = readJSON(entry.path);
+      const system = ((definition.menus ?? []) as {
+        label?: string;
+        content?: unknown[];
+      }[]).find(({label}) => label === 'SYSTEM');
+      const version = (system?.content ?? []).find(
+        (submenu) =>
+          !!submenu &&
+          typeof submenu === 'object' &&
+          'label' in submenu &&
+          (submenu as {label: unknown}).label === 'VERSION',
+      );
+      pairs.set(entry.pair!, [...(pairs.get(entry.pair!) ?? []), version]);
+    }
+    expect([...pairs.keys()].sort()).toEqual([
+      'tomak-tkl',
+      'tomak79h',
+      'tomak79s',
+    ]);
+    for (const versions of pairs.values()) {
+      expect(versions).toHaveLength(2);
+      expect(versions[0]).toEqual(versions[1]);
+    }
+  });
+
+  test('gives all five H7S definitions one first, read-only ASCII VERSION value', () => {
+    const h7s = manifest.definitions.filter(
+      ({exactMsFamily}) => exactMsFamily === 'h7s',
+    );
+    expect(h7s.map(({id}) => id).sort()).toEqual(
+      expectedUsbDiagnosticsDefinitionIds,
+    );
+    for (const entry of h7s) {
+      const definition = readJSON(entry.path);
+      expect(submenuLabels(definition, 'SYSTEM')[0]).toBe('VERSION');
+      expect(
+        submenuLabels(definition, 'SYSTEM').filter(
+          (label) => label === 'VERSION',
+        ),
+      ).toEqual(['VERSION']);
+      const versionControls = collectCommandControls(definition)
+        .filter(({name}) => name.startsWith('id_qmk_ver_'))
+        .map(({name, channel, id, label, type, options}) => ({
+          name,
+          channel,
+          id,
+          label,
+          type,
+          options,
+        }));
+      expect(versionControls).toEqual([
+        {
+          name: 'id_qmk_ver_ascii',
+          channel: 8,
+          id: 5,
+          label: 'Current Version',
+          type: 'label',
+          options: undefined,
+        },
+      ]);
+    }
+  });
+
   test('preserves the H7S 100-500 custom exact-ms exception', () => {
     const entry = manifest.definitions.find(
       ({exactMsFamily}) => exactMsFamily === 'h7s',
@@ -364,6 +500,20 @@ describe('canonical ERA definition inventory', () => {
         'TAPPING',
         'MOUSE',
       ]);
+      expect(submenuLabels(definition, 'SYSTEM')).toEqual([
+        'VERSION',
+        'USB POLLING',
+        'SLEEP',
+        'BOOT',
+        'EEPROM',
+      ]);
+      expect(
+        collectCommandControls(definition).filter(
+          ({name}) => name === 'id_qmk_rgb_sleep_timeout',
+        ),
+      ).toEqual([
+        expect.objectContaining({channel: 18, id: 1, label: 'RGB Sleep Timeout'}),
+      ]);
       const mouse = collectCommandControls(definition).filter(({name}) =>
         name.startsWith('id_qmk_mousekey_'),
       );
@@ -394,12 +544,79 @@ describe('canonical ERA definition inventory', () => {
     expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
   });
 
+  test('gives only the six TOMAK halves the exact-second RGB sleep control', () => {
+    const expected = [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ].sort();
+    const actual: string[] = [];
+    for (const entry of manifest.definitions) {
+      const controls = collectCommandControls(readJSON(entry.path)).filter(
+        ({name}) => name === 'id_qmk_rgb_sleep_timeout_exact',
+      );
+      if (controls.length === 0) {
+        continue;
+      }
+      actual.push(entry.id);
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toMatchObject({
+        channel: 9,
+        id: 11,
+        options: [1, 65535],
+      });
+    }
+    expect(actual.sort()).toEqual(expected);
+  });
+
+  test('hides fixed SOCD and KKUK mode rows and keeps shared control order', () => {
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const serialized = JSON.stringify(definition);
+      if (!serialized.includes('id_qmk_kkuk_enable')) {
+        continue;
+      }
+      expect(serialized).not.toContain('id_qmk_kkuk_mode');
+      expect(serialized).not.toContain('id_qmk_socd_lr_mode');
+      expect(serialized).not.toContain('id_qmk_socd_ud_mode');
+      expect(submenuControlLabels(definition, 'FEATURE', 'SOCD')).toEqual([
+        'Left/Right Enable',
+        'Left Key',
+        'Right Key',
+        'Up/Down Enable',
+        'Up Key',
+        'Down Key',
+      ]);
+      expect(submenuControlLabels(definition, 'FEATURE', 'KKUK')).toEqual([
+        'Enable',
+        'First Delay Time',
+        'Repeat Time',
+      ]);
+      expect(submenuControlLabels(definition, 'FEATURE', 'DEBOUNCE')).toEqual([
+        'Debounce Mode',
+        'Press & Release Delay',
+        'Press Delay',
+        'Press & Release Cooldown',
+        'Release Delay',
+      ]);
+      expect(submenuControlLabels(definition, 'FEATURE', 'TAPPING')).toEqual([
+        'Global Tapping Term (ms)',
+        'Permissive Hold',
+        'Hold on Other Key Press',
+        'Retro Tapping',
+      ]);
+    }
+  });
+
   // The SOCD menu shipped without help for twenty-five definitions because the RP2040
   // firmware calls it `id_qmk_socd_*` while H7S calls it `id_qmk_kill_switch_*`, and
   // only the second prefix was registered. Nothing failed, because no test asked "does
   // every ERA submenu actually resolve to help?". This one asks, and any submenu that
   // legitimately has none has to be named here rather than passing silently.
-  const SUBMENUS_WITHOUT_HELP = ['Backlight'];
+  const SUBMENUS_WITHOUT_HELP: string[] = [];
 
   test('every ERA submenu resolves to feature help, or is listed as not having any', () => {
     const uncovered = new Map<string, string[]>();
@@ -441,6 +658,34 @@ describe('canonical ERA definition inventory', () => {
     const rp2040 = findEraFeatureHelp(['id_qmk_socd_lr_enable']);
     expect(h7s).not.toBeNull();
     expect(rp2040).toEqual(h7s!);
+  });
+
+  test('both firmware families use the same RGB sleep help', () => {
+    const h7s = findEraFeatureHelp(['id_qmk_rgb_sleep_timeout']);
+    const rp2040 = findEraFeatureHelp(['id_qmk_rgb_sleep_timeout_exact']);
+    expect(h7s).not.toBeNull();
+    expect(rp2040).toEqual(h7s!);
+  });
+
+  test('keeps refreshed lighting labels consistent across ERA definitions', () => {
+    const tomakIds = [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ];
+    for (const entry of manifest.definitions) {
+      const serialized = JSON.stringify(readJSON(entry.path));
+      expect(serialized).not.toContain('Breating Period');
+      if (tomakIds.includes(entry.id)) {
+        expect(serialized).toContain('RGB-Only');
+        expect(serialized).toContain('Indicator-Only');
+        expect(serialized).not.toContain('Badge-Only RGB');
+        expect(serialized).not.toContain('Indicator Only');
+      }
+    }
   });
 
   // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in
@@ -513,6 +758,40 @@ describe('canonical ERA definition inventory', () => {
       'tomak79s-left',
       'tomak79s-right',
     ],
+    // Both live firmware families expose one NUL-terminated read-only ASCII value.
+    // brick65 is the stock-VIA ATmega exception and does not run either ERA layer.
+    id_qmk_ver_ascii: [
+      'brick60-h7s',
+      'brick65-h7s',
+      'brick65s',
+      'chickpad',
+      'classicd-a1',
+      'classicd-a1-ug',
+      'classicd-core',
+      'classicd-coreless',
+      'divine',
+      'era65',
+      'et-tkl',
+      'fave65s',
+      'intigrity80-h7s',
+      'klein-hs',
+      'klein-sd',
+      'may65-h7s',
+      'n86',
+      'n87',
+      'n8x',
+      'newone-a1',
+      'newone-h1',
+      'newone-odessey60h',
+      'newone-odessey60s',
+      'sculpturei-h7s',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
     // Split-only: there is no cable to set a speed on, and nothing to sync, unless the
     // keyboard comes in two units.
     id_qmk_split_link: [
@@ -531,12 +810,39 @@ describe('canonical ERA definition inventory', () => {
       'tomak79s-left',
       'tomak79s-right',
     ],
+    id_qmk_rgb_sleep_timeout_exact: [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ],
+    id_qmk_rgb_sleep_timeout: [
+      'brick60-h7s',
+      'brick65-h7s',
+      'intigrity80-h7s',
+      'may65-h7s',
+      'sculpturei-h7s',
+    ],
   };
 
   test('each feature reaches exactly the definitions that are meant to have it', () => {
     for (const [command, expectedIds] of Object.entries(FEATURE_COVERAGE)) {
       const actual = manifest.definitions
-        .filter(({path}) => JSON.stringify(readJSON(path)).includes(command))
+        .filter(({path}) => {
+          const names = collectCommandControls(readJSON(path)).map(({name}) => name);
+          if (
+            command === 'id_qmk_ver_ascii' ||
+            command === 'id_qmk_rgb_sleep_timeout' ||
+            command === 'id_qmk_rgb_sleep_timeout_exact'
+          ) {
+            return names.includes(command);
+          }
+          return names.some(
+            (name) => name === command || name.startsWith(`${command}_`),
+          );
+        })
         .map(({id}) => id)
         .sort();
       expect({command, ids: actual}).toEqual({

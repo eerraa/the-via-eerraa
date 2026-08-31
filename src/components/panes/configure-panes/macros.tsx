@@ -1,4 +1,4 @@
-import {useState, useMemo, FC, useCallback} from 'react';
+import {useState, useMemo, FC, useCallback, useEffect} from 'react';
 import styled from 'styled-components';
 import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../grid';
 import {CenterPane} from '../pane';
@@ -12,6 +12,10 @@ import {
   getMacroCount,
   saveMacros,
 } from '../../../store/macrosSlice';
+import {getSelectedStateSyncCapability} from '../../../store/stateSyncSlice';
+import {refreshMacroDomain} from '../../../store/stateSyncThunks';
+import {ConfigureStatusMessage} from './status-message';
+import {useTranslation} from 'react-i18next';
 
 const MacroPane = styled(CenterPane)`
   height: 100%;
@@ -31,13 +35,25 @@ const MenuContainer = styled.div`
 `;
 
 export const Pane: FC = () => {
+  const {t} = useTranslation();
   const dispatch = useAppDispatch();
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const macrosReady = useAppSelector(getIsMacrosReady);
   const macroExpressions = useAppSelector(getExpressions);
   const macroCount = useAppSelector(getMacroCount);
+  const stateSyncCapability = useAppSelector(getSelectedStateSyncCapability);
 
   const [selectedMacro, setSelectedMacro] = useState(0);
+
+  useEffect(() => {
+    if (
+      selectedDevice &&
+      stateSyncCapability === 'capable' &&
+      !macrosReady
+    ) {
+      void dispatch(refreshMacroDomain(selectedDevice));
+    }
+  }, [dispatch, macrosReady, selectedDevice, stateSyncCapability]);
 
   const saveMacro = useCallback(
     async (macro: string) => {
@@ -90,12 +106,18 @@ export const Pane: FC = () => {
       <OverflowCell>
         <MacroPane>
           <Container>
-            <MacroDetailPane
-              macroExpressions={macroExpressions}
-              selectedMacro={selectedMacro}
-              saveMacros={saveMacro}
-              protocol={selectedDevice ? selectedDevice.protocol : -1}
-            />
+            {macrosReady ? (
+              <MacroDetailPane
+                macroExpressions={macroExpressions}
+                selectedMacro={selectedMacro}
+                saveMacros={saveMacro}
+                protocol={selectedDevice.protocol}
+              />
+            ) : (
+              <ConfigureStatusMessage role="status">
+                {t('Loading...')}
+              </ConfigureStatusMessage>
+            )}
           </Container>
         </MacroPane>
       </OverflowCell>
