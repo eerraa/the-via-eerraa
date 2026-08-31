@@ -48,8 +48,8 @@ computed from code, the test goes red.
 | exact-ms `h7s` family (`options: [100, 500]`) | 5 |
 | USB diagnostics opt-in (`usbDiagnostics: true`) | 5 |
 | split pair entries (left/right each) | 6 |
-| Locales | 6 (`de en es ja ko zh`), 607 keys each |
-| ERA menu summaries | 17 |
+| Locales | 6 (`de en es ja ko zh`), 612 keys each |
+| ERA menu summaries | 19 |
 
 Only `brick65` has no opt-in. That is the durable ATmega32U4 stock-VIA exception
 in `docs/PROJECT_DIRECTION.md`, not a defect.

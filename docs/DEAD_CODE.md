@@ -148,7 +148,7 @@ are unused as identifiers; `ERA_USB_DIAGNOSTICS_REQUIRED_CAPABILITIES` is
 
 ### 2.7 Unused locale keys
 
-`src/locales/*.json`: 6 files, 605 keys each
+`src/locales/*.json`: 6 files, 612 keys each
 (`tests/locales.test.ts` same-key lock). A key is live if `src/` calls `t`
 with that string, or a definition JSON label is that string (Custom pane
 does `t(label)`).
@@ -161,7 +161,7 @@ Proven unused clusters (English key; all six catalogs must move together):
 | Duplicate period | `This feature is not available for this firmware version` (no period) vs live string with period in `src/components/panes/configure-panes/custom/menu-generator.tsx` | |
 | Duplicate import error | `Could not import layout. This file was created for a different keyboard` vs live `…keyboard: {{name}}` in `src/components/panes/configure-panes/save-load.tsx` | |
 | Retired tab title | `Diagnostics` | No `t('Diagnostics')`. Top-level page is gone ([ADR 0003](adr/0003-era-menu-help-ui.md)). |
-| Unused typo key | `Blacklight` | No `src/` and no definition label. Live backlight labels are `Backlight` / `Breating Period` (§4). |
+| Unused typo key | `Blacklight` | No `src/` and no definition label. Live backlight labels are `Backlight` / `Breathing Period`. |
 | Analog / DKS / rapid-trigger catalog | `Actuation`, `DKS`, `Rapit Trigger`, `Set Actuatoin Point`, `Per key actuation`, … | Zero `src/` matches. |
 | Video / image / flash catalog | `Import Video`, `FPS`, `Failed to flash.`, … | Zero `src/` matches. |
 | Per-key switch-type catalog | `Caps Key Switch Type`, `Left Shift Key Mode`, `Haptic Status`, … | Zero `src/` matches. |
@@ -193,7 +193,6 @@ Live strings or comments that are wrong. Not deletion of the control.
 | --- | --- |
 | `public/_redirects` header | Comments that routes are declared in pane-config with a `.tsx` suffix. The file is `src/utils/pane-config.ts`. |
 | `tests/docs-contract.test.ts` comment | Same `.tsx` suffix as an example of a path that outlived a rename. |
-| Label `Breating Period` | Live `id_custom_breathing_period` label in eight custom JSON files (`era-definitions/custom/v3/a1`, `classicd_a1`, `classicd_a1_ug`, `classicd_core`, `classicd_coreless`, `era65`, `et_tkl`, `n8x`). Same eight QMK firmware-local JSON files. Typo, not unused. Changing it is a label change on both trees, not a DELETE. |
 | `src/components/panes/configure-panes/custom/satisfaction75/menu.tsx` TODO | Asks whether `SatisfactionMenu` can go now that V3 exists. V2 `CustomFeaturesV2.RotaryEncoder` in `src/components/panes/configure.tsx` still mounts it. KEEP the pane; the TODO is not proof. |
 
 ## 5. KEEP
@@ -228,9 +227,8 @@ name appears in `FEATURE_COVERAGE` or in custom menu `content`.
 7. §2.7 unused locale keys, six catalogs in one commit, `tests/locales.test.ts`
    green.
 8. §4 comment-only fixes (`public/_redirects` and docs-contract comment
-   suffix). Separate from `Breating Period`, which is a live label.
+   suffix).
 
 Never in a deletion session from this ledger: §1 `0x06` short packet; §3
 legacy term ids or autodg; §5 dual-path / brick65 / H7S extras / satisfaction75
-/ `/diagnostics` redirect; Graphify restore; `Breating Period` treated as dead
-code.
+/ `/diagnostics` redirect; Graphify restore.

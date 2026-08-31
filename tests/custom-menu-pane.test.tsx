@@ -198,9 +198,22 @@ const menuData = {
   id_qmk_debounce_time_single: [5],
   id_qmk_debounce_time_pre: [5],
   id_qmk_debounce_time_post: [5],
+  id_qmk_kkuk_enable: [1],
+  id_qmk_kkuk_mode: [1],
+  id_qmk_kkuk_repeat_time: [8],
+  id_qmk_kkuk_delay_time: [20],
   id_qmk_tapping_global_term_exact: [0, 200],
   id_qmk_tapping_permissive_hold: [0],
   id_qmk_mousekey_cursor_acceleration: [20],
+  id_qmk_rgb_matrix_effect: [1],
+  id_qmk_rgb_matrix_brightness: [128],
+  id_qmk_rgblight_effect: [1],
+  id_qmk_rgblight_brightness: [128],
+  id_qmk_velocikey_toggle: [1],
+  id_custom_backlight_brightness: [5],
+  id_custom_badge_only: [1],
+  id_custom_indicator_toggle: [1],
+  id_custom_indicator_override: [0],
   id_qmk_rgb_sleep_timeout_exact: [0x02, 0x58],
 };
 
@@ -292,6 +305,131 @@ const mouseSubmenu = {
         ['Off (constant speed)', 0],
         ['1.0 s', 20],
       ],
+    },
+  ],
+};
+
+const kkukSubmenu = {
+  label: 'KKUK',
+  _id: '-0',
+  content: [
+    {
+      label: 'Enable',
+      type: 'toggle',
+      _id: '-0-0',
+      content: ['id_qmk_kkuk_enable', 12, 1],
+    },
+    {
+      label: 'Mode',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_kkuk_mode', 12, 4],
+      options: [['Report Pulse', 1]],
+    },
+    {
+      label: 'Repeat Time',
+      type: 'dropdown',
+      _id: '-0-2',
+      content: ['id_qmk_kkuk_repeat_time', 12, 3],
+      options: [['80 ms', 8]],
+    },
+    {
+      label: 'First Delay Time',
+      type: 'dropdown',
+      _id: '-0-3',
+      content: ['id_qmk_kkuk_delay_time', 12, 2],
+      options: [['200 ms', 20]],
+    },
+  ],
+};
+
+const rgbMatrixSubmenu = {
+  label: 'RGB Matrix',
+  _id: '-0',
+  content: [
+    {
+      label: 'Brightness',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_matrix_brightness', 3, 1],
+      options: [['128', 128]],
+    },
+    {
+      label: 'Effect',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_rgb_matrix_effect', 3, 2],
+      options: [['Solid Color', 1]],
+    },
+  ],
+};
+
+const rgbLightSubmenu = {
+  label: 'RGB ROW',
+  _id: '-0',
+  content: [
+    {
+      label: 'Brightness',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_rgblight_brightness', 2, 1],
+      options: [['128', 128]],
+    },
+    {
+      label: 'Effect',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_qmk_rgblight_effect', 2, 2],
+      options: [['Solid Color', 1]],
+    },
+    {
+      label: 'Velocikey',
+      type: 'toggle',
+      _id: '-0-2',
+      content: ['id_qmk_velocikey_toggle', 2, 5],
+    },
+  ],
+};
+
+const backlightSubmenu = {
+  label: 'Backlight',
+  _id: '-0',
+  content: [
+    {
+      label: 'Backlight Brightness',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_custom_backlight_brightness', 0, 0],
+      options: [['5', 5]],
+    },
+  ],
+};
+
+const badgeSubmenu = {
+  label: 'Badge Lighting',
+  _id: '-0',
+  content: [
+    {
+      label: 'RGB-Only',
+      type: 'toggle',
+      _id: '-0-0',
+      content: ['id_custom_badge_only', 0, 4],
+    },
+    {
+      label: 'Lock Indicator',
+      type: 'dropdown',
+      _id: '-0-1',
+      content: ['id_custom_indicator_toggle', 0, 0],
+      options: [
+        ['Off', 0],
+        ['Caps Lock', 1],
+      ],
+    },
+    {
+      label: 'Indicator-Only',
+      type: 'toggle',
+      _id: '-0-2',
+      content: ['id_custom_indicator_override', 0, 1],
     },
   ],
 };
@@ -433,8 +571,52 @@ describe('ERA feature help', () => {
       content: [mouseSubmenu],
     });
 
-    expect(html).toContain('Speed of the mouse keys on the keymap');
+    expect(html).toContain('Configures speed when using mouse-control keys');
     expect(html).toContain('Cursor Acceleration');
+  });
+
+  test('keeps lighting summaries direct and puts Velocikey help only on RGBLight', () => {
+    optIn(true);
+    const matrix = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [rgbMatrixSubmenu],
+    });
+    const rgbLight = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [rgbLightSubmenu],
+    });
+    const backlight = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [backlightSubmenu],
+    });
+
+    expect(matrix).toContain(
+      'Configures switch RGB brightness, effects, speed and color.',
+    );
+    expect(matrix).not.toContain('Velocikey');
+    expect(matrix).not.toContain('What this means');
+    expect(rgbLight).toContain(
+      'Configures RGB lighting brightness, effects, speed and color.',
+    );
+    expect(rgbLight).toContain('Velocikey');
+    expect(rgbLight).toContain('What this means: Velocikey');
+    expect(backlight).toContain('Configures backlight brightness and effects.');
+    expect(backlight).not.toContain('What this means');
+  });
+
+  test('moves badge explanations from the heading to the controls', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'Lighting',
+      content: [badgeSubmenu],
+    });
+
+    expect(html).toContain('Configures badge lighting and lock indicators.');
+    expect(html).toContain('What this means: RGB-Only');
+    expect(html).toContain('What this means: Lock Indicator');
+    expect(html).toContain('What this means: Indicator-Only');
+    expect(html).toContain('Applies RGB effects only to the badge area.');
+    expect(html).not.toContain('Badge-Only RGB');
   });
 });
 
@@ -476,9 +658,9 @@ describe('ERA per-control help', () => {
     });
 
     expect(html).toContain('Debounce Mode');
-    expect(html).toContain('Start with Balanced');
+    expect(html).toContain('Balanced — The most stable default');
     // Shipped with the row, folded away until asked for.
-    expect(visibleText(html)).not.toContain('Start with Balanced');
+    expect(visibleText(html)).not.toContain('Balanced — The most stable default');
     // Label, then the button beside it, then the body on the line under both. Put the
     // body before the control and the wrapping row pushes the control onto a third
     // line, which is what the ordering here is guarding.
@@ -486,8 +668,21 @@ describe('ERA per-control help', () => {
       html.indexOf('What this means: Debounce Mode'),
     );
     expect(html.indexOf('What this means: Debounce Mode')).toBeLessThan(
-      html.indexOf('Start with Balanced'),
+      html.indexOf('Balanced — The most stable default'),
     );
+  });
+
+  test('moves KKUK timing explanations off the one-option Mode row', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'FEATURE',
+      content: [kkukSubmenu],
+    });
+
+    expect(html).toContain('Repeats multiple keys while they remain held.');
+    expect(html).not.toContain('What this means: Mode');
+    expect(html).toContain('What this means: Repeat Time');
+    expect(html).toContain('What this means: First Delay Time');
   });
 
   test('reads the same command id differently on either side of the mode', () => {
@@ -548,7 +743,7 @@ describe('ERA per-control help', () => {
     });
 
     expect(html).toContain('Debounce Mode');
-    expect(html).not.toContain('Start with Balanced');
+    expect(html).not.toContain('Balanced — The most stable default');
     expect(html).not.toContain('What this means');
   });
 });

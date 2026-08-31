@@ -239,7 +239,9 @@ breaks **silently**.
 
 `src/utils/era-feature-help.ts` holds the tables.
 `src/components/panes/configure-panes/custom/feature-help.tsx` renders a
-one-line summary plus folded detail above the submenu controls.
+one-line summary above the submenu controls. A folded detail is present only
+when the summary is not the whole answer. Lighting pages use the direct summary
+alone; explanation that belongs to one control sits on that control's ⓘ.
 
 **Keys are firmware command ids, not menu labels.** Labels are free text; an
 ordinary VIA definition can also name a menu `TAPPING`. `id_qmk_tapping_*`
@@ -255,7 +257,8 @@ the value. Peer `eerraa-qmk-h7s-fw/docs/readme.txt` is that guide (read-only).
   bootloader when switched on.`, not `Puts the keyboard into bootloader mode
   so you can flash firmware.` Mixing lengths makes the remaining summaries
   look padded, so every summary has the same shape.
-- **Detail stops at on / off result.** Mechanism is stripped.
+- **Detail is optional and stops at the user-visible result.** Mechanism is
+  stripped. A summary-only page does not get an empty or redundant disclosure.
 - Summary: **at most 12 English words, no second person, one sentence in all
   six languages.** Addressing the reader belongs in the detail.
   `tests/locales.test.ts` checks all three; it caught a Japanese USB POLLING
@@ -269,9 +272,10 @@ failed — no test asked whether every ERA submenu actually resolves.
 `tests/era-definition.test.ts` asks, and a submenu that is allowed to have
 none must be named in `SUBMENUS_WITHOUT_HELP` (currently `Backlight` only).
 TOMAK `SLEEP` is intentionally not an exception: its summary says that the
-number is an input-idle RGB timeout, while the folded detail carries the
-10-minute default and DUAL-HOST/HOST-PEER ownership that the seconds unit alone
-cannot explain.
+number is an input-idle RGB timeout, while the folded detail carries only the
+10-minute default and keypress wake behaviour. DUAL-HOST/HOST-PEER ownership,
+USB suspend, and frame-loss terminology are firmware mechanics and are omitted
+from this user-facing help.
 
 ## 7. Per-control ⓘ
 
@@ -301,9 +305,9 @@ is fixed.
 > firmware does with the number, not that raising it delays every keystroke.
 >
 > Do not attach: a control whose unit is the whole answer (`Indicator
-> Brightness`), and a control the **submenu summary already takes as its
-> subject** (`Global Tapping Term (ms)`, KKUK `Enable`). Repeating that one
-> line down is noise.
+> Brightness`), a control the **submenu summary already takes as its subject**
+> (`Global Tapping Term (ms)`, KKUK `Enable`), or a fixed one-option row such as
+> KKUK `Mode`. Repeating that information one line down is noise.
 
 TAPPING therefore has no ⓘ on row 1 and has ⓘ on rows 2–4. That is the rule
 working, not a hole. MOUSE was first skipped as "the unit is the answer" and
@@ -334,7 +338,9 @@ one command id means two things, **the label is matched as well.**
 QMK-family KKUK JSON exposes `id_qmk_kkuk_mode` as a `Mode` dropdown whose
 only option is `Report Pulse`. H7S JSON (official and this host's custom) has
 `Enable` / `First Delay Time` / `Repeat Time` only; `kkuk_init` in
-`eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/kkuk.c` pins `mode` to 1.
+`eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/kkuk.c` pins `mode` to 1. The fixed
+`Mode` row therefore has no ⓘ; `First Delay Time` explains when repeating starts
+and `Repeat Time` explains the repeat interval.
 
 ### Implementation contract
 
@@ -358,34 +364,15 @@ copy on the shared command id, and the absent ⓘ on `Global Tapping Term (ms)`.
 
 ## 8. Names follow behaviour
 
-### `Anti-Ghosting` → `KKUK`
+### `KKUK`
 
-The old name described the wrong layer. Two measurements on live
-`eerraa-qmk-h7s-fw` (not a worktree):
-
-1. `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/kkuk.c` has **zero** occurrences
-   of `matrix` / `scan` / `row` / `col`. It calls `keyboard_report`,
-   `clear_keys()`, `send_keyboard_report()`, `millis()`, `IS_BASIC_KEYCODE`,
-   `kill_switch_is_use`. It runs on the **HID report** after matrix and keymap
-   are already resolved.
-2. None of the five H7S board `config.h` files define `MATRIX_HAS_GHOST`.
-   Each switch has a diode; matrix ghosting does not occur.
-
-It is not anti-ghosting. With two or more basic keys held, after `delay_time`
-it sends a full-group-release report every `repeat_time` and restores the
-original report — holding `asd` types `asdasdasd`, not OS auto-repeat
-`asddddd`.
+With two or more basic keys held, after `delay_time` it sends a
+full-group-release report every `repeat_time` and restores the original
+report. Holding `asd` types `asdasdasd`, not OS auto-repeat `asddddd`.
 
 Five official H7S `json/*-VIA.JSON` files and this host's five H7S custom JSON
-files all label the submenu `KKUK`. No `Anti-Ghosting`. Peer
-`eerraa-qmk-h7s-fw/docs/readme.txt` records that rename (read-only).
-
-> **REFUSED:** menu names `Anti-Ghosting`, `HOLD CYCLE`, `REPEAT PULSE`.
-> **WHY:** it is not ghosting prevention, HOLD CYCLE is read as layer/hold
-> cycling, and REPEAT PULSE is jargon; firmware identifiers are already
-> `kkuk.c`, `KKUK_ENABLE`, `id_qmk_kkuk_*`, so code, JSON, docs, and this host
-> converge on one word.
-> **REOPENS:** none.
+files all label the submenu `KKUK`. Peer
+`eerraa-qmk-h7s-fw/docs/readme.txt` describes the same behavior and label.
 
 The label is the English token `KKUK` in every catalog (`"KKUK": "KKUK"`), so
 official `usevia.app` shows the same name. Recognition is carried by the
@@ -393,14 +380,29 @@ summary's `asdasdasd` example, which does not depend on language. A Korean
 colloquial name as a catalog key would ship as a meaningless proper noun to
 German and Spanish readers.
 
-### `Indicator Priority` → `Indicator Only`
+### Badge control names describe their scope
 
-"Priority" does not say over what. The control stops the badge showing RGB
-effects and leaves it as a lock indicator, so `Indicator Only` is the
-behaviour name and pairs with `Badge-Only RGB` on the same menu. Scope is the
-three split boards (`tomak`, `tomak79h`, `tomak79s`), six left/right
-definitions. H7S has no Badge Lighting menu — official and custom JSON both
-have Lighting → `INDICATOR` (`id_qmk_custom_ind_*`), a different page.
+The badge page uses `RGB-Only` and `Indicator-Only`. `RGB-Only` makes the badge
+the only area receiving the selected RGB effect. `Indicator-Only` removes RGB
+effect influence from the badge and leaves it as the selected lock indicator.
+The page heading itself has no disclosure; these two rows and `Lock Indicator`
+carry the explanations beside the controls. Scope is the three split boards
+(`tomak`, `tomak79h`, `tomak79s`), six left/right definitions. H7S has no Badge
+Lighting menu — official and custom JSON both have Lighting → `INDICATOR`
+(`id_qmk_custom_ind_*`), a different page.
+
+### Lighting summaries follow the visible hardware surface
+
+RGB Matrix says it configures switch RGB brightness, effects, speed and color.
+RGBLight says it configures RGB lighting brightness, effects, speed and color,
+without assuming whether a board labels that area `Underglow` or `RGB ROW`.
+Backlight says it configures backlight brightness and effects. All three are
+summary-only.
+
+Velocikey is not an RGB Matrix control. A Velocikey ⓘ appears only beside an
+existing RGBLight Velocikey control (`id_qmk_velocikey_toggle` or the board-local
+`id_qmk_custom_velocikey_enable`). No RGB Matrix page gains a Velocikey toggle
+or Velocikey help merely because it shares this Lighting category.
 
 ### Labels change in JSON; command ids do not
 
@@ -419,9 +421,9 @@ This host's H7S custom JSON suffixes TAPPING / TAPDANCE terms with `(ms)`
 (`Global Tapping Term (ms)`, `Term (ms)`). The five official H7S
 `json/*-VIA.JSON` files use `Global Tapping Term` and `Term`. Command ids
 match. The ⓘ skip keys off the control being the submenu summary's subject,
-not the suffix. Menu-name tokens `KKUK` / `MOUSE` / absence of `NKRO` and
-Badge `Indicator Only` match official JSON. Debounce spelled-out labels match
-official JSON.
+not the suffix. Menu-name tokens `KKUK` / `MOUSE` / absence of `NKRO` and the
+Badge `RGB-Only` / `Indicator-Only` labels match the firmware-local VIA JSON.
+Debounce spelled-out labels match official JSON.
 
 ## 9. Do not invent a toggle the firmware does not have
 
@@ -478,7 +480,9 @@ Automated tests do not replace hardware:
 9. §4 type scale reads as hierarchy: `State: …` smaller than answer rows;
    summary headline not larger than panel titles.
 10. FEATURE / TAPDANCE / SYSTEM / Lighting submenus show a one-line summary;
-    ordinary VIA keyboards do not.
+    ordinary VIA keyboards do not. RGB Matrix and Backlight have no redundant
+    heading disclosure, and Velocikey help appears only on an actual RGBLight
+    Velocikey row.
 11. DEBOUNCE mode change swaps the ms row and that row's ⓘ copy; Fast and
     Advanced Release share a command id and must not share copy.
 12. MOUSE on H7S five boards reads and writes and survives reconnect.
