@@ -100,7 +100,7 @@
             },
             {
               "showIf": "{id_custom_backlight_effect} == 1",
-              "label": "Breating Period",
+              "label": "Breathing Period",
               "type": "range",
               "options": [
                 1,

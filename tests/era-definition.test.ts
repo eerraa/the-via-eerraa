@@ -434,7 +434,7 @@ describe('canonical ERA definition inventory', () => {
   // only the second prefix was registered. Nothing failed, because no test asked "does
   // every ERA submenu actually resolve to help?". This one asks, and any submenu that
   // legitimately has none has to be named here rather than passing silently.
-  const SUBMENUS_WITHOUT_HELP = ['Backlight'];
+  const SUBMENUS_WITHOUT_HELP: string[] = [];
 
   test('every ERA submenu resolves to feature help, or is listed as not having any', () => {
     const uncovered = new Map<string, string[]>();
@@ -476,6 +476,27 @@ describe('canonical ERA definition inventory', () => {
     const rp2040 = findEraFeatureHelp(['id_qmk_socd_lr_enable']);
     expect(h7s).not.toBeNull();
     expect(rp2040).toEqual(h7s!);
+  });
+
+  test('keeps refreshed lighting labels consistent across ERA definitions', () => {
+    const tomakIds = [
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ];
+    for (const entry of manifest.definitions) {
+      const serialized = JSON.stringify(readJSON(entry.path));
+      expect(serialized).not.toContain('Breating Period');
+      if (tomakIds.includes(entry.id)) {
+        expect(serialized).toContain('RGB-Only');
+        expect(serialized).toContain('Indicator-Only');
+        expect(serialized).not.toContain('Badge-Only RGB');
+        expect(serialized).not.toContain('Indicator Only');
+      }
+    }
   });
 
   // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in

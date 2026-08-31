@@ -313,7 +313,7 @@
           "label": "Badge Lighting",
           "content": [
             {
-              "label": "Badge-Only RGB",
+              "label": "RGB-Only",
               "type": "toggle",
               "content": [
                 "id_custom_badge_only",
@@ -350,7 +350,7 @@
             },
             {
               "showIf": "{id_custom_indicator_toggle} != 0",
-              "label": "Indicator Only",
+              "label": "Indicator-Only",
               "type": "toggle",
               "content": [
                 "id_custom_indicator_override",

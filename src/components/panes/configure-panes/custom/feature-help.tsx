@@ -35,7 +35,7 @@ export const FeatureHelp: FC<{commandNames: readonly unknown[]}> = ({
   return (
     <HelpRow>
       <HelpText>{t(help.summary)}</HelpText>
-      <Explain>{t(help.detail)}</Explain>
+      {help.detail && <Explain>{t(help.detail)}</Explain>}
     </HelpRow>
   );
 };

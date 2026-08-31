@@ -19,17 +19,17 @@
 export type EraFeatureHelp = {
   /** One line, always visible above the controls. Names the setting, does not narrate it. */
   summary: string;
-  /** Shown when the reader opens the disclosure. On/off behaviour, then stop. */
-  detail: string;
+  /** Shown when the reader opens the disclosure. Omit when the summary is the whole answer. */
+  detail?: string;
 };
 
 // The SOCD menu is the same feature under two command families: H7S firmware names it
 // `id_qmk_kill_switch_*`, the RP2040 firmware `id_qmk_socd_*`. One object, two prefixes,
 // so the two families cannot drift apart into two different explanations.
 const SOCD_HELP: EraFeatureHelp = {
-  summary: 'Only the key pressed last counts.',
+  summary: 'Resolves simultaneous input between two opposing keys.',
   detail:
-    'Set each pair to the two keys that fight each other, usually A and D, then W and S. Let one go and control passes straight back to the other, so you can change direction without releasing first.',
+    'A normal keyboard can report opposing keys such as A and D at the same time. With SOCD enabled, the key pressed later takes priority while both are held. Releasing it restores the key that is still physically held. This is mainly useful when a game needs unambiguous directional input.',
 };
 
 // Ordered: the first prefix that matches a command in the submenu wins, so more
@@ -48,23 +48,23 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_kkuk_',
     {
-      summary: 'Cycles the keys held down, so a, s, d gives "asdasdasd".',
+      summary: 'Repeats multiple keys while they remain held.',
       detail:
-        'Hold two or more ordinary keys still and the whole group is released and pressed again on a timer, so all of them keep arriving instead of only the last one. First Delay Time is the hold before it starts, Repeat Time the interval after. SOCD keys are excluded.',
+        'While two or more ordinary keys remain held, KKUK periodically releases the held key group and presses it again. For example, holding A, S and D usually produces "asdasdasd..." instead of the ordinary "asdddd..." auto-repeat. Keys assigned to SOCD are excluded.',
     },
   ],
   [
     'id_qmk_debounce_',
     {
-      summary: 'Filters chatter so one press types once.',
+      summary: 'Configures debounce to prevent switch chatter.',
       detail:
-        'Leave it alone unless one press sometimes types twice. If it does, raise the time a little at a time. Balanced at 5 to 10 ms suits most switches. Only the time boxes that mode affects appear.',
+        'If one physical press sometimes produces multiple inputs, increase the relevant delay a little at a time. If there is no chatter, keeping the default settings is recommended.',
     },
   ],
   [
     'id_qmk_tapping_',
     {
-      summary: 'Hold time for tap-hold keys.',
+      summary: 'Sets how tap-hold keys distinguish taps from holds.',
       detail:
         'For Mod-Tap and Layer-Tap keys, 200 ms by default. Shorter triggers the hold sooner but turns fast typing into accidental holds; longer is safer but the hold arrives late. The three switches below change what happens when you press another key first.',
     },
@@ -72,7 +72,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_mousekey_',
     {
-      summary: 'Speed of the mouse keys on the keymap.',
+      summary: 'Configures speed when using mouse-control keys.',
       detail:
         'Nothing here does anything unless your keymap has mouse keys on it. The values interact, so change one at a time.',
     },
@@ -129,8 +129,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     'id_qmk_rgb_sleep_timeout_exact',
     {
       summary: 'Turns RGB off after a period with no key input.',
-      detail:
-        'Default is 10 minutes. Pressing a key wakes the RGB. In DUAL-HOST each unit uses its own timeout and activity; in HOST-PEER both units follow the HOST. USB suspend or lost USB frames can turn RGB off sooner.',
+      detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
     },
   ],
   [
@@ -155,25 +154,25 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_custom_badge_only',
     {
-      summary: 'Lighting and lock indicator for the badge.',
-      detail:
-        'Badge-Only RGB lights the badge and nothing else. Indicator Only stops the badge showing effects so it works as a lock indicator alone.',
+      summary: 'Configures badge lighting and lock indicators.',
+    },
+  ],
+  [
+    'id_custom_backlight_',
+    {
+      summary: 'Configures backlight brightness and effects.',
     },
   ],
   [
     'id_qmk_rgblight_',
     {
-      summary: 'Brightness, effect, speed and colour for the lighting.',
-      detail:
-        'Only the lighting this keyboard has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider.',
+      summary: 'Configures RGB lighting brightness, effects, speed and color.',
     },
   ],
   [
     'id_qmk_rgb_matrix_',
     {
-      summary: 'Brightness, effect, speed and colour for the lighting.',
-      detail:
-        'Only the lighting this keyboard has shows up here. Velocikey, where it exists, speeds the effect up the faster you type and ignores the speed slider.',
+      summary: 'Configures switch RGB brightness, effects, speed and color.',
     },
   ],
 ];
@@ -251,12 +250,36 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
     help: 'The keycode sent when a tap is followed by holding the key down.',
   },
   {
-    command: 'id_qmk_kkuk_mode',
-    help: 'Report Pulse is the only behaviour the firmware has, and it is what the rest of this menu describes. Anything else you pick is ignored.',
+    command: 'id_qmk_kkuk_delay_time',
+    help: 'How long to wait after multiple keys are held before repeating begins.',
+  },
+  {
+    command: 'id_qmk_kkuk_repeat_time',
+    help: 'How often the held key group repeats. A shorter value repeats it faster.',
   },
   {
     command: 'id_qmk_debounce_mode',
-    help: 'Balanced waits for the switch to settle before sending, on press and on release alike, so every key registers that much later. Fast sends the instant the switch changes, then ignores that key for the set time — no added delay. Advanced sends the press immediately and waits on the release, with a separate time for each. Start with Balanced.',
+    help: 'Balanced — The most stable default. A press or release is applied only after the switch has remained settled for the configured time, so both directions are delayed by that amount.\n\nFast — Prioritizes response speed. The first press or release change is applied immediately, then further changes from that key are ignored for the configured time. It adds almost no input delay, but leaves the least margin for chatter.\n\nAdvanced — Treats press and release differently. A press is applied immediately, then further press-side changes are ignored for Press Delay. A release is applied only after the signal remains settled for Release Delay. Use this when you want immediate press response with more conservative release filtering.\n\nBalanced is recommended as the starting point.',
+  },
+  {
+    command: 'id_custom_badge_only',
+    help: 'Applies RGB effects only to the badge area.',
+  },
+  {
+    command: 'id_custom_indicator_toggle',
+    help: 'Selects which lock indicator the badge area shows.',
+  },
+  {
+    command: 'id_custom_indicator_override',
+    help: 'Uses the badge area only as an indicator. RGB effects do not affect it.',
+  },
+  {
+    command: 'id_qmk_velocikey_toggle',
+    help: 'Changes RGBLight effect speed according to typing speed while enabled.',
+  },
+  {
+    command: 'id_qmk_custom_velocikey_enable',
+    help: 'Changes RGBLight effect speed according to typing speed while enabled.',
   },
   {
     command: 'id_qmk_debounce_time_single',
@@ -349,10 +372,9 @@ export const eraMenuSummaries = (): string[] => [
 ];
 
 export const eraHelpStrings = (): string[] => [
-  ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) => [
-    summary,
-    detail,
-  ]),
+  ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) =>
+    detail ? [summary, detail] : [summary],
+  ),
   ...HELP_BY_CONTROL.map(({help}) => help),
 ];
 
