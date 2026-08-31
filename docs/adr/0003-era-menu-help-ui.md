@@ -272,11 +272,14 @@ Registering only one left twenty-five definitions with no help and nothing
 failed — no test asked whether every ERA submenu actually resolves. 
 `tests/era-definition.test.ts` asks, and a submenu that is allowed to have
 none must be named in `SUBMENUS_WITHOUT_HELP` (currently `Backlight` only).
-TOMAK `SLEEP` is intentionally not an exception: its summary says that the
-number is an input-idle RGB timeout, while the folded detail carries only the
-10-minute default and keypress wake behaviour. DUAL-HOST/HOST-PEER ownership,
-USB suspend, and frame-loss terminology are firmware mechanics and are omitted
-from this user-facing help.
+TOMAK `SLEEP` (`id_qmk_rgb_sleep_timeout_exact`) and H7S `SLEEP`
+(`id_qmk_rgb_sleep_timeout`, FEATURE channel 18 minute dropdown) share one
+help object the same way. The exact id is registered first so `startsWith`
+cannot steal it. The summary says the number is an input-idle RGB timeout;
+the folded detail carries only the 10-minute default and keypress wake.
+DUAL-HOST/HOST-PEER ownership, USB suspend, SOF, frame loss, scheduler,
+render owner, and USB state machine are firmware mechanics and are omitted
+from this user-facing help. H7S is not TOMAK SYSTEM channel 9 exact-seconds.
 
 ## 7. Per-control ⓘ
 
@@ -472,7 +475,8 @@ custom app and hide it on official `usevia.app`.
 > **REOPENS:** none.
 
 `tests/era-definition.test.ts` asserts H7S FEATURE is `SOCD`, `KKUK`,
-`DEBOUNCE`, `TAPPING`, `MOUSE`, channel 17 for mouse commands, and no
+`DEBOUNCE`, `TAPPING`, `MOUSE`, `SLEEP`, channel 17 for mouse commands,
+channel 18 / value 1 for the minute RGB sleep dropdown, and no
 `id_qmk_custom_nkro`.
 
 ## 10. Verification
@@ -485,11 +489,11 @@ This repo:
   `tests/custom-menu-pane.test.tsx`
 - translation presence, observation verdict regexes, summary shape —
   `tests/locales.test.ts`
-- help coverage, MOUSE channel, NKRO absence, `FEATURE_COVERAGE` —
-  `tests/era-definition.test.ts`
-- VERSION decoders and the shared non-editable row —
+- help coverage, MOUSE channel, NKRO absence, H7S SLEEP dropdown,
+  `FEATURE_COVERAGE` — `tests/era-definition.test.ts`
+- VERSION decoder and the shared non-editable row —
   `tests/custom-menu-pane.test.tsx`
-- VERSION definition count, H7S address preservation, split-pair equality and
+- VERSION definition count, H7S additive id 5, split-pair equality and
   `brick65` exclusion — `tests/era-definition.test.ts`
 
 `test:p1` includes the locale, definition, and docs-contract files.

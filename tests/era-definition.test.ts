@@ -470,6 +470,7 @@ describe('canonical ERA definition inventory', () => {
         'DEBOUNCE',
         'TAPPING',
         'MOUSE',
+        'SLEEP',
       ]);
       const mouse = collectCommandControls(definition).filter(({name}) =>
         name.startsWith('id_qmk_mousekey_'),
@@ -529,6 +530,34 @@ describe('canonical ERA definition inventory', () => {
     expect(actual.sort()).toEqual(expected);
   });
 
+  test('gives only the five H7S definitions the minute RGB sleep dropdown', () => {
+    const expected = [...expectedUsbDiagnosticsDefinitionIds];
+    const actual: string[] = [];
+    for (const entry of manifest.definitions) {
+      const controls = collectCommandControls(readJSON(entry.path)).filter(
+        ({name}) => name === 'id_qmk_rgb_sleep_timeout',
+      );
+      if (controls.length === 0) {
+        continue;
+      }
+      actual.push(entry.id);
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toMatchObject({
+        channel: 18,
+        id: 1,
+        options: [
+          ['1 min', 1],
+          ['3 min', 3],
+          ['5 min', 5],
+          ['10 min', 10],
+          ['30 min', 30],
+          ['60 min', 60],
+        ],
+      });
+    }
+    expect(actual.sort()).toEqual(expected);
+  });
+
   // The SOCD menu shipped without help for twenty-five definitions because the RP2040
   // firmware calls it `id_qmk_socd_*` while H7S calls it `id_qmk_kill_switch_*`, and
   // only the second prefix was registered. Nothing failed, because no test asked "does
@@ -576,6 +605,23 @@ describe('canonical ERA definition inventory', () => {
     const rp2040 = findEraFeatureHelp(['id_qmk_socd_lr_enable']);
     expect(h7s).not.toBeNull();
     expect(rp2040).toEqual(h7s!);
+  });
+
+  test('both firmware families name the same RGB sleep feature', () => {
+    const exact = findEraFeatureHelp(['id_qmk_rgb_sleep_timeout_exact']);
+    const h7s = findEraFeatureHelp(['id_qmk_rgb_sleep_timeout']);
+    expect(exact).toEqual({
+      summary: 'Turns RGB off after a period with no key input.',
+      detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
+    });
+    expect(h7s).toEqual(exact);
+    // The shorter H7S id is a prefix of the TOMAK exact id; the exact prefix must win.
+    expect(
+      findEraFeatureHelp([
+        'id_qmk_rgb_sleep_timeout',
+        'id_qmk_rgb_sleep_timeout_exact',
+      ]),
+    ).toEqual(exact);
   });
 
   test('keeps refreshed lighting labels consistent across ERA definitions', () => {
@@ -724,12 +770,31 @@ describe('canonical ERA definition inventory', () => {
       'tomak79s-left',
       'tomak79s-right',
     ],
+    // H7S official and custom JSON share FEATURE channel 18 / value 1. Not TOMAK
+    // SYSTEM channel 9, and not the exact-seconds command. Longest-prefix-wins
+    // below keeps `_exact` from counting as this id.
+    id_qmk_rgb_sleep_timeout: [
+      'brick60-h7s',
+      'brick65-h7s',
+      'intigrity80-h7s',
+      'may65-h7s',
+      'sculpturei-h7s',
+    ],
   };
 
   test('each feature reaches exactly the definitions that are meant to have it', () => {
+    const coverageKeys = Object.keys(FEATURE_COVERAGE);
+    const matchingKey = (name: string) =>
+      coverageKeys
+        .filter((key) => name === key || name.startsWith(key))
+        .sort((a, b) => b.length - a.length)[0];
     for (const [command, expectedIds] of Object.entries(FEATURE_COVERAGE)) {
       const actual = manifest.definitions
-        .filter(({path}) => JSON.stringify(readJSON(path)).includes(command))
+        .filter(({path}) =>
+          collectCommandControls(readJSON(path)).some(
+            ({name}) => matchingKey(name) === command,
+          ),
+        )
         .map(({id}) => id)
         .sort();
       expect({command, ids: actual}).toEqual({

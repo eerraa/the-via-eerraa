@@ -76,8 +76,9 @@ GET projection, and refused alternatives are
 | `0x16` v1 | upstream Custom Menu invalidation hint. Do not change its meaning | `src/utils/ui-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
 | V3 Custom Value channel 9 / id 10 | TOMAK RGB sleep stock preset, one-byte minutes 1/3/5/10/30/60 | firmware-local VIA definition | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
 | V3 Custom Value channel 9 / id 11 | TOMAK RGB sleep exact seconds, BE16 1..65535 | `era-definitions/custom/v3/tomak*` + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
+| V3 Custom Value channel 18 / id 1 | H7S RGB sleep official minute dropdown 1/3/5/10/30/60 (`id_qmk_rgb_sleep_timeout`) | `era-definitions/custom/v3` five H7S | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep minute dropdown** |
 | V3 Custom Value channel 8 / id 1 | RP2040 VERSION, NUL-terminated ASCII; one read-only label on 25 definitions | `src/utils/era-firmware-version.ts` + `era-definitions/custom/v3` | [ADR 0003](adr/0003-era-menu-help-ui.md) |
-| V3 Custom Value channel 8 / ids 1–4 | H7S VERSION, zero-based year/month/day/revision dropdown GET values; rendered as one read-only string | `src/utils/era-firmware-version.ts` + five H7S custom JSON files | [ADR 0003](adr/0003-era-menu-help-ui.md) |
+| V3 Custom Value channel 8 / id 5 | H7S VERSION, NUL-terminated ASCII; one read-only label on five definitions. Legacy ids 1–4 remain firmware-only for cached old definitions | `src/utils/era-firmware-version.ts` + five H7S custom JSON files | [ADR 0003](adr/0003-era-menu-help-ui.md) |
 
 exact-ms channel and value ids differ by family. The checker re-reads them from
 custom JSON `_term_exact` `content`.
@@ -87,6 +88,7 @@ custom JSON `_term_exact` `content`.
 | Global TAPPING term | channel 15 / value 5 | channel 15 / value 5 |
 | TD0–TD7 term | channel 0 / value 72–79 | channel 16 / value 41–48 |
 | MOUSE menu channel | 13 | **17** — on H7S, channel 13 is USB POLLING (`id_qmk_usb_bootmode`) |
+| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | FEATURE channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |
 | SOCD command prefix | `id_qmk_socd_` | `id_qmk_kill_switch_` |
 
 State Sync poll interval is `ERA_STATE_SYNC_POLL_INTERVAL_MS = 500`.
@@ -183,6 +185,9 @@ speak the same HID bytes. Product rules:
 | TOMAK RGB sleep | fixed 1/3/5/10/30/60-minute dropdown | exact 1..65535-second `uint16` |
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
+
+H7S RGB sleep is the same FEATURE channel 18 minute dropdown on official JSON
+and this overlay. It is not a dual encoding.
 
 ## 7. Hand-maintained seams
 

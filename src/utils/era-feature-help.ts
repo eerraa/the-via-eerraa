@@ -32,6 +32,13 @@ const SOCD_HELP: EraFeatureHelp = {
     'A normal keyboard can report opposing keys such as A and D at the same time. With SOCD enabled, the key pressed later takes priority while both are held. Releasing it restores the key that is still physically held. This is mainly useful when a game needs unambiguous directional input.',
 };
 
+// TOMAK exact-seconds and H7S minute presets are different wires for the same
+// user-visible setting. One object so the two families cannot drift apart.
+const RGB_SLEEP_HELP: EraFeatureHelp = {
+  summary: 'Turns RGB off after a period with no key input.',
+  detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
+};
+
 // Ordered: the first prefix that matches a command in the submenu wins, so more
 // specific prefixes come before the families that would also match them.
 const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
@@ -125,13 +132,14 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
         'All three are on by default, and each covers a different part of what the two units share.',
     },
   ],
+  // Exact first: `id_qmk_rgb_sleep_timeout_exact` starts with the H7S minute-dropdown
+  // id, so listing the shorter prefix first would steal TOMAK's command. Same help
+  // object — idle RGB timeout, 10-minute default, keypress wake — on both families.
   [
     'id_qmk_rgb_sleep_timeout_exact',
-    {
-      summary: 'Turns RGB off after a period with no key input.',
-      detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
-    },
+    RGB_SLEEP_HELP,
   ],
+  ['id_qmk_rgb_sleep_timeout', RGB_SLEEP_HELP],
   [
     'id_qmk_ver_',
     {

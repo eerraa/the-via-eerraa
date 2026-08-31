@@ -273,6 +273,7 @@ const menuData = {
   id_custom_indicator_toggle: [1],
   id_custom_indicator_override: [0],
   id_qmk_rgb_sleep_timeout_exact: [0x02, 0x58],
+  id_qmk_rgb_sleep_timeout: [10],
 };
 
 // The ms rows a DEBOUNCE mode shows are not the ones another mode shows, and Fast and
@@ -502,6 +503,27 @@ const sleepSubmenu = {
       _id: '-0-0',
       content: ['id_qmk_rgb_sleep_timeout_exact', 9, 11],
       options: [1, 65535],
+    },
+  ],
+};
+
+const h7sSleepSubmenu = {
+  label: 'SLEEP',
+  _id: '-0',
+  content: [
+    {
+      label: 'RGB Sleep Timeout',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_sleep_timeout', 18, 1],
+      options: [
+        ['1 min', 1],
+        ['3 min', 3],
+        ['5 min', 5],
+        ['10 min', 10],
+        ['30 min', 30],
+        ['60 min', 60],
+      ],
     },
   ],
 };
@@ -789,6 +811,23 @@ describe('ERA exact-second input', () => {
     expect(html).toContain('value="600"');
     expect(html).toContain('>s</span>');
     expect(html).not.toContain('type="range"');
+  });
+
+  test('renders the H7S minute sleep dropdown with the same help and no exact-seconds field', () => {
+    optIn(true);
+    const html = render(makeStore({era: true, menuData}), {
+      label: 'FEATURE',
+      content: [h7sSleepSubmenu],
+    });
+
+    expect(html).toContain('Turns RGB off after a period with no key input.');
+    expect(html).toContain('Default is 10 minutes.');
+    expect(html).toContain('hidden=""');
+    expect(html).toContain('RGB Sleep Timeout');
+    expect(html).toContain('10 min');
+    expect(html).not.toContain('RGB Sleep Timeout (s)');
+    expect(html).not.toContain('value="600"');
+    expect(html).not.toContain('>s</span>');
   });
 });
 
