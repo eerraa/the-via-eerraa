@@ -254,7 +254,7 @@ summary + folded-detail help surface.
 
 ### H7S RGB sleep minute dropdown
 
-The five H7S definitions expose RGB idle timeout as FEATURE channel 18 / value 1
+The five H7S definitions expose RGB idle timeout as SYSTEM channel 18 / value 1
 (`id_qmk_rgb_sleep_timeout`), a one-byte minute dropdown 1/3/5/10/30/60 matching
 the firmware-local official VIA JSON. Firmware stores seconds (default 600 / 10
 minutes); official GET floors onto the menu without writing. This is not the

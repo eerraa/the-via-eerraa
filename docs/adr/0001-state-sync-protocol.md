@@ -90,9 +90,14 @@ requires selected, ready, Configure-visible (`location === '/'` in
 `src/components/state-sync-runtime.tsx`), not `document.hidden`, and
 `capability === 'capable'`. The interval is `ERA_STATE_SYNC_POLL_INTERVAL_MS`
 (500). Changed domains are re-read with existing VIA GET under a start/end
-revision bracket (`refreshDomain`). Lifecycle boundaries (`coordinate` mode
-`full`) do not trust revision equality. `0x16` v1 remains a Custom Menu
-invalidation hint (`handleUISyncRequest`); it is not the sole correctness basis.
+revision bracket (`refreshDomain`). An initial capable ERA selection is
+progressive rather than a second lifecycle full read: KEYMAP is bracketed before
+`markDeviceReady`, CONFIG is prefetched immediately after ready, and the first
+full MACRO payload read is lazy until the Macro pane requests it. Existing VIA
+GET remains the value path in every case. Later lifecycle boundaries that use
+`coordinate` mode `full` do not trust revision equality. `0x16` v1 remains a
+Custom Menu invalidation hint (`handleUISyncRequest`); it is not the sole
+correctness basis.
 
 > **REFUSED:** unsolicited semantic events, event-only sync, host nonce, ARM/lease,
 > event sequence, descriptor queue / coalescing / overflow, and an H7S
@@ -126,7 +131,9 @@ invalidation hint (`handleUISyncRequest`); it is not the sole correctness basis.
 > **REFUSED:** a selected-layer provisional Redux patch on State Sync refresh.
 > **WHY:** `commitStableKeymapCandidate` writes every layer and encoder in one
 > action; `readKeymapStateSyncCandidate` does not dispatch `loadLayerSuccess`.
-> Ordinary connect still uses `loadKeymapFromDevice` per layer.
+> Ordinary/non-opt-in and unverified connect still uses `loadKeymapFromDevice`
+> per layer. A capable ERA initial selection instead commits one whole stable
+> KEYMAP candidate before ready; it does not expose provisional layers.
 > **REOPENS:** never.
 
 > **REFUSED:** an ACK journal, a firmware subscription state machine, and an extra
@@ -222,8 +229,10 @@ tokens.
 - Hidden (`document.hidden`) has no periodic traffic (`shouldPoll`). Resume
   full-refreshes implemented domains without trusting revision equality
   (`refreshAllDomains`).
-- Reconnect and connection-generation replacement also full-refresh without
-  trusting cached revision equality.
+- Reconnect and connection-generation replacement do not reuse a previous
+  generation's accepted snapshots. A capable ERA selection reacquires KEYMAP
+  before ready, CONFIG immediately after ready, and MACRO before first Macro-pane
+  use; none of those decisions trusts numeric equality with an older generation.
 
 ### Initial three host domains
 
@@ -388,7 +397,9 @@ refresh (`refreshDomain`):
 2. Mark the domain `refreshing`. Read existing VIA GET into an isolated
    candidate (`readKeymapStateSyncCandidate` / `readMacrosStateSyncCandidate` /
    layout + V3 menu). No Redux current-state patch before the bracket ends.
-   Ordinary connect still uses `loadKeymapFromDevice` per layer.
+   Ordinary/non-opt-in and unverified connect still uses
+   `loadKeymapFromDevice` per layer. Capable ERA initial selection uses the same
+   whole-domain candidate path for KEYMAP before `markDeviceReady`.
 3. End query. Record all three observed tokens again.
 4. Commit the whole candidate in one action iff start/end revision match, the
    captured mutation epoch is unchanged, and connection/selection generation,
@@ -399,6 +410,9 @@ refresh (`refreshDomain`):
 
 KEYMAP candidate is every layer and encoder map. MACRO is the whole macro
 buffer. CONFIG is layout options plus applicable V3 menu / per-key RGB.
+Coordinator preference is KEYMAP, CONFIG, then MACRO. Revision polling skips an
+uninitialised MACRO domain (`acceptedRevision == 0`, no local mutation); entering
+the Macro pane requests that first full stock-VIA macro snapshot explicitly.
 
 ### Foreground mutation epoch and CONFIG authority
 
@@ -509,14 +523,19 @@ poll sees a token mismatch and goes dirty.
 
 ## Lifecycle policy without a subscription state machine
 
-- Configure-visible is `location === '/'`. A selected ready device with
-  capability `unknown` is probed (`StateSyncRuntime`). `selectConnectedDevice`
-  also probes after lifecycle GET when the connection requires ERA verification.
-  Capable probe then `markPathDirty` and `coordinate(..., 'full')`, including
-  when lifecycle GET already finished.
-- Returning to the same path after another device, while still `capable` on that
-  generation, dirties all three domains and full-refreshes. Cache from outside
-  the current selection is not treated as current.
+- Configure-visible is `location === '/'`. `selectConnectedDevice` confirms the
+  read-only capability selector before advanced ERA I/O. If capable, it reads
+  only macro count metadata, brackets a whole KEYMAP candidate while the
+  selection is not yet UI-ready, then calls `markDeviceReady`. CONFIG is queued
+  immediately afterwards without delaying that first interactive keymap frame.
+  The first full MACRO buffer read is deferred until the Macro pane opens.
+- A selected ready device that still has capability `unknown` may also be probed
+  by `StateSyncRuntime`. The legacy `probeStateSyncForDevice` recovery entry
+  point keeps its conservative full-refresh behavior; it is not the normal
+  capable initial-selection path.
+- Returning to a capable path after another selection does not attach cache from
+  the old selection generation. KEYMAP is reacquired before ready, CONFIG after
+  ready, and MACRO remains lazy until first use.
 - Leaving Configure (`location !== '/'`) stops the poll (`shouldPoll`). Re-entering
   restores eligibility and runs the revision poll (`syncPolling`), not a
   separate full refresh.
@@ -526,7 +545,8 @@ poll sees a token mismatch and goes dirty.
 - Disconnect replaces the transport generation (`replaceGeneration` in
   `src/shims/node-hid.ts`), rejects listener and pending work, and drops path sync.
   The next `ensurePathSync` on the new generation starts domains at `unknown`.
-  Reconnect probes and full-refreshes even if revision numbers match.
+  Reconnect repeats the progressive acquisition above even if revision numbers
+  happen to match the previous generation.
 - Firmware has no subscription state for client replacement. A new client starts
   at the opt-in gate and the read-only query. The official VIA client is not
   sent advanced unsolicited packets.
@@ -544,11 +564,14 @@ this host and the QMK/H7S token bumpers that exist:
 1. Every semantic commit that changes firmware-readable `S_d` changes token
    `R_d` exactly once after GET can return the new value (QMK/H7S skip 0 on
    wrap; a no-op SET does not bump).
-2. While selected and visible, the revision poll is retried, and lifecycle full
-   refresh is retryable.
+2. While selected and visible, the revision poll is retried. A domain required
+   for initial or foreground use is revision-bracketed and retryable; later
+   lifecycle full refresh remains a recovery path.
 3. After some time `T`, state is stable.
 4. Two comparable queries do not see a full 32-bit wrap of `R_d`.
-5. Uncertain connection boundaries full-refresh instead of trusting equality.
+5. Uncertain connection boundaries never reuse an accepted snapshot from the
+   previous connection generation. Each domain is reacquired before that domain
+   is exposed as current; numeric revision equality alone is insufficient.
 
 A successful query after `T` that differs from the cached token brackets existing
 GET with start/end `R_d`. Stable state makes those tokens equal, so the candidate
@@ -564,8 +587,8 @@ events or ACKs.
 | Event overflow/coalescing | No advanced event queue. The revision token coalesces intermediate change. | Losing the last v1 hint is the counterexample above. |
 | Change during refresh | Start/end mismatch discards the candidate. Change after end is the next poll. | A further v1 hint queues another pass. Without a last hint, nothing is guaranteed until lifecycle. |
 | Revision wrap | Exact full wrap between polls is an equality-alias counterexample. No commit-rate limiter exists in this host. Remaining. | Not applicable. |
-| Firmware reboot | Re-enumeration generation plus full refresh ignores numeric equality. In-place silent reset is remaining. | Recovers if lifecycle full refresh runs. |
-| Reconnect / device switch | Freshness is per path+generation. Both full-refresh without trusting equality. | Only ordinary VIA lifecycle load. |
+| Firmware reboot | Re-enumeration generation plus progressive reacquisition ignores numeric equality. In-place silent reset is remaining. | Recovers if lifecycle reload runs. |
+| Reconnect / device switch | Freshness is per path+generation. KEYMAP is reacquired before ready, CONFIG immediately after, and MACRO before first use; none trusts old-generation equality. | Only ordinary VIA lifecycle load. |
 | Hidden / resume | Hidden poll count is 0. Resume full-refresh does not trust equality. | Recovers if the same app-core resume full refresh runs. |
 
 ## TOMAK durable peer boundary
@@ -668,8 +691,9 @@ convergence.
    command.
 3. Envelope version, status, tag, mask, reserved bytes, and nonzero big-endian
    revisions.
-4. Probe revision is not attached to the stale lifecycle snapshot; confirmation
-   is followed by a full bracket.
+4. Capability confirmation does not attach its revision to stale lifecycle
+   data. The progressive initial path brackets KEYMAP before ready, then CONFIG,
+   while macro count metadata does not expose a full MACRO snapshot.
 5. A revision for another domain observed during one domain's refresh dirties
    that other domain and does not advance its accepted revision.
 6. Capable timeout/malformed keeps capability; dirty domains retry without
@@ -707,7 +731,11 @@ convergence.
     Loading boundary until the first accepted snapshot.
 18. A disconnecting discrete SET before SAVE sends neither SAVE nor a
     stale-generation refresh and closes local-write depth. Reconnect generation
-    full refresh is a separate lifecycle regression.
+    starts a separate progressive reacquisition lifecycle.
+19. Progressive capable initial load: macro count metadata issues no macro-buffer
+    GET; KEYMAP can reach `fresh` before device ready; the first visible poll
+    accepts CONFIG while the uninitialised MACRO payload remains unread; an
+    explicit Macro-pane refresh then reads and accepts the stock macro buffer.
 
 `tests/custom-menu-pane.test.tsx` covers State Sync menu continuity.
 `tests/deferred-apply.test.ts` covers continuous-control lifecycle wiring. It is

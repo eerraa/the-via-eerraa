@@ -295,7 +295,7 @@ describe('docs state the same wire constants the source does', () => {
     );
     expect(found).toEqual([{channel: 18, id: 1}]);
     expect(MAP).toContain(
-      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | FEATURE channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |',
+      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |',
     );
     expect(MAP).toContain('V3 Custom Value channel 18 / id 1');
   });

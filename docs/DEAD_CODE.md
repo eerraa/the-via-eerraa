@@ -148,7 +148,7 @@ are unused as identifiers; `ERA_USB_DIAGNOSTICS_REQUIRED_CAPABILITIES` is
 
 ### 2.7 Unused locale keys
 
-`src/locales/*.json`: 6 files, 612 keys each
+`src/locales/*.json`: 6 files, 613 keys each
 (`tests/locales.test.ts` same-key lock). A key is live if `src/` calls `t`
 with that string, or a definition JSON label is that string (Custom pane
 does `t(label)`).
@@ -203,7 +203,7 @@ Looks unused; deleting is a regression.
 | --- | --- |
 | Dual tapping/TD term encodings, Tap Dance `CUSTOM(n)` vs `TD(n)`, `/definitions/v3` vs `/definitions/era/v3` | `docs/MAP.md` §6. Official VIA and custom app share HID bytes. |
 | `sirind/brick65` custom JSON with no ERA menus | Permanent ATmega32U4 exception. `FEATURE_COVERAGE` does not list it for mouse/NKRO/split. |
-| H7S-only custom command ids: `id_qmk_usb_bootmode`, `id_qmk_usb_bootmode_apply`, `id_qmk_ver_yy`/`_mm`/`_dd`/`_rv`, `id_qmk_kill_switch_*`, `id_qmk_velocikey_toggle`, `id_qmk_rgb_sleep_timeout` | Live menus (`USB POLLING`, `VERSION`, SOCD under a different prefix, FEATURE `SLEEP`). `FEATURE_COVERAGE` is a variance table, not a catalog of every command. Design-tab drafts of H7S official JSON showing extra menus is expected, not drift. |
+| H7S-only custom command ids: `id_qmk_usb_bootmode`, `id_qmk_usb_bootmode_apply`, `id_qmk_kill_switch_*`, `id_qmk_velocikey_toggle`, `id_qmk_rgb_sleep_timeout` | Live menus (`USB POLLING`, SOCD under a different prefix, SYSTEM `SLEEP`). VERSION now shares `id_qmk_ver_ascii`; H7S uses additive channel 8 / id 5 while its legacy firmware keeps ids 1–4 for cached old definitions. `FEATURE_COVERAGE` records the live definition distribution, not every command distinction. Design-tab drafts of H7S official JSON showing extra menus is expected, not drift. |
 | QMK-only custom command ids (NKRO, split, EEPROM sync, `id_qmk_socd_*`, RGB matrix, `id_custom_breathing_period`, …) | Live on RP2040 definitions. |
 | `src/Routes.tsx` `/diagnostics` → `/` | Bookmark compatibility after the top-level page was refused ([ADR 0003](adr/0003-era-menu-help-ui.md)). Missing from `public/_redirects` is a documented seam (`docs/MAP.md` §7), not a DELETE. |
 | `src/components/panes/configure-panes/custom/satisfaction75/` | Official V2 Rotary Encoder keyboards. |

@@ -11,9 +11,7 @@ import {
 } from '../src/shims/node-hid';
 import {
   decodeEraFirmwareVersion,
-  decodeH7sFirmwareVersion,
   ERA_FIRMWARE_VERSION_COMMAND,
-  H7S_FIRMWARE_VERSION_COMMANDS,
 } from '../src/utils/era-firmware-version';
 
 const loadPane = async () => {
@@ -213,36 +211,10 @@ const h7sVersionSubmenu = {
   _id: '-0',
   content: [
     {
-      label: 'Year',
-      type: 'dropdown',
+      label: 'Current Version',
+      type: 'label',
       _id: '-0-0',
-      content: [H7S_FIRMWARE_VERSION_COMMANDS.year, 8, 1],
-      options: ['24', '25', '26', '27', '28', '29', '30', '31', '32', '33'],
-    },
-    {
-      label: 'Month',
-      type: 'dropdown',
-      _id: '-0-1',
-      content: [H7S_FIRMWARE_VERSION_COMMANDS.month, 8, 2],
-      options: Array.from({length: 12}, (_, index) =>
-        String(index + 1).padStart(2, '0'),
-      ),
-    },
-    {
-      label: 'Day',
-      type: 'dropdown',
-      _id: '-0-2',
-      content: [H7S_FIRMWARE_VERSION_COMMANDS.day, 8, 3],
-      options: Array.from({length: 31}, (_, index) =>
-        String(index + 1).padStart(2, '0'),
-      ),
-    },
-    {
-      label: 'Rev.',
-      type: 'dropdown',
-      _id: '-0-3',
-      content: [H7S_FIRMWARE_VERSION_COMMANDS.revision, 8, 4],
-      options: Array.from({length: 9}, (_, index) => `R${index + 1}`),
+      content: [ERA_FIRMWARE_VERSION_COMMAND, 8, 5],
     },
   ],
 };
@@ -257,7 +229,6 @@ const menuData = {
   id_qmk_debounce_time_pre: [5],
   id_qmk_debounce_time_post: [5],
   id_qmk_kkuk_enable: [1],
-  id_qmk_kkuk_mode: [1],
   id_qmk_kkuk_repeat_time: [8],
   id_qmk_kkuk_delay_time: [20],
   id_qmk_tapping_global_term_exact: [0, 200],
@@ -274,6 +245,8 @@ const menuData = {
   id_custom_indicator_override: [0],
   id_qmk_rgb_sleep_timeout_exact: [0x02, 0x58],
   id_qmk_rgb_sleep_timeout: [10],
+  id_qmk_split_link_level: [0],
+  id_qmk_split_link_apply: [0],
 };
 
 // The ms rows a DEBOUNCE mode shows are not the ones another mode shows, and Fast and
@@ -301,7 +274,7 @@ const debounceSubmenu = {
     },
     {
       showIf: '{id_qmk_debounce_mode} == 0',
-      label: 'Press & Release - delay before and after (same value)',
+      label: 'Press & Release Delay',
       type: 'dropdown',
       _id: '-0-1',
       content: ['id_qmk_debounce_time_single', 14, 2],
@@ -309,7 +282,7 @@ const debounceSubmenu = {
     },
     {
       showIf: '{id_qmk_debounce_mode} == 1',
-      label: 'Press & Release - delay after change (post-only)',
+      label: 'Press & Release Cooldown',
       type: 'dropdown',
       _id: '-0-2',
       content: ['id_qmk_debounce_time_post', 14, 4],
@@ -317,7 +290,7 @@ const debounceSubmenu = {
     },
     {
       showIf: '{id_qmk_debounce_mode} == 2',
-      label: 'Release - delay before and after release (pre+post window)',
+      label: 'Release Delay',
       type: 'dropdown',
       _id: '-0-3',
       content: ['id_qmk_debounce_time_post', 14, 4],
@@ -379,11 +352,11 @@ const kkukSubmenu = {
       content: ['id_qmk_kkuk_enable', 12, 1],
     },
     {
-      label: 'Mode',
+      label: 'First Delay Time',
       type: 'dropdown',
       _id: '-0-1',
-      content: ['id_qmk_kkuk_mode', 12, 4],
-      options: [['Report Pulse', 1]],
+      content: ['id_qmk_kkuk_delay_time', 12, 2],
+      options: [['200 ms', 20]],
     },
     {
       label: 'Repeat Time',
@@ -391,13 +364,6 @@ const kkukSubmenu = {
       _id: '-0-2',
       content: ['id_qmk_kkuk_repeat_time', 12, 3],
       options: [['80 ms', 8]],
-    },
-    {
-      label: 'First Delay Time',
-      type: 'dropdown',
-      _id: '-0-3',
-      content: ['id_qmk_kkuk_delay_time', 12, 2],
-      options: [['200 ms', 20]],
     },
   ],
 };
@@ -528,6 +494,30 @@ const h7sSleepSubmenu = {
   ],
 };
 
+const linkSubmenu = {
+  label: 'LINK',
+  _id: '-0',
+  content: [
+    {
+      label: 'Split Link Speed',
+      type: 'dropdown',
+      _id: '-0-0',
+      content: ['id_qmk_split_link_level', 9, 8],
+      options: [
+        ['High', 0],
+        ['Medium', 1],
+        ['Low', 2],
+      ],
+    },
+    {
+      label: 'Apply',
+      type: 'toggle',
+      _id: '-0-1',
+      content: ['id_qmk_split_link_apply', 9, 9],
+    },
+  ],
+};
+
 // A collapsed disclosure keeps its text in the page, so "shipped" and "on the screen"
 // are different questions. This strips the collapsed bodies to ask the second one.
 const visibleText = (html: string) =>
@@ -558,7 +548,7 @@ describe('read-only ERA firmware version', () => {
     ...tail,
   ];
 
-  test('decodes the two live GET formats and rejects malformed or out-of-range values', () => {
+  test('decodes the shared live GET format and rejects malformed values', () => {
     expect(decodeEraFirmwareVersion(ascii('260901R1', [0, 0, 0]))).toBe(
       '260901R1',
     );
@@ -572,32 +562,9 @@ describe('read-only ERA firmware version', () => {
     expect(decodeEraFirmwareVersion(ascii('261301R1'))).toBeNull();
     expect(decodeEraFirmwareVersion([0x32, 0x80, 0])).toBeNull();
     expect(decodeEraFirmwareVersion('260901R1')).toBeNull();
-
-    expect(decodeH7sFirmwareVersion([2], [8], [0], [0])).toBe('260901R1');
-    expect(
-      decodeH7sFirmwareVersion(
-        [2, 'ignored'],
-        [8, 'ignored'],
-        [0, 'ignored'],
-        [0, 'ignored'],
-      ),
-    ).toBe('260901R1');
-    const malformedValues: [unknown, unknown, unknown, unknown][] = [
-      [10, [8], [0], [0]],
-      [[10], [8], [0], [0]],
-      [[2], [12], [0], [0]],
-      [[2], [8], [31], [0]],
-      [[2], [8], [0], [9]],
-      [['2', 'tail'], [8], [0], [0]],
-      [[2.5], [8], [0], [0]],
-      [[], [8], [0], [0]],
-    ];
-    for (const malformed of malformedValues) {
-      expect(decodeH7sFirmwareVersion(...malformed)).toBeNull();
-    }
   });
 
-  test('renders both adapters through one visible, non-editable presentation', () => {
+  test('renders both firmware definitions through one visible, non-editable presentation', () => {
     optIn(false);
     const era = render(
       makeStore({
@@ -612,10 +579,7 @@ describe('read-only ERA firmware version', () => {
       makeStore({
         era: true,
         menuData: {
-          [H7S_FIRMWARE_VERSION_COMMANDS.year]: [2, 0xa5],
-          [H7S_FIRMWARE_VERSION_COMMANDS.month]: [8, 0xa5],
-          [H7S_FIRMWARE_VERSION_COMMANDS.day]: [0, 0xa5],
-          [H7S_FIRMWARE_VERSION_COMMANDS.revision]: [0, 0xa5],
+          [ERA_FIRMWARE_VERSION_COMMAND]: ascii('260901R1', [0, 0xa5]),
         },
       }),
       {label: 'SYSTEM', content: [h7sVersionSubmenu]},
@@ -816,7 +780,7 @@ describe('ERA exact-second input', () => {
   test('renders the H7S minute sleep dropdown with the same help and no exact-seconds field', () => {
     optIn(true);
     const html = render(makeStore({era: true, menuData}), {
-      label: 'FEATURE',
+      label: 'SYSTEM',
       content: [h7sSleepSubmenu],
     });
 
@@ -857,7 +821,38 @@ describe('ERA per-control help', () => {
     );
   });
 
-  test('moves KKUK timing explanations off the one-option Mode row', () => {
+  test('explains split-link rates beside the short speed dropdown', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {
+          status: 'fresh',
+          observedRevision: 2,
+          acceptedRevision: 2,
+        },
+      }),
+      {
+        label: 'SYSTEM',
+        content: [linkSubmenu],
+      },
+    );
+
+    expect(html).toContain('What this means: Split Link Speed');
+    expect(html).toContain('High — 460800 bps; 1 ms polling');
+    expect(html).toContain('Medium — 230400 bps; 2 ms polling');
+    expect(html).toContain('Low — 115200 bps; 4 ms polling');
+    expect(html).toContain('Master–Slave (HOST-PEER) operation changes very little');
+    expect(html).toContain('DUAL-HOST layer-sharing response time');
+    expect(html).toMatch(/singleValue[^>]*>High<\/div>/);
+    expect(html).not.toContain('High - 460800');
+    expect(html).toContain(
+      'DUAL-HOST layer sharing.\n\nMedium — 230400 bps',
+    );
+  });
+
+  test('keeps KKUK timing help on the two actual settings', () => {
     optIn(true);
     const html = render(makeStore({era: true, menuData}), {
       label: 'FEATURE',
@@ -865,9 +860,9 @@ describe('ERA per-control help', () => {
     });
 
     expect(html).toContain('Repeats multiple keys while they remain held.');
-    expect(html).not.toContain('What this means: Mode');
-    expect(html).toContain('What this means: Repeat Time');
     expect(html).toContain('What this means: First Delay Time');
+    expect(html).toContain('What this means: Repeat Time');
+    expect(html).not.toContain('Report Pulse');
   });
 
   test('reads the same command id differently on either side of the mode', () => {
@@ -898,7 +893,9 @@ describe('ERA per-control help', () => {
     // The three switches each need their own answer; the term does not, because the
     // line above the controls is already about it.
     expect(html).toContain('Permissive Hold');
-    expect(html).toContain('For holds that do not take when you type fast');
+    expect(html).toContain(
+      'Use this when a tap-hold key is still treated as a tap during fast typing',
+    );
     expect(html).toContain('Global Tapping Term (ms)');
     expect(html).not.toContain('What this means: Global Tapping Term (ms)');
   });

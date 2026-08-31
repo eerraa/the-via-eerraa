@@ -21,7 +21,7 @@ import {
 } from './definitionsSlice';
 import {loadKeymapFromDevice} from './keymapSlice';
 import {updateLightingData} from './lightingSlice';
-import {loadMacros} from './macrosSlice';
+import {loadMacroMetadata, loadMacros} from './macrosSlice';
 import {updateV3MenuData} from './menusSlice';
 import {
   clearAllDevices,
@@ -54,7 +54,11 @@ import {extractDeviceInfo, logAppError} from './errorsSlice';
 import {tryForgetDevice} from 'src/shims/node-hid';
 import {isAuthorizedDeviceConnected} from 'src/utils/type-predicates';
 import {loadFirmwareVersion, loadKeycodesVersion} from './firmwareSlice';
-import {probeStateSyncForDevice} from './stateSyncThunks';
+import {
+  probeStateSyncCapabilityForDevice,
+  refreshStateSyncDomain,
+  syncPolling,
+} from './stateSyncThunks';
 import {
   isStateSyncOptIn,
   loadEraAdvancedMetadata,
@@ -64,7 +68,6 @@ import {
   loadDefinitionName,
 } from './definitionNameSlice';
 import {KeycodesVersionProtocolError} from 'src/utils/keycodes-version';
-import {getPathSyncState} from './stateSyncSlice';
 
 const selectConnectedDeviceRetry = createRetry(8, 100);
 
@@ -103,17 +106,24 @@ const selectConnectedDevice =
       const requiresCustomMenuVerification =
         getDefinitionSourceForDevice(getState(), connectedDevice) === 'era' &&
         isStateSyncOptIn(connectedDevice.vendorProductId);
-      if (requiresCustomMenuVerification) {
-        await dispatch(probeStateSyncForDevice(connectedDevice));
-        if (!isCurrentSelection()) return;
-      }
+      const stateSyncCapable = requiresCustomMenuVerification
+        ? await dispatch(probeStateSyncCapabilityForDevice(connectedDevice))
+        : false;
+      if (!isCurrentSelection()) return;
 
       await dispatch(loadKeycodesVersion(connectedDevice));
       if (!isCurrentSelection()) return;
-      // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-      await dispatch(loadMacros(connectedDevice));
-      if (!isCurrentSelection()) return;
-      await dispatch(loadLayoutOptions(connectedDevice));
+      if (stateSyncCapable) {
+        // The keycode picker only needs the count. Keep the stock full-capacity
+        // macro read lazy until the Macro pane is actually opened.
+        await dispatch(loadMacroMetadata(connectedDevice));
+      } else {
+        // Ordinary VIA and unverifiable ERA firmware keep the upstream load
+        // transcript unchanged.
+        await dispatch(loadMacros(connectedDevice));
+        if (!isCurrentSelection()) return;
+        await dispatch(loadLayoutOptions(connectedDevice));
+      }
       if (!isCurrentSelection()) return;
 
       const {protocol} = connectedDevice;
@@ -123,9 +133,7 @@ const selectConnectedDevice =
           await dispatch(updateLightingData(connectedDevice));
         } else if (protocol >= 11) {
           const advancedCommandsVerified =
-            !requiresCustomMenuVerification ||
-            getPathSyncState(getState(), connectedDevice.path)?.capability ===
-              'capable';
+            !requiresCustomMenuVerification || stateSyncCapable;
           if (advancedCommandsVerified) {
             await dispatch(loadDefinitionName(connectedDevice));
             if (!isCurrentSelection()) return;
@@ -153,8 +161,19 @@ const selectConnectedDevice =
       }
       if (!isCurrentSelection()) return;
 
-      // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
-      await dispatch(loadKeymapFromDevice(connectedDevice));
+      if (stateSyncCapable) {
+        const keymapReady = await dispatch(
+          refreshStateSyncDomain(connectedDevice, 'keymap', {
+            allowBeforeReady: true,
+          }),
+        );
+        if (!keymapReady) {
+          throw new Error('State Sync keymap did not reach a stable snapshot');
+        }
+      } else {
+        // John you drongo, don't trust the compiler, dispatches are totes awaitable for async thunks
+        await dispatch(loadKeymapFromDevice(connectedDevice));
+      }
       if (!isCurrentSelection()) return;
       dispatch(
         markDeviceReady({
@@ -163,8 +182,12 @@ const selectConnectedDevice =
           selectionGeneration,
         }),
       );
-      if (requiresCustomMenuVerification) {
-        await dispatch(probeStateSyncForDevice(connectedDevice));
+      if (stateSyncCapable) {
+        // CONFIG is much cheaper than the large macro domain and backs all of
+        // Lighting/FEATURE/TAPDANCE/SYSTEM. Prefetch it immediately without
+        // delaying the first interactive keymap frame.
+        void dispatch(refreshStateSyncDomain(connectedDevice, 'config'));
+        dispatch(syncPolling());
       }
       selectConnectedDeviceRetry.clear();
     } catch (e) {

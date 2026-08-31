@@ -25,7 +25,7 @@ looks right, report it; do not silently invert the table.
 | Official VIA V3 definitions | `the-via/keyboards` — the installed `node_modules/via-keyboards` is a pinned snapshot only | `Verify build output` in the deploy workflow |
 | Explicit validation of firmware-local VIA V3 files | `scripts/validate-external-v3.ts`, using the app's `@the-via/reader` guard and transform | `tests/validate-external-v3.test.ts` |
 | Wire selector values and envelopes | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
-| VERSION wire adapters and displayed value grammar | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
+| VERSION ASCII display grammar | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | What the diagnostics screen may and must not say | `src/locales/*.json` | `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
 | ERA menu help copy and attach targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx` | none — `public/_redirects` is hand-matched (§7) |
@@ -50,7 +50,7 @@ computed from code, the test goes red.
 | exact-ms `h7s` family (`options: [100, 500]`) | 5 |
 | USB diagnostics opt-in (`usbDiagnostics: true`) | 5 |
 | split pair entries (left/right each) | 6 |
-| Locales | 6 (`de en es ja ko zh`), 612 keys each |
+| Locales | 6 (`de en es ja ko zh`), 613 keys each |
 | ERA menu summaries | 19 |
 
 Only `brick65` has no opt-in. That is the durable ATmega32U4 stock-VIA exception
@@ -88,7 +88,7 @@ custom JSON `_term_exact` `content`.
 | Global TAPPING term | channel 15 / value 5 | channel 15 / value 5 |
 | TD0–TD7 term | channel 0 / value 72–79 | channel 16 / value 41–48 |
 | MOUSE menu channel | 13 | **17** — on H7S, channel 13 is USB POLLING (`id_qmk_usb_bootmode`) |
-| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | FEATURE channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |
+| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |
 | SOCD command prefix | `id_qmk_socd_` | `id_qmk_kill_switch_` |
 
 State Sync poll interval is `ERA_STATE_SYNC_POLL_INTERVAL_MS = 500`.
@@ -186,7 +186,7 @@ speak the same HID bytes. Product rules:
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
 
-H7S RGB sleep is the same FEATURE channel 18 minute dropdown on official JSON
+H7S RGB sleep is the same SYSTEM channel 18 minute dropdown on official JSON
 and this overlay. It is not a dual encoding.
 
 ## 7. Hand-maintained seams

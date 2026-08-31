@@ -51,6 +51,7 @@ import {getEraFirmwareVersionSource} from 'src/utils/era-firmware-version';
 import {UsbDiagnosticsSection} from './usb-diagnostics-section';
 import {FeatureHelp} from './feature-help';
 import {FirmwareVersion} from './firmware-version';
+import {ConfigureStatusMessage} from '../status-message';
 
 type Category = {
   label: string;
@@ -70,22 +71,11 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
-const StatusMessage = styled.div`
-  padding: 40px 20px;
-  max-width: 640px;
-  text-align: center;
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--color_label);
-  word-break: keep-all;
-  white-space: pre-line;
-`;
-
 const MenuStatus: React.FC<{message: string}> = ({message}) => (
   <SpanOverflowCell>
     <CustomPane>
       <Container>
-        <StatusMessage role="status">{message}</StatusMessage>
+        <ConfigureStatusMessage role="status">{message}</ConfigureStatusMessage>
       </Container>
     </CustomPane>
   </SpanOverflowCell>
@@ -333,9 +323,9 @@ export const Pane: React.FC<Props> = (props: any) => {
       <SpanOverflowCell>
         <CustomPane>
           <Container>
-            <StatusMessage role="status">
+            <ConfigureStatusMessage role="status">
               {t('No features available for this firmware version.')}
-            </StatusMessage>
+            </ConfigureStatusMessage>
           </Container>
         </CustomPane>
       </SpanOverflowCell>

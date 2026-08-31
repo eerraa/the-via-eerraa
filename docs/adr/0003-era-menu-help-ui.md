@@ -272,14 +272,12 @@ Registering only one left twenty-five definitions with no help and nothing
 failed — no test asked whether every ERA submenu actually resolves. 
 `tests/era-definition.test.ts` asks, and a submenu that is allowed to have
 none must be named in `SUBMENUS_WITHOUT_HELP` (currently `Backlight` only).
-TOMAK `SLEEP` (`id_qmk_rgb_sleep_timeout_exact`) and H7S `SLEEP`
-(`id_qmk_rgb_sleep_timeout`, FEATURE channel 18 minute dropdown) share one
-help object the same way. The exact id is registered first so `startsWith`
-cannot steal it. The summary says the number is an input-idle RGB timeout;
-the folded detail carries only the 10-minute default and keypress wake.
-DUAL-HOST/HOST-PEER ownership, USB suspend, SOF, frame loss, scheduler,
-render owner, and USB state machine are firmware mechanics and are omitted
-from this user-facing help. H7S is not TOMAK SYSTEM channel 9 exact-seconds.
+`SYSTEM -> SLEEP` is intentionally not an exception. TOMAK uses the exact-second
+channel 9 / id 11 command and H7S uses the stock minute-preset channel 18 / id 1
+command, but both resolve to the same summary: the value is an input-idle RGB
+timeout. The folded detail carries only the 10-minute default and keypress wake
+behaviour. DUAL-HOST/HOST-PEER ownership, USB suspend, and frame-loss
+terminology are firmware mechanics and are omitted from this user-facing help.
 
 ## 7. Per-control ⓘ
 
@@ -303,15 +301,15 @@ is fixed.
 > the value.
 >
 > Attach: (a) the choices are proper nouns whose names do not describe the
-> behaviour (`Balanced` / `Fast` / `Advanced`, `Permissive Hold`, `Report
-> Pulse`). (b) the label states a specification, not a consequence —
+> behaviour (`Balanced` / `Fast` / `Advanced`, `Permissive Hold`). (b) the
+> label states a specification, not a consequence —
 > `Press & Release - delay before and after (same value)` says what the
 > firmware does with the number, not that raising it delays every keystroke.
 >
 > Do not attach: a control whose unit is the whole answer (`Indicator
-> Brightness`), a control the **submenu summary already takes as its subject**
-> (`Global Tapping Term (ms)`, KKUK `Enable`), or a fixed one-option row such as
-> KKUK `Mode`. Repeating that information one line down is noise.
+> Brightness`) or a control the **submenu summary already takes as its subject**
+> (`Global Tapping Term (ms)`, KKUK `Enable`). Repeating that information one
+> line down is noise.
 
 TAPPING therefore has no ⓘ on row 1 and has ⓘ on rows 2–4. That is the rule
 working, not a hole. MOUSE was first skipped as "the unit is the answer" and
@@ -339,12 +337,14 @@ one command id means two things, **the label is matched as well.**
   matching would need forty entries. `commandPrefix` `id_qmk_tapdance_` plus
   row label covers all slots with four entries.
 
-QMK-family KKUK JSON exposes `id_qmk_kkuk_mode` as a `Mode` dropdown whose
-only option is `Report Pulse`. H7S JSON (official and this host's custom) has
-`Enable` / `First Delay Time` / `Repeat Time` only; `kkuk_init` in
-`eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/kkuk.c` pins `mode` to 1. The fixed
-`Mode` row therefore has no ⓘ; `First Delay Time` explains when repeating starts
-and `Repeat Time` explains the repeat interval.
+Neither SOCD nor KKUK exposes a fixed one-option `Mode` row. RP2040 firmware
+still accepts the shipped mode value ids so cached older VIA definitions remain
+compatible, but the only legal values are Last Input Wins for SOCD and Report
+Pulse for KKUK. A dropdown with no alternative is not a setting and adds a
+label the user has to interpret without giving them a decision. The submenu
+summary explains the fixed behaviour instead. If a second firmware mode is
+ever implemented, the dropdown returns together with per-control help that
+compares the real alternatives.
 
 ### Implementation contract
 
@@ -365,6 +365,13 @@ two-column `ControlRow`. `aria-label` is `What this means: {{name}}` so several
 
 `tests/custom-menu-pane.test.tsx` locks Debounce Mode ⓘ, Fast vs Advanced
 copy on the shared command id, and the absent ⓘ on `Global Tapping Term (ms)`.
+
+Long folded explanations use blank-line paragraph breaks. `ExplainBody` in
+`src/components/inputs/explain.tsx` renders translated newlines with
+`white-space: pre-line`. The LINK speed control follows the same Debounce
+pattern: its dropdown says only `High` / `Medium` / `Low`, while the
+control's ⓘ gives 460800 / 230400 / 115200 bps and the 1 / 2 / 4 ms DUAL-HOST
+layer-sharing periods. HOST-PEER (Master–Slave) behavior changes very little.
 
 ## 8. Names follow behaviour
 
@@ -427,7 +434,12 @@ This host's H7S custom JSON suffixes TAPPING / TAPDANCE terms with `(ms)`
 match. The ⓘ skip keys off the control being the submenu summary's subject,
 not the suffix. Menu-name tokens `KKUK` / `MOUSE` / absence of `NKRO` and the
 Badge `RGB-Only` / `Indicator-Only` labels match the firmware-local VIA JSON.
-Debounce spelled-out labels match official JSON.
+The shared SOCD, DEBOUNCE and TAPPING controls use the same concise labels and
+order on both firmware families; the help matcher still accepts the older H7S
+spelled-out DEBOUNCE labels for cached definitions. Both firmware families
+place SLEEP under SYSTEM; H7S uses the stock 1/3/5/10/30/60-minute control while
+TOMAK uses the custom exact-second control. Both families call the final reset
+submenu `EEPROM`.
 
 ### VERSION is one read-only value
 
@@ -438,23 +450,18 @@ row in
 `Current Version` plus one value in the ordinary custom-menu type scale. It has
 no input, SET action, or SAVE action.
 
-The wire adapters differ because the shipped firmware contracts differ.
-Twenty-five RP2040 definitions carry one `label` command,
-`id_qmk_ver_ascii` at channel 8 / id 1; its GET data is a NUL-terminated ASCII
-version. The ATmega32U4 `brick65` definition is excluded because it does not
-run the ERA common layer. The five H7S definitions retain their four
-zero-based dropdown commands `id_qmk_ver_yy` / `_mm` / `_dd` / `_rv` at
-channel 8 / ids 1–4. The custom pane recognizes that complete command set,
-decodes its GET values, and renders the same row instead of the four dropdowns.
-The definitions therefore continue to describe the existing H7S addresses;
-only this app's presentation is read-only.
+Both firmware families carry one `label` command named
+`id_qmk_ver_ascii`. Twenty-five RP2040 definitions use channel 8 / id 1; the
+five H7S definitions use the additive channel 8 / id 5. GET data is
+NUL-terminated ASCII `YYMMDDRn`. The ATmega32U4 `brick65` definition is
+excluded because it does not run the ERA common layer. H7S firmware retains
+its old zero-based ids 1–4 for cached old definitions, but current official
+and custom JSON expose only id 5. No dropdown adapter remains in this app.
 
 `src/utils/era-firmware-version.ts` is the display grammar. RP2040 data must
 contain printable ASCII, the NUL terminator, and a valid `YYMMDDRn` value.
 Bytes after that NUL belong to the surrounding HID report and are ignored.
-For H7S, the first byte of each GET value must be an integer inside its
-definition range; later report bytes are likewise ignored. Malformed data
-renders an em dash, never a partial or guessed release.
+Malformed ASCII data renders an em dash, never a partial or guessed release.
 The displayed release is always decoded from the selected keyboard's Custom
 Value GET snapshot; no release string in definition JSON or component source
 may stand in for firmware data. A static string goes stale as soon as another
@@ -475,9 +482,11 @@ custom app and hide it on official `usevia.app`.
 > **REOPENS:** none.
 
 `tests/era-definition.test.ts` asserts H7S FEATURE is `SOCD`, `KKUK`,
-`DEBOUNCE`, `TAPPING`, `MOUSE`, `SLEEP`, channel 17 for mouse commands,
-channel 18 / value 1 for the minute RGB sleep dropdown, and no
-`id_qmk_custom_nkro`.
+`DEBOUNCE`, `TAPPING`, `MOUSE`; SYSTEM is `VERSION`, `USB POLLING`, `SLEEP`,
+`BOOT`, `EEPROM`; channel 17 carries mouse commands; channel 18 / value 1 carries
+the minute RGB sleep dropdown; and H7S has no `id_qmk_custom_nkro`. It also
+rejects fixed SOCD/KKUK mode rows and locks the shared KKUK/TAPPING control
+order.
 
 ## 10. Verification
 
@@ -489,8 +498,9 @@ This repo:
   `tests/custom-menu-pane.test.tsx`
 - translation presence, observation verdict regexes, summary shape —
   `tests/locales.test.ts`
-- help coverage, MOUSE channel, NKRO absence, H7S SLEEP dropdown,
-  `FEATURE_COVERAGE` — `tests/era-definition.test.ts`
+- help coverage, MOUSE channel, H7S SLEEP dropdown, NKRO absence,
+  `FEATURE_COVERAGE` —
+  `tests/era-definition.test.ts`
 - VERSION decoder and the shared non-editable row —
   `tests/custom-menu-pane.test.tsx`
 - VERSION definition count, H7S additive id 5, split-pair equality and
