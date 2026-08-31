@@ -5,6 +5,7 @@ import type {
 } from '../types/types';
 
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
+const DEFAULT_LIFECYCLE_CONFIRMATION_MS = 100;
 const MAX_DIAGNOSTIC_REPORTS = 32;
 
 export type ResponseMatcher = (message: Uint8Array) => boolean;
@@ -69,13 +70,56 @@ type HIDTransportGenerationChange = {
 
 class HIDTransportError extends Error {}
 export class HIDTransportTimeoutError extends HIDTransportError {}
-class HIDTransportGenerationError extends HIDTransportError {}
+export class HIDTransportGenerationError extends HIDTransportError {}
+export class HIDTransportLifecycleCancellationError extends HIDTransportGenerationError {
+  readonly path: string;
+  readonly generation: number;
+  readonly reason: string;
+  readonly originalError?: Error;
+
+  constructor(
+    path: string,
+    generation: number,
+    reason: string,
+    originalError?: Error,
+  ) {
+    super(`HID transport ${path} ${reason}`);
+    this.name = 'HIDTransportLifecycleCancellationError';
+    this.path = path;
+    this.generation = generation;
+    this.reason = reason;
+    this.originalError = originalError;
+  }
+}
+
+class HIDTransportDeviceIOError extends HIDTransportError {
+  readonly path: string;
+  readonly generation: number;
+  readonly operation: 'open' | 'write';
+  readonly originalError: Error;
+
+  constructor(
+    path: string,
+    generation: number,
+    operation: 'open' | 'write',
+    originalError: Error,
+  ) {
+    super(originalError.message);
+    this.name = 'HIDTransportDeviceIOError';
+    this.path = path;
+    this.generation = generation;
+    this.operation = operation;
+    this.originalError = originalError;
+    this.stack = originalError.stack ?? this.stack;
+  }
+}
 
 const transportStates = new Map<string, TransportState>();
 const generationChangeListeners = new Set<
   (change: HIDTransportGenerationChange) => void
 >();
 let responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS;
+let lifecycleConfirmationMs = DEFAULT_LIFECYCLE_CONFIRMATION_MS;
 let now = () => Date.now();
 let lifecycleNavigator: HID | undefined;
 
@@ -104,6 +148,82 @@ const getVIAPathIdentifier = () =>
 
 const makeTransportError = (path: string, reason: string) =>
   new HIDTransportGenerationError(`HID transport ${path} ${reason}`);
+
+const makeLifecycleCancellationError = (
+  state: TransportState,
+  reason: string,
+  originalError?: Error,
+) =>
+  new HIDTransportLifecycleCancellationError(
+    state.path,
+    state.generation,
+    reason,
+    originalError,
+  );
+
+const makeDeviceIOError = (
+  state: TransportState,
+  generation: number,
+  operation: 'open' | 'write',
+  error: unknown,
+) =>
+  new HIDTransportDeviceIOError(
+    state.path,
+    generation,
+    operation,
+    error instanceof Error ? error : new Error(String(error)),
+  );
+
+export const isHIDTransportLifecycleCancellationError = (
+  error: unknown,
+): error is HIDTransportLifecycleCancellationError =>
+  error instanceof HIDTransportLifecycleCancellationError;
+
+export const isHIDTransportDeviceIOError = (error: unknown) =>
+  error instanceof HIDTransportDeviceIOError;
+
+const isWebHIDDeviceConnected = async (
+  device: HIDDevice,
+): Promise<boolean | undefined> => {
+  if (typeof navigator === 'undefined' || !navigator.hid) {
+    return undefined;
+  }
+  try {
+    const devices = await navigator.hid.getDevices();
+    return devices.includes(device);
+  } catch {
+    // A failed connectivity probe cannot prove disappearance. Keep the
+    // original transport failure user-visible rather than hiding it.
+    return undefined;
+  }
+};
+
+const waitForWebHIDDisconnect = async (
+  device: HIDDevice,
+  timeoutMs: number,
+): Promise<boolean> => {
+  if (typeof navigator === 'undefined' || !navigator.hid || timeoutMs <= 0) {
+    return false;
+  }
+  const hid = navigator.hid;
+  return new Promise<boolean>((resolve) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const finish = (disconnected: boolean) => {
+      hid.removeEventListener('disconnect', onDisconnect);
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      resolve(disconnected);
+    };
+    const onDisconnect = (event: HIDConnectionEvent) => {
+      if (event.device === device) {
+        finish(true);
+      }
+    };
+    hid.addEventListener('disconnect', onDisconnect);
+    timeoutId = setTimeout(() => finish(false), timeoutMs);
+  });
+};
 
 const removeInputListener = (state: TransportState) => {
   if (state.listener) {
@@ -269,10 +389,15 @@ const bindTransportDevice = (path: string, device: HIDDevice) => {
   }
 
   if (existing.device !== device) {
-    replaceGeneration(existing, 'was replaced', {
-      poisoned: false,
-      disconnected: false,
-    });
+    replaceGeneration(
+      existing,
+      'was replaced',
+      {
+        poisoned: false,
+        disconnected: false,
+      },
+      makeLifecycleCancellationError(existing, 'was replaced'),
+    );
     existing.device = device;
     existing.hasOpened = device.opened;
   } else if (existing.disconnected) {
@@ -316,13 +441,18 @@ const handleConnect = ({device}: HIDConnectionEvent) => {
 const handleDisconnect = ({device}: HIDConnectionEvent) => {
   const path = (device as any).__path as string | undefined;
   const state = path ? transportStates.get(path) : undefined;
-  if (!state || state.device !== device) {
+  if (!state || state.device !== device || state.disconnected) {
     return;
   }
-  replaceGeneration(state, 'disconnected', {
-    poisoned: false,
-    disconnected: true,
-  });
+  replaceGeneration(
+    state,
+    'disconnected',
+    {
+      poisoned: false,
+      disconnected: true,
+    },
+    makeLifecycleCancellationError(state, 'was disconnected'),
+  );
 };
 
 const ensureLifecycleListeners = () => {
@@ -349,7 +479,7 @@ const enqueueTransportTask = <T>(
       return;
     }
     if (state.disconnected) {
-      reject(makeTransportError(state.path, 'is disconnected'));
+      reject(makeLifecycleCancellationError(state, 'is disconnected'));
       return;
     }
     state.commandQueue.push({
@@ -369,7 +499,11 @@ const flushTransportQueue = async (state: TransportState) => {
     while (state.commandQueue.length) {
       const entry = state.commandQueue.shift() as CommandQueueEntry;
       if (state.poisoned || state.disconnected) {
-        entry.reject(makeTransportError(state.path, 'is unavailable'));
+        entry.reject(
+          state.disconnected
+            ? makeLifecycleCancellationError(state, 'is disconnected')
+            : makeTransportError(state.path, 'is unavailable'),
+        );
         continue;
       }
       try {
@@ -463,7 +597,7 @@ const ExtendedHID = {
         throw makeTransportError(state.path, 'is poisoned');
       }
       if (state.disconnected) {
-        throw makeTransportError(state.path, 'is disconnected');
+        throw makeLifecycleCancellationError(state, 'is disconnected');
       }
       if (state.device.opened) {
         state.hasOpened = true;
@@ -483,7 +617,11 @@ const ExtendedHID = {
 
       const generation = state.generation;
       const openPromise = (async () => {
-        await state.device.open();
+        try {
+          await state.device.open();
+        } catch (error) {
+          throw makeDeviceIOError(state, generation, 'open', error);
+        }
         if (
           state.generation !== generation ||
           state.poisoned ||
@@ -515,6 +653,70 @@ const ExtendedHID = {
         !state.poisoned &&
         !state.disconnected
       );
+    }
+
+    async classifyLifecycleCancellation(
+      error: unknown,
+      expectedGeneration: number,
+    ): Promise<HIDTransportLifecycleCancellationError | undefined> {
+      if (isHIDTransportLifecycleCancellationError(error)) {
+        return error;
+      }
+      if (
+        !(error instanceof HIDTransportDeviceIOError) ||
+        error.path !== this.path ||
+        error.generation !== expectedGeneration
+      ) {
+        return undefined;
+      }
+
+      const state = this.state;
+      if (state.disconnected) {
+        return makeLifecycleCancellationError(
+          state,
+          `device disappeared during ${error.operation}`,
+          error.originalError,
+        );
+      }
+
+      const connected = await isWebHIDDeviceConnected(this._hidDevice._device);
+      if (connected !== false) {
+        return undefined;
+      }
+
+      const cancellation = new HIDTransportLifecycleCancellationError(
+        this.path,
+        expectedGeneration,
+        `device disappeared during ${error.operation}`,
+        error.originalError,
+      );
+      if (state.device === this._hidDevice._device && !state.disconnected) {
+        // The failed request has already retired its generation. Once WebHID's
+        // connected-device set proves the physical device is gone, reclassify
+        // the quarantine state instead of rotating the generation a second time.
+        state.poisoned = false;
+        state.disconnected = true;
+      }
+      return cancellation;
+    }
+
+    async confirmLifecycleCancellation(
+      error: unknown,
+      expectedGeneration: number,
+    ): Promise<HIDTransportLifecycleCancellationError | undefined> {
+      const immediate = await this.classifyLifecycleCancellation(
+        error,
+        expectedGeneration,
+      );
+      if (immediate || !isHIDTransportDeviceIOError(error)) {
+        return immediate;
+      }
+
+      await waitForWebHIDDisconnect(
+        this._hidDevice._device,
+        lifecycleConfirmationMs,
+      );
+      return this.classifyLifecycleCancellation(error, expectedGeneration);
     }
 
     addInputReportHandler(
@@ -597,17 +799,21 @@ const ExtendedHID = {
           const sendFailure = state.device.sendReport(0, data).then(
             () => new Promise<never>(() => undefined),
             (error) => {
+              const writeError = makeDeviceIOError(
+                state,
+                generation,
+                'write',
+                error,
+              );
               if (state.generation === generation && !state.poisoned) {
                 replaceGeneration(
                   state,
                   'failed during write',
                   {poisoned: true, disconnected: false},
-                  error instanceof Error
-                    ? error
-                    : new HIDTransportError(String(error)),
+                  writeError,
                 );
               }
-              throw error;
+              throw writeError;
             },
           );
           return await Promise.race([responsePromise, sendFailure]);
@@ -620,10 +826,17 @@ const ExtendedHID = {
             state.generation === generation &&
             !state.poisoned
           ) {
-            replaceGeneration(state, 'failed during request', {
-              poisoned: true,
-              disconnected: false,
-            });
+            replaceGeneration(
+              state,
+              'failed during request',
+              {
+                poisoned: true,
+                disconnected: false,
+              },
+              error instanceof Error
+                ? error
+                : new HIDTransportError(String(error)),
+            );
           }
           throw error;
         }
@@ -747,10 +960,15 @@ export const tryForgetDevice = async (
   } finally {
     const state = transportStates.get(device.path);
     if (state) {
-      replaceGeneration(state, 'was forgotten', {
-        poisoned: false,
-        disconnected: true,
-      });
+      replaceGeneration(
+        state,
+        'was forgotten',
+        {
+          poisoned: false,
+          disconnected: true,
+        },
+        makeLifecycleCancellationError(state, 'was forgotten'),
+      );
     }
     delete ExtendedHID._cache[device.path];
   }
@@ -758,10 +976,14 @@ export const tryForgetDevice = async (
 
 export const configureHIDTransport = (options: {
   responseTimeoutMs?: number;
+  lifecycleConfirmationMs?: number;
   now?: () => number;
 }) => {
   if (options.responseTimeoutMs !== undefined) {
     responseTimeoutMs = options.responseTimeoutMs;
+  }
+  if (options.lifecycleConfirmationMs !== undefined) {
+    lifecycleConfirmationMs = options.lifecycleConfirmationMs;
   }
   if (options.now) {
     now = options.now;
@@ -810,11 +1032,16 @@ export const registerHIDDeviceForTesting = (
 
 export const disconnectHIDDeviceForTesting = (path: string) => {
   const state = transportStates.get(path);
-  if (state) {
-    replaceGeneration(state, 'disconnected', {
-      poisoned: false,
-      disconnected: true,
-    });
+  if (state && !state.disconnected) {
+    replaceGeneration(
+      state,
+      'disconnected',
+      {
+        poisoned: false,
+        disconnected: true,
+      },
+      makeLifecycleCancellationError(state, 'was disconnected'),
+    );
   }
 };
 
@@ -829,6 +1056,7 @@ export const resetHIDTransportForTesting = () => {
     (path) => delete ExtendedHID._cache[path],
   );
   responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS;
+  lifecycleConfirmationMs = DEFAULT_LIFECYCLE_CONFIRMATION_MS;
   now = () => Date.now();
 };
 

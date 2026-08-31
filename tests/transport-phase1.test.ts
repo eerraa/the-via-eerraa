@@ -6,11 +6,18 @@ import {
   disconnectHIDDeviceForTesting,
   getHIDTransportDebugState,
   HID,
+  isHIDTransportLifecycleCancellationError,
   HIDTransportTimeoutError,
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
 } from '../src/shims/node-hid';
 import {KeyboardAPI} from '../src/utils/keyboard-api';
+import {store as appStore} from '../src/store';
+import errorsReducer, {
+  clearAppErrors,
+  getAppErrors,
+} from '../src/store/errorsSlice';
+import {reloadConnectedDevices} from '../src/store/devicesThunks';
 import {
   getUISyncCommandIds,
   parseUISyncRequest,
@@ -22,6 +29,7 @@ import devicesReducer, {
   markDeviceReady,
   selectDevice,
   updateConnectedDevices,
+  updateSupportedIds,
 } from '../src/store/devicesSlice';
 import keymapReducer, {
   getLoadProgress,
@@ -115,6 +123,42 @@ const waitUntil = async (predicate: () => boolean, timeoutMs = 250) => {
 };
 
 const asHIDDevice = (device: FakeHIDDevice) => device as unknown as HIDDevice;
+
+const installFakeNavigatorHID = (getDevices: () => HIDDevice[]) => {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(navigator, 'hid');
+  const listeners = new Map<string, Set<(event: {device: HIDDevice}) => void>>();
+  const hid = {
+    getDevices: async () => getDevices(),
+    requestDevice: async () => getDevices(),
+    addEventListener: (
+      type: string,
+      listener: (event: {device: HIDDevice}) => void,
+    ) => {
+      const typeListeners = listeners.get(type) ?? new Set();
+      typeListeners.add(listener);
+      listeners.set(type, typeListeners);
+    },
+    removeEventListener: (
+      type: string,
+      listener: (event: {device: HIDDevice}) => void,
+    ) => listeners.get(type)?.delete(listener),
+  };
+  Object.defineProperty(navigator, 'hid', {
+    configurable: true,
+    value: hid,
+  });
+  return {
+    emit: (type: 'connect' | 'disconnect', device: HIDDevice) =>
+      listeners.get(type)?.forEach((listener) => listener({device})),
+    restore: () => {
+      if (originalDescriptor) {
+        Object.defineProperty(navigator, 'hid', originalDescriptor);
+      } else {
+        delete (navigator as Navigator & {hid?: HID}).hid;
+      }
+    },
+  };
+};
 
 const connectFake = async (path: string, device = new FakeHIDDevice()) => {
   registerHIDDeviceForTesting(path, asHIDDevice(device));
@@ -211,11 +255,16 @@ const attachMacroHarness = (
 
 beforeEach(() => {
   resetHIDTransportForTesting();
-  configureHIDTransport({responseTimeoutMs: 200});
+  configureHIDTransport({
+    responseTimeoutMs: 200,
+    lifecycleConfirmationMs: 10,
+  });
+  appStore.dispatch(clearAppErrors());
 });
 
 afterEach(() => {
   resetHIDTransportForTesting();
+  appStore.dispatch(clearAppErrors());
 });
 
 describe('per-device WebHID transport', () => {
@@ -332,6 +381,163 @@ describe('per-device WebHID transport', () => {
     expect(getHIDTransportDebugState('late')?.hasPendingResponse).toBe(true);
     replacement.emit(payload(0x01, 0x00, 0x0d));
     expect(Array.from(await next).slice(0, 3)).toEqual([0x01, 0x00, 0x0d]);
+  });
+
+  test('a genuine KeyboardAPI timeout remains user-visible', async () => {
+    configureHIDTransport({responseTimeoutMs: 15});
+    await connectFake('app-timeout');
+    const api = new KeyboardAPI('app-timeout');
+
+    await expect(api.getProtocolVersion()).rejects.toBeInstanceOf(
+      HIDTransportTimeoutError,
+    );
+
+    const errors = getAppErrors(appStore.getState());
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message.length).toBeGreaterThan(0);
+    expect(getHIDTransportDebugState('app-timeout')?.poisoned).toBe(true);
+    expect(getHIDTransportDebugState('app-timeout')?.disconnected).toBe(false);
+  });
+
+  test('a wrong-prefix response remains a user-visible failed protocol exchange', async () => {
+    configureHIDTransport({responseTimeoutMs: 15});
+    const {device} = await connectFake('bad-response');
+    device.onSend = () => {
+      device.emit(payload(0x7f, 0x00, 0x0d));
+    };
+    const api = new KeyboardAPI('bad-response');
+
+    const request = api.getProtocolVersion().then(
+      () => undefined,
+      (error) => error,
+    );
+    await waitUntil(
+      () => getHIDTransportDebugState('bad-response')?.diagnosticCount === 1,
+    );
+    expect(getHIDTransportDebugState('bad-response')?.hasPendingResponse).toBe(
+      true,
+    );
+    expect(await request).toBeInstanceOf(HIDTransportTimeoutError);
+
+    const errors = getAppErrors(appStore.getState());
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message.length).toBeGreaterThan(0);
+  });
+
+  test('a write failure while the WebHID device is still connected remains user-visible', async () => {
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    const navigatorHID = installFakeNavigatorHID(() => [webDevice]);
+    try {
+      await connectFake('connected-write-failure', fake);
+      fake.onSend = () => {
+        throw new Error('connected write failed');
+      };
+      const api = new KeyboardAPI('connected-write-failure');
+
+      await expect(api.getProtocolVersion()).rejects.toThrow(
+        'connected write failed',
+      );
+
+      await waitUntil(() => getAppErrors(appStore.getState()).length === 1);
+      const errors = getAppErrors(appStore.getState());
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('connected write failed');
+      expect(
+        getHIDTransportDebugState('connected-write-failure')?.poisoned,
+      ).toBe(true);
+      expect(
+        getHIDTransportDebugState('connected-write-failure')?.disconnected,
+      ).toBe(false);
+    } finally {
+      navigatorHID.restore();
+    }
+  });
+
+  test('device disappearance turns the failed write and queued work into silent lifecycle cancellation', async () => {
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    let connected = true;
+    const navigatorHID = installFakeNavigatorHID(() =>
+      connected ? [webDevice] : [],
+    );
+    const generationChanges: {path: string; generation: number; reason: string}[] =
+      [];
+    const removeGenerationListener = addHIDTransportGenerationListener(
+      (change) => generationChanges.push(change),
+    );
+    try {
+      const {hid} = await connectFake('disappeared-write', fake);
+      const initialGeneration = hid.getConnectionGeneration();
+      fake.onSend = () => {
+        connected = false;
+        throw new Error('generic write rejection after removal');
+      };
+      const api = new KeyboardAPI('disappeared-write');
+
+      const results = await Promise.allSettled([
+        api.getProtocolVersion(),
+        api.getProtocolVersion(),
+        api.getLayerCount(),
+      ]);
+
+      expect(results).toHaveLength(3);
+      results.forEach((result) => {
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+          expect(isHIDTransportLifecycleCancellationError(result.reason)).toBe(
+            true,
+          );
+        }
+      });
+      expect(getAppErrors(appStore.getState())).toHaveLength(0);
+      expect(getHIDTransportDebugState('disappeared-write')?.generation).toBe(
+        initialGeneration + 1,
+      );
+      expect(getHIDTransportDebugState('disappeared-write')?.poisoned).toBe(
+        false,
+      );
+      expect(getHIDTransportDebugState('disappeared-write')?.disconnected).toBe(
+        true,
+      );
+      expect(generationChanges).toHaveLength(1);
+      expect(generationChanges[0].reason).toBe('failed during write');
+    } finally {
+      removeGenerationListener();
+      navigatorHID.restore();
+    }
+  });
+
+  test('a delayed WebHID disconnect after write rejection stays silent after the device was already loaded', async () => {
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    let connected = true;
+    const navigatorHID = installFakeNavigatorHID(() =>
+      connected ? [webDevice] : [],
+    );
+    try {
+      await connectFake('post-load-disconnect-race', fake);
+      await HID.getFilteredDevices();
+      fake.onSend = () => {
+        setTimeout(() => {
+          connected = false;
+          navigatorHID.emit('disconnect', webDevice);
+        }, 5);
+        throw new Error('write rejected just before disconnect event');
+      };
+      const api = new KeyboardAPI('post-load-disconnect-race');
+
+      await expect(api.getProtocolVersion()).rejects.toThrow(
+        'write rejected just before disconnect event',
+      );
+      await waitUntil(
+        () => getHIDTransportDebugState('post-load-disconnect-race')?.disconnected === true,
+      );
+
+      expect(getAppErrors(appStore.getState())).toHaveLength(0);
+    } finally {
+      navigatorHID.restore();
+    }
   });
 
   test('disconnect/reconnect rejects old work and discards the old listener generation', async () => {
@@ -632,6 +838,91 @@ describe('per-device WebHID transport', () => {
   });
 });
 
+const makeProtocolReloadStore = () =>
+  configureStore({
+    reducer: {
+      devices: devicesReducer,
+      definitions: definitionsReducer,
+      errors: errorsReducer,
+    },
+  });
+
+describe('protocol probe lifecycle classification', () => {
+  test('a successful but unsupported protocol response remains an invalid-protocol error', async () => {
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    (webDevice as HIDDevice & {__path?: string}).__path = 'invalid-protocol';
+    fake.onSend = (data) => {
+      if (data[0] === 0x01) {
+        fake.emit(payload(0x01, 0x00, 0x06));
+      }
+    };
+    const navigatorHID = installFakeNavigatorHID(() => [webDevice]);
+    try {
+      const protocolStore = makeProtocolReloadStore();
+      const dispatch = protocolStore.dispatch as any;
+      const vendorProductId = fake.vendorId * 65536 + fake.productId;
+      dispatch(
+        updateSupportedIds({
+          [vendorProductId]: {v2: true, v3: true},
+        }),
+      );
+
+      await dispatch(reloadConnectedDevices());
+
+      const state = protocolStore.getState();
+      expect(state.errors.appErrors).toHaveLength(1);
+      expect(state.errors.appErrors[0].message).toBe(
+        'Received invalid protocol version from device',
+      );
+      expect(
+        state.devices.invalidProtocolDevicePaths['invalid-protocol'],
+      ).toBeDefined();
+    } finally {
+      navigatorHID.restore();
+    }
+  });
+
+  test('device disappearance during protocol probing is neither an AppError nor invalid protocol', async () => {
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    (webDevice as HIDDevice & {__path?: string}).__path =
+      'protocol-probe-disappeared';
+    let connected = true;
+    fake.onSend = () => {
+      connected = false;
+      throw new Error('write rejected after device removal');
+    };
+    const navigatorHID = installFakeNavigatorHID(() =>
+      connected ? [webDevice] : [],
+    );
+    try {
+      const protocolStore = makeProtocolReloadStore();
+      const dispatch = protocolStore.dispatch as any;
+      const vendorProductId = fake.vendorId * 65536 + fake.productId;
+      dispatch(
+        updateSupportedIds({
+          [vendorProductId]: {v2: true, v3: true},
+        }),
+      );
+
+      await dispatch(reloadConnectedDevices());
+
+      const state = protocolStore.getState();
+      expect(state.errors.appErrors).toHaveLength(0);
+      expect(Object.keys(state.devices.invalidProtocolDevicePaths)).toHaveLength(
+        0,
+      );
+      expect(getAppErrors(appStore.getState())).toHaveLength(0);
+      expect(
+        getHIDTransportDebugState('protocol-probe-disappeared')?.disconnected,
+      ).toBe(true);
+    } finally {
+      navigatorHID.restore();
+    }
+  });
+});
+
 describe('exact macro buffer transactions', () => {
   test('writes RESET, FF, bounded payload chunks, zero, then an exact marker GET', async () => {
     const {device} = await connectFake('macro-transcript');
@@ -883,6 +1174,94 @@ const makeCacheTestStore = () =>
   });
 
 describe('explicit device and cache generation ownership', () => {
+  test('disconnect during keymap load invalidates the selected lifecycle and cannot commit a late layer', async () => {
+    const vendorProductId = 1163042818;
+    const generatedDefinition = await Bun.file(
+      'public/definitions/era/v3/1163042818.json',
+    ).json();
+    const definition = {
+      ...generatedDefinition,
+      matrix: {rows: 1, cols: 1},
+    };
+    const connectedDevice = makeConnectedDevice(
+      'keymap-disconnect',
+      vendorProductId,
+    );
+    const {device: fake, hid} = await connectFake(connectedDevice.path);
+    let releaseKeymapResponse: (() => void) | undefined;
+    fake.onSend = (data) => {
+      if (data[0] === 0x01) {
+        fake.emit(payload(0x01, 0x00, 0x0d));
+      } else if (data[0] === 0x11) {
+        fake.emit(payload(0x11, 0x01));
+      } else if (data[0] === 0x12) {
+        releaseKeymapResponse = () =>
+          fake.emit(payload(0x12, data[1], data[2], data[3], 0x12, 0x34));
+      }
+    };
+
+    const cacheStore = makeCacheTestStore();
+    const dispatch = cacheStore.dispatch as any;
+    dispatch(
+      updateDefinitions({
+        [vendorProductId]: {v3: definition},
+      } as any),
+    );
+    dispatch(
+      updateConnectedDevices({
+        [connectedDevice.path]: connectedDevice,
+      }),
+    );
+    const initialGeneration = hid.getConnectionGeneration();
+    dispatch(
+      selectDevice({
+        device: connectedDevice,
+        connectionGeneration: initialGeneration,
+      }),
+    );
+    const selectionGeneration = getSelectionGeneration(cacheStore.getState() as any);
+    const removeGenerationListener = addHIDTransportGenerationListener(
+      ({path, generation}) =>
+        dispatch(
+          invalidateDeviceConnection({
+            devicePath: path,
+            connectionGeneration: generation,
+          }),
+        ),
+    );
+
+    try {
+      const loadResult = Promise.resolve(
+        dispatch(loadKeymapFromDevice(connectedDevice)),
+      ).then(
+        () => undefined,
+        (error) => error,
+      );
+      await waitUntil(() => releaseKeymapResponse !== undefined);
+
+      disconnectHIDDeviceForTesting(connectedDevice.path);
+      const error = await loadResult;
+      releaseKeymapResponse?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(isHIDTransportLifecycleCancellationError(error)).toBe(true);
+      const state = cacheStore.getState();
+      expect(state.devices.selectedConnectionNeedsReload).toBe(true);
+      expect(state.devices.selectionGeneration).toBe(selectionGeneration + 1);
+      expect(state.devices.selectedConnectionGeneration).toBe(
+        initialGeneration + 1,
+      );
+      expect(state.keymap.rawDeviceMap[connectedDevice.path]).toHaveLength(1);
+      expect(state.keymap.rawDeviceMap[connectedDevice.path][0].isLoaded).toBe(
+        false,
+      );
+      expect(getLoadProgress(state as any)).toBe(0);
+      expect(getAppErrors(appStore.getState())).toHaveLength(0);
+    } finally {
+      removeGenerationListener();
+    }
+  });
+
   test('a keymap read continues on its captured API and cannot complete the newly selected device cache', async () => {
     const vendorProductId = 1163042818;
     const generatedDefinition = await Bun.file(

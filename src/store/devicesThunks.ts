@@ -6,7 +6,10 @@ import {
   syncStore,
 } from '../utils/device-store';
 import {getRecognisedDevices, getVendorProductId} from '../utils/hid-keyboards';
-import {KeyboardAPI} from '../utils/keyboard-api';
+import {
+  isSupportedVIAProtocolVersion,
+  KeyboardAPI,
+} from '../utils/keyboard-api';
 import type {AppThunk} from './index';
 import {
   reloadDefinitions,
@@ -139,12 +142,14 @@ const selectConnectedDevice =
           }
         }
       } catch (e) {
-        dispatch(
-          logAppError({
-            message: 'Loading lighting/menu data failed',
-            deviceInfo,
-          }),
-        );
+        if (isCurrentSelection()) {
+          dispatch(
+            logAppError({
+              message: 'Loading lighting/menu data failed',
+              deviceInfo,
+            }),
+          );
+        }
       }
       if (!isCurrentSelection()) return;
 
@@ -213,15 +218,30 @@ export const reloadConnectedDevices =
       forceRequest,
     );
 
-    const protocolVersions = await Promise.all(
-      recognisedDevices.map((device) =>
-        new KeyboardAPI(device.path).getProtocolVersion(),
-      ),
+    const protocolProbes = await Promise.all(
+      recognisedDevices.map(async (device) => {
+        try {
+          return {
+            device,
+            protocol: await new KeyboardAPI(device.path).getProtocolVersion(),
+          } as const;
+        } catch (error) {
+          // hidCommand owns user-facing logging for genuine transport failures.
+          // Lifecycle cancellations are deliberately silent and simply remove
+          // the disappeared device from this reload generation.
+          return {device, error} as const;
+        }
+      }),
     );
-
-    const recognisedDevicesWithBadProtocol = recognisedDevices.filter(
-      (_, i) => protocolVersions[i] === -1,
+    const successfulProtocolProbes = protocolProbes.filter(
+      (
+        probe,
+      ): probe is Extract<(typeof protocolProbes)[number], {protocol: number}> =>
+        'protocol' in probe,
     );
+    const recognisedDevicesWithBadProtocol = successfulProtocolProbes
+      .filter(({protocol}) => !isSupportedVIAProtocolVersion(protocol))
+      .map(({device}) => device);
 
     if (recognisedDevicesWithBadProtocol.length) {
       // Should we exit early??
@@ -260,11 +280,10 @@ export const reloadConnectedDevices =
       ),
     );
 
-    const authorizedDevices: AuthorizedDevice[] = recognisedDevices
-      .filter((_, i) => protocolVersions[i] !== -1)
-      .map((device, idx) => {
+    const authorizedDevices: AuthorizedDevice[] = successfulProtocolProbes
+      .filter(({protocol}) => isSupportedVIAProtocolVersion(protocol))
+      .map(({device, protocol}) => {
         const {path, productId, vendorId, productName} = device;
-        const protocol = protocolVersions[idx];
         return {
           path,
           productId,
