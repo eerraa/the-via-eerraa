@@ -289,6 +289,16 @@ timeout. The folded detail carries only the 10-minute default and keypress wake
 behaviour. DUAL-HOST/HOST-PEER ownership, USB suspend, and frame-loss
 terminology are firmware mechanics and are omitted from this user-facing help.
 
+The custom exact-second SLEEP surface has two independent write lifecycles.
+`RGB Sleep` is the master and writes immediately when its toggle changes. It is
+never staged behind the submenu's `Apply` button. Only
+`id_qmk_rgb_sleep_timeout_exact` is deferred: editing the seconds field enables
+`Apply`, and that button commits only the timeout draft. The timeout row's V3
+`showIf` follows the authoritative/optimistic menu value for
+`id_qmk_rgb_sleep_enable`, so switching the master off hides the timeout as soon
+as the immediate master write is accepted (and restores it if that write is
+rolled back).
+
 ## 7. Per-control ⓘ
 
 One submenu-top ⓘ cannot explain DEBOUNCE. The chosen layout puts the answer

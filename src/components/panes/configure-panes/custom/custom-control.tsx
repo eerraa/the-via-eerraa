@@ -30,6 +30,7 @@ import {
   isExactSecondCommand,
 } from 'src/utils/era-exact-sec';
 import {
+  shouldDeferApplyCommand,
   useDeferredApplyMode,
   useDeferredApplyRegistration,
 } from './deferred-apply';
@@ -470,9 +471,10 @@ const decodeNullTerminatedUTF8 = (value?: number[]) => {
 
 const VIACustomControl = (props: VIACustomControlProps) => {
   const {t} = useTranslation();
-  const deferApply = useDeferredApplyMode();
+  const submenuHasDeferredApply = useDeferredApplyMode();
   const {content, type, options, value} = props as any;
   const [name, ...command] = content;
+  const deferApply = shouldDeferApplyCommand(submenuHasDeferredApply, name);
   const controlId = `${(props as {_id?: string})._id ?? name}:${type}`;
   switch (type) {
     case 'label': {

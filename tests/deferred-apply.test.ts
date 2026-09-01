@@ -1,6 +1,9 @@
 import {describe, expect, test} from 'bun:test';
 import {readFileSync} from 'node:fs';
-import {isDeferredApplyCommand} from '../src/components/panes/configure-panes/custom/deferred-apply';
+import {
+  isDeferredApplyCommand,
+  shouldDeferApplyCommand,
+} from '../src/components/panes/configure-panes/custom/deferred-apply';
 import {canApplyIntegerDraft} from '../src/utils/integer-field';
 import {canApplyMillisecondDraft} from '../src/utils/millisecond-field';
 
@@ -22,6 +25,16 @@ describe('deferred TAPPING/TAPDANCE/SLEEP apply', () => {
     expect(isDeferredApplyCommand('id_qmk_rgb_sleep_timeout')).toBe(false);
     expect(isDeferredApplyCommand('id_qmk_rgb_matrix_brightness')).toBe(false);
     expect(isDeferredApplyCommand(undefined)).toBe(false);
+  });
+
+  test('defers only the matching command, not every control in the same submenu', () => {
+    expect(
+      shouldDeferApplyCommand(true, 'id_qmk_rgb_sleep_timeout_exact'),
+    ).toBe(true);
+    expect(shouldDeferApplyCommand(true, 'id_qmk_rgb_sleep_enable')).toBe(false);
+    expect(
+      shouldDeferApplyCommand(false, 'id_qmk_rgb_sleep_timeout_exact'),
+    ).toBe(false);
   });
 
   test('Apply stays off for an unchanged ms value and on for a different valid value', () => {

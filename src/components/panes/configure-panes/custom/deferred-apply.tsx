@@ -17,6 +17,11 @@ export const isDeferredApplyCommand = (name: string | undefined) =>
     name.startsWith('id_qmk_tapdance_') ||
     name === 'id_qmk_rgb_sleep_timeout_exact');
 
+export const shouldDeferApplyCommand = (
+  submenuHasDeferredApply: boolean,
+  name: string | undefined,
+) => submenuHasDeferredApply && isDeferredApplyCommand(name);
+
 type DeferredApplyHandle = {
   canApply: boolean;
   apply: () => Promise<void>;
