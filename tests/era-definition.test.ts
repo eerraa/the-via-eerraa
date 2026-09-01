@@ -72,6 +72,7 @@ const collectCommandControls = (
     label?: string;
     type?: string;
     options?: unknown;
+    showIf?: string;
   }[] = [],
 ) => {
   if (Array.isArray(value)) {
@@ -86,6 +87,7 @@ const collectCommandControls = (
     label?: unknown;
     type?: unknown;
     options?: unknown;
+    showIf?: unknown;
   };
   if (
     Array.isArray(record.content) &&
@@ -100,6 +102,7 @@ const collectCommandControls = (
       label: typeof record.label === 'string' ? record.label : undefined,
       type: typeof record.type === 'string' ? record.type : undefined,
       options: record.options,
+      showIf: typeof record.showIf === 'string' ? record.showIf : undefined,
     });
   }
   Object.values(record).forEach((item) => collectCommandControls(item, into));
@@ -196,6 +199,48 @@ const expectedUsbDiagnosticsDefinitionIds = [
   'intigrity80-h7s',
   'may65-h7s',
   'sculpturei-h7s',
+].sort();
+
+const expectedRgbSleepTimeoutDefinitionIds = [
+  'brick60-h7s',
+  'brick65-h7s',
+  'intigrity80-h7s',
+  'may65-h7s',
+  'sculpturei-h7s',
+  'tomak-tkl-left',
+  'tomak-tkl-right',
+  'tomak79h-left',
+  'tomak79h-right',
+  'tomak79s-left',
+  'tomak79s-right',
+].sort();
+
+const expectedRgbSleepToggleDefinitionIds = [
+  '7b75',
+  'brick60-h7s',
+  'brick65',
+  'brick65-h7s',
+  'brick65s',
+  'chickpad',
+  'classicd-a1-ug',
+  'classicd-core',
+  'classicd-coreless',
+  'fave65s',
+  'intigrity80-h7s',
+  'klein-sd',
+  'may65-h7s',
+  'n86',
+  'n87',
+  'newone-odessey60h',
+  'newone-odessey60s',
+  'riley',
+  'sculpturei-h7s',
+  'tomak-tkl-left',
+  'tomak-tkl-right',
+  'tomak79h-left',
+  'tomak79h-right',
+  'tomak79s-left',
+  'tomak79s-right',
 ].sort();
 
 describe('era definition tapdanceKeycodes', () => {
@@ -510,13 +555,27 @@ describe('canonical ERA definition inventory', () => {
       ]);
       expect(
         collectCommandControls(definition).filter(
-          ({name}) => name === 'id_qmk_rgb_sleep_timeout',
+          ({name}) => name === 'id_qmk_rgb_sleep_timeout_exact',
         ),
       ).toEqual([
         expect.objectContaining({
           channel: 18,
-          id: 1,
-          label: 'RGB Sleep Timeout',
+          id: 2,
+          label: 'RGB Sleep Timeout (s)',
+          options: [1, 65535],
+          showIf: '{id_qmk_rgb_sleep_enable} == 1',
+        }),
+      ]);
+      expect(
+        collectCommandControls(definition).filter(
+          ({name}) => name === 'id_qmk_rgb_sleep_enable',
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          channel: 18,
+          id: 3,
+          label: 'RGB Sleep',
+          type: 'toggle',
         }),
       ]);
       const mouse = collectCommandControls(definition).filter(({name}) =>
@@ -549,32 +608,57 @@ describe('canonical ERA definition inventory', () => {
     expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
   });
 
-  test('gives only the six TOMAK halves the exact-second RGB sleep control', () => {
-    const expected = [
-      'tomak-tkl-left',
-      'tomak-tkl-right',
-      'tomak79h-left',
-      'tomak79h-right',
-      'tomak79s-left',
-      'tomak79s-right',
-    ].sort();
-    const actual: string[] = [];
+  test('gives every RGB-capable definition the master toggle and only TOMAK/H7S the exact-second timeout', () => {
+    const actualToggle: string[] = [];
+    const actualTimeout: string[] = [];
     for (const entry of manifest.definitions) {
-      const controls = collectCommandControls(readJSON(entry.path)).filter(
+      const definition = readJSON(entry.path);
+      const allControls = collectCommandControls(definition);
+      const controls = allControls.filter(
         ({name}) => name === 'id_qmk_rgb_sleep_timeout_exact',
       );
-      if (controls.length === 0) {
+      const toggles = allControls.filter(
+        ({name}) => name === 'id_qmk_rgb_sleep_enable',
+      );
+      if (controls.length === 0 && toggles.length === 0) {
         continue;
       }
-      actual.push(entry.id);
-      expect(controls).toHaveLength(1);
-      expect(controls[0]).toMatchObject({
-        channel: 9,
-        id: 11,
-        options: [1, 65535],
-      });
+      if (toggles.length !== 0) {
+        actualToggle.push(entry.id);
+        expect(toggles).toHaveLength(1);
+        expect(toggles[0]).toMatchObject({label: 'RGB Sleep', type: 'toggle'});
+      }
+      if (controls.length !== 0) {
+        actualTimeout.push(entry.id);
+        expect(controls).toHaveLength(1);
+        expect(controls[0].showIf).toBe('{id_qmk_rgb_sleep_enable} == 1');
+      }
+      const serialized = JSON.stringify(definition);
+      if (entry.exactMsFamily === 'h7s') {
+        expect(controls).toHaveLength(1);
+        expect(controls[0]).toMatchObject({
+          channel: 18,
+          id: 2,
+          options: [1, 65535],
+        });
+        expect(toggles[0]).toMatchObject({channel: 18, id: 3});
+        expect(serialized).toContain('id_qmk_rgblight_');
+      } else if (expectedRgbSleepTimeoutDefinitionIds.includes(entry.id)) {
+        expect(controls).toHaveLength(1);
+        expect(controls[0]).toMatchObject({
+          channel: 9,
+          id: 11,
+          options: [1, 65535],
+        });
+        expect(toggles[0]).toMatchObject({channel: 9, id: 12});
+        expect(serialized).toContain('id_qmk_rgb_matrix_');
+      } else {
+        expect(controls).toHaveLength(0);
+        expect(toggles[0]).toMatchObject({channel: 9, id: 12});
+      }
     }
-    expect(actual.sort()).toEqual(expected);
+    expect(actualToggle.sort()).toEqual(expectedRgbSleepToggleDefinitionIds);
+    expect(actualTimeout.sort()).toEqual(expectedRgbSleepTimeoutDefinitionIds);
   });
 
   test('hides fixed SOCD and KKUK mode rows and keeps shared control order', () => {
@@ -917,19 +1001,10 @@ describe('canonical ERA definition inventory', () => {
       'tomak79s-right',
     ],
     id_qmk_rgb_sleep_timeout_exact: [
-      'tomak-tkl-left',
-      'tomak-tkl-right',
-      'tomak79h-left',
-      'tomak79h-right',
-      'tomak79s-left',
-      'tomak79s-right',
+      ...expectedRgbSleepTimeoutDefinitionIds,
     ],
-    id_qmk_rgb_sleep_timeout: [
-      'brick60-h7s',
-      'brick65-h7s',
-      'intigrity80-h7s',
-      'may65-h7s',
-      'sculpturei-h7s',
+    id_qmk_rgb_sleep_enable: [
+      ...expectedRgbSleepToggleDefinitionIds,
     ],
   };
 

@@ -610,6 +610,6 @@
   "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.": "保存される設定が変わってから数秒後、インジケーターとともに両ユニットが値を合わせます。INPUT SYNC と RGB SYNC を完全に機能させるには、まずこれをオンにしておく必要があります。",
   "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.": "両ユニットを PC に接続したとき、レイヤーとキー入力の判定を共有して 1 台のキーボードのように動作させます。",
   "Lines the lighting up across both units, reactive effects included.": "両ユニットのライティングを 1 台のキーボードのようにそろえます。リアクティブなエフェクトも含みます。",
-  "Turns RGB off after a period with no key input.": "キー入力がない時間が続くと RGB を消灯します。",
-  "Default is 10 minutes. Pressing a key wakes the RGB.": "既定は 10 分です。キーを押すと RGB が復帰します。"
+  "Controls automatic RGB sleep.": "RGB の自動スリープを制御します。",
+  "On by default. Turning it off disables RGB sleep for idle timeout, USB suspend, and host loss.": "既定はオンです。オフにすると、アイドルタイムアウト、USB サスペンド、ホスト切断による RGB スリープがすべて無効になります。"
 }

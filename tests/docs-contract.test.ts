@@ -264,8 +264,8 @@ describe('docs state the same wire constants the source does', () => {
     );
   });
 
-  test('H7S RGB sleep address matches MAP and the H7S definitions', () => {
-    const found: Array<{channel: number; id: number}> = [];
+  test('H7S RGB sleep exact and enable addresses match MAP and the H7S custom definitions', () => {
+    const found: Array<{name: string; channel: number; id: number}> = [];
     const walk = (node: unknown): void => {
       if (Array.isArray(node)) {
         node.forEach(walk);
@@ -277,11 +277,13 @@ describe('docs state the same wire constants the source does', () => {
       const content = (node as {content?: unknown}).content;
       if (
         Array.isArray(content) &&
-        content[0] === 'id_qmk_rgb_sleep_timeout' &&
+        (content[0] === 'id_qmk_rgb_sleep_timeout_exact' ||
+          content[0] === 'id_qmk_rgb_sleep_enable') &&
+        typeof content[0] === 'string' &&
         typeof content[1] === 'number' &&
         typeof content[2] === 'number'
       ) {
-        found.push({channel: content[1], id: content[2]});
+        found.push({name: content[0], channel: content[1], id: content[2]});
       }
       Object.values(node as Record<string, unknown>).forEach(walk);
     };
@@ -293,11 +295,19 @@ describe('docs state the same wire constants the source does', () => {
         ),
       ),
     );
-    expect(found).toEqual([{channel: 18, id: 1}]);
+    expect(found).toEqual([
+      {name: 'id_qmk_rgb_sleep_enable', channel: 18, id: 3},
+      {name: 'id_qmk_rgb_sleep_timeout_exact', channel: 18, id: 2},
+    ]);
     expect(MAP).toContain(
-      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |',
+      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 2 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) |',
+    );
+    expect(MAP).toContain(
+      '| RGB SLEEP master | SYSTEM channel 9 / value 12 (`id_qmk_rgb_sleep_enable`) | SYSTEM channel 18 / value 3 (`id_qmk_rgb_sleep_enable`) |',
     );
     expect(MAP).toContain('V3 Custom Value channel 18 / id 1');
+    expect(MAP).toContain('V3 Custom Value channel 18 / id 2');
+    expect(MAP).toContain('V3 Custom Value channel 18 / id 3');
   });
 });
 

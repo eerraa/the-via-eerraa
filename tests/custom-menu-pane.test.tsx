@@ -243,6 +243,7 @@ const menuData = {
   id_custom_badge_only: [1],
   id_custom_indicator_toggle: [1],
   id_custom_indicator_override: [0],
+  id_qmk_rgb_sleep_enable: [1],
   id_qmk_rgb_sleep_timeout_exact: [0x02, 0x58],
   id_qmk_rgb_sleep_timeout: [10],
   id_qmk_split_link_level: [0],
@@ -464,9 +465,16 @@ const sleepSubmenu = {
   _id: '-0',
   content: [
     {
+      label: 'RGB Sleep',
+      type: 'toggle',
+      _id: '-0-0',
+      content: ['id_qmk_rgb_sleep_enable', 9, 12],
+    },
+    {
       label: 'RGB Sleep Timeout (s)',
       type: 'range',
-      _id: '-0-0',
+      _id: '-0-1',
+      showIf: '{id_qmk_rgb_sleep_enable} == 1',
       content: ['id_qmk_rgb_sleep_timeout_exact', 9, 11],
       options: [1, 65535],
     },
@@ -478,18 +486,18 @@ const h7sSleepSubmenu = {
   _id: '-0',
   content: [
     {
-      label: 'RGB Sleep Timeout',
-      type: 'dropdown',
+      label: 'RGB Sleep',
+      type: 'toggle',
       _id: '-0-0',
-      content: ['id_qmk_rgb_sleep_timeout', 18, 1],
-      options: [
-        ['1 min', 1],
-        ['3 min', 3],
-        ['5 min', 5],
-        ['10 min', 10],
-        ['30 min', 30],
-        ['60 min', 60],
-      ],
+      content: ['id_qmk_rgb_sleep_enable', 18, 3],
+    },
+    {
+      label: 'RGB Sleep Timeout (s)',
+      type: 'range',
+      _id: '-0-1',
+      showIf: '{id_qmk_rgb_sleep_enable} == 1',
+      content: ['id_qmk_rgb_sleep_timeout_exact', 18, 2],
+      options: [1, 65535],
     },
   ],
 };
@@ -768,30 +776,61 @@ describe('ERA exact-second input', () => {
       {label: 'SYSTEM', content: [sleepSubmenu]},
     );
 
-    expect(html).toContain('Turns RGB off after a period with no key input.');
-    expect(html).toContain('Default is 10 minutes.');
+    expect(html).toContain('Controls automatic RGB sleep.');
+    expect(html).toContain('Turning it off disables RGB sleep');
     expect(html).toContain('hidden=""');
+    expect(html).toContain('RGB Sleep');
     expect(html).toContain('RGB Sleep Timeout (s)');
     expect(html).toContain('value="600"');
     expect(html).toContain('>s</span>');
     expect(html).not.toContain('type="range"');
   });
 
-  test('renders the H7S minute sleep dropdown with the same help and no exact-seconds field', () => {
-    optIn(true);
-    const html = render(makeStore({era: true, menuData}), {
-      label: 'SYSTEM',
-      content: [h7sSleepSubmenu],
-    });
+  test('renders the H7S exact-second sleep field through the shared deferred-input surface', () => {
+    optIn(false, true);
+    const html = render(
+      makeStore({
+        era: true,
+        menuData,
+        configSync: {
+          status: 'fresh',
+          observedRevision: 2,
+          acceptedRevision: 2,
+        },
+      }),
+      {label: 'SYSTEM', content: [h7sSleepSubmenu]},
+    );
 
-    expect(html).toContain('Turns RGB off after a period with no key input.');
-    expect(html).toContain('Default is 10 minutes.');
+    expect(html).toContain('Controls automatic RGB sleep.');
+    expect(html).toContain('Turning it off disables RGB sleep');
     expect(html).toContain('hidden=""');
-    expect(html).toContain('RGB Sleep Timeout');
-    expect(html).toContain('10 min');
-    expect(html).not.toContain('RGB Sleep Timeout (s)');
-    expect(html).not.toContain('value="600"');
-    expect(html).not.toContain('>s</span>');
+    expect(html).toContain('RGB Sleep');
+    expect(html).toContain('RGB Sleep Timeout (s)');
+    expect(html).toContain('value="600"');
+    expect(html).toContain('>s</span>');
+  });
+
+  test('keeps the RGB Sleep toggle visible and hides both timeout surfaces while it is off', () => {
+    optIn(false, true);
+    const disabledMenuData = {...menuData, id_qmk_rgb_sleep_enable: [0]};
+    for (const submenu of [sleepSubmenu, h7sSleepSubmenu]) {
+      const html = render(
+        makeStore({
+          era: true,
+          menuData: disabledMenuData,
+          configSync: {
+            status: 'fresh',
+            observedRevision: 2,
+            acceptedRevision: 2,
+          },
+        }),
+        {label: 'SYSTEM', content: [submenu]},
+      );
+
+      expect(html).toContain('RGB Sleep');
+      expect(html).not.toContain('RGB Sleep Timeout (s)');
+      expect(html).not.toContain('value="600"');
+    }
   });
 });
 

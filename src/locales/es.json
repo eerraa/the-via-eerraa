@@ -610,6 +610,6 @@
   "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.": "Unos segundos después de cambiar un ajuste guardado, aparece un indicador y ambas unidades lo copian. INPUT SYNC y RGB SYNC necesitan esto activado para funcionar del todo.",
   "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.": "Con las dos unidades conectadas al PC, comparten el estado de capa y las decisiones de tecla para actuar como un solo teclado.",
   "Lines the lighting up across both units, reactive effects included.": "Alinea la iluminación de ambas unidades, efectos reactivos incluidos.",
-  "Turns RGB off after a period with no key input.": "Apaga el RGB tras un tiempo sin pulsaciones.",
-  "Default is 10 minutes. Pressing a key wakes the RGB.": "El valor predeterminado es 10 minutos. Pulsar una tecla reactiva el RGB."
+  "Controls automatic RGB sleep.": "Controla la suspensión automática del RGB.",
+  "On by default. Turning it off disables RGB sleep for idle timeout, USB suspend, and host loss.": "Está activado de forma predeterminada. Al desactivarlo, se deshabilita la suspensión RGB por inactividad, suspensión USB y pérdida del host."
 }

@@ -10,7 +10,26 @@
     "qmk_rgb_matrix_keycodes"
   ],
   "menus": [
-    "qmk_rgb_matrix"
+    "qmk_rgb_matrix",
+    {
+      "label": "SYSTEM",
+      "content": [
+        {
+          "label": "SLEEP",
+          "content": [
+            {
+              "label": "RGB Sleep",
+              "type": "toggle",
+              "content": [
+                "id_qmk_rgb_sleep_enable",
+                9,
+                12
+              ]
+            }
+          ]
+        }
+      ]
+    }
   ],
   "layouts": {
     "labels": [

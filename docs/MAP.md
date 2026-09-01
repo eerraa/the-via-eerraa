@@ -76,7 +76,10 @@ GET projection, and refused alternatives are
 | `0x16` v1 | upstream Custom Menu invalidation hint. Do not change its meaning | `src/utils/ui-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
 | V3 Custom Value channel 9 / id 10 | TOMAK RGB sleep stock preset, one-byte minutes 1/3/5/10/30/60 | firmware-local VIA definition | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
 | V3 Custom Value channel 9 / id 11 | TOMAK RGB sleep exact seconds, BE16 1..65535 | `era-definitions/custom/v3/tomak*` + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
-| V3 Custom Value channel 18 / id 1 | H7S RGB sleep official minute dropdown 1/3/5/10/30/60 (`id_qmk_rgb_sleep_timeout`) | `era-definitions/custom/v3` five H7S | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep minute dropdown** |
+| V3 Custom Value channel 9 / id 12 | QMK ERA RGB Sleep master, one-byte toggle; present on all 20 RGB-capable QMK definitions | firmware-local VIA definitions + corresponding `era-definitions/custom/v3` overlays | `docs/PROJECT_DIRECTION.md` **RGB Sleep master** |
+| V3 Custom Value channel 18 / id 1 | H7S RGB sleep official minute dropdown 1/3/5/10/30/60 (`id_qmk_rgb_sleep_timeout`) | firmware-local official VIA definition | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep exact-sec** |
+| V3 Custom Value channel 18 / id 2 | H7S RGB sleep exact seconds, BE16 1..65535 (`id_qmk_rgb_sleep_timeout_exact`) | `era-definitions/custom/v3` five H7S + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep exact-sec** |
+| V3 Custom Value channel 18 / id 3 | H7S RGB Sleep master, one-byte toggle (`id_qmk_rgb_sleep_enable`) | firmware-local official VIA definition + five H7S custom definitions | `docs/PROJECT_DIRECTION.md` **RGB Sleep master** |
 | V3 Custom Value channel 8 / id 1 | RP2040 VERSION, NUL-terminated ASCII; one read-only label on 27 definitions | `src/utils/era-firmware-version.ts` + `era-definitions/custom/v3` | [ADR 0003](adr/0003-era-menu-help-ui.md) |
 | V3 Custom Value channel 8 / id 5 | H7S VERSION, NUL-terminated ASCII; one read-only label on five definitions. Legacy ids 1–4 remain firmware-only for cached old definitions | `src/utils/era-firmware-version.ts` + five H7S custom JSON files | [ADR 0003](adr/0003-era-menu-help-ui.md) |
 
@@ -88,7 +91,8 @@ custom JSON `_term_exact` `content`.
 | Global TAPPING term | channel 15 / value 5 | channel 15 / value 5 |
 | TD0–TD7 term | channel 0 / value 72–79 | channel 16 / value 41–48 |
 | MOUSE menu channel | 13 | **17** — on H7S, channel 13 is USB POLLING (`id_qmk_usb_bootmode`) |
-| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 1 minute dropdown (`id_qmk_rgb_sleep_timeout`) |
+| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 2 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) |
+| RGB SLEEP master | SYSTEM channel 9 / value 12 (`id_qmk_rgb_sleep_enable`) | SYSTEM channel 18 / value 3 (`id_qmk_rgb_sleep_enable`) |
 | SOCD command prefix | `id_qmk_socd_` | `id_qmk_kill_switch_` |
 
 State Sync poll interval is `ERA_STATE_SYNC_POLL_INTERVAL_MS = 500`.
@@ -182,12 +186,18 @@ speak the same HID bytes. Product rules:
 | Dual copy | Official | Custom |
 | --- | --- | --- |
 | tapping/TD term | legacy 1-byte × 10 ms, 100–500 / 20 ms grid | exact 2-byte `uint16` |
-| TOMAK RGB sleep | fixed 1/3/5/10/30/60-minute dropdown | exact 1..65535-second `uint16` |
+| RGB sleep timeout (TOMAK / H7S) | master toggle + fixed 1/3/5/10/30/60-minute dropdown | same master toggle + exact 1..65535-second `uint16`; timeout uses `showIf` on the toggle |
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
 
-H7S RGB sleep is the same SYSTEM channel 18 minute dropdown on official JSON
-and this overlay. It is not a dual encoding.
+H7S keeps the official minute dropdown on channel 18 / value 1 and uses channel
+18 / value 2 for the overlay's exact seconds. Both reach the same persisted
+firmware value, matching the TOMAK dual-surface compatibility rule without
+moving H7S onto TOMAK's channel 9 ids. RGB Sleep itself has one master in each
+firmware family: QMK channel 9 / value 12 on all 20 RGB-capable QMK definitions,
+H7S channel 18 / value 3 on all five H7S definitions. Turning it off disables
+idle timeout, USB suspend RGB sleep, and host-loss RGB sleep together. Where a
+timeout exists, `showIf` hides only that timeout row and its stored value survives.
 
 ## 7. Hand-maintained seams
 

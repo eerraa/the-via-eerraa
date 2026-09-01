@@ -610,6 +610,6 @@
   "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.": "A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.",
   "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.": "With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.",
   "Lines the lighting up across both units, reactive effects included.": "Lines the lighting up across both units, reactive effects included.",
-  "Turns RGB off after a period with no key input.": "Turns RGB off after a period with no key input.",
-  "Default is 10 minutes. Pressing a key wakes the RGB.": "Default is 10 minutes. Pressing a key wakes the RGB."
+  "Controls automatic RGB sleep.": "Controls automatic RGB sleep.",
+  "On by default. Turning it off disables RGB sleep for idle timeout, USB suspend, and host loss.": "On by default. Turning it off disables RGB sleep for idle timeout, USB suspend, and host loss."
 }

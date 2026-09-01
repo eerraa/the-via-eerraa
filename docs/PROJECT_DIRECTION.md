@@ -3,7 +3,7 @@
 Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
 lookup order, the brick65 exception, Tap Dance and exact-ms/exact-sec product rules,
-H7S RGB sleep minute-dropdown overlay rules, State Sync product guarantees, and
+H7S RGB sleep dual-surface rules, State Sync product guarantees, and
 the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
@@ -118,14 +118,17 @@ definition JSON are canonical, `tests/era-definition.test.ts` binds them, and
 ### brick65
 
 `sirind/brick65` (`id`: `brick65` in the manifest) is a durable product
-decision, not inventory. Re-measured custom JSON is stock VIA: no FEATURE menu,
-no `tapdanceKeycodes`, no term controls. The manifest has `stateSync: false`
-and no `exactMsFamily`.
+decision, not inventory. It remains the ATmega stock-feature exception: no
+FEATURE menu, no `tapdanceKeycodes`, no term controls, no State Sync, and no
+`exactMsFamily`. RGB Sleep is the one cross-family exception because the board
+has RGB Matrix hardware: its SYSTEM/SLEEP page contains only the common master
+toggle and uses QMK's existing 2-byte keymap-config storage.
 
 > **REFUSED:** putting common ERA tapping, Tap Dance, exact-ms, or State Sync
 > capability on `sirind/brick65`.
 > **WHY:** 28,672 B flash budget; permanent ATmega32U4 exception that keeps
-> stock VIA only.
+> those larger ERA feature families out. The tiny RGB Sleep master has separate
+> measured budget and does not reopen them.
 > **REOPENS:** never. Hardware budget, not a defect.
 
 Sibling ids `brick65s` and `brick65-h7s` are not this exception.
@@ -239,6 +242,16 @@ does not snap to the stock menu, while stock GET only projects the exact value
 down to the nearest supported preset and never mutates it. Firmware defaults the
 setting, including legacy zero migration, to 600 seconds / 10 minutes.
 
+Both clients also expose the QMK-family RGB Sleep master on SYSTEM channel 9 /
+value 12. It defaults on. Turning it off preserves the stored timeout and gates
+**all** automatic RGB sleep reasons: the TOMAK input-idle timeout, explicit USB
+suspend, and host-frame-loss sleep. The timeout row is hidden with V3 `showIf`
+until the master is on again. Compile-time `keyboard.json` `rgb_matrix.sleep:
+true` stays enabled because it is the capability; the VIA master decides whether
+that capability may darken RGB at runtime. The same master address is used by
+every other RGB-capable QMK ERA definition, which has the toggle even when it
+has no idle-timeout control.
+
 This is the same dual-surface compatibility principle as exact-ms, but the two
 encodings require separate value ids because a 32-byte V3 Custom Value request
 does not identify which definition/client produced it. The exact id is additive,
@@ -252,24 +265,56 @@ matches the authoritative value, and becomes available only for a different
 valid 1..65535-second draft. It also participates in the normal ERA submenu
 summary + folded-detail help surface.
 
-### H7S RGB sleep minute dropdown
+### H7S RGB sleep exact-sec
 
-The five H7S definitions expose RGB idle timeout as SYSTEM channel 18 / value 1
-(`id_qmk_rgb_sleep_timeout`), a one-byte minute dropdown 1/3/5/10/30/60 matching
-the firmware-local official VIA JSON. Firmware stores seconds (default 600 / 10
-minutes); official GET floors onto the menu without writing. This is not the
-TOMAK dual-surface: H7S has no exact-seconds value id and is not SYSTEM
-channel 9. The overlay must not diverge on channel, value id, or range.
-Firmware persists the timeout on VIA SAVE, not on SET. The submenu uses the
-ordinary dropdown write path, not deferred-Apply. Help copy is the same
-idle-timeout object as TOMAK exact-seconds
-(`src/utils/era-feature-help.ts`).
+The five H7S definitions use the same dual-surface rule as TOMAK without sharing
+TOMAK's channel numbers. Firmware-local official VIA JSON keeps SYSTEM channel
+18 / value 1 (`id_qmk_rgb_sleep_timeout`) as the one-byte minute dropdown
+1/3/5/10/30/60. The ERA overlay uses additive channel 18 / value 2
+(`id_qmk_rgb_sleep_timeout_exact`) as two-byte big-endian exact seconds,
+1..65535 inclusive. Firmware stores one uint16-second value (default 600 / 10
+minutes); both setters update it and SAVE persists it. Official GET floors an
+exact value onto the preset list without writing, so reading the keyboard in
+official VIA never snaps a custom 137-second value. The custom submenu uses the
+existing exact-second integer editor and deferred-Apply surface. Help copy is
+the same idle-timeout object as TOMAK (`src/utils/era-feature-help.ts`).
 
-> **REFUSED:** copying TOMAK `id_qmk_rgb_sleep_timeout_exact` / channel 9 /
-> value 11 onto H7S, or inventing a custom-app-only selector.
-> **WHY:** firmware already ships the complete feature on official usevia.app
-> JSON; a second wire would be a custom-app-only path.
-> **REOPENS:** never while H7S firmware exposes only the minute preset.
+Both H7S clients add the RGB Sleep master `id_qmk_rgb_sleep_enable` on channel
+18 / value 3. It defaults on, preserves the timeout while off, and the timeout
+row uses `showIf` so it appears only while the master is enabled. OFF gates all
+automatic RGB sleep reasons: inactivity, explicit USB suspend, and host-SOF
+loss. H7S still compiles `RGBLIGHT_SLEEP`; that is the capability used by the
+single `rgb_sleep.c` owner, while the VIA master decides whether the owner may
+enter RGB sleep. The enable bit is additive and does not replace the shipped
+value-1 official timeout contract.
+
+> **REFUSED:** moving H7S RGB sleep onto TOMAK channel 9 / value 11, or replacing
+> the official value-1 preset with the exact encoding.
+> **WHY:** H7S already shipped channel 18 / value 1 to official VIA; additive
+> value 2 adds precision without changing the shipped official wire contract.
+> **REOPENS:** never.
+
+### RGB Sleep master
+
+Every definition whose keyboard actually has RGB exposes exactly one master:
+20 QMK definitions on channel 9 / value 12 and five H7S definitions on channel
+18 / value 3. Definitions with no RGB hardware expose neither the master nor a
+timeout. `tests/era-definition.test.ts` owns that 25-definition set separately
+from the 11 definitions that also have an exact timeout.
+
+Firmware must compile the native QMK sleep capability wherever RGB exists.
+The firmware audit therefore treats missing `rgb_matrix.sleep: true` or
+`rgblight.sleep: true` as a defect, not as a user preference. Runtime master OFF
+then covers the user who never wants automatic RGB sleep, including during USB
+suspend or host loss; master ON covers the user who does.
+
+> **REFUSED:** representing RGB Sleep OFF as timeout `0`, or disabling the
+> compile-time QMK/H7S RGB sleep capability to represent a user preference.
+> **WHY:** zero is already legacy/default migration for timeout storage, while
+> compile-time sleep support must exist before the runtime master can choose
+> whether USB suspend, host loss, or idle timeout may darken RGB.
+> **REOPENS:** only if the firmware families replace the timeout encoding or
+> remove runtime configurability entirely.
 
 Use Vial only to study interaction design.
 

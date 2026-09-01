@@ -132,10 +132,11 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     },
   ],
   [
-    'id_qmk_rgb_sleep_timeout',
+    'id_qmk_rgb_sleep_',
     {
-      summary: 'Turns RGB off after a period with no key input.',
-      detail: 'Default is 10 minutes. Pressing a key wakes the RGB.',
+      summary: 'Controls automatic RGB sleep.',
+      detail:
+        'On by default. Turning it off disables RGB sleep for idle timeout, USB suspend, and host loss.',
     },
   ],
   [
