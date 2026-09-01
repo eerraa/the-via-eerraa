@@ -1,6 +1,22 @@
 {
   "definitions": [
     {
+      "id": "7b75",
+      "path": "era-definitions/custom/v3/7b75/7B75-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0016",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "riley",
+      "path": "era-definitions/custom/v3/riley/RILEY-VIA.json",
+      "vendorId": "0x4552",
+      "productId": "0x0024",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
       "id": "tomak79h-left",
       "path": "era-definitions/custom/v3/tomak79h/TOMAK79H-L-VIA.json",
       "vendorId": "0x4552",

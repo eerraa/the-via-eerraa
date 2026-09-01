@@ -17,8 +17,11 @@ Re-measured from this host: `src/components/panes/configure-panes/custom/`,
 `src/utils/era-feature-help.ts`, `src/locales/*.json`,
 `era-definitions/custom/v3`, `tests/locales.test.ts`,
 `tests/custom-menu-pane.test.tsx`, `tests/diagnostics-pane.test.tsx`,
-`tests/era-definition.test.ts`. Peer H7S (read-only): five board
-`json/*-VIA.JSON` files and `eerraa-qmk-h7s-fw/docs/readme.txt`.
+`tests/era-definition.test.ts`. Peer firmware user guides are
+`qmk_firmware_eerraa/keyboards/era/common/docs/user/usevia.txt`,
+`qmk_firmware_eerraa/keyboards/era/common/docs/user/usevia_split.txt`, and
+`eerraa-qmk-h7s-fw/docs/usevia.txt`; H7S also has five board
+`json/*-VIA.JSON` files.
 
 ## 1. The diagnostics block sits inline under the setting it measures
 
@@ -85,9 +88,9 @@ Two side effects of inline placement:
 page. A cold deeplink on the deploy host does not hit that redirect
 (`docs/MAP.md` §7).
 
-Peer user guide `eerraa-qmk-h7s-fw/docs/readme.txt` still names a top-level
-DIAGNOSTICS page in this app. That file is not this host's IA. This unit does
-not edit it.
+Peer official-VIA guide `eerraa-qmk-h7s-fw/docs/usevia.txt` intentionally
+documents official usevia.app only and therefore does not name this custom-app
+diagnostics block. Its placement and copy remain owned by this ADR.
 
 ## 2. Result screen: summary by default, advanced on request
 
@@ -252,7 +255,14 @@ Same gate idea as the diagnostics block.
 Firmware user-guide text is rewritten, not copied. The guide says "adjust this
 under VIA CONFIGURE → FEATURE → DEBOUNCE"; the reader of this text is already
 on that screen. What remains is what the setting does and which way to move
-the value. Peer `eerraa-qmk-h7s-fw/docs/readme.txt` is that guide (read-only).
+the value. The peer `usevia.txt` guides keep the same user-visible meaning,
+terms, trade-offs, and recommendations as the summary/detail/control help here,
+then add official-VIA navigation and firmware-family differences that the user
+can actually observe. They do not reintroduce internal mechanism that this Help
+intentionally omits merely because the firmware can describe it. The peer
+guides are `qmk_firmware_eerraa/keyboards/era/common/docs/user/usevia.txt`,
+`qmk_firmware_eerraa/keyboards/era/common/docs/user/usevia_split.txt`, and
+`eerraa-qmk-h7s-fw/docs/usevia.txt`.
 
 - **A summary names the setting; it is not a narration.** `Enters the
   bootloader when switched on.`, not `Puts the keyboard into bootloader mode
@@ -383,7 +393,7 @@ report. Holding `asd` types `asdasdasd`, not OS auto-repeat `asddddd`.
 
 Five official H7S `json/*-VIA.JSON` files and this host's five H7S custom JSON
 files all label the submenu `KKUK`. Peer
-`eerraa-qmk-h7s-fw/docs/readme.txt` describes the same behavior and label.
+`eerraa-qmk-h7s-fw/docs/usevia.txt` describes the same behavior and label.
 
 The label is the English token `KKUK` in every catalog (`"KKUK": "KKUK"`), so
 official `usevia.app` shows the same name. Recognition is carried by the

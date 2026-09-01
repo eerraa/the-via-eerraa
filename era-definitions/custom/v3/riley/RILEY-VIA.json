@@ -1,10 +1,10 @@
 {
-  "name": "CLASSIC.D_A1_UG",
+  "name": "Riley",
   "vendorId": "0x4552",
-  "productId": "0x0029",
+  "productId": "0x0024",
   "matrix": {
-    "rows": 6,
-    "cols": 17
+    "rows": 5,
+    "cols": 14
   },
   "tapdanceKeycodes": [
     {
@@ -56,91 +56,9 @@
       "label": "Lighting",
       "content": [
         {
-          "label": "Backlight",
+          "label": "RGBLight",
           "content": [
             {
-              "label": "Backlight Brightness",
-              "type": "range",
-              "options": [
-                0,
-                10
-              ],
-              "content": [
-                "id_custom_backlight_brightness",
-                0,
-                0
-              ]
-            },
-            {
-              "label": "Backlight Effect",
-              "type": "dropdown",
-              "content": [
-                "id_custom_backlight_effect",
-                0,
-                1
-              ],
-              "options": [
-                [
-                  "Steady",
-                  0
-                ],
-                [
-                  "Breathing",
-                  1
-                ],
-                [
-                  "Pulse Off Press",
-                  2
-                ],
-                [
-                  "Pulse On Press",
-                  3
-                ],
-                [
-                  "Pulse Off Press (Hold)",
-                  4
-                ],
-                [
-                  "Pulse On Press (Hold)",
-                  5
-                ]
-              ]
-            },
-            {
-              "showIf": "{id_custom_backlight_effect} == 1",
-              "label": "Breathing Period",
-              "type": "range",
-              "options": [
-                1,
-                10
-              ],
-              "content": [
-                "id_custom_breathing_period",
-                0,
-                2
-              ]
-            },
-            {
-              "showIf": "{id_custom_backlight_effect} == 2 || {id_custom_backlight_effect} == 3 || {id_custom_backlight_effect} == 4 || {id_custom_backlight_effect} == 5",
-              "label": "Pulse Speed",
-              "type": "range",
-              "options": [
-                1,
-                10
-              ],
-              "content": [
-                "id_custom_blink_speed",
-                0,
-                3
-              ]
-            }
-          ]
-        },
-        {
-          "label": "Underglow",
-          "content": [
-            {
-              "showIf": "{id_qmk_rgblight_effect} != 0",
               "label": "Brightness",
               "type": "range",
               "options": [
@@ -162,53 +80,177 @@
                 2
               ],
               "options": [
-                "All Off",
-                "Solid Color",
-                "Breathing 1",
-                "Breathing 2",
-                "Breathing 3",
-                "Breathing 4",
-                "Rainbow Mood 1",
-                "Rainbow Mood 2",
-                "Rainbow Mood 3",
-                "Rainbow Swirl 1",
-                "Rainbow Swirl 2",
-                "Rainbow Swirl 3",
-                "Rainbow Swirl 4",
-                "Rainbow Swirl 5",
-                "Rainbow Swirl 6",
-                "Snake 1",
-                "Snake 2",
-                "Snake 3",
-                "Snake 4",
-                "Snake 5",
-                "Snake 6",
-                "Knight 1",
-                "Knight 2",
-                "Knight 3",
-                "Christmas",
-                "Gradient 1",
-                "Gradient 2",
-                "Gradient 3",
-                "Gradient 4",
-                "Gradient 5",
-                "Gradient 6",
-                "Gradient 7",
-                "Gradient 8",
-                "Gradient 9",
-                "Gradient 10",
-                "RGB Test",
-                "Alternating",
-                "Twinkle 1",
-                "Twinkle 2",
-                "Twinkle 3",
-                "Twinkle 4",
-                "Twinkle 5",
-                "Twinkle 6"
+                [
+                  "Solid Color",
+                  1
+                ],
+                [
+                  "Breathing 1",
+                  2
+                ],
+                [
+                  "Breathing 2",
+                  3
+                ],
+                [
+                  "Breathing 3",
+                  4
+                ],
+                [
+                  "Breathing 4",
+                  5
+                ],
+                [
+                  "Rainbow Mood 1",
+                  6
+                ],
+                [
+                  "Rainbow Mood 2",
+                  7
+                ],
+                [
+                  "Rainbow Mood 3",
+                  8
+                ],
+                [
+                  "Rainbow Swirl 1",
+                  9
+                ],
+                [
+                  "Rainbow Swirl 2",
+                  10
+                ],
+                [
+                  "Rainbow Swirl 3",
+                  11
+                ],
+                [
+                  "Rainbow Swirl 4",
+                  12
+                ],
+                [
+                  "Rainbow Swirl 5",
+                  13
+                ],
+                [
+                  "Rainbow Swirl 6",
+                  14
+                ],
+                [
+                  "Snake 1",
+                  15
+                ],
+                [
+                  "Snake 2",
+                  16
+                ],
+                [
+                  "Snake 3",
+                  17
+                ],
+                [
+                  "Snake 4",
+                  18
+                ],
+                [
+                  "Snake 5",
+                  19
+                ],
+                [
+                  "Snake 6",
+                  20
+                ],
+                [
+                  "Knight 1",
+                  21
+                ],
+                [
+                  "Knight 2",
+                  22
+                ],
+                [
+                  "Knight 3",
+                  23
+                ],
+                [
+                  "Christmas",
+                  24
+                ],
+                [
+                  "Gradient 1",
+                  25
+                ],
+                [
+                  "Gradient 2",
+                  26
+                ],
+                [
+                  "Gradient 3",
+                  27
+                ],
+                [
+                  "Gradient 4",
+                  28
+                ],
+                [
+                  "Gradient 5",
+                  29
+                ],
+                [
+                  "Gradient 6",
+                  30
+                ],
+                [
+                  "Gradient 7",
+                  31
+                ],
+                [
+                  "Gradient 8",
+                  32
+                ],
+                [
+                  "Gradient 9",
+                  33
+                ],
+                [
+                  "Gradient 10",
+                  34
+                ],
+                [
+                  "RGB Test",
+                  35
+                ],
+                [
+                  "Alternating",
+                  36
+                ],
+                [
+                  "Twinkle 1",
+                  37
+                ],
+                [
+                  "Twinkle 2",
+                  38
+                ],
+                [
+                  "Twinkle 3",
+                  39
+                ],
+                [
+                  "Twinkle 4",
+                  40
+                ],
+                [
+                  "Twinkle 5",
+                  41
+                ],
+                [
+                  "Twinkle 6",
+                  42
+                ]
               ]
             },
             {
-              "showIf": "{id_qmk_rgblight_effect} != 0",
               "label": "Effect Speed",
               "type": "range",
               "options": [
@@ -222,13 +264,189 @@
               ]
             },
             {
-              "showIf": "{id_qmk_rgblight_effect} != 0 && {id_qmk_rgblight_effect} != 6 && {id_qmk_rgblight_effect} != 7 && {id_qmk_rgblight_effect} != 8 && {id_qmk_rgblight_effect} != 9 && {id_qmk_rgblight_effect} != 10 && {id_qmk_rgblight_effect} != 11 && {id_qmk_rgblight_effect} != 12 && {id_qmk_rgblight_effect} != 13 && {id_qmk_rgblight_effect} != 14 && {id_qmk_rgblight_effect} != 24 && {id_qmk_rgblight_effect} != 35 && {id_qmk_rgblight_effect} != 40 && {id_qmk_rgblight_effect} != 41 && {id_qmk_rgblight_effect} != 42",
+              "showIf": "{id_qmk_rgblight_effect} != 6 && {id_qmk_rgblight_effect} != 7 && {id_qmk_rgblight_effect} != 8 && {id_qmk_rgblight_effect} != 9 && {id_qmk_rgblight_effect} != 10 && {id_qmk_rgblight_effect} != 11 && {id_qmk_rgblight_effect} != 12 && {id_qmk_rgblight_effect} != 13 && {id_qmk_rgblight_effect} != 14 && {id_qmk_rgblight_effect} != 24 && {id_qmk_rgblight_effect} != 35 && {id_qmk_rgblight_effect} != 40 && {id_qmk_rgblight_effect} != 41 && {id_qmk_rgblight_effect} != 42",
               "label": "Color",
               "type": "color",
               "content": [
                 "id_qmk_rgblight_color",
                 2,
                 4
+              ]
+            },
+            {
+              "label": "Velocikey",
+              "type": "toggle",
+              "content": [
+                "id_qmk_custom_riley_velocikey_enable",
+                0,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "label": "INDICATOR",
+          "content": [
+            {
+              "label": "Indicator-Only",
+              "type": "toggle",
+              "content": [
+                "id_qmk_custom_riley_indicator_only",
+                0,
+                22
+              ]
+            },
+            {
+              "label": "IND1 Mode",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_custom_riley_ind1_mode",
+                0,
+                13
+              ],
+              "options": [
+                [
+                  "RGB Effect",
+                  0
+                ],
+                [
+                  "Caps Lock",
+                  1
+                ],
+                [
+                  "Scroll Lock",
+                  2
+                ],
+                [
+                  "Num Lock",
+                  3
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_custom_riley_ind1_mode} != 0",
+              "label": "IND1 Indicator Brightness",
+              "type": "range",
+              "options": [
+                0,
+                255
+              ],
+              "content": [
+                "id_qmk_custom_riley_ind1_brightness",
+                0,
+                14
+              ]
+            },
+            {
+              "showIf": "{id_qmk_custom_riley_ind1_mode} != 0",
+              "label": "IND1 Indicator Color",
+              "type": "color",
+              "content": [
+                "id_qmk_custom_riley_ind1_color",
+                0,
+                15
+              ]
+            },
+            {
+              "label": "IND2 Mode",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_custom_riley_ind2_mode",
+                0,
+                16
+              ],
+              "options": [
+                [
+                  "RGB Effect",
+                  0
+                ],
+                [
+                  "Caps Lock",
+                  1
+                ],
+                [
+                  "Scroll Lock",
+                  2
+                ],
+                [
+                  "Num Lock",
+                  3
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_custom_riley_ind2_mode} != 0",
+              "label": "IND2 Indicator Brightness",
+              "type": "range",
+              "options": [
+                0,
+                255
+              ],
+              "content": [
+                "id_qmk_custom_riley_ind2_brightness",
+                0,
+                17
+              ]
+            },
+            {
+              "showIf": "{id_qmk_custom_riley_ind2_mode} != 0",
+              "label": "IND2 Indicator Color",
+              "type": "color",
+              "content": [
+                "id_qmk_custom_riley_ind2_color",
+                0,
+                18
+              ]
+            },
+            {
+              "label": "IND3 Mode",
+              "type": "dropdown",
+              "content": [
+                "id_qmk_custom_riley_ind3_mode",
+                0,
+                19
+              ],
+              "options": [
+                [
+                  "RGB Effect",
+                  0
+                ],
+                [
+                  "Caps Lock",
+                  1
+                ],
+                [
+                  "Scroll Lock",
+                  2
+                ],
+                [
+                  "Num Lock",
+                  3
+                ]
+              ]
+            },
+            {
+              "showIf": "{id_qmk_custom_riley_ind3_mode} != 0",
+              "label": "IND3 Indicator Brightness",
+              "type": "range",
+              "options": [
+                0,
+                255
+              ],
+              "content": [
+                "id_qmk_custom_riley_ind3_brightness",
+                0,
+                20
+              ]
+            },
+            {
+              "showIf": "{id_qmk_custom_riley_ind3_mode} != 0",
+              "label": "IND3 Indicator Color",
+              "type": "color",
+              "content": [
+                "id_qmk_custom_riley_ind3_color",
+                0,
+                21
               ]
             }
           ]
@@ -1746,73 +1964,27 @@
     }
   ],
   "layouts": {
-    "labels": [
-      [
-        "Backspace",
-        "Unified",
-        "Split"
-      ],
-      [
-        "Enter",
-        "ANSI",
-        "ISO"
-      ],
-      [
-        "Left Shift",
-        "ANSI",
-        "ISO"
-      ],
-      [
-        "Right Shift",
-        "Unified",
-        "Split"
-      ],
-      [
-        "Bottom Row",
-        "6.26U",
-        "7U"
-      ]
-    ],
     "keymap": [
       [
-        {
-          "x": 2.5,
-          "c": "#777777"
-        },
         "0,0",
-        {
-          "x": 1,
-          "c": "#cccccc"
-        },
+        "0,1",
         "0,2",
         "0,3",
         "0,4",
         "0,5",
-        {
-          "x": 0.5
-        },
         "0,6",
         "0,7",
         "0,8",
         "0,9",
-        {
-          "x": 0.5
-        },
         "0,10",
         "0,11",
         "0,12",
         "0,13",
-        {
-          "x": 0.25
-        },
-        "0,14",
-        "0,15",
-        "0,16"
+        "1,13"
       ],
       [
         {
-          "y": 0.25,
-          "x": 2.5
+          "w": 1.5
         },
         "1,0",
         "1,1",
@@ -1828,33 +2000,15 @@
         "1,11",
         "1,12",
         {
-          "c": "#aaaaaa",
-          "w": 2
+          "w": 1.5
         },
-        "1,13\n\n\n0,0",
-        {
-          "x": 0.25,
-          "c": "#cccccc"
-        },
-        "2,14",
-        "1,15",
-        "1,16",
-        {
-          "x": 1.25
-        },
-        "1,13\n\n\n0,1",
-        "1,14\n\n\n0,1"
+        "2,13"
       ],
       [
         {
-          "x": 2.5,
-          "c": "#aaaaaa",
-          "w": 1.5
+          "w": 1.75
         },
         "2,0",
-        {
-          "c": "#cccccc"
-        },
         "2,1",
         "2,2",
         "2,3",
@@ -1868,36 +2022,15 @@
         "2,11",
         "2,12",
         {
-          "w": 1.5
+          "w": 1.25
         },
-        "2,13\n\n\n1,0",
-        {
-          "x": 0.25
-        },
-        "3,14",
-        "2,15",
-        "2,16",
-        {
-          "x": 2,
-          "c": "#777777",
-          "w": 1.25,
-          "h": 2,
-          "w2": 1.5,
-          "h2": 1,
-          "x2": -0.25
-        },
-        "3,13\n\n\n1,1"
+        "3,13"
       ],
       [
         {
-          "x": 2.5,
-          "c": "#aaaaaa",
-          "w": 1.75
+          "w": 1.25
         },
         "3,0",
-        {
-          "c": "#cccccc"
-        },
         "3,1",
         "3,2",
         "3,3",
@@ -1910,131 +2043,37 @@
         "3,10",
         "3,11",
         {
-          "c": "#777777",
-          "w": 2.25
-        },
-        "3,13\n\n\n1,0",
-        {
-          "x": 4.25,
-          "c": "#cccccc"
-        },
-        "3,12\n\n\n1,1"
-      ],
-      [
-        {
-          "c": "#aaaaaa",
-          "w": 1.25
-        },
-        "4,0\n\n\n2,1",
-        "4,1\n\n\n2,1",
-        {
-          "x": 0.25,
-          "w": 2.25
-        },
-        "4,0\n\n\n2,0",
-        {
-          "c": "#cccccc"
-        },
-        "4,2",
-        "4,3",
-        "4,4",
-        "4,5",
-        "4,6",
-        "4,7",
-        "4,8",
-        "4,9",
-        "4,10",
-        "4,11",
-        {
-          "c": "#aaaaaa",
-          "w": 2.75
-        },
-        "4,12\n\n\n3,0",
-        {
-          "x": 1.25,
-          "c": "#cccccc"
-        },
-        "4,15",
-        {
-          "x": 1.5,
-          "c": "#aaaaaa",
           "w": 1.75
         },
-        "4,12\n\n\n3,1",
-        "4,13\n\n\n3,1"
+        "3,12",
+        {
+          "x": 0.25
+        },
+        "4,13"
       ],
       [
         {
-          "x": 2.5,
-          "w": 1.25
+          "x": 1.5
         },
-        "5,0\n\n\n4,0",
-        {
-          "w": 1.25
-        },
-        "5,1\n\n\n4,0",
-        {
-          "w": 1.25
-        },
-        "5,2\n\n\n4,0",
-        {
-          "c": "#cccccc",
-          "w": 6.25
-        },
-        "5,6\n\n\n4,0",
-        {
-          "c": "#aaaaaa",
-          "w": 1.25
-        },
-        "5,9\n\n\n4,0",
-        {
-          "w": 1.25
-        },
-        "5,10\n\n\n4,0",
-        {
-          "w": 1.25
-        },
-        "5,11\n\n\n4,0",
-        {
-          "w": 1.25
-        },
-        "5,13\n\n\n4,0",
-        {
-          "x": 0.25,
-          "c": "#cccccc"
-        },
-        "5,14",
-        "5,15",
-        "5,16"
-      ],
-      [
-        {
-          "y": 0.25,
-          "x": 2.5,
-          "c": "#aaaaaa",
-          "w": 1.5
-        },
-        "5,0\n\n\n4,1",
-        "5,1\n\n\n4,1",
+        "4,1",
         {
           "w": 1.5
         },
-        "5,2\n\n\n4,1",
+        "4,2",
         {
-          "c": "#cccccc",
-          "w": 7
+          "w": 3
         },
-        "5,6\n\n\n4,1",
+        "4,4",
+        "4,6",
         {
-          "c": "#aaaaaa",
-          "w": 1.5
+          "w": 3
         },
-        "5,10\n\n\n4,1",
-        "5,11\n\n\n4,1",
+        "4,8",
         {
           "w": 1.5
         },
-        "5,13\n\n\n4,1"
+        "4,11",
+        "4,12"
       ]
     ]
   }

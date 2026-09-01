@@ -176,9 +176,9 @@ Ids the firmware still answers (or used to) that this app's menus do not
 send. Not a deletion of JSON in this tree until a paired firmware session
 agrees. Dual-path architecture is KEEP (§5).
 
-| Id / label | This tree | QMK `*-VIA.json` (26 files under `keyboards/era`) | H7S `*-VIA.JSON` (5 files) |
+| Id / label | This tree | QMK `*-VIA.json` (27 files under `keyboards/era`) | H7S `*-VIA.JSON` (5 files) |
 | --- | --- | --- | --- |
-| `id_qmk_tapping_global_term` and `id_qmk_tapdance_1_term` … `_8_term` (legacy 1-byte × 10 ms) | Absent from all 31 custom JSON files. `scripts/build-keyboards.ts` rejects them. `isLegacyTermCommand` exists only as that guard. | Present. Labels `Global Tapping Term` / `Term`. | Present. Same labels. Channel 16, values 5,10,…40 for TD slots. |
+| `id_qmk_tapping_global_term` and `id_qmk_tapdance_1_term` … `_8_term` (legacy 1-byte × 10 ms) | Absent from all 32 custom JSON files. `scripts/build-keyboards.ts` rejects them. `isLegacyTermCommand` exists only as that guard. | Present. Labels `Global Tapping Term` / `Term`. | Present. Same labels. Channel 16, values 5,10,…40 for TD slots. |
 | `id_qmk_tapping_global_term_exact` and `id_qmk_tapdance_N_term_exact` | Present on every opted-in custom JSON (not `brick65`). Labels `Global Tapping Term (ms)` / `Term (ms)`. | Absent. | Absent. Firmware C still implements exact GET/SET ([ADR 0001](adr/0001-state-sync-protocol.md)). |
 | `id_qmk_usb_autodg_beta` / label `Auto downgrade on USB unstable` | Absent. `tests/era-definition.test.ts` asserts H7S custom JSON does not contain either string. | Absent at the measured QMK tree. | Absent at the measured H7S tree. |
 

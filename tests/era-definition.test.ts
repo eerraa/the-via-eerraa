@@ -151,12 +151,12 @@ const expectedQmkTermAddresses = [
   'id_qmk_tapping_global_term_exact:15:5',
   ...Array.from(
     {length: 8},
-    (_, index) =>
-      `id_qmk_tapdance_${index + 1}_term_exact:0:${72 + index}`,
+    (_, index) => `id_qmk_tapdance_${index + 1}_term_exact:0:${72 + index}`,
   ),
 ].sort();
 
 const expectedQmkDefinitionIds = [
+  '7b75',
   'brick65',
   'brick65s',
   'chickpad',
@@ -177,6 +177,7 @@ const expectedQmkDefinitionIds = [
   'newone-h1',
   'newone-odessey60h',
   'newone-odessey60s',
+  'riley',
   'tomak-tkl-left',
   'tomak-tkl-right',
   'tomak79h-left',
@@ -251,9 +252,7 @@ describe('era definition tapdanceKeycodes', () => {
     );
     expect(selected({}, source('upload'), source('era'))).toBe('era');
     expect(selected(source('official'), {}, source('era'))).toBe('era');
-    expect(selected(source('official'), source('upload'), {})).toBe(
-      'official',
-    );
+    expect(selected(source('official'), source('upload'), {})).toBe('official');
     expect(selected(source('official'), {}, {})).toBe('official');
     expect(selected({}, source('upload'), {})).toBe('upload');
     expect(selected({}, {}, {})).toBeUndefined();
@@ -297,8 +296,8 @@ describe('era definition tapdanceKeycodes', () => {
 });
 
 describe('canonical ERA definition inventory', () => {
-  const qmkEntries = manifest.definitions.filter(
-    (entry) => expectedQmkDefinitionIds.includes(entry.id),
+  const qmkEntries = manifest.definitions.filter((entry) =>
+    expectedQmkDefinitionIds.includes(entry.id),
   );
 
   test('lists every QMK ERA custom definition variant', () => {
@@ -351,9 +350,9 @@ describe('canonical ERA definition inventory', () => {
         .map(({name, channel, id}) => `${name}:${channel}:${id}`)
         .sort();
       expect(customAddresses).toEqual(expectedQmkTermAddresses);
-      expect(
-        customTerms.filter(({name}) => !name.endsWith('_exact')),
-      ).toEqual([]);
+      expect(customTerms.filter(({name}) => !name.endsWith('_exact'))).toEqual(
+        [],
+      );
       expect(
         customTerms
           .filter(({name}) => name.endsWith('_exact'))
@@ -362,7 +361,7 @@ describe('canonical ERA definition inventory', () => {
     });
   }
 
-  test('gives exactly the 25 RP2040 definitions one live VERSION label and excludes brick65', () => {
+  test('gives exactly the 27 RP2040 definitions one live VERSION label and excludes brick65', () => {
     const actual: string[] = [];
     for (const entry of qmkEntries) {
       const definition = readJSON(entry.path);
@@ -393,7 +392,7 @@ describe('canonical ERA definition inventory', () => {
         },
       ]);
     }
-    expect(actual).toHaveLength(25);
+    expect(actual).toHaveLength(27);
     expect(actual.sort()).toEqual(expectedRp2040DefinitionIds);
   });
 
@@ -401,10 +400,12 @@ describe('canonical ERA definition inventory', () => {
     const pairs = new Map<string, unknown[]>();
     for (const entry of manifest.definitions.filter(({pair}) => pair)) {
       const definition = readJSON(entry.path);
-      const system = ((definition.menus ?? []) as {
-        label?: string;
-        content?: unknown[];
-      }[]).find(({label}) => label === 'SYSTEM');
+      const system = (
+        (definition.menus ?? []) as {
+          label?: string;
+          content?: unknown[];
+        }[]
+      ).find(({label}) => label === 'SYSTEM');
       const version = (system?.content ?? []).find(
         (submenu) =>
           !!submenu &&
@@ -512,7 +513,11 @@ describe('canonical ERA definition inventory', () => {
           ({name}) => name === 'id_qmk_rgb_sleep_timeout',
         ),
       ).toEqual([
-        expect.objectContaining({channel: 18, id: 1, label: 'RGB Sleep Timeout'}),
+        expect.objectContaining({
+          channel: 18,
+          id: 1,
+          label: 'RGB Sleep Timeout',
+        }),
       ]);
       const mouse = collectCommandControls(definition).filter(({name}) =>
         name.startsWith('id_qmk_mousekey_'),
@@ -688,6 +693,101 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
+  test('keeps Riley on RGB Effect plus three independent lock-indicator slots without a persistent All Off choice', () => {
+    const entry = manifest.definitions.find(({id}) => id === 'riley');
+    expect(entry).toBeDefined();
+    const definition = readJSON(entry!.path);
+    const controls = collectCommandControls(definition);
+    const byName = new Map(controls.map((control) => [control.name, control]));
+
+    expect(byName.get('id_qmk_rgblight_effect')?.options).toEqual(
+      expect.arrayContaining([
+        ['Solid Color', 1],
+        ['Rainbow Swirl 1', 9],
+        ['Twinkle 6', 42],
+      ]),
+    );
+    expect(
+      JSON.stringify(byName.get('id_qmk_rgblight_effect')?.options),
+    ).not.toContain('All Off');
+    expect(
+      (byName.get('id_qmk_rgblight_effect')?.options as unknown[][]).map(
+        (option) => option[1],
+      ),
+    ).not.toContain(0);
+
+    expect(byName.get('id_qmk_custom_riley_indicator_only')).toMatchObject({
+      channel: 0,
+      id: 22,
+      label: 'Indicator-Only',
+      type: 'toggle',
+    });
+
+    for (const [slot, base] of [
+      [1, 13],
+      [2, 16],
+      [3, 19],
+    ] as const) {
+      expect(byName.get(`id_qmk_custom_riley_ind${slot}_mode`)).toMatchObject({
+        channel: 0,
+        id: base,
+        label: `IND${slot} Mode`,
+        type: 'dropdown',
+        options: [
+          ['RGB Effect', 0],
+          ['Caps Lock', 1],
+          ['Scroll Lock', 2],
+          ['Num Lock', 3],
+        ],
+      });
+      expect(
+        byName.get(`id_qmk_custom_riley_ind${slot}_brightness`),
+      ).toMatchObject({
+        channel: 0,
+        id: base + 1,
+        label: `IND${slot} Indicator Brightness`,
+        type: 'range',
+        options: [0, 255],
+      });
+      expect(byName.get(`id_qmk_custom_riley_ind${slot}_color`)).toMatchObject({
+        channel: 0,
+        id: base + 2,
+        label: `IND${slot} Indicator Color`,
+        type: 'color',
+      });
+    }
+  });
+
+  test('uses the six common Backlight modes without retired Blink labels', () => {
+    const expectedModes = [
+      ['Steady', 0],
+      ['Breathing', 1],
+      ['Pulse Off Press', 2],
+      ['Pulse On Press', 3],
+      ['Pulse Off Press (Hold)', 4],
+      ['Pulse On Press (Hold)', 5],
+    ];
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const controls = collectCommandControls(definition);
+      const effect = controls.find(
+        ({name}) => name === 'id_custom_backlight_effect',
+      );
+      if (!effect) {
+        continue;
+      }
+      expect({id: entry.id, modes: effect.options}).toEqual({
+        id: entry.id,
+        modes: expectedModes,
+      });
+      const serialized = JSON.stringify(definition);
+      expect(serialized).not.toContain('Blink-Out on Keypress');
+      expect(serialized).not.toContain('Blink-In on Keypress');
+      expect(serialized).not.toContain('Blink Speed');
+      expect(serialized).toContain('Pulse Speed');
+    }
+  });
+
   // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in
   // its custom definition, while its own official VIA JSON and both sibling split
   // boards had all three. Nothing failed, because no test asked which definitions carry
@@ -698,6 +798,7 @@ describe('canonical ERA definition inventory', () => {
     // Every ERA keyboard supports mouse keys. `brick65` is the ATmega32U4 exception
     // documented in PROJECT_DIRECTION: stock VIA only, no ERA feature menus at all.
     id_qmk_mousekey: [
+      '7b75',
       'brick60-h7s',
       'brick65-h7s',
       'brick65s',
@@ -721,6 +822,7 @@ describe('canonical ERA definition inventory', () => {
       'newone-h1',
       'newone-odessey60h',
       'newone-odessey60s',
+      'riley',
       'sculpturei-h7s',
       'tomak-tkl-left',
       'tomak-tkl-right',
@@ -732,6 +834,7 @@ describe('canonical ERA definition inventory', () => {
     // Every RP2040 keyboard has the toggle. H7S is always 20-key with no switch, so a
     // toggle there would offer a choice the firmware does not have.
     id_qmk_custom_nkro: [
+      '7b75',
       'brick65s',
       'chickpad',
       'classicd-a1',
@@ -751,6 +854,7 @@ describe('canonical ERA definition inventory', () => {
       'newone-h1',
       'newone-odessey60h',
       'newone-odessey60s',
+      'riley',
       'tomak-tkl-left',
       'tomak-tkl-right',
       'tomak79h-left',
@@ -761,6 +865,7 @@ describe('canonical ERA definition inventory', () => {
     // Both live firmware families expose one NUL-terminated read-only ASCII value.
     // brick65 is the stock-VIA ATmega exception and does not run either ERA layer.
     id_qmk_ver_ascii: [
+      '7b75',
       'brick60-h7s',
       'brick65-h7s',
       'brick65s',
@@ -784,6 +889,7 @@ describe('canonical ERA definition inventory', () => {
       'newone-h1',
       'newone-odessey60h',
       'newone-odessey60s',
+      'riley',
       'sculpturei-h7s',
       'tomak-tkl-left',
       'tomak-tkl-right',
@@ -831,7 +937,9 @@ describe('canonical ERA definition inventory', () => {
     for (const [command, expectedIds] of Object.entries(FEATURE_COVERAGE)) {
       const actual = manifest.definitions
         .filter(({path}) => {
-          const names = collectCommandControls(readJSON(path)).map(({name}) => name);
+          const names = collectCommandControls(readJSON(path)).map(
+            ({name}) => name,
+          );
           if (
             command === 'id_qmk_ver_ascii' ||
             command === 'id_qmk_rgb_sleep_timeout' ||

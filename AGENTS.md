@@ -54,7 +54,7 @@ bun install --frozen-lockfile
 bun run test:transport   # 7개 파일, 0 fail
 bun run test:p1          # 8개 파일, 0 fail
 bun x tsc --noEmit       # 0
-bun run build            # ERA 정의 31종
+bun run build            # ERA 정의 33종
 ```
 
 변경 위험에 비례해 돌린다. 소스를 고쳤으면 네 개 모두, 문서만 고쳤으면 최소한

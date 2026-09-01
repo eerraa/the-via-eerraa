@@ -769,9 +769,9 @@ not snap; widening official `options` is refused (exact-ms section above).
 ## Probe targets and what the app shows
 
 This host probes only connections whose effective source is ERA overlay and
-whose manifest entry has `stateSync: true`. That is 30 of 31 custom definitions
+whose manifest entry has `stateSync: true`. That is 31 of 32 custom definitions
 (`brick65` is the exception — `docs/MAP.md` §2). The five H7S boards are among
-the 30.
+the 31.
 
 When probe ends `unverified`, `getCustomMenuAvailabilityForDevice` replaces the
 whole Custom pane with the unverified message. Ordinary VIA keymap flow remains.

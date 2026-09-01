@@ -32,6 +32,12 @@ const SOCD_HELP: EraFeatureHelp = {
     'A normal keyboard can report opposing keys such as A and D at the same time. With SOCD enabled, the key pressed later takes priority while both are held. Releasing it restores the key that is still physically held. This is mainly useful when a game needs unambiguous directional input.',
 };
 
+const RGB_INDICATOR_HELP: EraFeatureHelp = {
+  summary: 'LED for Caps Lock, Scroll Lock and Num Lock.',
+  detail:
+    'Choose which lock each indicator follows, then set its brightness and colour. While that lock is on, the indicator display takes priority on that LED.',
+};
+
 // Ordered: the first prefix that matches a command in the submenu wins, so more
 // specific prefixes come before the families that would also match them.
 const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
@@ -140,14 +146,8 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
         'Year, month, day and revision, read from the keyboard. Quote it when you report a problem.',
     },
   ],
-  [
-    'id_qmk_custom_ind_',
-    {
-      summary: 'LED for Caps Lock, Scroll Lock and Num Lock.',
-      detail:
-        'Choose which lock each indicator follows, then set its brightness and colour. While that lock is on, the indicator display takes priority on that LED.',
-    },
-  ],
+  ['id_qmk_custom_ind_', RGB_INDICATOR_HELP],
+  ['id_qmk_custom_riley_ind', RGB_INDICATOR_HELP],
   // The badge menu is gated on `id_custom_badge_only`, the one command in it that no
   // other keyboard would plausibly name the same way; the indicator commands beside it
   // are generic enough that keying on them would be a weaker gate.

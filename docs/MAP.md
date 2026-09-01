@@ -42,11 +42,11 @@ computed from code, the test goes red.
 
 | Item | Value |
 | --- | --- |
-| ERA custom definitions | **31** |
-| ├ QMK (RP2040 + ATmega32U4) | 26 |
+| ERA custom definitions | **33** |
+| ├ QMK (RP2040 + ATmega32U4) | 28 |
 | └ H7S | 5 |
-| State Sync opt-in (`stateSync: true`) | 30 |
-| exact-ms `qmk` family (`options: [1, 65535]`) | 25 |
+| State Sync opt-in (`stateSync: true`) | 32 |
+| exact-ms `qmk` family (`options: [1, 65535]`) | 27 |
 | exact-ms `h7s` family (`options: [100, 500]`) | 5 |
 | USB diagnostics opt-in (`usbDiagnostics: true`) | 5 |
 | split pair entries (left/right each) | 6 |
@@ -77,7 +77,7 @@ GET projection, and refused alternatives are
 | V3 Custom Value channel 9 / id 10 | TOMAK RGB sleep stock preset, one-byte minutes 1/3/5/10/30/60 | firmware-local VIA definition | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
 | V3 Custom Value channel 9 / id 11 | TOMAK RGB sleep exact seconds, BE16 1..65535 | `era-definitions/custom/v3/tomak*` + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
 | V3 Custom Value channel 18 / id 1 | H7S RGB sleep official minute dropdown 1/3/5/10/30/60 (`id_qmk_rgb_sleep_timeout`) | `era-definitions/custom/v3` five H7S | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep minute dropdown** |
-| V3 Custom Value channel 8 / id 1 | RP2040 VERSION, NUL-terminated ASCII; one read-only label on 25 definitions | `src/utils/era-firmware-version.ts` + `era-definitions/custom/v3` | [ADR 0003](adr/0003-era-menu-help-ui.md) |
+| V3 Custom Value channel 8 / id 1 | RP2040 VERSION, NUL-terminated ASCII; one read-only label on 27 definitions | `src/utils/era-firmware-version.ts` + `era-definitions/custom/v3` | [ADR 0003](adr/0003-era-menu-help-ui.md) |
 | V3 Custom Value channel 8 / id 5 | H7S VERSION, NUL-terminated ASCII; one read-only label on five definitions. Legacy ids 1–4 remain firmware-only for cached old definitions | `src/utils/era-firmware-version.ts` + five H7S custom JSON files | [ADR 0003](adr/0003-era-menu-help-ui.md) |
 
 exact-ms channel and value ids differ by family. The checker re-reads them from
