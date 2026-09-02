@@ -1,0 +1,231 @@
+{
+  "name": "TOMAK79L",
+  "vendorId": "0x3151",
+  "productId": "0x4040",
+  "matrix": {
+    "rows": 6,
+    "cols": 8
+  },
+  "customKeycodes": [
+    {"name": "Bluetooth Host 1", "title": "Bluetooth Host 1", "shortName": "BTH1"},
+    {"name": "Bluetooth Host 2", "title": "Bluetooth Host 2", "shortName": "BTH2"},
+    {"name": "Bluetooth Host 3", "title": "Bluetooth Host 3", "shortName": "BTH3"},
+    {"name": "usb mode", "title": "usb mode", "shortName": "USB"},
+    {"name": "2.4G mode", "title": "2.4G mode", "shortName": "2.4G"},
+    {"name": "Close RGB", "title": "Close RGB", "shortName": "cRGB"},
+    {"name": "Open RGB", "title": "Open RGB", "shortName": "oRGB"},
+    {"name": "Reset", "title": "Reset", "shortName": "Rst"},
+    {"name": "Clean EEPROM", "title": "Clean EEPROM", "shortName": "cEE"},
+    {"name": "Update KeyBoard", "title": "Update KeyBoard", "shortName": "Upda"},
+    {"name": "Clean Wireless", "title": "Clean Wireless", "shortName": "cWi"},
+    {"name": "Light+", "title": "Light+", "shortName": "RGB+"},
+    {"name": "Light-", "title": "Light-", "shortName": "RGB-"},
+    {"name": "Magnetic Force +", "title": "Magnetic Force +", "shortName": "MF+"},
+    {"name": "Magnetic Force -", "title": "Magnetic Force -", "shortName": "MF-"},
+    {"name": "Actuation Point +", "title": "Actuation Point +", "shortName": "AP+"},
+    {"name": "Actuation Point -", "title": "Actuation Point -", "shortName": "AP-"},
+    {"name": "Update 2.4g", "title": "Update 2.4g", "shortName": "Up2.4"},
+    {"name": "batter level", "title": "batter level", "shortName": "bat"}
+  ],
+
+  "menus": [
+    {
+      "label": "Configurations",
+      "content": [
+        {
+          "label": "Wireless",
+          "content": [
+            {
+              "showIf": "{id_Work_mode} == 1",
+              "label": "BLE Device",
+              "type": "dropdown",
+              "options": [
+                ["Device 0", 0],
+                ["Device 1", 1],
+                ["Device 2", 2]
+              ],
+              "content": ["id_BLE_device", 0, 1]
+            },
+            {
+              "label": "Work Mode",
+              "type": "dropdown",
+              "options": [
+                ["USB", 0],
+                ["BlueTooth", 1],
+                ["RF 2.4G", 2]
+              ],
+              "content": ["id_Work_mode", 0, 2]
+            }
+          ]
+        },
+        {
+          "label": "RGBType",
+          "content": [
+            {
+              "label": "Style",
+              "type": "dropdown",
+              "options": [
+                ["OFF", 0],
+                ["Rainbow", 1],
+                ["Breath", 2],
+                ["Marquee", 3],
+                ["Solid", 4],
+                ["Cycle effect", 5],
+                ["Meteor effect", 6],
+                ["wave flow", 7],
+                ["ripple effect", 8],
+                ["starry night", 9],
+                ["flowing stream", 10],
+                ["follow me", 11],
+                ["layered waves", 12],
+                ["sine wave", 13],
+                ["color spring", 14],
+                ["gentle fade", 15],
+                ["flower garden", 16],
+                ["double effect", 17],
+                ["peak return", 18],
+                ["color cross", 19],
+                ["snow flurry", 20]
+              ],
+              "content": ["id_LED_Style", 1, 1]
+            },
+            {
+              "label": "RGBBrightness",
+              "type": "range",
+              "options": [1, 128],
+              "content": ["id_LED_Brightness", 1, 2]
+            },
+            {
+              "showIf": "{id_LED_Style} > 6",
+              "label": "Effect Speed",
+              "type": "range",
+              "options": [0, 3],
+              "content": ["id_rgblight_speed", 1, 3]
+            },
+            {
+              "showIf": "{id_LED_Style} == 4",
+              "label": "Color",
+              "type": "color",
+              "content": ["id_rgblight_color", 1, 4]
+            }
+          ]
+        },
+        {
+          "label": "Device settings",
+          "content": [
+            {
+              "label": "Reboot device",
+              "type": "button",
+              "options": [1],
+              "content": ["id_reset_button", 3, 1]
+            },
+            {
+              "label": "factory reset",
+              "type": "button",
+              "options": [1],
+              "content": ["id_reset_button", 3, 2]
+            },
+            {
+              "label": "upgrade mode",
+              "type": "button",
+              "options": [1],
+              "content": ["id_reset_button", 3, 3]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+
+  "layouts": {
+    "labels": [],
+    "keymap": [
+      [
+        {
+          "y": 1.75
+        },
+        "0,0",
+        {
+          "x": 0.5
+        },
+        "0,1",
+        "0,2",
+        "0,3",
+        "0,4",
+        {
+          "x": 0.5
+        },
+        "0,5",
+        "0,6"
+      ],
+      [
+        {
+          "y": 0.25
+        },
+        "1,0",
+        "1,1",
+        "1,2",
+        "1,3",
+        "1,4",
+        "1,5",
+        "1,6",
+        "1,7"
+      ],
+      [
+        {
+          "w": 1.5
+        },
+        "2,0",
+        "2,1",
+        "2,2",
+        "2,3",
+        "2,4",
+        "2,5",
+        "2,6"
+      ],
+      [
+        {
+          "w": 1.75
+        },
+        "3,0",
+        "3,1",
+        "3,2",
+        "3,3",
+        "3,4",
+        "3,5",
+        "3,6"
+      ],
+      [
+        {
+          "w": 2.25
+        },
+        "4,0",
+        "4,1",
+        "4,2",
+        "4,3",
+        "4,4",
+        "4,5"
+      ],
+      [
+        {
+          "w": 1.25
+        },
+        "5,0",
+        {
+          "w": 1.25
+        },
+        "5,1",
+        {
+          "w": 1.25
+        },
+        "5,2",
+        {
+          "x": 0.25,
+          "w": 3
+        },
+        "5,3",
+        "5,4"
+      ]
+    ]
+  }
+}

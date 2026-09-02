@@ -117,7 +117,7 @@ The deploy workflow pins Node 22 (`actions/setup-node@v4`) and Bun
 - `dist/definitions/era/v3` file count == `era-definitions/custom/v3` source
   count
 - `dist/definitions/v3` file count == installed `via-keyboards` `v3` snapshot
-  count
+  count + `era-definitions/external/v3` managed source count
 - total files under `dist/` < 20,000
 
 Mismatch does not upload. Then `Deploy` runs

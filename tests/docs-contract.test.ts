@@ -31,6 +31,11 @@ type ManifestEntry = {
 const manifest = readJSON('config/era-definitions.manifest.json') as {
   definitions: ManifestEntry[];
 };
+const externalManifest = readJSON(
+  'config/external-definitions.manifest.json',
+) as {
+  definitions: {path: string}[];
+};
 const packageJson = readJSON('package.json') as {
   scripts: Record<string, string>;
 };
@@ -80,13 +85,14 @@ const mapTableValue = (label: string) => {
   return Number(cell.replace(/\*/g, ''));
 };
 
-describe('docs state the same counts the manifest does', () => {
+describe('docs state the same counts the manifests do', () => {
   const h7s = manifest.definitions.filter(
     ({usbDiagnostics}) => usbDiagnostics === true,
   );
 
   const claims: [string, number][] = [
     ['ERA custom definitions', manifest.definitions.length],
+    ['External stock V3 definitions', externalManifest.definitions.length],
     ['├ QMK (RP2040 + ATmega32U4)', manifest.definitions.length - h7s.length],
     ['└ H7S', h7s.length],
     [

@@ -63,10 +63,12 @@ jobs:
           src_count=$(find era-definitions/custom/v3 -type f -iname '*.json' | wc -l)
           echo "ERA overlay files: $era_count (canonical sources: $src_count)"
           test "$era_count" -eq "$src_count"
-          official_count=$(find dist/definitions/v3 -type f -name '*.json' | wc -l)
+          bundled_count=$(find dist/definitions/v3 -type f -name '*.json' | wc -l)
           snapshot_count=$(find node_modules/via-keyboards/v3 -type f -name '*.json' | wc -l)
-          echo "official V3 files: $official_count (installed snapshot: $snapshot_count)"
-          test "$official_count" -eq "$snapshot_count"
+          external_count=$(find era-definitions/external/v3 -type f -iname '*.json' | wc -l)
+          expected_bundled_count=$((snapshot_count + external_count))
+          echo "bundled V3 files: $bundled_count (installed snapshot: $snapshot_count, managed external: $external_count)"
+          test "$bundled_count" -eq "$expected_bundled_count"
           file_count=$(find dist -type f | wc -l)
           echo "total files: $file_count (Cloudflare Pages limit: 20000)"
           test "$file_count" -lt 20000

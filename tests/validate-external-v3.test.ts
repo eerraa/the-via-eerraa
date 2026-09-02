@@ -8,6 +8,19 @@ import {fileURLToPath} from 'node:url';
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const scriptPath = 'scripts/validate-external-v3.ts';
 const tempRoots: string[] = [];
+const externalManifest = JSON.parse(
+  readFileSync(
+    path.join(repoRoot, 'config/external-definitions.manifest.json'),
+    'utf8',
+  ),
+) as {
+  definitions: {
+    id: string;
+    path: string;
+    vendorId: string;
+    productId: string;
+  }[];
+};
 
 const tempRoot = () => {
   const root = mkdtempSync(path.join(tmpdir(), 'via-external-v3-'));
@@ -144,5 +157,76 @@ describe('external VIA V3 validator', () => {
         'Usage: bun scripts/validate-external-v3.ts --format json -- <one-or-more JSON paths>\n',
       );
     }
+  });
+});
+
+describe('managed external VIA V3 definitions', () => {
+  test('keeps the Sirind inventory and VID-PID filenames explicit', () => {
+    expect(externalManifest.definitions).toEqual([
+      {
+        id: 'sirind-tomak79l',
+        path: 'era-definitions/external/v3/sirind/3151-4040.json',
+        vendorId: '0x3151',
+        productId: '0x4040',
+      },
+      {
+        id: 'sirind-tomak79r',
+        path: 'era-definitions/external/v3/sirind/3151-4047.json',
+        vendorId: '0x3151',
+        productId: '0x4047',
+      },
+      {
+        id: 'sirind-brickex',
+        path: 'era-definitions/external/v3/sirind/5352-4245.json',
+        vendorId: '0x5352',
+        productId: '0x4245',
+      },
+    ]);
+
+    for (const entry of externalManifest.definitions) {
+      const source = JSON.parse(
+        readFileSync(path.join(repoRoot, entry.path), 'utf8'),
+      ) as {vendorId: string; productId: string};
+      expect(source.vendorId.toLowerCase()).toBe(entry.vendorId.toLowerCase());
+      expect(source.productId.toLowerCase()).toBe(
+        entry.productId.toLowerCase(),
+      );
+      expect(path.basename(entry.path)).toBe(
+        `${entry.vendorId.slice(2)}-${entry.productId.slice(2)}.json`,
+      );
+    }
+  });
+
+  test('validates every managed source with the app reader', () => {
+    const inputPaths = externalManifest.definitions.map(({path: inputPath}) =>
+      path.join(repoRoot, inputPath),
+    );
+    const result = runValidator(['--format', 'json', '--', ...inputPaths]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual([
+      {
+        firmwareVersion: 0,
+        name: 'TOMAK79L',
+        ok: true,
+        path: inputPaths[0],
+        vendorProductId: 827408448,
+      },
+      {
+        firmwareVersion: 0,
+        name: 'TOMAK79R',
+        ok: true,
+        path: inputPaths[1],
+        vendorProductId: 827408455,
+      },
+      {
+        firmwareVersion: 0,
+        name: 'S.R.Industry BrickEX',
+        ok: true,
+        path: inputPaths[2],
+        vendorProductId: 1397899845,
+      },
+    ]);
   });
 });

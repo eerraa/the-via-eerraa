@@ -2,7 +2,12 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {access, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import type {KeyboardDefinitionV3} from '@the-via/reader';
+import {
+  isKeyboardDefinitionV3,
+  keyboardDefinitionV3ToVIADefinitionV3,
+  type KeyboardDefinitionV3,
+  type VIADefinitionV3,
+} from '@the-via/reader';
 import {
   isTapDanceKeycodeName,
   parseEraV3Definition,
@@ -30,6 +35,17 @@ type DefinitionManifest = {
   definitions: DefinitionEntry[];
 };
 
+type ExternalDefinitionEntry = {
+  id: string;
+  path: string;
+  vendorId: string;
+  productId: string;
+};
+
+type ExternalDefinitionManifest = {
+  definitions: ExternalDefinitionEntry[];
+};
+
 type DefinitionIndex = {
   generatedAt: number;
   version: string;
@@ -43,15 +59,26 @@ type CompiledDefinition = {
   via: EraVIADefinitionV3;
 };
 
+type CompiledExternalDefinition = {
+  entry: ExternalDefinitionEntry;
+  via: VIADefinitionV3;
+};
+
 const projectRoot = process.cwd();
 const manifestPath = path.join(
   projectRoot,
   'config',
   'era-definitions.manifest.json',
 );
+const externalManifestPath = path.join(
+  projectRoot,
+  'config',
+  'external-definitions.manifest.json',
+);
 const definitionsOutputPath = path.join(projectRoot, 'public', 'definitions');
 const eraDefinitionsRoot = path.join(projectRoot, 'era-definitions');
 const customDefinitionsRoot = path.join(eraDefinitionsRoot, 'custom', 'v3');
+const externalDefinitionsRoot = path.join(eraDefinitionsRoot, 'external', 'v3');
 const officialBuilderPath = path.join(
   projectRoot,
   'node_modules',
@@ -152,9 +179,68 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
   }
 }
 
+function validateExternalManifest(
+  value: unknown,
+): asserts value is ExternalDefinitionManifest {
+  invariant(isRecord(value), 'External definition manifest must be an object.');
+  invariant(
+    Array.isArray(value.definitions),
+    'External definitions must be an array.',
+  );
+  invariant(
+    value.definitions.length > 0,
+    'External definitions must not be empty.',
+  );
+  const definitionIds = new Set<string>();
+  for (const definition of value.definitions) {
+    invariant(
+      isRecord(definition),
+      'Each external definition must be an object.',
+    );
+    invariant(
+      typeof definition.id === 'string' && /^[a-z0-9-]+$/.test(definition.id),
+      'External definition id is invalid.',
+    );
+    invariant(
+      !definitionIds.has(definition.id),
+      `Duplicate external id: ${definition.id}`,
+    );
+    definitionIds.add(definition.id);
+    validateRelativePath(definition.path, `${definition.id}.path`);
+    invariant(
+      /^era-definitions\/external\/v3\/[a-z0-9-]+\/[0-9a-f]{4}-[0-9a-f]{4}\.json$/.test(
+        definition.path,
+      ),
+      `${definition.id}.path must use era-definitions/external/v3/<maintainer>/<vid>-<pid>.json.`,
+    );
+    invariant(
+      isHexId(definition.vendorId),
+      `${definition.id}.vendorId is invalid.`,
+    );
+    invariant(
+      isHexId(definition.productId),
+      `${definition.id}.productId is invalid.`,
+    );
+    const expectedFilename =
+      `${definition.vendorId.slice(2)}-${definition.productId.slice(2)}.json`.toLowerCase();
+    invariant(
+      path.posix.basename(definition.path) === expectedFilename,
+      `${definition.id}.path filename must match its VID and PID.`,
+    );
+  }
+}
+
 const loadManifest = async () => {
   const value: unknown = JSON.parse(await readFile(manifestPath, 'utf8'));
   validateManifest(value);
+  return value;
+};
+
+const loadExternalManifest = async () => {
+  const value: unknown = JSON.parse(
+    await readFile(externalManifestPath, 'utf8'),
+  );
+  validateExternalManifest(value);
   return value;
 };
 
@@ -237,6 +323,19 @@ const resolveCustomDefinitionPath = async (entry: DefinitionEntry) => {
     customDefinitionsRoot,
     `${entry.id}.path`,
     'era-definitions/custom/v3',
+  );
+  return currentPath;
+};
+
+const resolveExternalDefinitionPath = async (
+  entry: ExternalDefinitionEntry,
+) => {
+  const currentPath = await resolveRepoPath(entry.path, `${entry.id}.path`);
+  assertUnderRoot(
+    currentPath,
+    externalDefinitionsRoot,
+    `${entry.id}.path`,
+    'era-definitions/external/v3',
   );
   return currentPath;
 };
@@ -450,6 +549,47 @@ const compileDefinition = async (
   return {entry, raw: raw as KeyboardDefinitionV3, via};
 };
 
+const compileExternalDefinition = async (
+  entry: ExternalDefinitionEntry,
+): Promise<CompiledExternalDefinition> => {
+  const definitionPath = await resolveExternalDefinitionPath(entry);
+  const raw = await readDefinitionJSON(definitionPath, `${entry.id}.path`);
+  invariant(
+    String(raw.vendorId).toLowerCase() === entry.vendorId.toLowerCase(),
+    `${entry.id}: vendorId does not match the external manifest.`,
+  );
+  invariant(
+    String(raw.productId).toLowerCase() === entry.productId.toLowerCase(),
+    `${entry.id}: productId does not match the external manifest.`,
+  );
+  invariant(
+    isKeyboardDefinitionV3(raw),
+    `${entry.id}: invalid external VIA V3 keyboard definition.`,
+  );
+
+  let via: VIADefinitionV3;
+  try {
+    via = keyboardDefinitionV3ToVIADefinitionV3(raw);
+  } catch (error) {
+    throw new Error(`${entry.id}: external VIA V3 transform failed.`, {
+      cause: error,
+    });
+  }
+  const expectedVendorProductId = vendorProductId(
+    entry.vendorId,
+    entry.productId,
+  );
+  invariant(
+    via.vendorProductId === expectedVendorProductId,
+    `${entry.id}: generated VPID ${via.vendorProductId} does not match ${expectedVendorProductId}.`,
+  );
+  invariant(
+    typeof via.name === 'string',
+    `${entry.id}: external definitions must currently use a static name.`,
+  );
+  return {entry, via};
+};
+
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
@@ -523,8 +663,20 @@ const countJSONFiles = async (directory: string) =>
     (entry) => entry.isFile() && entry.name.endsWith('.json'),
   ).length;
 
-type DirectorySnapshot = {count: number; digest: string};
+type DirectorySnapshot = {count: number; digest: string; names: string[]};
 type OfficialSnapshot = Record<'v2' | 'v3', DirectorySnapshot>;
+
+const snapshotNamedJSONFiles = async (
+  directory: string,
+  names: string[],
+): Promise<DirectorySnapshot> => {
+  const digest = createHash('sha256');
+  for (const name of names) {
+    digest.update(name);
+    digest.update(await readFile(path.join(directory, name)));
+  }
+  return {count: names.length, digest: digest.digest('hex'), names};
+};
 
 const snapshotJSONDirectory = async (
   directory: string,
@@ -533,12 +685,7 @@ const snapshotJSONDirectory = async (
     .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
     .map(({name}) => name)
     .sort();
-  const digest = createHash('sha256');
-  for (const name of names) {
-    digest.update(name);
-    digest.update(await readFile(path.join(directory, name)));
-  }
-  return {count: names.length, digest: digest.digest('hex')};
+  return snapshotNamedJSONFiles(directory, names);
 };
 
 const snapshotOfficialOutput = async (): Promise<OfficialSnapshot> => ({
@@ -572,9 +719,96 @@ const validateOfficialOutput = async () => {
   return {index, snapshot};
 };
 
+const writeExternalDefinitions = async (
+  manifest: ExternalDefinitionManifest,
+  officialIndex: DefinitionIndex,
+) => {
+  const definitions = await Promise.all(
+    manifest.definitions.map((entry) => compileExternalDefinition(entry)),
+  );
+  const externalIds = new Set<number>();
+  const v3OutputDir = path.join(definitionsOutputPath, 'v3');
+  for (const definition of definitions) {
+    const id = definition.via.vendorProductId;
+    invariant(
+      !externalIds.has(id),
+      `${definition.entry.id}: duplicate external VPID ${id}.`,
+    );
+    invariant(
+      !officialIndex.vendorProductIds.v3.includes(id) &&
+        !(await pathExists(path.join(v3OutputDir, `${id}.json`))),
+      `${definition.entry.id}: external VPID ${id} collides with the official V3 snapshot.`,
+    );
+    externalIds.add(id);
+  }
+
+  await Promise.all(
+    definitions.map((definition) =>
+      writeFile(
+        path.join(v3OutputDir, `${definition.via.vendorProductId}.json`),
+        JSON.stringify(definition.via),
+      ),
+    ),
+  );
+
+  const baseIndex: DefinitionIndex = {
+    ...officialIndex,
+    vendorProductIds: {
+      v2: officialIndex.vendorProductIds.v2,
+      v3: Array.from(
+        new Set([...officialIndex.vendorProductIds.v3, ...externalIds]),
+      ).sort((a, b) => a - b),
+    },
+  };
+  await writeFile(
+    path.join(definitionsOutputPath, 'supported_kbs.json'),
+    JSON.stringify(baseIndex),
+  );
+
+  const namesPath = path.join(definitionsOutputPath, 'keyboard_names.json');
+  const officialNames = await readJSON<unknown[]>(namesPath);
+  invariant(
+    officialNames.every((name) => typeof name === 'string'),
+    'Official keyboard names must be strings.',
+  );
+  const externalNames = definitions.map(({via}) => via.name as string);
+  await writeFile(
+    namesPath,
+    JSON.stringify(
+      Array.from(new Set([...officialNames, ...externalNames])).sort(),
+    ),
+  );
+
+  const officialHash = await readJSON<string>(
+    path.join(definitionsOutputPath, 'hash.json'),
+  );
+  const {generatedAt: _generatedAt, ...stableIndex} = baseIndex;
+  const baseHash = createHash('sha256')
+    .update(
+      canonicalJSON({
+        officialHash,
+        stableIndex,
+        definitions: definitions.map(({via}) => via),
+      }),
+    )
+    .digest('hex');
+  await writeFile(
+    path.join(definitionsOutputPath, 'hash.json'),
+    JSON.stringify(baseHash),
+  );
+
+  for (const definition of definitions) {
+    console.log(
+      `Added external definition ${definition.entry.id}: ${definition.via.vendorProductId} (${definition.entry.path})`,
+    );
+  }
+  return {baseIndex, definitions};
+};
+
 const writeEraOverlay = async (
   manifest: DefinitionManifest,
-  officialIndex: DefinitionIndex,
+  baseIndex: DefinitionIndex,
+  externalDefinitions: CompiledExternalDefinition[],
 ) => {
   const definitions = await Promise.all(
     manifest.definitions.map((entry) => compileDefinition(entry)),
@@ -582,11 +816,18 @@ const writeEraOverlay = async (
   validatePairs(definitions);
 
   const eraIds = new Set<number>();
+  const externalIds = new Set(
+    externalDefinitions.map(({via}) => via.vendorProductId),
+  );
   for (const definition of definitions) {
     const id = definition.via.vendorProductId;
     invariant(
       !eraIds.has(id),
       `${definition.entry.id}: duplicate ERA VPID ${id}.`,
+    );
+    invariant(
+      !externalIds.has(id),
+      `${definition.entry.id}: ERA VPID ${id} collides with an external definition.`,
     );
     eraIds.add(id);
   }
@@ -604,11 +845,11 @@ const writeEraOverlay = async (
   );
 
   const mergedIndex: DefinitionIndex = {
-    ...officialIndex,
+    ...baseIndex,
     vendorProductIds: {
-      v2: officialIndex.vendorProductIds.v2,
+      v2: baseIndex.vendorProductIds.v2,
       v3: Array.from(
-        new Set([...officialIndex.vendorProductIds.v3, ...eraIds]),
+        new Set([...baseIndex.vendorProductIds.v3, ...eraIds]),
       ).sort((a, b) => a - b),
     },
   };
@@ -618,10 +859,10 @@ const writeEraOverlay = async (
   );
 
   const namesPath = path.join(definitionsOutputPath, 'keyboard_names.json');
-  const officialNames = await readJSON<unknown[]>(namesPath);
+  const baseNames = await readJSON<unknown[]>(namesPath);
   invariant(
-    officialNames.every((name) => typeof name === 'string'),
-    'Official keyboard names must be strings.',
+    baseNames.every((name) => typeof name === 'string'),
+    'Bundled keyboard names must be strings.',
   );
   const eraNames = definitions.map((definition) => definition.via.name);
   invariant(
@@ -629,18 +870,18 @@ const writeEraOverlay = async (
     'ERA definitions must currently use static string names.',
   );
   const mergedNames = Array.from(
-    new Set([...officialNames, ...(eraNames as string[])]),
+    new Set([...baseNames, ...(eraNames as string[])]),
   ).sort();
   await writeFile(namesPath, JSON.stringify(mergedNames));
 
-  const officialHash = await readJSON<string>(
+  const baseHash = await readJSON<string>(
     path.join(definitionsOutputPath, 'hash.json'),
   );
   const {generatedAt: _generatedAt, ...stableIndex} = mergedIndex;
   const combinedHash = createHash('sha256')
     .update(
       canonicalJSON({
-        officialHash,
+        baseHash,
         stableIndex,
         definitions: definitions.map(({via}) => via),
       }),
@@ -674,14 +915,31 @@ const writeEraOverlay = async (
 
 const validateFinalOutput = async (
   definitions: CompiledDefinition[],
+  externalDefinitions: CompiledExternalDefinition[],
   mergedIndex: DefinitionIndex,
   officialIndex: DefinitionIndex,
   officialSnapshot: OfficialSnapshot,
 ) => {
-  const finalOfficialSnapshot = await snapshotOfficialOutput();
+  const finalV2Snapshot = await snapshotJSONDirectory(
+    path.join(definitionsOutputPath, 'v2'),
+  );
+  const finalOfficialV3Snapshot = await snapshotNamedJSONFiles(
+    path.join(definitionsOutputPath, 'v3'),
+    officialSnapshot.v3.names,
+  );
   invariant(
-    canonicalJSON(finalOfficialSnapshot) === canonicalJSON(officialSnapshot),
-    'ERA overlay changed, removed, or added an official definition file.',
+    canonicalJSON(finalV2Snapshot) === canonicalJSON(officialSnapshot.v2) &&
+      canonicalJSON(finalOfficialV3Snapshot) ===
+        canonicalJSON(officialSnapshot.v3),
+    'Bundled additions changed or removed an official definition file.',
+  );
+
+  const finalV3Count = await countJSONFiles(
+    path.join(definitionsOutputPath, 'v3'),
+  );
+  invariant(
+    finalV3Count === officialSnapshot.v3.count + externalDefinitions.length,
+    `Bundled V3 definition output count mismatch: expected ${officialSnapshot.v3.count + externalDefinitions.length}, received ${finalV3Count}.`,
   );
 
   const expectedIndex = {
@@ -689,6 +947,7 @@ const validateFinalOutput = async (
     v3: Array.from(
       new Set([
         ...officialIndex.vendorProductIds.v3,
+        ...externalDefinitions.map(({via}) => via.vendorProductId),
         ...definitions.map(({via}) => via.vendorProductId),
       ]),
     ).sort((a, b) => a - b),
@@ -697,10 +956,26 @@ const validateFinalOutput = async (
     path.join(definitionsOutputPath, 'supported_kbs.json'),
   );
   invariant(
-    canonicalJSON(outputIndex.vendorProductIds) === canonicalJSON(expectedIndex) &&
-      canonicalJSON(mergedIndex.vendorProductIds) === canonicalJSON(expectedIndex),
-    'Final definition index is not the unique official/ERA VPID union.',
+    canonicalJSON(outputIndex.vendorProductIds) ===
+      canonicalJSON(expectedIndex) &&
+      canonicalJSON(mergedIndex.vendorProductIds) ===
+        canonicalJSON(expectedIndex),
+    'Final definition index is not the unique official/external/ERA VPID union.',
   );
+
+  for (const definition of externalDefinitions) {
+    const outputPath = path.join(
+      definitionsOutputPath,
+      'v3',
+      `${definition.via.vendorProductId}.json`,
+    );
+    const output = await readJSON<VIADefinitionV3>(outputPath);
+    invariant(
+      output.vendorProductId === definition.via.vendorProductId &&
+        output.name === definition.via.name,
+      `${definition.entry.id}: generated external output identity is invalid.`,
+    );
+  }
 
   const eraOutputCount = await countJSONFiles(
     path.join(definitionsOutputPath, 'era', 'v3'),
@@ -758,7 +1033,10 @@ const listJSONFilesRecursively = async (directory: string): Promise<string[]> =>
   return nested.flat();
 };
 
-const validateSourceInventory = async (manifest: DefinitionManifest) => {
+const validateSourceInventory = async (
+  manifest: DefinitionManifest,
+  externalManifest: ExternalDefinitionManifest,
+) => {
   const expected = manifest.definitions.map(({path: definitionPath}) =>
     definitionPath.replaceAll('\\', '/'),
   );
@@ -770,6 +1048,21 @@ const validateSourceInventory = async (manifest: DefinitionManifest) => {
   invariant(
     expected.join('|') === actual.join('|'),
     `Custom definition manifest/source inventory differs: expected ${expected.length}, found ${actual.length}.`,
+  );
+
+  const expectedExternal = externalManifest.definitions.map(
+    ({path: definitionPath}) => definitionPath.replaceAll('\\', '/'),
+  );
+  const actualExternal = (
+    await listJSONFilesRecursively(externalDefinitionsRoot)
+  ).map((filePath) =>
+    path.relative(projectRoot, filePath).replaceAll('\\', '/'),
+  );
+  expectedExternal.sort();
+  actualExternal.sort();
+  invariant(
+    expectedExternal.join('|') === actualExternal.join('|'),
+    `External definition manifest/source inventory differs: expected ${expectedExternal.length}, found ${actualExternal.length}.`,
   );
 };
 
@@ -794,27 +1087,34 @@ const main = async () => {
       path.resolve(projectRoot, 'public', 'definitions'),
     'Refusing to remove an unexpected definitions output directory.',
   );
-  const manifest = await loadManifest();
-  await validateSourceInventory(manifest);
+  const [manifest, externalManifest] = await Promise.all([
+    loadManifest(),
+    loadExternalManifest(),
+  ]);
+  await validateSourceInventory(manifest, externalManifest);
   await validateForbiddenOutputsAbsent();
   await rm(definitionsOutputPath, {recursive: true, force: true});
   await mkdir(definitionsOutputPath, {recursive: true});
   await runOfficialBuilder();
   const {index: officialIndex, snapshot: officialSnapshot} =
     await validateOfficialOutput();
+  const {baseIndex, definitions: externalDefinitions} =
+    await writeExternalDefinitions(externalManifest, officialIndex);
   const {definitions, mergedIndex} = await writeEraOverlay(
     manifest,
-    officialIndex,
+    baseIndex,
+    externalDefinitions,
   );
   await validateFinalOutput(
     definitions,
+    externalDefinitions,
     mergedIndex,
     officialIndex,
     officialSnapshot,
   );
   await validateForbiddenOutputsAbsent();
   console.log(
-    `Definition build complete: ${mergedIndex.vendorProductIds.v2.length} V2 index entries, ${mergedIndex.vendorProductIds.v3.length} V3-only index entries, ${definitions.length} ERA definitions.`,
+    `Definition build complete: ${mergedIndex.vendorProductIds.v2.length} V2 index entries, ${mergedIndex.vendorProductIds.v3.length} V3-only index entries, ${externalDefinitions.length} external definitions, ${definitions.length} ERA definitions.`,
   );
 };
 

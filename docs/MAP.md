@@ -20,6 +20,7 @@ looks right, report it; do not silently invert the table.
 | Fact | Canonical | What bites it |
 | --- | --- | --- |
 | ERA custom definition contents (menus, controls, addresses, labels) | JSON under `era-definitions/custom/v3/` | `tests/era-definition.test.ts` |
+| Fork-managed external stock V3 definitions | JSON under `era-definitions/external/v3/` + `config/external-definitions.manifest.json` | `tests/validate-external-v3.test.ts`, `scripts/build-keyboards.ts` |
 | Which board has which feature | the same JSON | `FEATURE_COVERAGE` in that file |
 | Per-board capability opt-in (state sync / exact-ms / diagnostics / split pair) | `config/era-definitions.manifest.json` | `tests/era-definition.test.ts` |
 | Official VIA V3 definitions | `the-via/keyboards` — the installed `node_modules/via-keyboards` is a pinned snapshot only | `Verify build output` in the deploy workflow |
@@ -45,6 +46,7 @@ computed from code, the test goes red.
 | ERA custom definitions | **33** |
 | ├ QMK (RP2040 + ATmega32U4) | 28 |
 | └ H7S | 5 |
+| External stock V3 definitions | **3** |
 | State Sync opt-in (`stateSync: true`) | 32 |
 | exact-ms `qmk` family (`options: [1, 65535]`) | 27 |
 | exact-ms `h7s` family (`options: [100, 500]`) | 5 |
@@ -114,6 +116,8 @@ Do not invent a freshness decision outside this ownership:
 ```
 era-definitions/custom/v3/**.json    ← ERA custom canonical (authored)
 config/era-definitions.manifest.json ← paths, VID/PID, pair, capability opt-in
+era-definitions/external/v3/**.json  ← fork-managed external stock V3 (authored)
+config/external-definitions.manifest.json ← paths and VID/PID
 node_modules/via-keyboards           ← pinned official snapshot (github:the-via/keyboards#79ae8d2 + patches/)
     src/**/*.json   1,484            official V2 source
     v3/**/*.json    2,003            official V3 source
@@ -121,7 +125,8 @@ node_modules/via-keyboards           ← pinned official snapshot (github:the-vi
         │  scripts/build-keyboards.ts  →  node_modules/via-keyboards/scripts/build-all.ts
         ▼
 public/definitions/
-  v2/, v3/             official bundle as-is. Preserve even when an ERA VPID collides
+  v2/                  official V2 bundle as-is
+  v3/                  official V3 bundle + non-colliding external stock definitions
   era/v3/              ERA overlay. File count must equal the definition count in §2
   supported_kbs.json   full V2 plus V3 VPIDs that V2 does not have
   era_advanced.json    schemaVersion 2, per-definition runtime capability
@@ -130,20 +135,29 @@ public/definitions/
 
 The deploy workflow's `Verify build output` requires
 `dist/definitions/era/v3` count == custom source count and
-`dist/definitions/v3` count == `node_modules/via-keyboards/v3` count.
+`dist/definitions/v3` count == `node_modules/via-keyboards/v3` count + managed
+external source count. Every official file must remain byte-identical.
 Mismatch blocks upload.
 
-Runtime lookup is **ERA overlay → official snapshot → Design upload**,
+Runtime lookup is **ERA overlay → bundled stock V3 (official + external) →
+Design upload**,
 implemented by `mergeDefinitionLookup()` and locked by the lookup matrix in
 `tests/era-definition.test.ts`. Product rules for that order:
 `docs/PROJECT_DIRECTION.md`.
 
 `era-definitions/v3` (a stock clone tree) remains an **intentional absence**.
-`scripts/validate-external-v3.ts` is an explicit, read-only adapter for release
-audits: it accepts caller-owned JSON paths, runs the same authoritative V3 guard
-and transform as the app, and neither copies those definitions nor records
-their provenance. `tests/era-definition.test.ts` still forbids provenance
-fields returning on the manifest.
+The curated `era-definitions/external/v3` tree is a separate, manifest-bound
+exception for definitions this fork intentionally bundles; it is not a clone of
+the official tree. The build rejects external/official and external/ERA VPID
+collisions, then emits external definitions into the ordinary `/definitions/v3`
+namespace so no parallel runtime loader exists.
+
+`scripts/validate-external-v3.ts` remains the explicit, read-only adapter for
+caller-owned release-audit paths. It runs the same authoritative V3 guard and
+transform as the app without copying inputs. The managed external sources run
+through that same contract in `tests/validate-external-v3.test.ts` and the
+ordinary definition build. `tests/era-definition.test.ts` still forbids
+cross-repository provenance fields returning on the ERA manifest.
 
 ```powershell
 bun scripts/validate-external-v3.ts --format json -- <one-or-more JSON paths>
@@ -236,9 +250,10 @@ session start.
 - Firmware `*-VIA.json` files are firmware-local copies, not an app lookup
   source. Adding a feature still requires **both sides** — a custom-app-only
   path is an error (`docs/PROJECT_DIRECTION.md`).
-- Ordinary app CI does not invoke the external V3 validator, so it still will
-  not catch cross-repository drift automatically. A release audit passes its
-  extracted firmware-local JSON paths explicitly to
+- Ordinary app CI validates the manifest-bound external registry, but it does
+  not pass arbitrary firmware-local JSON to the external V3 validator and
+  therefore cannot catch cross-repository drift automatically. A release audit
+  passes extracted firmware-local paths explicitly to
   `scripts/validate-external-v3.ts`; wire and identity compatibility still
   require their separate review.
 

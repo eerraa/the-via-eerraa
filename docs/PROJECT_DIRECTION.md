@@ -64,17 +64,25 @@ architecture is the actual limitation.
 - `the-via/keyboards` `v3/` is the canonical official VIA source. The installed
   `via-keyboards` package is a pinned build snapshot, not a second source of
   truth.
+- `era-definitions/external/v3` is the canonical source only for external stock
+  V3 definitions this fork deliberately bundles. Its separate
+  `config/external-definitions.manifest.json` binds path and VID/PID. These
+  definitions are neither official VIA ownership nor ERA overlays and never
+  receive ERA advanced capabilities.
 - QMK `keymaps/via` and H7S board-local `json` files are firmware-local
   compatibility, test, or release material. They are not app lookup sources and
   do not define official JSON ownership.
 - Design uploads are a last-resort local source. They are retained for the
-  existing UX but cannot override a bundled ERA or official definition.
+  existing UX but cannot override a bundled ERA, official, or managed external
+  definition.
 
 > **REFUSED:** generating one canonical source from the other, or maintaining
 > `era-definitions/v3` as a stock clone.
 > **WHY:** custom and official have different ownership; generated output
 > replaces neither. `scripts/build-keyboards.ts` `validateForbiddenOutputsAbsent`
-> requires `era-definitions/v3` not to exist.
+> requires `era-definitions/v3` not to exist. The narrowly curated
+> `era-definitions/external/v3` registry is manifest-bound, collision-checked,
+> and is not an official-tree clone.
 > **REOPENS:** never.
 
 VID/PID, command addresses, layout, and TD slot identity still require
@@ -82,9 +90,18 @@ release-time compatibility review when app and firmware change together. The
 app manifest records only custom path, identity, split pair, and independent
 runtime capabilities. It must not grow cross-repository provenance fields
 (`tests/era-definition.test.ts`). Normal app build and PR CI read the installed
-official snapshot and the ERA custom source; they do not fetch GitHub or inspect
-firmware repositories and do not emit remote-verifier provenance
-(`era_definition_sources.json` is forbidden).
+official snapshot, ERA custom source, and managed external source; they do not
+fetch GitHub or inspect firmware repositories and do not emit remote-verifier
+provenance (`era_definition_sources.json` is forbidden).
+
+Managed external V3 paths use `era-definitions/external/v3/*/*.json`, with the
+directory naming the maintainer and the filename holding `<vid>-<pid>`. The
+build requires the filename, manifest, and JSON identity to agree; rejects
+duplicate, official, or ERA VPID collisions; and preserves every official
+output byte. If the pinned official snapshot later supplies the same VPID, the
+external entry must be retired instead of silently overriding upstream.
+Redistribution permission and an accountable maintainer are admission
+requirements outside the JSON schema.
 
 Firmware repositories remain authoritative for USB identity and protocol
 implementation, not for official definition ownership. The app validates its
@@ -97,14 +114,15 @@ or coupling ordinary builds to firmware Git history.
 `getDefinitionSourceForDevice` in `src/store/definitionsSlice.ts`) implement:
 
 1. Bundled ERA overlay (`/definitions/era/v3/{vpid}.json`).
-2. Installed official VIA snapshot (`/definitions/v3/{vpid}.json`).
+2. Bundled stock V3 (`/definitions/v3/{vpid}.json`): installed official VIA
+   snapshot plus non-colliding managed external definitions.
 3. JSON the user uploaded in Design, only if neither built-in source has that
    version/VPID.
 
 No matching definition means unresolved. Stored uploads are re-evaluated
 through the same priority after app updates, upload replacement/unload, device
 selection changes, and reconnects. `tests/era-definition.test.ts` locks the
-full ERA > official > upload matrix.
+full ERA > bundled stock > upload matrix.
 
 Firmware accepts both presentations: official VIA writes TD0–TD7 as
 `CUSTOM(n)` / `QK_KB_n`; the custom app writes the same `QK_KB_n` bytes from
@@ -135,12 +153,12 @@ Sibling ids `brick65s` and `brick65-h7s` are not this exception.
 
 ### Build overlay
 
-`build:kbs` packages the installed official snapshot under `/definitions/v3`
-and emits the ERA overlay to `/definitions/era/v3/{vpid}.json`. Official files
-must be preserved even when both sources contain the same VPID
-(`ERA overlay changed, removed, or added an official definition file.`). The
-merged V3 index is the unique union of the two namespaces. Generated output
-never replaces either canonical source.
+`build:kbs` packages the installed official snapshot and managed external stock
+definitions under `/definitions/v3`, then emits the ERA overlay to
+`/definitions/era/v3/{vpid}.json`. External definitions cannot collide with
+official or ERA VPIDs. Official files must remain byte-identical even when an
+ERA overlay has the same VPID. The merged V3 index is the unique union of all
+three sources. Generated output never replaces any canonical source.
 
 Bundled definitions auto-load without a manual JSON upload; this has been
 confirmed on hardware.

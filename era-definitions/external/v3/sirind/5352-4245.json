@@ -1,0 +1,265 @@
+{
+  "name": "S.R.Industry BrickEX",
+  "vendorId": "0x5352",
+  "productId": "0x4245",
+  "keycodes": ["qmk_lighting"],
+  "matrix": { "rows": 5, "cols": 19 },
+"menus":
+  [
+    "qmk_rgb_matrix",
+  {
+        "label":"Indicators Control",
+        "content":[
+        {
+          "label":"Indicators",
+          "content":[
+            {
+              "label":"Capslock Indicator",
+              "type":"toggle",
+              "content":["id_caps_enabled",0,1]
+            },
+             {
+
+                "label":"Capslock Indicator Brightness",
+                "type":"range",
+                "options": [0, 255],
+                "content":["id_caps_brightness",0,2]
+            },
+            {
+
+              "label":"Capslock Indicator Color",
+              "type":"color",
+              "content":["id_caps_color",0,3]
+            },
+            {
+              "label":"Scrolllock Indicator",
+              "type":"toggle",
+              "content":["id_via_scroll_enabled",0,4]
+            },
+             {
+
+                "label":"Scrolllock Indicator Brightness",
+                "type":"range",
+                "options": [0, 255],
+                "content":["id_scroll_brightness",0,5]
+            },
+            {
+
+              "label":"Scrolllock Indicator Color",
+              "type":"color",
+              "content":["id_scroll_color",0,6]
+            },
+            {
+              "label":"Numlock Indicator",
+              "type":"toggle",
+              "content":["id_num_enabled",0,7]
+            },
+             {
+
+                "label":"Numlock Indicator Brightness",
+                "type":"range",
+                "options": [0, 255],
+                "content":["id_num_brightness",0,8]
+            },
+            {
+
+              "label":"Numlock Indicator Color",
+              "type":"color",
+              "content":["id_num_color",0,9]
+            }
+          ]
+          }
+        ]
+      }
+],
+  "layouts": {
+    "labels":[
+      "Split Plus"
+    ],
+    "keymap": [
+      [
+    "0,0",
+    {
+      "x": 0.25
+    },
+    "0,1",
+    "0,2",
+    "0,3",
+    "0,4",
+    "0,5",
+    "0,6",
+    "0,7",
+    "0,8",
+    "0,9",
+    "0,10",
+    "0,11",
+    "0,12",
+    {
+      "w": 2
+    },
+    "0,13",
+    {
+      "x": 0.25
+    },
+    "0,14",
+    {
+      "x": 0.25
+    },
+    "0,15",
+    "0,16",
+    "0,17",
+    "0,18"
+  ],
+  [
+    {
+      "y": 0.25,
+      "x": 0.25,
+      "w": 1.5
+    },
+    "1,0",
+    "1,1",
+    "1,2",
+    "1,3",
+    "1,4",
+    "1,5",
+    "1,6",
+    "1,7",
+    "1,8",
+    "1,9",
+    "1,10",
+    "1,11",
+    "1,12",
+    {
+      "w": 1.5
+    },
+    "1,13",
+    {
+      "x": 0.25
+    },
+    "1,14",
+    {
+      "x": 0.25
+    },
+    "1,15",
+    "1,16",
+    "1,17",
+    {
+      "h": 2
+    },
+    "1,18\n\n\n0,0",
+    "1,18\n\n\n0,1"
+  ],
+  [
+    {
+      "x": 0.25,
+      "w": 1.75
+    },
+    "2,0",
+    "2,1",
+    "2,2",
+    "2,3",
+    "2,4",
+    "2,5",
+    "2,6",
+    "2,7",
+    "2,8",
+    "2,9",
+    "2,10",
+    "2,11",
+    {
+      "w": 2.25
+    },
+    "2,12",
+    {
+      "x": 0.25
+    },
+    "2,14",
+    {
+      "x": 0.25
+    },
+    "2,15",
+    "2,16",
+    "2,17",
+    {
+      "x": 1
+    },
+    "2,18\n\n\n0,1"
+  ],
+  [
+    {
+      "x": 0.25,
+      "w": 2.25
+    },
+    "3,0",
+    "3,1",
+    "3,2",
+    "3,3",
+    "3,4",
+    "3,5",
+    "3,6",
+    "3,7",
+    "3,8",
+    "3,9",
+    "3,10",
+    {
+      "w": 1.75
+    },
+    "3,11",
+    {
+      "x": 2.5
+    },
+    "3,15",
+    "3,16",
+    "3,17",
+    {
+      "h": 2
+    },
+    "3,18"
+  ],
+  [
+    {
+      "y": -0.75,
+      "x": 14.5
+    },
+    "3,12"
+  ],
+  [
+    {
+      "y": -0.25,
+      "w": 1.5
+    },
+    "4,0",
+    "4,1",
+    {
+      "w": 1.5
+    },
+    "4,2",
+    {
+      "x": 7.5,
+      "w": 1.5
+    },
+    "4,10",
+    {
+      "x": 3.75,
+      "w": 2
+    },
+    "4,15",
+    "4,17"
+  ],
+  [
+    {
+      "y": -0.75,
+      "x": 4.25,
+      "w": 7
+    },
+    "4,5",
+    {
+      "x": 2.25
+    },
+    "4,11",
+    "4,12",
+    "4,14"
+  ]
+      ]
+  }
+}
