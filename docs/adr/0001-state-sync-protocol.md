@@ -194,7 +194,7 @@ last column is final convergence under loss or duplication.
 | Visible-event watchdog | **Simplified** | Finds a lost last event and firmware-originated change on the selected device. | Lifecycle full read does not observe change during the same visible session. | Adopted as the 500 ms revision poll on an eligible connection, not an event watchdog. | One app timer (`syncPolling`) and a path/generation coordinator owner. No firmware timer. | Each poll reads current tokens; there is no event to lose. A failed poll does not extend fresh. |
 | Four domains (`KEYMAP`, `MACRO`, `CUSTOM_MENU`, `KEYBOARD`) | **Simplified** | Isolates different read costs. | One global token rereads large keymap and macro on a small config change. No measurement requires splitting `CUSTOM_MENU` from `KEYBOARD`. | Start with three host domains; CONFIG cost is remaining measurement. | Three counters/caches, not four. No `KEYBOARD` adapter. | Each domain is an independent equality token and converges by final GET. |
 | Per-device transport ownership and connection generation | **Keep** | Stops A/B device traffic, old listeners, and late async completion from poisoning each other's cache/response. | Sending more GETs enlarges global timestamp and selected-coupling races. | Implemented core correction. | Per-path listener, serialized queue, pending matcher, write timestamp, generation (`src/shims/node-hid.ts`). | Disconnect and untagged legacy timeout discard the generation. Tagged State Sync timeout ends that request only and marks freshness dirty. |
-| Legacy command timeout poisoning | **Keep** | Stops a late previous response from matching a retry of the same untagged legacy command. | Two responses with the same prefix cannot be told apart by the app. | Required now. | Timeout of a WebHID session is terminal for that generation (`poison-generation`). | No automatic retry on the same generation until `close`/`open` flushing the USB pipe is proven on browser and hardware. Reconnect then full-refreshes. |
+| Legacy command timeout poisoning | **Keep** | Stops a late previous response from matching a retry of the same untagged legacy command. | Two responses with the same prefix cannot be told apart by the app. | Required now. | Timeout of a WebHID session is terminal (`poison-generation`). | Enumeration and reauthorization cannot clear poison. A host `close`/`open` and new JS generation do not prove a delayed firmware reply was cancelled. Device reconnect is required. |
 | Revision-bracketed refresh and atomic cache commit | **Keep** | Stops a torn multi-packet GET from being accepted as fresh. | A single lifecycle read does not detect a race during the read. | Implemented correctness boundary. | Per-domain observed/accepted revision, `unknown \| dirty \| refreshing \| fresh`, isolated candidate. | Start/end token mismatch discards the candidate and retries up to `ERA_STATE_SYNC_REFRESH_RETRIES` (3). Still churning stays dirty for the next poll. |
 | TOMAK post-readback/post-reload revision hook | **Keep** | Stops writing source intent into the target cache, and stops missing the target's actual durable apply. | Source GET does not prove target success. Waiting only for target lifecycle full read delays detection on a selected target. | QMK durable boundary (`qmk_firmware_eerraa/keyboards/era/common/split/era_host_peer_storage.c`). | Existing seven storage domains map to three host domains; token increments after target commit. | No wire notification. Revision query reads the token the target actually incremented. Lifecycle full read is a recovery path, not permission to omit the hook. |
 
@@ -370,10 +370,13 @@ an explicit fallback for that query only. Capable `0x16` dirties CONFIG and runs
 invalidation and does not send Custom GET/SET/SAVE.
 
 Untagged legacy commands match on command plus immutable echoed arguments.
-Default timeout uses `poison-generation`: that transport generation is terminal,
-pending/queued work is rejected, and the same generation is not retried. Whether
-`close`/`open` flushes the USB pipe is remaining hardware; fail closed until
-then.
+Default timeout uses `poison-generation`: the session is terminal and
+pending/queued work is rejected until device disconnect/reconnect. Enumeration
+and reauthorization preserve poison. Rotating the JS generation and reopening
+the WebHID handle cannot distinguish an old firmware reply delivered to the new
+listener. The [WebHID close algorithm](https://wicg.github.io/webhid/#dom-hiddevice-close)
+releases host resources; it does not cancel a command already received by the
+firmware. Automatic recovery requires evidence of a device-side response boundary.
 
 State Sync queries pass `{timeoutBehavior: 'preserve-generation'}`. A timed-out
 tag cannot resolve the next tag, so only that pending request is rejected.
@@ -411,8 +414,14 @@ refresh (`refreshDomain`):
 KEYMAP candidate is every layer and encoder map. MACRO is the whole macro
 buffer. CONFIG is layout options plus applicable V3 menu / per-key RGB.
 Coordinator preference is KEYMAP, CONFIG, then MACRO. Revision polling skips an
-uninitialised MACRO domain (`acceptedRevision == 0`, no local mutation); entering
-the Macro pane requests that first full stock-VIA macro snapshot explicitly.
+unrequested MACRO domain (`acceptedRevision == 0`, no local mutation, and
+`macroReadRequested == false`). Entering the Macro pane or requesting a full
+refresh records demand for that path and connection generation before any
+revision query, including when joining another coordinator owner. A failed first
+query or exhausted read therefore remains eligible for the next visible poll.
+The flag is read intent only: it never grants freshness or write authority, and a
+new connection generation resets it. Merely observing a revision keeps an
+untouched macro buffer lazy.
 
 ### Foreground mutation epoch and CONFIG authority
 
@@ -736,6 +745,13 @@ convergence.
     GET; KEYMAP can reach `fresh` before device ready; the first visible poll
     accepts CONFIG while the uninitialised MACRO payload remains unread; an
     explicit Macro-pane refresh then reads and accepts the stock macro buffer.
+20. A requested first MACRO read survives a lost or malformed revision query,
+    three revision races, and a failed coalesced/full refresh. Healthy visible
+    polling accepts the snapshot without reopening the pane. Hidden polling
+    sends nothing; an untouched buffer and a new connection remain lazy.
+21. Enumeration and reauthorization after a legacy timeout cannot send a new
+    identical request that would consume a delayed reply on the current listener.
+    A physical disconnect/reconnect permits a fresh GET with one active listener.
 
 `tests/custom-menu-pane.test.tsx` covers State Sync menu continuity.
 `tests/deferred-apply.test.ts` covers continuous-control lifecycle wiring. It is

@@ -51,7 +51,6 @@ type TransportState = {
   disconnected: boolean;
   hasOpened: boolean;
   openPromise?: Promise<void>;
-  recoveryPromise?: Promise<boolean>;
   listener?: (event: HIDInputReportEvent) => void;
   listenerGeneration?: number;
   handlers: UnsolicitedReportHandler[];
@@ -361,92 +360,6 @@ const installInputListener = (state: TransportState, generation: number) => {
   state.device.addEventListener('inputreport', listener);
 };
 
-const recoverPoisonedTransport = async (state: TransportState) => {
-  if (!state.poisoned) {
-    return true;
-  }
-  if (state.disconnected) {
-    return false;
-  }
-  if (state.recoveryPromise) {
-    return state.recoveryPromise;
-  }
-
-  const recoveryPromise = (async () => {
-    const device = state.device;
-    const connected = await isWebHIDDeviceConnected(device);
-    if (
-      connected !== true ||
-      state.device !== device ||
-      !state.poisoned ||
-      state.disconnected
-    ) {
-      return false;
-    }
-
-    // A timeout deliberately removes the old input listener before poisoning
-    // the transport. Never clear that poison in place: a late response from the
-    // retired request could otherwise arrive after a new matcher is installed.
-    // Rotate once more, then close/open the WebHID handle so the recovered
-    // generation starts behind an actual host-side session boundary.
-    replaceGeneration(
-      state,
-      'retired for recovery',
-      {poisoned: true, disconnected: false},
-      makeLifecycleCancellationError(state, 'was retired for recovery'),
-    );
-    const recoveryGeneration = state.generation;
-
-    try {
-      if (device.opened) {
-        await device.close();
-      }
-      state.hasOpened = false;
-
-      if (
-        state.device !== device ||
-        state.generation !== recoveryGeneration ||
-        state.disconnected
-      ) {
-        return false;
-      }
-
-      await device.open();
-      if (
-        state.device !== device ||
-        state.generation !== recoveryGeneration ||
-        state.disconnected
-      ) {
-        if (device.opened) {
-          await device.close();
-        }
-        return false;
-      }
-
-      state.hasOpened = true;
-      state.poisoned = false;
-      installInputListener(state, recoveryGeneration);
-      return true;
-    } catch {
-      if (state.device === device && state.generation === recoveryGeneration) {
-        removeInputListener(state);
-        state.hasOpened = device.opened;
-        state.poisoned = true;
-      }
-      return false;
-    }
-  })();
-
-  state.recoveryPromise = recoveryPromise;
-  try {
-    return await recoveryPromise;
-  } finally {
-    if (state.recoveryPromise === recoveryPromise) {
-      state.recoveryPromise = undefined;
-    }
-  }
-};
-
 const createTransportState = (
   path: string,
   device: HIDDevice,
@@ -642,16 +555,10 @@ const ExtendedHID = {
       }
       devices = await ExtendedHID.getFilteredDevices();
     }
-    const taggedDevices = devices.map(tagDevice);
-    await Promise.all(
-      taggedDevices.map(async ({path}) => {
-        const state = transportStates.get(path);
-        if (state?.poisoned && !state.disconnected) {
-          await recoverPoisonedTransport(state);
-        }
-      }),
-    );
-    return taggedDevices;
+    // Enumeration and host close/open cannot cancel a delayed firmware reply.
+    // Keep a timed-out legacy session poisoned until device reconnect: a new
+    // JS generation cannot distinguish identical, untagged VIA responses.
+    return devices.map(tagDevice);
   },
   HID: class HID {
     _hidDevice: WebVIADevice;

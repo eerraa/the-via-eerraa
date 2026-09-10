@@ -52,6 +52,7 @@ import {
   getPathSyncState,
   markPathDirty,
   observePathRevisions,
+  requestMacroRead,
   setDomainStatus,
   setPathCapability,
   type StateSyncDomain,
@@ -491,6 +492,7 @@ const runCoordinatorOwner = async (
           // token but does not eagerly pull the whole stock VIA buffer.
           const lazyMacroIsUninitialised =
             candidateDomain === 'macro' &&
+            !sync.macroReadRequested &&
             candidate.acceptedRevision === 0 &&
             candidate.mutationEpoch === 0;
           return (
@@ -556,6 +558,11 @@ const coordinate = async (
     )
   ) {
     return;
+  }
+  if (mode === 'macro' || mode === 'full') {
+    // Record demand before the first revision query, which can itself fail.
+    // Later polls must distinguish an unrequested buffer from a failed read.
+    dispatch(requestMacroRead({path: device.path, generation}));
   }
   const key = ownerKey(device.path, generation);
   const existing = coordinatorOwners.get(key);

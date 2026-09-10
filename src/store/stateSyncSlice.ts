@@ -28,6 +28,7 @@ export type DomainState = {
 export type PathSyncState = {
   capability: StateSyncCapability;
   generation: number;
+  macroReadRequested: boolean;
   keymap: DomainState;
   macro: DomainState;
   config: DomainState;
@@ -54,6 +55,7 @@ const initialDomain = (): DomainState => ({
 const initialPathSyncState = (generation: number): PathSyncState => ({
   capability: 'unknown',
   generation,
+  macroReadRequested: false,
   keymap: initialDomain(),
   macro: initialDomain(),
   config: initialDomain(),
@@ -174,6 +176,16 @@ const stateSyncSlice = createSlice({
         current[domain].status = 'dirty';
       });
     },
+    requestMacroRead: (
+      state,
+      action: PayloadAction<{path: string; generation: number}>,
+    ) => {
+      const {path, generation} = action.payload;
+      const current = state.byPath[path];
+      if (current?.generation === generation) {
+        current.macroReadRequested = true;
+      }
+    },
     beginForegroundMutation: (
       state,
       action: PayloadAction<{
@@ -281,6 +293,7 @@ export const {
   setPathCapability,
   observePathRevisions,
   markPathDirty,
+  requestMacroRead,
   beginForegroundMutation,
   beginForegroundWriteSession,
   endForegroundWriteSession,

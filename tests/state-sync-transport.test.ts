@@ -1074,6 +1074,38 @@ describe('state-sync probe isolation', () => {
 });
 
 describe('progressive State Sync initial load', () => {
+  const prepareLazyMacros = async (path: string) => {
+    const {device} = await connectFake(path);
+    const firmware = new FakeStateSyncFirmware(device);
+    device.onSend = firmware.onSend;
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = makeConnectedDevice(path, TOMAK_VPID);
+    installEraDefinition(store, makeV3Definition(true));
+    dispatch(updateConnectedDevices({[path]: connected}));
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+    expect(await dispatch(probeStateSyncCapabilityForDevice(connected))).toBe(true);
+    await dispatch(loadMacroMetadata(connected));
+    expect(
+      await dispatch(
+        refreshStateSyncDomain(connected, 'keymap', {allowBeforeReady: true}),
+      ),
+    ).toBe(true);
+    dispatch(
+      markDeviceReady({
+        devicePath: path,
+        connectionGeneration: generation,
+        selectionGeneration: store.getState().devices.selectionGeneration,
+      }),
+    );
+    dispatch(setConfigureVisible(true));
+    await dispatch(pollStateSync());
+    expect(firmware.macroBufferReads).toBe(0);
+    expect(getIsMacrosReady(store.getState())).toBe(false);
+    return {device, firmware, store, dispatch, connected, generation};
+  };
+
   test('opens on a stable keymap, prefetches CONFIG, and keeps the stock macro buffer lazy', async () => {
     const {device} = await connectFake('progressive-initial');
     const firmware = new FakeStateSyncFirmware(device);
@@ -1128,6 +1160,118 @@ describe('progressive State Sync initial load', () => {
     expect(firmware.macroBufferReads).toBeGreaterThan(0);
     expect(getIsMacrosReady(store.getState())).toBe(true);
     expect(getExpressions(store.getState())).toEqual(['A']);
+  });
+
+  test.each(['timeout', 'malformed', 'churn'] as const)(
+    'a healthy poll retries the first requested macro snapshot after %s',
+    async (failure) => {
+      const {device, firmware, store, dispatch, connected} =
+        await prepareLazyMacros(`lazy-macro-${failure}`);
+      if (failure === 'timeout') {
+        firmware.dropNextStateSync = true;
+      } else if (failure === 'malformed') {
+        firmware.malformNextStateSync = true;
+      } else {
+        device.onSend = (data) => {
+          if (data[0] === 0x0e) {
+            firmware.revisions.macro++;
+          }
+          firmware.onSend(data);
+        };
+      }
+
+      expect(await dispatch(refreshMacroDomain(connected))).toBe(false);
+      expect(getHIDTransportDebugState(connected.path)?.poisoned).toBe(false);
+      expect(getIsMacrosReady(store.getState())).toBe(false);
+      const failedReads = firmware.macroBufferReads;
+      expect(failedReads).toBe(failure === 'churn' ? 3 : 0);
+
+      device.onSend = firmware.onSend;
+      firmware.macroText = 'B';
+      await dispatch(pollStateSync());
+      expect(firmware.macroBufferReads).toBeGreaterThan(failedReads);
+      expect(getIsMacrosReady(store.getState())).toBe(true);
+      expect(getExpressions(store.getState())).toEqual(['B']);
+      expect(store.getState().stateSync.byPath[connected.path]?.macro).toMatchObject({
+        status: 'fresh',
+        acceptedRevision: firmware.revisions.macro,
+      });
+    },
+  );
+
+  test('a failed full refresh also keeps its first macro read eligible for polling', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareLazyMacros('lazy-macro-full-refresh');
+    firmware.dropNextStateSync = true;
+    await dispatch(refreshAllDomains(connected));
+    expect(firmware.macroBufferReads).toBe(0);
+    await dispatch(pollStateSync());
+    expect(getIsMacrosReady(store.getState())).toBe(true);
+    expect(firmware.macroBufferReads).toBeGreaterThan(0);
+  });
+
+  test('a failed ordinary poll does not request the untouched macro buffer', async () => {
+    const {firmware, store, dispatch} =
+      await prepareLazyMacros('lazy-macro-untouched');
+    firmware.dropNextStateSync = true;
+    await dispatch(pollStateSync());
+    await dispatch(pollStateSync());
+    expect(firmware.macroBufferReads).toBe(0);
+    expect(getIsMacrosReady(store.getState())).toBe(false);
+  });
+
+  test('a macro request joined to a failing poll survives until the page is visible', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareLazyMacros('lazy-macro-coalesced');
+    firmware.holdNextStateSync = true;
+    const polling = dispatch(pollStateSync());
+    await waitUntil(() => !!firmware.heldStateSyncRequest);
+    const requested = dispatch(refreshMacroDomain(connected));
+    await polling;
+    expect(await requested).toBe(false);
+    firmware.releaseHeldStateSync();
+
+    dispatch(setDocumentHidden(true));
+    const reportsBeforeHiddenPoll = firmware.device.sentReports.length;
+    await dispatch(pollStateSync());
+    expect(firmware.device.sentReports.length).toBe(reportsBeforeHiddenPoll);
+    expect(firmware.macroBufferReads).toBe(0);
+
+    dispatch(setDocumentHidden(false));
+    await dispatch(pollStateSync());
+    expect(getIsMacrosReady(store.getState())).toBe(true);
+    expect(getExpressions(store.getState())).toEqual(['A']);
+  });
+
+  test('a new connection does not inherit a failed first macro request', async () => {
+    const {device, firmware, store, dispatch, connected, generation} =
+      await prepareLazyMacros('lazy-macro-reconnect');
+    firmware.dropNextStateSync = true;
+    expect(await dispatch(refreshMacroDomain(connected))).toBe(false);
+
+    disconnectHIDDeviceForTesting(connected.path);
+    registerHIDDeviceForTesting(connected.path, asHIDDevice(device));
+    const reconnected = new HID.HID(connected.path);
+    await reconnected.openPromise;
+    const nextGeneration = reconnected.getConnectionGeneration();
+    expect(nextGeneration).toBeGreaterThan(generation);
+    dispatch(
+      selectDevice({device: connected, connectionGeneration: nextGeneration}),
+    );
+    expect(await dispatch(probeStateSyncCapabilityForDevice(connected))).toBe(true);
+    await dispatch(loadMacroMetadata(connected));
+    dispatch(
+      markDeviceReady({
+        devicePath: connected.path,
+        connectionGeneration: nextGeneration,
+        selectionGeneration: store.getState().devices.selectionGeneration,
+      }),
+    );
+    await dispatch(pollStateSync());
+    expect(firmware.macroBufferReads).toBe(0);
+    expect(getIsMacrosReady(store.getState())).toBe(false);
+    expect(await dispatch(refreshMacroDomain(connected))).toBe(true);
+    expect(getIsMacrosReady(store.getState())).toBe(true);
   });
 });
 
