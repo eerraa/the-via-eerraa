@@ -11,6 +11,7 @@ import {
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
 } from '../src/shims/node-hid';
+import {usbDetect} from '../src/shims/usb-detection';
 import {KeyboardAPI} from '../src/utils/keyboard-api';
 import {store as appStore} from '../src/store';
 import errorsReducer, {
@@ -56,10 +57,18 @@ class FakeHIDDevice {
   listeners = new Set<InputListener>();
   listenerHistory: InputListener[] = [];
   sentReports: {reportId: number; data: Uint8Array}[] = [];
+  openCount = 0;
+  closeCount = 0;
   onSend?: (data: Uint8Array) => void | Promise<void>;
 
   async open() {
     this.opened = true;
+    this.openCount += 1;
+  }
+
+  async close() {
+    this.opened = false;
+    this.closeCount += 1;
   }
 
   async forget() {
@@ -150,6 +159,8 @@ const installFakeNavigatorHID = (getDevices: () => HIDDevice[]) => {
   return {
     emit: (type: 'connect' | 'disconnect', device: HIDDevice) =>
       listeners.get(type)?.forEach((listener) => listener({device})),
+    listenerCount: (type: 'connect' | 'disconnect') =>
+      listeners.get(type)?.size ?? 0,
     restore: () => {
       if (originalDescriptor) {
         Object.defineProperty(navigator, 'hid', originalDescriptor);
@@ -267,6 +278,32 @@ afterEach(() => {
   appStore.dispatch(clearAppErrors());
 });
 
+describe('WebHID lifecycle monitoring', () => {
+  test('startMonitoring registers one connect/disconnect listener per navigator', () => {
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    const navigatorHID = installFakeNavigatorHID(() => [webDevice]);
+    let changeCount = 0;
+    const onChange = () => {
+      changeCount += 1;
+    };
+    try {
+      usbDetect.on('change', onChange);
+      usbDetect.startMonitoring();
+      usbDetect.startMonitoring();
+
+      expect(navigatorHID.listenerCount('connect')).toBe(1);
+      expect(navigatorHID.listenerCount('disconnect')).toBe(1);
+      navigatorHID.emit('connect', webDevice);
+      expect(changeCount).toBe(1);
+    } finally {
+      usbDetect.off('change', onChange);
+      usbDetect.stopMonitoring();
+      navigatorHID.restore();
+    }
+  });
+});
+
 describe('per-device WebHID transport', () => {
   test('timestamp, listener, pending matcher, diagnostic buffer and queue stay path-local', async () => {
     let clock = 0;
@@ -381,6 +418,51 @@ describe('per-device WebHID transport', () => {
     expect(getHIDTransportDebugState('late')?.hasPendingResponse).toBe(true);
     replacement.emit(payload(0x01, 0x00, 0x0d));
     expect(Array.from(await next).slice(0, 3)).toEqual([0x01, 0x00, 0x0d]);
+  });
+
+  test('enumerating the same live WebHID device retires poison through close/open before reuse', async () => {
+    configureHIDTransport({responseTimeoutMs: 15});
+    const fake = new FakeHIDDevice();
+    const webDevice = asHIDDevice(fake);
+    (webDevice as HIDDevice & {__path?: string}).__path = 'recover-live';
+    const navigatorHID = installFakeNavigatorHID(() => [webDevice]);
+    try {
+      const {hid} = await connectFake('recover-live', fake);
+      const retiredListener = fake.listenerHistory[0];
+      fake.onSend = () => undefined;
+
+      await expect(
+        hid.exchange(report(0x01), matchesPrefix(0x01)),
+      ).rejects.toBeInstanceOf(HIDTransportTimeoutError);
+      const poisonedGeneration =
+        getHIDTransportDebugState('recover-live')?.generation ?? 0;
+      expect(getHIDTransportDebugState('recover-live')?.poisoned).toBe(true);
+
+      const enumerated = await HID.devices(false);
+      expect(enumerated.map(({path}) => path)).toContain('recover-live');
+      expect(fake.closeCount).toBe(1);
+      expect(fake.openCount).toBe(2);
+      expect(getHIDTransportDebugState('recover-live')?.poisoned).toBe(false);
+      expect(getHIDTransportDebugState('recover-live')?.generation).toBeGreaterThan(
+        poisonedGeneration,
+      );
+
+      const recovered = new KeyboardAPI('recover-live');
+      const response = recovered.getProtocolVersion();
+      await waitUntil(() => fake.sentReports.length === 2);
+
+      // Calling the retired listener directly simulates a response already
+      // queued for the old WebHID session. It must not satisfy the recovered
+      // generation even though the command bytes are identical.
+      fake.emitTo(retiredListener, payload(0x01, 0x00, 0x07));
+      expect(
+        getHIDTransportDebugState('recover-live')?.hasPendingResponse,
+      ).toBe(true);
+      fake.emit(payload(0x01, 0x00, 0x0d));
+      expect(await response).toBe(0x000d);
+    } finally {
+      navigatorHID.restore();
+    }
   });
 
   test('a genuine KeyboardAPI timeout remains user-visible', async () => {

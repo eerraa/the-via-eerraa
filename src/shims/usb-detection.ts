@@ -5,13 +5,21 @@ export class usbDetect {
     remove: [],
   };
   static shouldMonitor = false;
-  static hasMonitored = false;
+  private static monitorNavigator: HID | undefined;
   static startMonitoring() {
     this.shouldMonitor = true;
-    if (!this.hasMonitored && navigator.hid) {
-      navigator.hid.addEventListener('connect', usbDetect.onConnect);
-      navigator.hid.addEventListener('disconnect', usbDetect.onDisconnect);
+    const hid = navigator.hid;
+    if (!hid || this.monitorNavigator === hid) {
+      return;
     }
+    this.monitorNavigator?.removeEventListener('connect', usbDetect.onConnect);
+    this.monitorNavigator?.removeEventListener(
+      'disconnect',
+      usbDetect.onDisconnect,
+    );
+    hid.addEventListener('connect', usbDetect.onConnect);
+    hid.addEventListener('disconnect', usbDetect.onDisconnect);
+    this.monitorNavigator = hid;
   }
   static stopMonitoring() {
     this.shouldMonitor = false;
