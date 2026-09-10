@@ -171,7 +171,7 @@ part of the ordinary app build.
 
 ```powershell
 bun run test:transport   # 7 files, 0 fail — transport, State Sync, diagnostics, custom-menu layout
-bun run test:p1          # 8 files, 0 fail — definitions, locales, picker, layout macros, ms input, diagnostic records, external V3 validation, docs contract
+bun run test:p1          # 9 files, 0 fail — definitions, locales, picker, keycap rendering, layout macros, ms input, diagnostic records, external V3 validation, docs contract
 bun x tsc --noEmit       # 0
 bun run build            # typecheck:scripts → build:kbs → tsc → vite build
 ```

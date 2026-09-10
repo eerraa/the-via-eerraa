@@ -168,7 +168,6 @@ const paintKeycap = (
 export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
   const {
     label,
-    scale,
     color,
     selected,
     disabled,
@@ -187,7 +186,7 @@ export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
   const [hovered, hover] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const redraw = React.useCallback(() => {
+  const redraw = useCallback(() => {
     if (
       canvasRef.current &&
       color &&
@@ -206,21 +205,14 @@ export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
       setOverflowsTexture(!!doesOverflow);
     }
   }, [
-    canvasRef.current,
     textureWidth,
-    label && label.key,
-    scale[0],
-    scale[1],
+    textureHeight,
+    label,
     color && color.t,
-    color && color.c,
-    shouldRotate,
-  ]);
-  useEffect(redraw, [
-    label && label.key,
     skipFontCheck,
-    color && color.c,
-    color && color.t,
   ]);
+  // Font fallback can change while the accepted keymap stays the same.
+  useEffect(redraw, [redraw]);
 
   const redrawRef = React.useRef(redraw);
   redrawRef.current = redraw;

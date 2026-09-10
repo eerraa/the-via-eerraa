@@ -10,7 +10,7 @@
     "build:kbs": "node --import tsx scripts/build-keyboards.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test:transport": "bun test --preload tests/setup.ts tests/transport-phase1.test.ts tests/era-state-sync.test.ts tests/state-sync-transport.test.ts tests/era-exact-ms.test.ts tests/era-usb-diagnostics.test.ts tests/diagnostics-pane.test.tsx tests/custom-menu-pane.test.tsx",
-    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/layout-macros.test.ts tests/locales.test.ts tests/era-definition.test.ts tests/usb-diagnostics-history.test.ts tests/validate-external-v3.test.ts tests/docs-contract.test.ts",
+    "test:p1": "bun test tests/millisecond-field.test.ts tests/keycode-picker.test.ts tests/keycap-rendering.test.tsx tests/layout-macros.test.ts tests/locales.test.ts tests/era-definition.test.ts tests/usb-diagnostics-history.test.ts tests/validate-external-v3.test.ts tests/docs-contract.test.ts",
     "find-deadcode": "ts-prune"
   },
   "engines": {
@@ -66,12 +66,14 @@
     "@types/raf-schd": "^4.0.1",
     "@types/react": "^18.0.28",
     "@types/react-dom": "^18.0.11",
+    "@types/react-test-renderer": "18.3.1",
     "@types/three": "^0.169.0",
     "@types/w3c-web-hid": "^1.0.3",
     "@types/webscopeio__react-textarea-autocomplete": "^4.7.2",
     "@types/wicg-file-system-access": "^2020.9.5",
     "@vitejs/plugin-react": "^3.1.0",
     "concurrently": "^7.6.0",
+    "react-test-renderer": "18.3.1",
     "ts-prune": "0.10.3",
     "tsx": "^4.21.0",
     "typescript": "^5.6.2",
