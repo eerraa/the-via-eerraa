@@ -120,7 +120,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Link speed of the cable between the two units.',
       detail:
-        'Apply does nothing if that speed is already running; changing it restarts both units.\n\nThree long red LED pulses mean the split cable is not good enough — replace it. Default is High.',
+        'Apply changes the cable speed without restarting the keyboard or disconnecting USB. Default is High.\n\nOn TOMAK split keyboards, one green STATUS flash confirms Apply on the unit receiving the command, including an already matching running and saved speed. One red flash means the request was busy, cancelled or failed.\n\nTwo short green flashes on both halves mean the link recovered after a speed search. Three long red flashes warn of link-speed failure and recovery to Low. If this repeats, check or replace the split cable; the signal alone does not identify the cause. STATUS is hidden during RGB sleep.',
     },
   ],
   [
@@ -272,7 +272,7 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
   },
   {
     command: 'id_custom_indicator_override',
-    help: 'Uses the badge area only as an indicator. RGB effects do not affect it.',
+    help: 'Reserves the badge area for the selected lock indicator. Normal RGB effects do not use it; temporary link and synchronization STATUS signals can still appear.',
   },
   {
     command: 'id_qmk_velocikey_toggle',
@@ -354,7 +354,7 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
   },
   {
     command: 'id_qmk_eeprom_sync_requested',
-    help: 'A few seconds after a stored setting changes, an indicator shows and both units copy it across. INPUT SYNC and RGB SYNC need this on to work fully.',
+    help: 'Copies stored settings between the split halves. On TOMAK keyboards, blue STATUS shows EEPROM synchronization work. INPUT SYNC and RGB SYNC need this enabled to work fully. STATUS is hidden during RGB sleep.',
   },
   {
     command: 'id_qmk_input_sync_requested',
