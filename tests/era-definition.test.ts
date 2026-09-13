@@ -881,6 +881,39 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
+  test('keeps all six TOMAK effect menus on the firmware RGB Matrix wire ids', () => {
+    // This is the supported firmware wire order, not a comparison against a
+    // sibling JSON: two halves can share the same mistaken labels and ids.
+    const labels = [
+      'All Off', 'Solid Color', 'Alphas Mods', 'Gradient Up/Down',
+      'Gradient Left/Right', 'Breathing', 'Band Sat.', 'Band Val.',
+      'Pinwheel Sat.', 'Pinwheel Val.', 'Spiral Sat.', 'Spiral Val.',
+      'Cycle All', 'Cycle Left/Right', 'Cycle Up/Down',
+      'Rainbow Moving Chevron', 'Cycle Out/In', 'Cycle Out/In Dual',
+      'Cycle Pinwheel', 'Cycle Spiral', 'Dual Beacon', 'Rainbow Beacon',
+      'Rainbow Pinwheels', 'Flower Blooming', 'Raindrops', 'Jellybean Raindrops',
+      'Hue Breathing', 'Hue Pendulum', 'Hue Wave', 'Pixel Rain', 'Pixel Flow',
+      'Pixel Fractal', 'Typing Heatmap', 'Digital Rain', 'Solid Reactive Simple',
+      'Solid Reactive', 'Solid Reactive Wide', 'Solid Reactive Multi Wide',
+      'Solid Reactive Cross', 'Solid Reactive Multi Cross', 'Solid Reactive Nexus',
+      'Solid Reactive Multi Nexus', 'Splash', 'Multi Splash', 'Solid Splash',
+      'Solid Multi Splash', 'Starlight Smooth', 'Starlight', 'Starlight Dual Sat.',
+      'Starlight Dual Hue.', 'Riverflow',
+    ];
+    const expected = labels.map((label, id) => [label, id]);
+    const tomak = manifest.definitions.filter(({id}) => id.startsWith('tomak'));
+    expect(tomak).toHaveLength(6);
+    for (const entry of tomak) {
+      const effect = collectCommandControls(readJSON(entry.path)).find(
+        ({name}) => name === 'id_qmk_rgb_matrix_effect',
+      );
+      expect({definition: entry.id, effect}).toEqual({
+        definition: entry.id,
+        effect: expect.objectContaining({channel: 3, id: 2, options: expected}),
+      });
+    }
+  });
+
   // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in
   // its custom definition, while its own official VIA JSON and both sibling split
   // boards had all three. Nothing failed, because no test asked which definitions carry
