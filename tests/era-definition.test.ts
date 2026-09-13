@@ -869,6 +869,15 @@ describe('canonical ERA definition inventory', () => {
       expect(serialized).not.toContain('Blink-In on Keypress');
       expect(serialized).not.toContain('Blink Speed');
       expect(serialized).toContain('Pulse Speed');
+      // Pulse Speed is the same full slider as RGBLight's Effect Speed: the
+      // firmware maps 0..255 to a 5 + speed ms pulse on both families.
+      const pulseSpeed = controls.find(
+        ({name}) => name === 'id_custom_blink_speed',
+      );
+      expect({id: entry.id, options: pulseSpeed?.options}).toEqual({
+        id: entry.id,
+        options: [0, 255],
+      });
     }
   });
 
