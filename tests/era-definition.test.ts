@@ -243,6 +243,167 @@ const expectedRgbSleepToggleDefinitionIds = [
   'tomak79s-right',
 ].sort();
 
+describe('era definition layout options', () => {
+  // Schema validation permits a label-free all-switch layout. An independent
+  // inventory catches a port that loses the same options on both VIA surfaces.
+  const expectedChoices: Record<string, number[]> = {
+    '7b75': [],
+    'brick60-h7s': [2, 2],
+    'brick65': [2, 2],
+    'brick65-h7s': [],
+    'brick65s': [2],
+    'chickpad': [],
+    'classicd-a1': [2, 2, 2, 2, 2],
+    'classicd-a1-ug': [2, 2, 2, 2, 2],
+    'classicd-core': [2, 2, 2, 2, 2],
+    'classicd-coreless': [2, 2, 2, 2, 2],
+    'divine': [2, 2],
+    'era65': [2, 2, 4],
+    'et-tkl': [2, 2, 2, 2],
+    'fave65s': [2, 2, 2, 2],
+    'intigrity80-h7s': [2, 2],
+    'klein-hs': [2, 3],
+    'klein-sd': [2, 3],
+    'may65-h7s': [2, 2, 2, 2],
+    'n86': [2, 2],
+    'n87': [2, 2],
+    'n8x': [2, 2, 2, 2, 2],
+    'newone-a1': [2, 2, 2, 2, 2],
+    'newone-h1': [2, 2],
+    'newone-odessey60h': [2, 2, 3],
+    'newone-odessey60s': [2, 2, 2, 2, 3],
+    'riley': [2, 2, 2, 2, 2],
+    'sculpturei-h7s': [2, 2, 2],
+    'tomak-tkl-left': [2, 2, 2],
+    'tomak-tkl-right': [2, 2, 2],
+    'tomak79h-left': [2],
+    'tomak79h-right': [2],
+    'tomak79s-left': [2, 2, 2],
+    'tomak79s-right': [2, 2, 2],
+  };
+
+  test('every definition retains its layout groups and selectable choice keys', async () => {
+    const {keyboardDefinitionV3ToVIADefinitionV3, isKeyboardDefinitionV3} =
+      await import('@the-via/reader');
+    expect(Object.keys(expectedChoices).sort()).toEqual(
+      manifest.definitions.map(({id}) => id).sort(),
+    );
+    for (const {id, path} of manifest.definitions) {
+      const {definitionRaw} = splitTapDanceKeycodesFromRaw(readJSON(path));
+      if (!isKeyboardDefinitionV3(definitionRaw)) {
+        throw new Error(`${id}: invalid VIA V3 definition`);
+      }
+      const {layouts} = keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+      const counts = (layouts.labels ?? []).map((label) =>
+        Array.isArray(label) ? label.length - 1 : 2,
+      );
+      expect({id, counts}).toEqual({id, counts: expectedChoices[id]});
+      expect(Object.keys(layouts.optionKeys).sort()).toEqual(
+        counts.map((_, group) => String(group)).sort(),
+      );
+      counts.forEach((count, group) => {
+        expect(Object.keys(layouts.optionKeys[group]).sort()).toEqual(
+          Array.from({length: count}, (_, choice) => String(choice)).sort(),
+        );
+        for (let choice = 0; choice < count; choice++) {
+          expect(layouts.optionKeys[group][choice].length).toBeGreaterThan(0);
+        }
+      });
+    }
+  });
+
+  test('BRICK65S exposes both firmware-supported Backspace layouts', async () => {
+    const {keyboardDefinitionV3ToVIADefinitionV3, isKeyboardDefinitionV3} =
+      await import('@the-via/reader');
+    const entry = manifest.definitions.find(({id}) => id === 'brick65s')!;
+    const {definitionRaw} = splitTapDanceKeycodesFromRaw(readJSON(entry.path));
+    if (!isKeyboardDefinitionV3(definitionRaw)) {
+      throw new Error('BRICK65S: invalid VIA V3 definition');
+    }
+    const {layouts} = keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+    expect(layouts.labels).toEqual([['Backspace', 'Unified', 'Split']]);
+    expect(layouts.optionKeys[0][0]).toMatchObject([
+      {row: 0, col: 14, x: 13, y: 0, w: 2, h: 1},
+    ]);
+    expect(layouts.optionKeys[0][1]).toMatchObject([
+      {row: 0, col: 13, x: 13, y: 0, w: 1, h: 1},
+      {row: 0, col: 14, x: 14, y: 0, w: 1, h: 1},
+    ]);
+    for (let choice = 0; choice < 2; choice++) {
+      const selected = layouts.keys.concat(layouts.optionKeys[0][choice]);
+      expect(selected.length).toBe(65 + choice);
+      expect(new Set(selected.map(({row, col}) => `${row},${col}`)).size).toBe(
+        selected.length,
+      );
+      expect(selected.find(({row, col}) => row === 0 && col === 15)).toMatchObject({
+        x: 15.25, y: 0, w: 1, h: 1,
+      });
+    }
+  });
+
+  test('Riley renders the original five choices and all 32 physical layouts', async () => {
+    const {keyboardDefinitionV3ToVIADefinitionV3, isKeyboardDefinitionV3} =
+      await import('@the-via/reader');
+    const entry = manifest.definitions.find(({id}) => id === 'riley')!;
+    const {definitionRaw} = splitTapDanceKeycodesFromRaw(readJSON(entry.path));
+    if (!isKeyboardDefinitionV3(definitionRaw)) {
+      throw new Error('Riley: invalid VIA V3 definition');
+    }
+    const {layouts, matrix} =
+      keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+    expect(matrix).toEqual({rows: 5, cols: 14});
+    expect(layouts.labels).toEqual([
+      ['Backspace', 'Unified', 'Split'],
+      ['Enter', 'ANSI', 'ISO'],
+      ['Left Shift', 'ANSI', 'ISO'],
+      ['Right Shift', 'Unified', 'Split'],
+      ['Bottom Row', '7U', 'Split'],
+    ]);
+    expect([layouts.width, layouts.height]).toEqual([15, 5]);
+    const expected = [
+      [[[1, 13, 13, 0, 2, 1]], [[0, 13, 13, 0, 1, 1], [1, 13, 14, 0, 1, 1]]],
+      [[[2, 13, 13.5, 1, 1.5, 1], [3, 13, 12.75, 2, 2.25, 1]],
+        [[3, 13, 13.75, 1, 1.25, 2], [2, 12, 12.75, 2, 1, 1]]],
+      [[[3, 0, 0, 3, 2.25, 1]], [[3, 0, 0, 3, 1.25, 1], [3, 1, 1.25, 3, 1, 1]]],
+      [[[3, 12, 12.25, 3, 2.75, 1]], [[3, 12, 12.25, 3, 1.75, 1], [4, 13, 14, 3, 1, 1]]],
+      [[[4, 6, 4, 4, 7, 1]], [[4, 4, 4, 4, 3, 1], [4, 6, 7, 4, 1, 1], [4, 8, 8, 4, 3, 1]]],
+    ];
+    expected.forEach((choices, group) => {
+      choices.forEach((keys, choice) => {
+        expect(layouts.optionKeys[group][choice].map(
+          ({row, col, x, y, w, h}) => [row, col, x, y, w, h],
+        )).toEqual(keys);
+      });
+    });
+    expect(layouts.optionKeys[1][1][0]).toMatchObject({
+      w2: 1.5, h2: 1, x2: -0.25,
+    });
+    const covered = new Set<string>();
+    for (let bits = 0; bits < 32; bits++) {
+      const choices = Array.from({length: 5}, (_, group) => (bits >> group) & 1);
+      const selected = layouts.keys.concat(
+        choices.flatMap((choice, group) => layouts.optionKeys[group][choice]),
+      );
+      const coordinates = selected.map(({row, col}) => `${row},${col}`);
+      expect(new Set(coordinates).size).toBe(selected.length);
+      expect(selected.length).toBe(
+        58 + choices[0] + choices[2] + choices[3] + 2 * choices[4],
+      );
+      selected.forEach(({row, col}) => {
+        expect(row >= 0 && row < matrix.rows).toBe(true);
+        expect(col >= 0 && col < matrix.cols).toBe(true);
+      });
+      coordinates.forEach((coordinate) => covered.add(coordinate));
+    }
+    expect([...covered].sort()).toEqual([
+      ...Array.from({length: 4}, (_, row) =>
+        Array.from({length: 14}, (_, col) => `${row},${col}`),
+      ).flat(),
+      ...[1, 2, 4, 6, 8, 11, 12, 13].map((col) => `4,${col}`),
+    ].sort());
+  });
+});
+
 describe('era definition tapdanceKeycodes', () => {
   test('strips tapdanceKeycodes so official V3 validation can run', () => {
     const {definitionRaw, tapdanceKeycodes} = splitTapDanceKeycodesFromRaw({
