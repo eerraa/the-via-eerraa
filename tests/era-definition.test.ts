@@ -247,7 +247,7 @@ describe('era definition layout options', () => {
   // Schema validation permits a label-free all-switch layout. An independent
   // inventory catches a port that loses the same options on both VIA surfaces.
   const expectedChoices: Record<string, number[]> = {
-    '7b75': [],
+    '7b75': [2, 2, 2, 2],
     'brick60-h7s': [2, 2],
     'brick65': [2, 2],
     'brick65-h7s': [],
@@ -310,6 +310,73 @@ describe('era definition layout options', () => {
         }
       });
     }
+  });
+
+  test('7B75 renders the original four choices and all 16 physical layouts', async () => {
+    const {keyboardDefinitionV3ToVIADefinitionV3, isKeyboardDefinitionV3} =
+      await import('@the-via/reader');
+    const entry = manifest.definitions.find(({id}) => id === '7b75')!;
+    const {definitionRaw} = splitTapDanceKeycodesFromRaw(readJSON(entry.path));
+    if (!isKeyboardDefinitionV3(definitionRaw)) {
+      throw new Error('7B75: invalid VIA V3 definition');
+    }
+    const {layouts, matrix} =
+      keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+    expect(matrix).toEqual({rows: 6, cols: 16});
+    expect(layouts.labels).toEqual([
+      ['Backspace', 'Unified', 'Split'],
+      ['Enter', 'ANSI', 'ISO'],
+      ['Left Shift', 'ANSI', 'ISO'],
+      ['Bottom Row', '6U', '6.25U'],
+    ]);
+    expect([layouts.width, layouts.height]).toEqual([16.25, 6.5]);
+    const expected = [
+      [[[1, 14, 13, 1.25, 2, 1]],
+        [[1, 13, 13, 1.25, 1, 1], [1, 14, 14, 1.25, 1, 1]]],
+      [[[2, 14, 13.5, 2.25, 1.5, 1], [3, 14, 12.75, 3.25, 2.25, 1]],
+        [[3, 14, 13.75, 2.25, 1.25, 2], [3, 12, 12.75, 3.25, 1, 1]]],
+      [[[4, 0, 0, 4.25, 2.25, 1]],
+        [[4, 0, 0, 4.25, 1.25, 1], [4, 1, 1.25, 4.25, 1, 1]]],
+      [[[5, 0, 0, 5.25, 1.5, 1], [5, 1, 1.5, 5.25, 1, 1],
+        [5, 2, 2.5, 5.25, 1.5, 1], [5, 6, 4, 5.25, 6, 1],
+        [5, 10, 10, 5.25, 1.5, 1], [5, 11, 11.5, 5.25, 1.5, 1]],
+        [[5, 0, 0, 5.25, 1.25, 1], [5, 1, 1.25, 5.25, 1.25, 1],
+          [5, 2, 2.5, 5.25, 1.25, 1], [5, 6, 3.75, 5.25, 6.25, 1],
+          [5, 10, 10, 5.25, 1.5, 1], [5, 11, 11.5, 5.25, 1.5, 1]]],
+    ];
+    expected.forEach((choices, group) => {
+      choices.forEach((keys, choice) => {
+        expect(layouts.optionKeys[group][choice].map(
+          ({row, col, x, y, w, h}) => [row, col, x, y, w, h],
+        )).toEqual(keys);
+      });
+    });
+    expect(layouts.optionKeys[1][1][0]).toMatchObject({
+      w2: 1.5, h2: 1, x2: -0.25,
+    });
+    const covered = new Set<string>();
+    for (let bits = 0; bits < 16; bits++) {
+      const choices = Array.from({length: 4}, (_, group) => (bits >> group) & 1);
+      const selected = layouts.keys.concat(
+        choices.flatMap((choice, group) => layouts.optionKeys[group][choice]),
+      );
+      const coordinates = selected.map(({row, col}) => `${row},${col}`);
+      expect(new Set(coordinates).size).toBe(selected.length);
+      expect(selected.length).toBe(80 + choices[0] + choices[2]);
+      selected.forEach(({row, col}) => {
+        expect(row >= 0 && row < matrix.rows).toBe(true);
+        expect(col >= 0 && col < matrix.cols).toBe(true);
+      });
+      coordinates.forEach((coordinate) => covered.add(coordinate));
+    }
+    expect([...covered].sort()).toEqual([
+      ...Array.from({length: 14}, (_, col) => `0,${col}`),
+      ...Array.from({length: 16}, (_, col) => `1,${col}`),
+      ...[...Array.from({length: 13}, (_, col) => col), 14, 15]
+        .flatMap((col) => [`2,${col}`, `3,${col}`]),
+      ...[...Array.from({length: 13}, (_, col) => col), 14].map((col) => `4,${col}`),
+      ...[0, 1, 2, 6, 10, 11, 13, 14, 15].map((col) => `5,${col}`),
+    ].sort());
   });
 
   test('BRICK65S exposes both firmware-supported Backspace layouts', async () => {
