@@ -2,9 +2,8 @@
 
 Genre: map
 Canonical for: which fact lives where in this repository, which side wins on
-conflict, and what bites the mismatch — definition inventory, wire addresses,
-build outputs, verification commands, reference repositories, and this
-repository's additions to the shared document convention
+conflict, and what bites the mismatch — source ownership, verification entry
+points, reference repositories, and this repository's document adapters
 
 This document answers only **where a fact lives and which side is canonical
 when two copies disagree**. Reasons live in `docs/adr/`, product direction in
@@ -25,79 +24,38 @@ looks right, report it; do not silently invert the table.
 | Per-board capability opt-in (state sync / exact-ms / diagnostics / split pair) | `config/era-definitions.manifest.json` | `tests/era-definition.test.ts` |
 | Official VIA V3 definitions | `the-via/keyboards` — the installed `node_modules/via-keyboards` is a pinned snapshot only | `Verify build output` in the deploy workflow |
 | Explicit validation of firmware-local VIA V3 files | `scripts/validate-external-v3.ts`, using the app's `@the-via/reader` guard and transform | `tests/validate-external-v3.test.ts` |
-| Wire selector values and envelopes | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
+| Host wire encode/decode implementation | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
 | VERSION ASCII display grammar | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | What the diagnostics screen may and must not say | `src/locales/*.json` | `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
 | ERA menu help copy and attach targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx` | none — `public/_redirects` is hand-matched (§7) |
-| Counts in this document and paths it names | all of the sources above | `tests/docs-contract.test.ts` |
 
-The last row is the genre of this file. **This document is a derivative.** It is
-not a place to hand-edit numbers into agreement; if they disagree with values
-computed from code, the test goes red.
+## 2. Definition inventory ownership
 
-## 2. Definition inventory
+Inventory is source-owned and is not copied into this map.
 
-`tests/docs-contract.test.ts` recomputes the values below from the manifest
-(and, for the last two rows, from the locale catalogs and `eraMenuSummaries`).
-
-| Item | Value |
-| --- | --- |
-| ERA custom definitions | **33** |
-| ├ QMK (RP2040 + ATmega32U4) | 28 |
-| └ H7S | 5 |
-| External stock V3 definitions | **3** |
-| State Sync opt-in (`stateSync: true`) | 32 |
-| exact-ms `qmk` family (`options: [1, 65535]`) | 27 |
-| exact-ms `h7s` family (`options: [100, 500]`) | 5 |
-| USB diagnostics opt-in (`usbDiagnostics: true`) | 5 |
-| split pair entries (left/right each) | 6 |
-| Locales | 6 (`de en es ja ko zh`), 613 keys each |
-| ERA menu summaries | 19 |
-
-Only `brick65` has no opt-in. That is the durable ATmega32U4 stock-VIA exception
-in `docs/PROJECT_DIRECTION.md`, not a defect.
-
-Per-family menu coverage is `FEATURE_COVERAGE` in `tests/era-definition.test.ts`.
-The table exists because `TOMAK79H` shipped without `MOUSE`, `NKRO`, or
-`SPLIT LINK` in its custom definition while its official VIA JSON and both
-sibling splits had all three, and nothing failed — no test asked. Adding a
-keyboard or a feature means editing that table on purpose.
-
-## 3. Wire addresses
-
-No new top-level command. Envelope layouts, SET range, encode/decode, legacy
-GET projection, and refused alternatives are
-[ADR 0001](adr/0001-state-sync-protocol.md) and
-[ADR 0002](adr/0002-h7s-usb-diagnostics.md). This table is location only.
-
-| Address | What | App source | Contract |
-| --- | --- | --- | --- |
-| `GET_KEYBOARD_VALUE 0x02` + selector `0x06` | State Sync revision envelope v1 | `src/utils/era-state-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
-| `0x02`/`SET_KEYBOARD_VALUE 0x03` + selector `0x07` | H7S USB diagnostics session v1 | `src/utils/era-usb-diagnostics.ts` | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) |
-| `0x16` v1 | upstream Custom Menu invalidation hint. Do not change its meaning | `src/utils/ui-sync.ts` | [ADR 0001](adr/0001-state-sync-protocol.md) |
-| V3 Custom Value channel 9 / id 10 | TOMAK RGB sleep stock preset, one-byte minutes 1/3/5/10/30/60 | firmware-local VIA definition | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
-| V3 Custom Value channel 9 / id 11 | TOMAK RGB sleep exact seconds, BE16 1..65535 | `era-definitions/custom/v3/tomak*` + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec** |
-| V3 Custom Value channel 9 / id 12 | QMK ERA RGB Sleep master, one-byte toggle; present on all 20 RGB-capable QMK definitions | firmware-local VIA definitions + corresponding `era-definitions/custom/v3` overlays | `docs/PROJECT_DIRECTION.md` **RGB Sleep master** |
-| V3 Custom Value channel 18 / id 1 | H7S RGB sleep official minute dropdown 1/3/5/10/30/60 (`id_qmk_rgb_sleep_timeout`) | firmware-local official VIA definition | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep exact-sec** |
-| V3 Custom Value channel 18 / id 2 | H7S RGB sleep exact seconds, BE16 1..65535 (`id_qmk_rgb_sleep_timeout_exact`) | `era-definitions/custom/v3` five H7S + `src/utils/era-exact-sec.ts` | `docs/PROJECT_DIRECTION.md` **H7S RGB sleep exact-sec** |
-| V3 Custom Value channel 18 / id 3 | H7S RGB Sleep master, one-byte toggle (`id_qmk_rgb_sleep_enable`) | firmware-local official VIA definition + five H7S custom definitions | `docs/PROJECT_DIRECTION.md` **RGB Sleep master** |
-| V3 Custom Value channel 8 / id 1 | RP2040 VERSION, NUL-terminated ASCII; one read-only label on 27 definitions | `src/utils/era-firmware-version.ts` + `era-definitions/custom/v3` | [ADR 0003](adr/0003-era-menu-help-ui.md) |
-| V3 Custom Value channel 8 / id 5 | H7S VERSION, NUL-terminated ASCII; one read-only label on five definitions. Legacy ids 1–4 remain firmware-only for cached old definitions | `src/utils/era-firmware-version.ts` + five H7S custom JSON files | [ADR 0003](adr/0003-era-menu-help-ui.md) |
-
-exact-ms channel and value ids differ by family. The checker re-reads them from
-custom JSON `_term_exact` `content`.
-
-| Control | QMK | H7S |
+| Concern | Canonical | Verification |
 | --- | --- | --- |
-| Global TAPPING term | channel 15 / value 5 | channel 15 / value 5 |
-| TD0–TD7 term | channel 0 / value 72–79 | channel 16 / value 41–48 |
-| MOUSE menu channel | 13 | **17** — on H7S, channel 13 is USB POLLING (`id_qmk_usb_bootmode`) |
-| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 2 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) |
-| RGB SLEEP master | SYSTEM channel 9 / value 12 (`id_qmk_rgb_sleep_enable`) | SYSTEM channel 18 / value 3 (`id_qmk_rgb_sleep_enable`) |
-| SOCD command prefix | `id_qmk_socd_` | `id_qmk_kill_switch_` |
+| ERA definition membership, identity, split pairing, capability opt-in | `config/era-definitions.manifest.json` + referenced `era-definitions/custom/v3` JSON | `tests/era-definition.test.ts` |
+| Managed external stock membership and identity | `config/external-definitions.manifest.json` + referenced `era-definitions/external/v3` JSON | `tests/validate-external-v3.test.ts` |
+| Per-family menu support | definition JSON | `FEATURE_COVERAGE` in `tests/era-definition.test.ts` |
+| Locale catalogs | `src/locales/*.json` | `tests/locales.test.ts` |
+| ERA menu help catalog | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
 
-State Sync poll interval is `ERA_STATE_SYNC_POLL_INTERVAL_MS = 500`.
+`brick65` is a durable product exception rather than an inventory count; its
+requirements live in `docs/PROJECT_DIRECTION.md` **brick65**.
+
+## 3. Wire and runtime ownership
+
+Wire and storage requirements stay in the contracts that own them; this map
+does not duplicate their addresses, ranges, packet layouts, or polling values.
+
+| Concern | Contract owner | First app/source anchor | Verification |
+| --- | --- | --- | --- |
+| State Sync, exact-ms, legacy projection, Custom Menu invalidation | [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/era-state-sync.ts`, `src/utils/era-exact-ms.ts`, `src/utils/ui-sync.ts` | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
+| H7S USB diagnostics wire and lifecycle | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) | `src/utils/era-usb-diagnostics.ts` | `tests/era-usb-diagnostics.test.ts`, `tests/diagnostics-pane.test.tsx` |
+| RGB sleep preset/exact/master compatibility | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec**, **H7S RGB sleep exact-sec**, **RGB Sleep master** | `era-definitions/custom/v3`, `src/utils/era-exact-sec.ts` | `tests/era-definition.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| VERSION display compatibility | [ADR 0003](adr/0003-era-menu-help-ui.md) | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 
 Do not invent a freshness decision outside this ownership:
 
@@ -119,25 +77,23 @@ config/era-definitions.manifest.json ← paths, VID/PID, pair, capability opt-in
 era-definitions/external/v3/**.json  ← fork-managed external stock V3 (authored)
 config/external-definitions.manifest.json ← paths and VID/PID
 node_modules/via-keyboards           ← pinned official snapshot (github:the-via/keyboards#79ae8d2 + patches/)
-    src/**/*.json   1,484            official V2 source
-    v3/**/*.json    2,003            official V3 source
+    src/**/*.json                    official V2 source
+    v3/**/*.json                     official V3 source
         │
         │  scripts/build-keyboards.ts  →  node_modules/via-keyboards/scripts/build-all.ts
         ▼
 public/definitions/
   v2/                  official V2 bundle as-is
   v3/                  official V3 bundle + non-colliding external stock definitions
-  era/v3/              ERA overlay. File count must equal the definition count in §2
+  era/v3/              ERA overlay from the manifest-bound custom source
   supported_kbs.json   full V2 plus V3 VPIDs that V2 does not have
   era_advanced.json    schemaVersion 2, per-definition runtime capability
   hash.json            cache-invalidation key (§7)
 ```
 
-The deploy workflow's `Verify build output` requires
-`dist/definitions/era/v3` count == custom source count and
-`dist/definitions/v3` count == `node_modules/via-keyboards/v3` count + managed
-external source count. Every official file must remain byte-identical.
-Mismatch blocks upload.
+The deploy workflow's `Verify build output` checks the emitted definition sets
+against their source owners and requires every official file to remain
+byte-identical. Mismatch blocks upload.
 
 Runtime lookup is **ERA overlay → bundled stock V3 (official + external) →
 Design upload**,
@@ -170,9 +126,10 @@ part of the ordinary app build.
 ## 5. Verification commands and what they actually run
 
 ```powershell
-bun run test:transport   # 7 files, 0 fail — transport, State Sync, diagnostics, custom-menu layout
-bun run test:p1          # 9 files, 0 fail — definitions, locales, picker, keycap rendering, layout macros, ms input, diagnostic records, external V3 validation, docs contract
-bun x tsc --noEmit       # 0
+bun test tests/docs-contract.test.ts
+bun run test:transport
+bun run test:p1
+bun x tsc --noEmit
 bun run build            # typecheck:scripts → build:kbs → tsc → vite build
 ```
 
@@ -199,19 +156,15 @@ speak the same HID bytes. Product rules:
 
 | Dual copy | Official | Custom |
 | --- | --- | --- |
-| tapping/TD term | legacy 1-byte × 10 ms, 100–500 / 20 ms grid | exact 2-byte `uint16` |
-| RGB sleep timeout (TOMAK / H7S) | master toggle + fixed 1/3/5/10/30/60-minute dropdown | same master toggle + exact 1..65535-second `uint16`; timeout uses `showIf` on the toggle |
+| tapping/TD term | legacy official presentation | exact integer presentation |
+| RGB sleep timeout (TOMAK / H7S) | shipped preset presentation | exact-seconds presentation of the same persisted timeout |
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
 
-H7S keeps the official minute dropdown on channel 18 / value 1 and uses channel
-18 / value 2 for the overlay's exact seconds. Both reach the same persisted
-firmware value, matching the TOMAK dual-surface compatibility rule without
-moving H7S onto TOMAK's channel 9 ids. RGB Sleep itself has one master in each
-firmware family: QMK channel 9 / value 12 on all 20 RGB-capable QMK definitions,
-H7S channel 18 / value 3 on all five H7S definitions. Turning it off disables
-idle timeout, USB suspend RGB sleep, and host-loss RGB sleep together. Where a
-timeout exists, `showIf` hides only that timeout row and its stored value survives.
+Exact encodings, ranges, and family-specific ids are owned by
+`docs/PROJECT_DIRECTION.md` and [ADR 0001](adr/0001-state-sync-protocol.md).
+The durable rule here is only that the official and custom surfaces remain
+compatible and converge on the same firmware-owned state.
 
 ## 7. Hand-maintained seams
 
@@ -241,12 +194,10 @@ session start.
 | --- | --- |
 | `D:\Engineering\qmk_firmware_eerraa` | QMK firmware (RP2040 + ATmega32U4). `keyboards/era/` |
 | `D:\Engineering\eerraa-qmk-h7s-fw` | H7S firmware (main) |
-| `D:\Engineering\eerraa-qmk-h7s-fw-via`, `...-via2` | H7S working worktrees |
 
 - Opening an H7S repository: read **that** `AGENTS.md` first and follow it.
-- Opening a session with a firmware repository as cwd caused that repo's rules
-  to run `graphify update .` and commit `graphify-out/` into this app
-  repository. **Keep cwd on the app.**
+- Keep the app as cwd for app work. Treat a missing peer repository as
+  unverified rather than inventing or recreating a worktree.
 - Firmware `*-VIA.json` files are firmware-local copies, not an app lookup
   source. Adding a feature still requires **both sides** — a custom-app-only
   path is an error (`docs/PROJECT_DIRECTION.md`).
@@ -259,11 +210,8 @@ session start.
 
 ## 9. Document rules
 
-The shared convention (two-line header, five genres, three-column index,
-minimum checks path · header · index · citation) is
-[eerraa-agent-docs](https://github.com/eerraa/eerraa-agent-docs) tag **v1**
-[`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/v1/AGENT_DOCS_CONVENTION.md).
-This file does not copy that spec. This repository adds:
+The adopted shared convention is declared once in `AGENTS.md`; this file does
+not copy it. This repository adds:
 
 - A repository path in a document that starts with `src/ tests/ config/
   era-definitions/ public/ scripts/ docs/ types/ patches/ .github/` must be a
@@ -275,11 +223,10 @@ This file does not copy that spec. This repository adds:
   the cause, the next person has a pretext to bypass the rule. A commit is a
   change unit and a constraint is a contract unit; `git log` does not replace
   this.
-- A `path:line` address in a document must name a line that exists. Line
-  numbers go silently wrong the moment a line is inserted above them.
+- New persistent pointers prefer path + symbol/heading. If a legacy
+  `path:line` citation remains, it must still name a line that exists.
 - How to write or retire an ADR is [`docs/adr/README.md`](adr/README.md).
-- Paths, constants, links, scripts, and the v1-required path · header · index
-  · citation checks are in `tests/docs-contract.test.ts`. A document that no
-  router can reach also fails.
+- Repository paths, links, script names, document scope declarations, legacy
+  citations, and router reachability are checked by `tests/docs-contract.test.ts`.
 
 The three-column Change / Locate / Verify index lives in `AGENTS.md`, not here.

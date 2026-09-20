@@ -2,14 +2,9 @@ import {describe, expect, test} from 'bun:test';
 import {existsSync, readFileSync, readdirSync, statSync} from 'node:fs';
 import path from 'node:path';
 
-// The docs are a derivative of the code, not a second copy of it. Every number and every
-// repository path a document states is recomputed here from the source it was derived from,
-// so a document cannot drift silently: it either matches or this file goes red.
-//
-// The precedent is `tests/locales.test.ts`, which reads its own key list from source rather
-// than restating it, and `tests/era-definition.test.ts`, which holds the feature-coverage
-// table. Nothing below hard-codes a fact that also lives in a document; it computes the fact
-// and asserts the document agrees.
+// Docs point at source owners instead of copying source-derived inventories. This checker
+// verifies paths, links, script names, document scope, and routing. Product support and
+// wire-compatibility assertions below operate on source data rather than documentary copies.
 
 const repoRoot = path.join(import.meta.dir, '..');
 const read = (relative: string) =>
@@ -31,11 +26,7 @@ type ManifestEntry = {
 const manifest = readJSON('config/era-definitions.manifest.json') as {
   definitions: ManifestEntry[];
 };
-const externalManifest = readJSON(
-  'config/external-definitions.manifest.json',
-) as {
-  definitions: {path: string}[];
-};
+
 const packageJson = readJSON('package.json') as {
   scripts: Record<string, string>;
 };
@@ -74,133 +65,7 @@ const docFiles = [
     .map((name) => `docs/adr/${name}`),
 ];
 
-// `docs/MAP.md` §2 is a two-column table. Read the value the document claims for a row so the
-// assertion compares document text against a computed number, never number against number.
-const mapTableValue = (label: string) => {
-  const row = MAP.split('\n').find((line) =>
-    line.startsWith(`| ${label} |`),
-  );
-  expect({label, row: typeof row}).toEqual({label, row: 'string'});
-  const cell = row!.split('|')[2].trim();
-  return Number(cell.replace(/\*/g, ''));
-};
-
-describe('docs state the same counts the manifests do', () => {
-  const h7s = manifest.definitions.filter(
-    ({usbDiagnostics}) => usbDiagnostics === true,
-  );
-
-  const claims: [string, number][] = [
-    ['ERA custom definitions', manifest.definitions.length],
-    ['External stock V3 definitions', externalManifest.definitions.length],
-    ['├ QMK (RP2040 + ATmega32U4)', manifest.definitions.length - h7s.length],
-    ['└ H7S', h7s.length],
-    [
-      'State Sync opt-in (`stateSync: true`)',
-      manifest.definitions.filter(({stateSync}) => stateSync).length,
-    ],
-    [
-      'exact-ms `qmk` family (`options: [1, 65535]`)',
-      manifest.definitions.filter(({exactMsFamily}) => exactMsFamily === 'qmk')
-        .length,
-    ],
-    [
-      'exact-ms `h7s` family (`options: [100, 500]`)',
-      manifest.definitions.filter(({exactMsFamily}) => exactMsFamily === 'h7s')
-        .length,
-    ],
-    ['USB diagnostics opt-in (`usbDiagnostics: true`)', h7s.length],
-    [
-      'split pair entries (left/right each)',
-      manifest.definitions.filter(({pair}) => typeof pair === 'string').length,
-    ],
-  ];
-
-  for (const [label, actual] of claims) {
-    test(`${label} == ${actual}`, () => {
-      expect({label, documented: mapTableValue(label)}).toEqual({
-        label,
-        documented: actual,
-      });
-    });
-  }
-
-  test('ERA menu summaries count matches era-feature-help', async () => {
-    const {eraMenuSummaries} = await import('../src/utils/era-feature-help');
-    expect(mapTableValue('ERA menu summaries')).toBe(eraMenuSummaries().length);
-  });
-
-  test('official snapshot sizes match the installed package', () => {
-    const countJSON = (relative: string) => {
-      const root = path.join(repoRoot, relative);
-      expect({relative, installed: existsSync(root)}).toEqual({
-        relative,
-        installed: true,
-      });
-      let total = 0;
-      const walk = (dir: string) => {
-        for (const entry of readdirSync(dir, {withFileTypes: true})) {
-          const child = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            walk(child);
-          } else if (entry.name.endsWith('.json')) {
-            total += 1;
-          }
-        }
-      };
-      walk(root);
-      return total;
-    };
-
-    const grouped = (value: number) => value.toLocaleString('en-US');
-    expect(MAP).toContain(
-      `src/**/*.json   ${grouped(countJSON('node_modules/via-keyboards/src'))}`,
-    );
-    expect(MAP).toContain(
-      `v3/**/*.json    ${grouped(countJSON('node_modules/via-keyboards/v3'))}`,
-    );
-  });
-
-  test('locale count and key count match the catalogs', () => {
-    const dir = path.join(repoRoot, 'src/locales');
-    const files = readdirSync(dir).filter((name) => name.endsWith('.json'));
-    const keyCounts = new Set(
-      files.map(
-        (name) =>
-          Object.keys(JSON.parse(readFileSync(path.join(dir, name), 'utf8')))
-            .length,
-      ),
-    );
-    expect(keyCounts.size).toBe(1);
-    const documented = MAP.split('\n').find((line) =>
-      line.startsWith('| Locales |'),
-    );
-    expect(documented).toContain(`${files.length} (`);
-    expect(documented).toContain(`${[...keyCounts][0]} keys`);
-  });
-});
-
-describe('docs state the same wire constants the source does', () => {
-  test('selector, command and poll interval', async () => {
-    const stateSync = await import('../src/utils/era-state-sync');
-    const diagnostics = await import('../src/utils/era-usb-diagnostics');
-
-    const hex = (value: number) =>
-      `0x${value.toString(16).padStart(2, '0')}`;
-
-    expect(MAP).toContain(
-      `\`GET_KEYBOARD_VALUE ${hex(stateSync.ERA_STATE_SYNC_COMMAND)}\` + selector \`${hex(
-        stateSync.ERA_STATE_SYNC_SELECTOR,
-      )}\``,
-    );
-    expect(MAP).toContain(
-      `selector \`${hex(diagnostics.ERA_USB_DIAGNOSTICS_SELECTOR)}\``,
-    );
-    expect(MAP).toContain(
-      `ERA_STATE_SYNC_POLL_INTERVAL_MS = ${stateSync.ERA_STATE_SYNC_POLL_INTERVAL_MS}`,
-    );
-  });
-
+describe('definition wire compatibility', () => {
   test('exact-ms addresses match the definitions they came from', () => {
     const addresses = (definitionPath: string) => {
       const found = new Map<string, string>();
@@ -240,7 +105,6 @@ describe('docs state the same wire constants the source does', () => {
     // Global term shares one address across both families; the TD banks do not.
     expect(qmk.get('id_qmk_tapping_global_term_exact')).toBe('15:5');
     expect(h7s.get('id_qmk_tapping_global_term_exact')).toBe('15:5');
-    expect(MAP).toContain('| Global TAPPING term | channel 15 / value 5 |');
 
     const bank = (
       found: Map<string, string>,
@@ -263,14 +127,11 @@ describe('docs state the same wire constants the source does', () => {
       };
     };
 
-    const qmkBank = bank(qmk);
-    const h7sBank = bank(h7s);
-    expect(MAP).toContain(
-      `| TD0–TD7 term | channel ${qmkBank.channel} / value ${qmkBank.first}–${qmkBank.last} | channel ${h7sBank.channel} / value ${h7sBank.first}–${h7sBank.last} |`,
-    );
+    expect(bank(qmk)).toEqual({channel: 0, first: 72, last: 79});
+    expect(bank(h7s)).toEqual({channel: 16, first: 41, last: 48});
   });
 
-  test('H7S RGB sleep exact and enable addresses match MAP and the H7S custom definitions', () => {
+  test('H7S RGB sleep exact and enable addresses remain compatible', () => {
     const found: Array<{name: string; channel: number; id: number}> = [];
     const walk = (node: unknown): void => {
       if (Array.isArray(node)) {
@@ -305,51 +166,10 @@ describe('docs state the same wire constants the source does', () => {
       {name: 'id_qmk_rgb_sleep_enable', channel: 18, id: 3},
       {name: 'id_qmk_rgb_sleep_timeout_exact', channel: 18, id: 2},
     ]);
-    expect(MAP).toContain(
-      '| RGB SLEEP timeout | SYSTEM channel 9 / value 11 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) | SYSTEM channel 18 / value 2 exact-sec (`id_qmk_rgb_sleep_timeout_exact`) |',
-    );
-    expect(MAP).toContain(
-      '| RGB SLEEP master | SYSTEM channel 9 / value 12 (`id_qmk_rgb_sleep_enable`) | SYSTEM channel 18 / value 3 (`id_qmk_rgb_sleep_enable`) |',
-    );
-    expect(MAP).toContain('V3 Custom Value channel 18 / id 1');
-    expect(MAP).toContain('V3 Custom Value channel 18 / id 2');
-    expect(MAP).toContain('V3 Custom Value channel 18 / id 3');
   });
 });
 
 describe('docs only name commands and files that exist', () => {
-  // The pass count moves whenever a case is added, so the documents state the file count
-  // instead: that only moves when a file leaves a script, which is the failure worth catching.
-  test('documented test-file counts match the scripts', () => {
-    for (const script of ['test:transport', 'test:p1'] as const) {
-      const files = [
-        ...packageJson.scripts[script].matchAll(/tests\/[\w.-]+\.test\.tsx?/g),
-      ].length;
-      for (const [name, body] of [
-        ['AGENTS.md', AGENTS],
-        ['docs/MAP.md', MAP],
-      ] as const) {
-        const line = body
-          .split('\n')
-          .find((candidate) => candidate.includes(`bun run ${script}`));
-        expect({script, name, line: typeof line}).toEqual({
-          script,
-          name,
-          line: 'string',
-        });
-        const fileCountPhrase =
-          name === 'AGENTS.md' ? `${files}개 파일` : `${files} files`;
-        expect({script, name, states: line!.includes(fileCountPhrase)}).toEqual(
-          {script, name, states: true},
-        );
-      }
-    }
-  });
-
-  test('AGENTS.md states the definition count the build emits', () => {
-    expect(AGENTS).toContain(`ERA 정의 ${manifest.definitions.length}종`);
-  });
-
   test('every `bun run <script>` named in AGENTS.md or MAP.md is defined', () => {
     const named = new Set<string>();
     for (const source of [AGENTS, MAP]) {

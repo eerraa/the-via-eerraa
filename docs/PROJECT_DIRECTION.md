@@ -11,18 +11,11 @@ the durable non-goals
 > decisions with rejected alternatives are `docs/adr/`. Transient state is not
 > recorded anywhere — `git log` and the verification commands answer it.
 
-Re-measured from this host: `src/utils/definition-priority.ts`,
-`src/store/definitionsSlice.ts`, `config/era-definitions.manifest.json`,
-`era-definitions/custom/v3`, `scripts/build-keyboards.ts`,
-`tests/era-definition.test.ts`, `src/utils/era-exact-ms.ts`,
-`src/utils/millisecond-field.ts`, `src/utils/keycode-picker.ts`,
-`src/components/inputs/keycode-picker.tsx`,
-`src/components/inputs/pelpi/keycode-input.tsx`,
-`src/components/inputs/millisecond-input.tsx`,
-`src/components/menus/external-links.tsx`. Wire, envelope, exact-ms identifiers,
-and refused State Sync mechanisms: [ADR 0001](adr/0001-state-sync-protocol.md).
-USB diagnostics product boundary: [ADR 0002](adr/0002-h7s-usb-diagnostics.md).
-Inventory counts: `docs/MAP.md` §2 — this file does not restate them.
+Implementation/source ownership and verification entry points are
+`docs/MAP.md` §§1–4. Wire and exact-ms requirements are
+[ADR 0001](adr/0001-state-sync-protocol.md); USB diagnostics requirements are
+[ADR 0002](adr/0002-h7s-usb-diagnostics.md). This file keeps product boundaries
+and reasons rather than a second implementation inventory.
 
 ## Mission
 
@@ -57,24 +50,15 @@ architecture is the actual limitation.
 
 ### Ownership
 
-- `era-definitions/custom/v3` in this app repository is the canonical ERA
-  custom source. Tap Dance slots live in `tapdanceKeycodes`. `customKeycodes`
-  remains the ordinary Custom tab and is omitted when empty
-  (`scripts/build-keyboards.ts`). TD names must not appear in `customKeycodes`.
-- `the-via/keyboards` `v3/` is the canonical official VIA source. The installed
-  `via-keyboards` package is a pinned build snapshot, not a second source of
-  truth.
-- `era-definitions/external/v3` is the canonical source only for external stock
-  V3 definitions this fork deliberately bundles. Its separate
-  `config/external-definitions.manifest.json` binds path and VID/PID. These
-  definitions are neither official VIA ownership nor ERA overlays and never
-  receive ERA advanced capabilities.
-- QMK `keymaps/via` and H7S board-local `json` files are firmware-local
-  compatibility, test, or release material. They are not app lookup sources and
-  do not define official JSON ownership.
-- Design uploads are a last-resort local source. They are retained for the
-  existing UX but cannot override a bundled ERA, official, or managed external
-  definition.
+Source locations and build ownership are mapped in `docs/MAP.md` §§1, 2, 4.
+The product boundary is that ERA overlays, official VIA definitions, and
+managed external stock definitions remain distinct ownership domains. Generated
+output replaces none of them. Firmware-local JSON is compatibility/release
+material rather than an app lookup source, and Design uploads remain a
+last-resort local source that cannot override a bundled definition.
+
+Tap Dance remains a separate presentation contract: TD names belong to
+`tapdanceKeycodes`, not the ordinary Custom-tab `customKeycodes` surface.
 
 > **REFUSED:** generating one canonical source from the other, or maintaining
 > `era-definitions/v3` as a stock clone.
@@ -110,8 +94,8 @@ or coupling ordinary builds to firmware Git history.
 
 ### Lookup order
 
-`mergeDefinitionLookup` in `src/utils/definition-priority.ts` (and
-`getDefinitionSourceForDevice` in `src/store/definitionsSlice.ts`) implement:
+Implementation anchors and the lookup matrix are in `docs/MAP.md` §4. The
+product order remains:
 
 1. Bundled ERA overlay (`/definitions/era/v3/{vpid}.json`).
 2. Bundled stock V3 (`/definitions/v3/{vpid}.json`): installed official VIA
@@ -130,8 +114,7 @@ Firmware accepts both presentations: official VIA writes TD0–TD7 as
 
 Which boards exist, which menus they carry, and which capabilities they opt
 into are not restated here. `config/era-definitions.manifest.json` and the
-definition JSON are canonical, `tests/era-definition.test.ts` binds them, and
-`docs/MAP.md` §2 carries the counts.
+definition JSON are canonical, and `tests/era-definition.test.ts` binds them.
 
 ### brick65
 
@@ -285,7 +268,7 @@ summary + folded-detail help surface.
 
 ### H7S RGB sleep exact-sec
 
-The five H7S definitions use the same dual-surface rule as TOMAK without sharing
+H7S definitions use the same dual-surface rule as TOMAK without sharing
 TOMAK's channel numbers. Firmware-local official VIA JSON keeps SYSTEM channel
 18 / value 1 (`id_qmk_rgb_sleep_timeout`) as the one-byte minute dropdown
 1/3/5/10/30/60. The ERA overlay uses additive channel 18 / value 2
@@ -315,10 +298,9 @@ value-1 official timeout contract.
 ### RGB Sleep master
 
 Every definition whose keyboard actually has RGB exposes exactly one master:
-20 QMK definitions on channel 9 / value 12 and five H7S definitions on channel
-18 / value 3. Definitions with no RGB hardware expose neither the master nor a
-timeout. `tests/era-definition.test.ts` owns that 25-definition set separately
-from the 11 definitions that also have an exact timeout.
+the QMK and H7S families keep their established master controls. Definitions
+with no RGB hardware expose neither the master nor a timeout.
+`tests/era-definition.test.ts` owns the coverage set.
 
 Firmware must compile the native QMK sleep capability wherever RGB exists.
 The firmware audit therefore treats missing `rgb_matrix.sleep: true` or
@@ -400,7 +382,8 @@ Acceptance bar (same guarantees, including hardware):
 
 Timeout and rate values are measured parameters, not permanent guesses. Poll
 interval and remaining hardware evidence live in
-[ADR 0001](adr/0001-state-sync-protocol.md) and `docs/MAP.md` §3.
+[ADR 0001](adr/0001-state-sync-protocol.md); `docs/MAP.md` §3 routes to that
+owner without restating the values.
 
 Three product boundaries constrain work that is not itself State Sync. The
 REFUSED three-liners are [ADR 0001](adr/0001-state-sync-protocol.md):

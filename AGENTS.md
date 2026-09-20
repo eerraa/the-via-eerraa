@@ -10,9 +10,10 @@
 기록된 상태를 믿지 말고 직접 확인한다.
 
 ```powershell
+git rev-parse --show-toplevel
+git branch --show-current
+git rev-parse HEAD
 git status --short
-git log --oneline -3
-bun install --frozen-lockfile
 ```
 
 전부 읽지 마라. 하려는 일에 따라 읽는다. 행은 세 열이다 — **Change**(편집 전
@@ -33,32 +34,27 @@ bun install --frozen-lockfile
 
 조사로는 알기 어렵고, 모르면 시간을 잃는 것들이다.
 
-- **`bun run lint`는 게이트가 아니다.** `prettier --check`가 `src/**` 257개 파일 전부에서
-  실패한다. 이 워크트리는 `core.autocrlf=true`라 내용은 맞고 줄바꿈만 CRLF이기 때문이다.
-  CRLF를 벗겨도 106개는 여전히 실패한다 — upstream에서 물려받은 포맷 차이다.
-  즉 실패가 기준선이므로 회귀 신호로 쓸 수 없다. `tests/`는 lint glob에 들어 있지도 않다.
-  실제 게이트는 §3의 네 명령뿐이다.
-- **`git checkout --`으로 파일을 되돌리면 autocrlf가 CRLF로 되돌려 놓는다.** 되돌린 뒤
-  줄바꿈이 바뀐 것처럼 보이는 것은 정상이고, `git diff`는 정규화 후 비교하므로 깨끗하다.
-- **PR CI는 `bun run build`와 `test:p1`을 돈다.** `test:transport`와
-  `bun x tsc --noEmit`는 로컬 게이트다. 커밋 전에 로컬에서 §3을 직접 돌려야 한다.
-- **cwd를 이 앱 저장소에 둔다.** 펌웨어 저장소를 cwd로 세션을 열면 그쪽 규칙이
-  `graphify update .`를 걸고, 과거에 그 경로로 이 저장소에 `graphify-out/` 75,000줄이
-  잘못 커밋된 사고가 있다.
-- **편집기에 열려 있던 파일이 저장되며 작업을 덮어쓴 사고가 있었다.** 커밋 전에
-  `git status`와 `git diff --stat`을 본다.
+- **`bun run lint`를 회귀 게이트로 취급하지 않는다.** upstream 포맷 차이와 Windows
+  줄바꿈의 영향을 받는다. 변경 범위에 맞는 테스트·타입체크·빌드를 선택한다.
+- 줄바꿈 정리를 이유로 사용자 변경을 되돌리거나 작업 트리를 정규화하지 않는다.
+- 명령은 이 앱 저장소 root에서 실행한다. 펌웨어 저장소를 열어야 하면 그 저장소의
+  `AGENTS.md`를 별도로 읽고, 이 앱 세션의 규칙과 섞지 않는다.
+- 커밋 전에는 현재 `git status`, 관련 diff, 공백 오류를 다시 확인한다.
 
 ## 3. 검증
 
 ```powershell
-bun run test:transport   # 7개 파일, 0 fail
-bun run test:p1          # 9개 파일, 0 fail
-bun x tsc --noEmit       # 0
-bun run build            # ERA 정의 33종
+bun test tests/docs-contract.test.ts
+bun run test:transport
+bun run test:p1
+bun x tsc --noEmit
+bun run build
 ```
 
-변경 위험에 비례해 돌린다. 소스를 고쳤으면 네 개 모두, 문서만 고쳤으면 최소한
-`bun run test:p1`(문서–코드 정합 테스트가 여기 있다)은 돌린다.
+변경 위험에 비례해 필요한 것만 돌린다. 문서만 고쳤으면 관련 문서 검사를 기본으로 하고,
+문서 검사기나 제품 계약을 바꿨으면 그 영향 시험을 추가한다. 생성기·제품 소스가 바뀌지
+않은 문서 변경에 전체 빌드나 실기기 검증을 요구하지 않는다. 실제 CI와 스크립트 구성은
+`.github/workflows/`와 `package.json`이 소유한다.
 
 앱을 띄운 채로 넘길 때는 loopback Vite를 남기고 `http://127.0.0.1:5173`이 응답하는지
 확인한다: `bun run dev -- --host 127.0.0.1`.
@@ -97,24 +93,5 @@ bun run build            # ERA 정의 33종
 - 문서 작성 규칙의 공통 규약은
   [eerraa-agent-docs](https://github.com/eerraa/eerraa-agent-docs) 태그 **v1**의
   [`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/v1/AGENT_DOCS_CONVENTION.md)다.
-  이 저장소가 보태는 것(경로 접두사, 상수, 링크, 스크립트)은 `docs/MAP.md` §9에 있다.
+  이 저장소가 보태는 것(경로 접두사, 링크, 스크립트)은 `docs/MAP.md` §9에 있다.
   루트 `AGENTS.md`·`CLAUDE.md`는 진입 사슬이므로 헤더를 갖지 않는다 — 그것도 v1이 정한다.
-
-## 7. `main` 히스토리를 다시 썼다 (한시적 안내)
-
-`main`은 문서 전용 커밋 13개를 인접 작업 커밋에 합쳐 63커밋에서 46커밋으로 리베이스됐고
-force-push 됐다. **파일 내용은 1바이트도 바뀌지 않았다**(트리 해시 `301e0b20…` 동일).
-합쳐진 커밋의 제목은 흡수한 커밋 본문에 목록으로 남아 있으므로 `git log --grep`으로
-옛 제목을 찾을 수 있다.
-
-리라이트 이전 히스토리 전체는 태그 **`backup/main-before-rewrite`**(`e775278`)에 있다.
-로컬과 `origin` 양쪽에 있다. 이 커밋은 `main`에서 도달할 수 없으므로 `git log`에는
-나타나지 않는다 — 보려면 `git log backup/main-before-rewrite` 또는 `git log --all`.
-
-- 옛 해시로 무언가를 찾고 있다면 그 태그에서 찾아라.
-- 삭제된 원격 브랜치 39개(포크 상속 37 + `fix/pages-spa-rewrite`, `goal/era-via-release`)의
-  커밋도 이 태그에서 도달 가능하다. 포크 상속분은 `upstream` 리모트에도 그대로 있다.
-- 되돌리려면 `git reset --hard backup/main-before-rewrite && git push --force origin main`.
-
-**이 절은 한시적이다.** 리라이트 이후 작업이 자리를 잡아 옛 해시를 찾을 일이 없어지면
-태그와 함께 이 절을 지워라(`git tag -d`, `git push origin :refs/tags/...`).
