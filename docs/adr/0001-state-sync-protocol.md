@@ -171,138 +171,69 @@ protocol change and requires a new envelope version plus paired host/firmware
 review. v1 does not add a new top-level VIA command or unsolicited State Sync
 packet.
 
-## App transport and refresh algorithm
+## App transport, lifetime, and refresh coordination
 
-Each WebHID path owns one input listener, one serialized request queue, one
-pending response matcher, one per-path write timestamp, and one connection
-generation (`TransportState` in `src/shims/node-hid.ts`). Selected Redux state
-is not transport identity.
+Transport lifetime is per WebHID path; selected Redux state is not transport
+identity. Queue/listener/matcher/generation mechanics are owned by
+`src/shims/node-hid.ts`. State Sync coordination and freshness state are owned
+by `src/store/stateSyncThunks.ts` and `src/store/stateSyncSlice.ts`.
+`tests/transport-phase1.test.ts` and `tests/state-sync-transport.test.ts` own
+the executable race, cancellation, late-reply, and freshness counterexamples.
 
-A generation-pinned logical reservation sits on that same FIFO.
-`HID.withPathReservation` enqueues like any other command. Nested calls with the
-same owner and generation run the callback without a second reservation
-(`KeyboardAPI.withPathReservation` returns `callback(this)` when already
-reserved). There is no
-physical scheduler, priority lane, or Redux global lock. Foreground work and a
-State Sync bracket wait on the same path; other paths proceed independently.
+The transport contract is:
 
-Each send re-checks the start generation. Disconnect or generation replacement
-rejects the active owner, waiting owners, and pending responses
-(`replaceGeneration`). Timeout, send failure, malformed response, and callback
-exceptions release the owner in `finally` so later queue work can run.
+- Work sharing one path is serialized. A generation-pinned logical reservation
+  uses the same FIFO; it creates neither a priority lane nor a Redux-global
+  lock. Different device paths remain independent.
+- Disconnect or device replacement invalidates that transport lifetime and
+  rejects active, pending, and waiting work. Timeout, send/response failure, or
+  callback failure must not strand a reservation or block later queue work.
+- An untagged legacy request timeout fails closed for that generation. Reopening
+  a handle, enumeration, or reauthorization is not evidence that an old
+  firmware reply can no longer reach the current listener. The
+  [WebHID close algorithm](https://wicg.github.io/webhid/#dom-hiddevice-close)
+  releases host resources but does not cancel a command already received by
+  firmware, so legacy recovery waits for an observable device lifecycle
+  boundary.
+- A uniquely tagged State Sync query may abandon only its timed-out request
+  without poisoning the generation because that delayed tag cannot satisfy the
+  next query. Failure of the initial proof leaves that generation `unverified`;
+  a transient query failure after capability was proved does not redefine the
+  firmware as incapable, but it also grants no freshness.
+- A result may become current UI state only while path, connection generation,
+  selection generation, and definition identity still match. Late work from an
+  older selection must not make a newly selected device ready or fresh.
 
-Input-report order (`routeInputReport`):
+The freshness contract is:
 
-1. Unsolicited handlers: `parseUISyncRequest` requires length 32, command `0x16`,
-   version `0x01`, and valid type/count (`src/utils/ui-sync.ts`). Unused bytes
-   inside those 32 are not required to be zero.
-2. The current serialized request's pending matcher.
-3. Bounded diagnostic drop (`MAX_DIAGNOSTIC_REPORTS` 32).
+- Revision observation alone never promotes cached data. A whole-domain
+  candidate becomes `fresh` only after matching start/end revisions, no
+  intervening foreground mutation, and a still-current selection/lifetime
+  context. Candidate data is not partially applied before that decision.
+- Refresh requests for the same path/generation coalesce. A lifecycle full
+  refresh requested while a domain is already in flight must still cause a read
+  after that in-flight boundary rather than be lost.
+- Foreground mutation makes the affected domain dirty before its first packet so
+  an older candidate cannot overwrite it. Failed or unstable reconciliation
+  keeps the last accepted snapshot only for display continuity; it remains
+  dirty and retryable, not write authority.
+- Exact coordinator fields, domain read composition/order, lazy MACRO demand,
+  and retry counts are source/test-owned implementation details rather than a
+  second algorithm in this contract.
 
-`APICommand` is `0x01..0x16`. This host never sends `UI_SYNC_REQUEST` (`0x16`).
-The State Sync pending matcher in `queryStateSync` checks command `0x02`,
-selector `0x06`, and the request tag. Version and capability are checked after
-match (`parseStateSyncEnvelope` / `isCapableStateSyncEnvelope`). Probe `0xFF` is
-an explicit fallback for that query only. Capable `0x16` dirties CONFIG and runs
-`coordinate(..., 'config')`. Ordinary non-opt-in uses
-`syncCustomMenuValuesFromRequest`. Opt-in that is not `capable` records CONFIG
-invalidation and does not send Custom GET/SET/SAVE.
+For advanced CONFIG, the exact availability predicate is owned by
+`src/store/menusSlice.ts`. The persistent constraints are that `unverified`
+never falls through to ordinary VIA, a new write requires a capable accepted
+CONFIG snapshot for the current context that is still fresh against observation,
+and external-only dirty/refreshing state cannot bootstrap write authority. An
+already-open foreground write session that entered through that gate may finish
+its interaction.
 
-Untagged legacy commands match on command plus immutable echoed arguments.
-Default timeout uses `poison-generation`: the session is terminal and
-pending/queued work is rejected until device disconnect/reconnect. Enumeration
-and reauthorization preserve poison. Rotating the JS generation and reopening
-the WebHID handle cannot distinguish an old firmware reply delivered to the new
-listener. The [WebHID close algorithm](https://wicg.github.io/webhid/#dom-hiddevice-close)
-releases host resources; it does not cancel a command already received by the
-firmware. Automatic recovery requires evidence of a device-side response boundary.
-
-State Sync queries pass `{timeoutBehavior: 'preserve-generation'}`. A timed-out
-tag cannot resolve the next tag, so only that pending request is rejected.
-Transport generation and an already-confirmed `capable` stay. An initial probe
-timeout/unhandled/malformed is `unverified` for that generation only and does
-not distinguish missing firmware from a comms error.
-
-Thunks capture path, API, definition identity, selection generation, and start
-connection generation, and re-check before Redux commit
-(`isSelectedContextCurrent`). Late completion of a previous device may update
-only still-valid cache for that path/generation. It cannot mark a newly selected
-device ready (`markDeviceReady`). A previous selection generation cannot mark
-the new selected device ready.
-
-Poll, initial confirmation, selection, reconnect, and resume share one
-path/generation coordinator owner (`coordinate` / `coordinatorOwners`). Domain
-refresh (`refreshDomain`):
-
-1. Start query. Record all three tokens as observed. Capture that domain's
-   `mutationEpoch`. Observation does not advance any `acceptedRevision`.
-2. Mark the domain `refreshing`. Read existing VIA GET into an isolated
-   candidate (`readKeymapStateSyncCandidate` / `readMacrosStateSyncCandidate` /
-   layout + V3 menu). No Redux current-state patch before the bracket ends.
-   Ordinary/non-opt-in and unverified connect still uses
-   `loadKeymapFromDevice` per layer. Capable ERA initial selection uses the same
-   whole-domain candidate path for KEYMAP before `markDeviceReady`.
-3. End query. Record all three observed tokens again.
-4. Commit the whole candidate in one action iff start/end revision match, the
-   captured mutation epoch is unchanged, and connection/selection generation,
-   path, and definition identity are still current. Status becomes `fresh`.
-5. Otherwise discard and retry immediately, up to `ERA_STATE_SYNC_REFRESH_RETRIES`
-   (3). Exhausted or failed GET/query leaves the accepted snapshot and stays
-   `dirty`. A dirty domain is retried even when observed numbers still match.
-
-KEYMAP candidate is every layer and encoder map. MACRO is the whole macro
-buffer. CONFIG is layout options plus applicable V3 menu / per-key RGB.
-Coordinator preference is KEYMAP, CONFIG, then MACRO. Revision polling skips an
-unrequested MACRO domain (`acceptedRevision == 0`, no local mutation, and
-`macroReadRequested == false`). Entering the Macro pane or requesting a full
-refresh records demand for that path and connection generation before any
-revision query, including when joining another coordinator owner. A failed first
-query or exhausted read therefore remains eligible for the next visible poll.
-The flag is read intent only: it never grants freshness or write authority, and a
-new connection generation resets it. Merely observing a revision keeps an
-untouched macro buffer lazy.
-
-### Foreground mutation epoch and CONFIG authority
-
-Each `path:generation:domain` has a monotonic `mutationEpoch`
-(`beginForegroundMutation`). Macro save/reset/import, dynamic keymap bulk
-write/import, encoder import, and capable CONFIG SET/SAVE increment it and mark
-the domain dirty before the first packet. A candidate that finished reading
-under an older epoch cannot commit. Other paths and new connection generations
-have separate epoch spaces.
-
-Advanced CONFIG writes go through `getCustomMenuAvailabilityForDevice` in
-`src/store/menusSlice.ts`. For ERA overlay + opt-in:
-
-- `unverified` stays `unverified` (not treated as ordinary VIA)
-- otherwise `'available'` requires `capability == capable`, current
-  path/connection/selection generation, current definition identity,
-  `acceptedRevision !== 0`, current accepted selection generation and
-  definition identity, and either (`status == fresh` and
-  `acceptedRevision == observedRevision`) or `foregroundWriteDepth > 0`
-- no accepted snapshot → `'checking'`
-- depth 0 and not that fresh/equal pair → `'reconciling'`
-
-`updateCustomMenuValue` and the other discrete/continuous starts return false
-unless availability is `'available'`. A continuous interaction that already
-holds `hasContinuousHIDTransaction` does not re-check availability for later
-SETs. Ordinary non-opt-in returns `'available'` immediately (no advanced gate).
-
-Each discrete SET/SAVE that starts under that gate owns a
-`path:generation:config` local-write session (`beginForegroundWriteSession`).
-Later discrete writes on the same current selection/definition join while depth
-> 0 and bump `mutationEpoch` again before the packet. Depth 0 external-only
-`dirty`/`refreshing` does not open write authority. Depth closes in `finally`
-regardless of refresh success. `endForegroundWriteSession` no-ops if generation
-no longer matches.
-
-The session does not replace firmware authority. UI may show an optimistic
-value; `fresh` is still only a bracketed GET. Equal authoritative menu bytes
-keep object identity (`isSameCustomMenuData`); otherwise the candidate commits
-atomically. Rollback of an earlier SET applies only to fields still holding that
-SET's optimistic value (`rollbackCustomMenuData`). A refresh that sees a
-mutation-epoch mismatch returns `'retry'`, drops the reservation, and lets FIFO
-foreground writes run first.
+Optimistic UI does not create freshness: authoritative reconciliation still
+comes from revision-bracketed existing VIA GET. A failed optimistic write must
+not roll back a newer value, and a candidate is applied atomically only while
+its ownership/freshness guards still hold. Ordinary definitions without the ERA
+State Sync opt-in keep the existing VIA path.
 
 ### Exact macro and full import transaction
 
@@ -344,100 +275,53 @@ not created. Macro failure does not start keymap/encoder. Partial failure stops
 remaining steps, dirties affected domains, and requests one reconciliation on
 the same generation. UI success waits for every stage.
 
-### Verified continuous-control SET/SAVE shaping
+### Continuous-control write ownership
 
-Only controls with a verified completion lifecycle use an interaction
-transaction: custom range/color (`custom-control.tsx`) wrapping `AccentRange`,
-`ColorPicker`, `ArrayColorPicker`, and the lighting range/color wrappers.
-Pending SAVE lives in the path/generation registry
-(`src/utils/continuous-hid-transaction.ts`), not component local state. Each
-control has its own reservation. Consecutive identical values are dropped.
-Pointer/touch release, keyboard commit, blur, cancel/close, and unmount send
-SAVE once per affected channel/object. Channels are not merged.
+Only controls with an explicit completion lifecycle may hold a multi-SET
+interaction reservation and defer SAVE to the interaction boundary. Pending
+ownership is scoped to path/generation, not component-local state; device switch
+may finish the previous still-valid generation, while disconnect or generation
+replacement cancels that ownership and leaves capable CONFIG dirty. Controls
+without a reliable completion boundary remain discrete, and no trailing timer or
+maximum-drag SAVE is invented. The exact control set and event plumbing are owned
+by `src/utils/continuous-hid-transaction.ts` and its UI call sites; integration
+counterexamples live in `tests/state-sync-transport.test.ts`.
 
-Device switch flushes pending interaction for the previous path/generation while
-that generation is still usable (`completeContinuousHIDTransactionsForPath` in
-`src/components/state-sync-runtime.tsx`). Disconnect/generation replacement
-fails the reservation (`failContinuousHIDTransactionsForPath` in
-`src/components/Home.tsx`) and dirties capable CONFIG. Controls that already
-have a completion event do not gain a trailing timer or long-drag maximum-age
-SAVE (those symbols are absent). TAPPING/TAPDANCE `DeferredApply`,
-toggle/dropdown/button/keycode, unknown custom controls, and the per-key painter
-(`use-color-painter.tsx`) stay discrete.
+The lock-free interval between the end-revision response and Redux commit does
+not extend the meaning of the snapshot: it was consistent at the end query, and
+a later change is discovered by the next eligible reconciliation.
 
-The window after the end-revision response and before Redux commit exists in any
-lock-free read. That snapshot was consistent at the end query. The next visible
-poll sees a token mismatch and goes dirty.
+## Lifecycle boundary and convergence
 
-## Lifecycle policy without a subscription state machine
+Selection, visibility, and reconnect wiring is source-owned by
+`src/components/state-sync-runtime.tsx`, `src/store/devicesSlice.ts`, and the
+State Sync thunks. Those transitions must enforce the freshness and generation
+rules above; they do not establish a firmware subscription state machine or a
+second value protocol. Official VIA clients therefore receive no advanced
+unsolicited State Sync traffic.
 
-- Configure-visible is `location === '/'`. `selectConnectedDevice` confirms the
-  read-only capability selector before advanced ERA I/O. If capable, it reads
-  only macro count metadata, brackets a whole KEYMAP candidate while the
-  selection is not yet UI-ready, then calls `markDeviceReady`. CONFIG is queued
-  immediately afterwards without delaying that first interactive keymap frame.
-  The first full MACRO buffer read is deferred until the Macro pane opens.
-- A selected ready device that still has capability `unknown` may also be probed
-  by `StateSyncRuntime`. The legacy `probeStateSyncForDevice` recovery entry
-  point keeps its conservative full-refresh behavior; it is not the normal
-  capable initial-selection path.
-- Returning to a capable path after another selection does not attach cache from
-  the old selection generation. KEYMAP is reacquired before ready, CONFIG after
-  ready, and MACRO remains lazy until first use.
-- Leaving Configure (`location !== '/'`) stops the poll (`shouldPoll`). Re-entering
-  restores eligibility and runs the revision poll (`syncPolling`), not a
-  separate full refresh.
-- `document.hidden` stops periodic requests. Resume from hidden on a capable
-  selected ready device calls `refreshAllDomains` (full, ignoring revision
-  equality).
-- Disconnect replaces the transport generation (`replaceGeneration` in
-  `src/shims/node-hid.ts`), rejects listener and pending work, and drops path sync.
-  The next `ensurePathSync` on the new generation starts domains at `unknown`.
-  Reconnect repeats the progressive acquisition above even if revision numbers
-  happen to match the previous generation.
-- Firmware has no subscription state for client replacement. A new client starts
-  at the opt-in gate and the read-only query. The official VIA client is not
-  sent advanced unsolicited packets.
+A reboot is safely distinguished when USB disconnect/re-enumeration replaces the
+connection generation. An in-place silent reset that the host cannot observe is
+a remaining counterexample if its revision values alias the prior generation.
+No boot/session token is added to this envelope until that path is measured.
 
-Recovery from reboot assumes USB disconnect/re-enumeration, which increments
-generation. An in-place silent reset that the host cannot observe would be a
-counterexample (same revision numbers). No boot/session token is added to this
-envelope until that path is measured.
+For a supported domain `d`, eventual convergence depends on five durable
+premises: a semantic firmware change advances `R_d` only after existing GET can
+return the new `S_d`; eligible reconciliation is retried; the state eventually
+stops changing; comparable queries do not alias a full revision wrap; and an
+uncertain connection boundary never reuses an accepted snapshot from the prior
+generation. Under those premises, a stable revision bracket installs the final
+`S_d`; transient query/GET failure stays dirty and retryable. Missing firmware
+revision hooks cannot be repaired by host events or acknowledgements.
 
-## Convergence proof and counterexamples
-
-For a supported domain `d`, eventual convergence uses these premises, which match
-this host and the QMK/H7S token bumpers that exist:
-
-1. Every semantic commit that changes firmware-readable `S_d` changes token
-   `R_d` exactly once after GET can return the new value (QMK/H7S skip 0 on
-   wrap; a no-op SET does not bump).
-2. While selected and visible, the revision poll is retried. A domain required
-   for initial or foreground use is revision-bracketed and retryable; later
-   lifecycle full refresh remains a recovery path.
-3. After some time `T`, state is stable.
-4. Two comparable queries do not see a full 32-bit wrap of `R_d`.
-5. Uncertain connection boundaries never reuse an accepted snapshot from the
-   previous connection generation. Each domain is reacquired before that domain
-   is exposed as current; numeric revision equality alone is insufficient.
-
-A successful query after `T` that differs from the cached token brackets existing
-GET with start/end `R_d`. Stable state makes those tokens equal, so the candidate
-is final `S_d` and the atomic commit installs it. Transient query/GET failure
-leaves dirty and repeats. Missing firmware increment hooks are not repaired by
-events or ACKs.
-
-| Fault | Advanced-capable device | Legacy `0x16` v1-only device |
-| --- | --- | --- |
-| Lost last event | No advanced events. Next revision poll reads the current token. | **Counterexample:** without a later `0x16` or lifecycle reload, the last Custom Menu change does not auto-recover. Kept as v1 compatibility. |
-| Duplicate `0x16` | Same CONFIG invalidation coalesces. GET is authority. | Duplicate GET may occur; values still converge. |
-| Reordered `0x16` | Hint carries no value. | Each hint only narrows; GET reads current. |
-| Event overflow/coalescing | No advanced event queue. The revision token coalesces intermediate change. | Losing the last v1 hint is the counterexample above. |
-| Change during refresh | Start/end mismatch discards the candidate. Change after end is the next poll. | A further v1 hint queues another pass. Without a last hint, nothing is guaranteed until lifecycle. |
-| Revision wrap | Exact full wrap between polls is an equality-alias counterexample. No commit-rate limiter exists in this host. Remaining. | Not applicable. |
-| Firmware reboot | Re-enumeration generation plus progressive reacquisition ignores numeric equality. In-place silent reset is remaining. | Recovers if lifecycle reload runs. |
-| Reconnect / device switch | Freshness is per path+generation. KEYMAP is reacquired before ready, CONFIG immediately after, and MACRO before first use; none trusts old-generation equality. | Only ordinary VIA lifecycle load. |
-| Hidden / resume | Hidden poll count is 0. Resume full-refresh does not trust equality. | Recovers if the same app-core resume full refresh runs. |
+The remaining semantic counterexamples are deliberately explicit: a legacy
+v1-only device can lose its final `0x16` invalidation hint until a later hint or
+lifecycle reload, a full revision wrap can alias equality between polls, and an
+in-place silent reset can evade a generation boundary. Duplicate/reordered hints
+do not become value authority because existing VIA GET remains authoritative.
+Executable reconnect, device-switch, refresh-race, hidden/resume, and legacy
+late-reply cases belong to `tests/state-sync-transport.test.ts` and
+`tests/transport-phase1.test.ts`, not to a duplicate case ledger here.
 
 ## TOMAK durable peer authority
 
@@ -525,8 +409,12 @@ Executable detail belongs to the tests rather than a duplicate case ledger here:
 
 - `tests/era-state-sync.test.ts` owns v1 request/envelope parsing, capability
   rejection cases, and canonical definition opt-in behavior.
+- `tests/transport-phase1.test.ts` owns per-path FIFO/reservation lifetime,
+  timeout poisoning, disconnect/replacement cancellation, and late legacy reply
+  isolation.
 - `tests/state-sync-transport.test.ts` owns runtime capability gating,
-  revision-bracketed refresh, and the transport/freshness integration.
+  revision-bracketed refresh, selection/reconnect freshness, and UI write
+  authority.
 - `tests/docs-contract.test.ts` owns active document links, scope declarations,
   and entry-chain reachability.
 
