@@ -53,7 +53,7 @@ does not duplicate their addresses, ranges, packet layouts, or polling values.
 | Concern | Contract owner | First app/source anchor | Verification |
 | --- | --- | --- | --- |
 | State Sync, exact-ms, legacy projection, Custom Menu invalidation | [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/era-state-sync.ts`, `src/utils/era-exact-ms.ts`, `src/utils/ui-sync.ts` | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
-| H7S USB diagnostics wire and lifecycle | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) | `src/utils/era-usb-diagnostics.ts` | `tests/era-usb-diagnostics.test.ts`, `tests/diagnostics-pane.test.tsx` |
+| H7S USB diagnostics app acceptance, observation/comparison, and lifecycle | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) | `src/utils/era-usb-diagnostics.ts` | `tests/era-usb-diagnostics.test.ts`, `tests/diagnostics-pane.test.tsx` |
 | RGB sleep preset/exact/master compatibility | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec**, **H7S RGB sleep exact-sec**, **RGB Sleep master** | `era-definitions/custom/v3`, `src/utils/era-exact-sec.ts` | `tests/era-definition.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | VERSION display compatibility | [ADR 0003](adr/0003-era-menu-help-ui.md) | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 
