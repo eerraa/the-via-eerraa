@@ -200,15 +200,21 @@ session start.
 - Opening an H7S repository: read **that** `AGENTS.md` first and follow it.
 - Keep the app as cwd for app work. Treat a missing peer repository as
   unverified rather than inventing or recreating a worktree.
-- Firmware `*-VIA.json` files are firmware-local copies, not an app lookup
-  source. Adding a feature still requires **both sides** — a custom-app-only
-  path is an error (`docs/PROJECT_DIRECTION.md`).
-- Ordinary app CI validates the manifest-bound external registry, but it does
-  not pass arbitrary firmware-local JSON to the external V3 validator and
-  therefore cannot catch cross-repository drift automatically. A release audit
-  passes extracted firmware-local paths explicitly to
-  `scripts/validate-external-v3.ts`; wire and identity compatibility still
-  require their separate review.
+
+Cross-repository checks keep each owner/counterpart pair separate. A local PASS
+does not promote an unchecked peer side to verified.
+
+| Surface | Owner → counterpart | Verification in this repository | Still unverified here |
+| --- | --- | --- | --- |
+| Official VIA V3 registry | `the-via/keyboards` → bundled stock `/definitions/v3` | `scripts/build-keyboards.ts` plus deploy `Verify build output` | Firmware-local official-client JSON and publication on the official site |
+| Firmware-local official-client JSON | peer repository `*-VIA.json` → official `usevia.app` | Explicit release-audit paths through `scripts/validate-external-v3.ts` check V3 parse/schema/transform | Ordinary CI does not pass arbitrary peer paths; runtime firmware behavior is not proved |
+| ERA custom definition | `era-definitions/custom/v3` + `config/era-definitions.manifest.json` → app custom menu + matching firmware Custom Value handlers | `tests/era-definition.test.ts` checks local identity, menu support, addresses, and opt-in | Matching peer handlers, storage, and identity require paired firmware review |
+| Coordinated wire | [ADR 0001](adr/0001-state-sync-protocol.md) / [ADR 0002](adr/0002-h7s-usb-diagnostics.md) + app encoders → peer firmware handlers | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts`, `tests/era-usb-diagnostics.test.ts` | Peer revision, on-device transcript, and HIL remain separate evidence |
+
+Firmware-local `*-VIA.json` files are therefore peer-owned release inputs, not
+an app lookup source. Adding a feature still requires both official-client and
+custom-app paths where the product contract requires them
+(`docs/PROJECT_DIRECTION.md`).
 
 ## 9. Document rules
 

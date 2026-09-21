@@ -24,10 +24,12 @@ git status --short
 | --- | --- | --- | --- |
 | 무엇이 어디 있고 무엇이 정본인가 | `docs/MAP.md` — 여기부터 | `docs/MAP.md` | `tests/docs-contract.test.ts` |
 | 제품 방향과 영구 금지사항 | `docs/PROJECT_DIRECTION.md` | — | `tests/docs-contract.test.ts` |
-| State Sync·exact-ms wire | `docs/adr/0001-state-sync-protocol.md` | `docs/MAP.md` §3 | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
-| H7S USB 진단 wire·계측 | `docs/adr/0002-h7s-usb-diagnostics.md` | `docs/MAP.md` §3 | `tests/era-usb-diagnostics.test.ts` |
-| ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` | `docs/MAP.md` §1 | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/diagnostics-pane.test.tsx`, `tests/era-definition.test.ts` |
-| 공개 배포 | `docs/DEPLOYMENT.md` | `docs/MAP.md` §5·§7 | `bun run build` |
+| 작은 UI·일반 앱 결함 | — (아래 계약을 바꾸면 해당 행으로 전환) | 편집 대상 `src/` 파일과 인접 테스트 | 인접 테스트; 타입 경계 변경 시 `bun x tsc --noEmit` |
+| State Sync·exact-ms wire | `docs/adr/0001-state-sync-protocol.md` | `src/utils/era-state-sync.ts`, `src/utils/era-exact-ms.ts`, `src/store/stateSyncThunks.ts` | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
+| H7S USB 진단 wire·계측 | `docs/adr/0002-h7s-usb-diagnostics.md` | `src/utils/era-usb-diagnostics.ts` | `tests/era-usb-diagnostics.test.ts` |
+| ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` | `src/utils/era-feature-help.ts`, `src/utils/era-firmware-version.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/diagnostics-pane.test.tsx`, `tests/era-definition.test.ts` |
+| 정의·공식 VIA 호환 감사 | `docs/PROJECT_DIRECTION.md`의 정의/호환 경계 | `config/era-definitions.manifest.json`, `config/external-definitions.manifest.json`, `era-definitions/custom/v3`; peer 짝은 `docs/MAP.md` §8 | `tests/era-definition.test.ts`, `tests/validate-external-v3.test.ts`; peer는 명시적 release audit |
+| 공개 배포 | `docs/DEPLOYMENT.md` | `.github/workflows/deploy-to-cloudflare.yml`, `package.json`, `public/_redirects` | `bun run build` |
 | 죽은 코드·은퇴 아키텍처 장부 | `docs/DEAD_CODE.md` | — | `tests/docs-contract.test.ts` |
 
 ## 2. 먼저 알아야 손해를 안 보는 것

@@ -184,8 +184,14 @@ describe('docs only name commands and files that exist', () => {
     }
   });
 
-  test('documents exist to be checked', () => {
-    expect(docFiles.length).toBeGreaterThan(5);
+  test('the active entry chain is part of the document input', () => {
+    for (const doc of ['AGENTS.md', 'CLAUDE.md', 'docs/MAP.md']) {
+      expect(docFiles).toContain(doc);
+    }
+  });
+
+  test('a missing document fixture is rejected', () => {
+    expect(() => read('docs/__missing-docs-contract-fixture__.md')).toThrow();
   });
 
   for (const doc of docFiles) {
@@ -275,10 +281,6 @@ describe('every document declares its own scope', () => {
   const KNOWN_STATUS = ['Accepted', 'Proposed', 'Superseded'];
 
   const documented = docFiles.filter((doc) => doc.startsWith('docs/'));
-
-  test('there are documents to check', () => {
-    expect(documented.length).toBeGreaterThan(3);
-  });
 
   for (const doc of documented) {
     test(`${doc} declares Genre and Canonical for`, () => {
