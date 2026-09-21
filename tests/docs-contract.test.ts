@@ -31,10 +31,8 @@ const packageJson = readJSON('package.json') as {
   scripts: Record<string, string>;
 };
 
-// A repository path that quietly stops existing is the most common way a document turns
-// into a lie: comments cited `src/utils/pane-config.ts` with a `.tsx` suffix even though
-// the file was never `.tsx`, because nothing ever asked. A path that belongs to another
-// repository has to carry that repository's name, so this check can tell the two apart.
+// Repository-local paths named by active docs must exist. Peer-repository paths
+// carry the peer repository name and are outside this existence check.
 const OWNED_PREFIXES = [
   'src/',
   'tests/',
@@ -269,31 +267,9 @@ describe('docs only name commands and files that exist', () => {
   }
 });
 
-// The header convention the four ERA repositories share — this app, `qmk_firmware_eerraa`,
-// `eerraa-qmk-h7s-fw` and `eerraa-54lm20-fw`. Two fields, because those are the two that
-// carry information at every scale:
-//
-//   Genre:         what kind of sentence this document may hold
-//   Canonical for: the facts this document is the single source of
-//
-// `Status:` is required only under `docs/adr/`, where it genuinely varies (Proposed →
-// Accepted → Superseded). Elsewhere a document is either current or deleted, so the field
-// would be a constant. Measured in `qmk_firmware_eerraa`, where the convention started:
-// 19 of 21 documents said `active`, and the two that did not differed from each other only
-// by a trailing period — a field nobody reads and nothing checks.
-//
-// `Read when:` is deliberately absent. It states, from the document's side, the same fact
-// the entry index states from the task's side, and both were maintained by hand. That is
-// the defect this whole document set was reorganised to remove, and it is present in the
-// repository the convention was borrowed from: `era_wire_contract.md` says "editing payload
-// encode/decode, scheduler IO, responder, or router" while the index row for the same
-// document says "wire payloads, compact IO, responder admission". Routing lives in the
-// index alone, and `every document is reachable from the entry chain` below keeps it honest.
-//
-// One scale-driven difference remains: there, genre is the directory (21 documents over
-// four of them). Here there are seven, so the genre is declared rather than encoded in a
-// path. The repo-root entry files carry no header in either repository — `AGENTS.md` is
-// the chain, not a document routed to by it.
+// This repository keeps document role and ownership machine-checkable with
+// Genre/Canonical for. Numbered ADRs additionally carry Status. Task routing
+// stays in AGENTS.md/MAP.md rather than being duplicated as Read when fields.
 describe('every document declares its own scope', () => {
   const KNOWN_GENRES = ['contract', 'entry', 'manual', 'map', 'state'];
   const KNOWN_STATUS = ['Accepted', 'Proposed', 'Superseded'];
@@ -364,14 +340,7 @@ describe('every document declares its own scope', () => {
 });
 
 describe('every test file is reachable from a package script', () => {
-  // A test no script runs proves nothing. `SUBMENUS_WITHOUT_HELP` in
-  // `tests/era-definition.test.ts` uses the same shape: being on the list means somebody
-  // decided, and nothing slips through unnoticed.
-  //
-  // `deferred-apply.test.ts` is on this list as a defect, not a decision. It passes when run
-  // by hand (`bun test tests/deferred-apply.test.ts`) but neither `test:transport` nor
-  // `test:p1` mentions it, so a regression in the deferred TAPPING/TAPDANCE Apply gate would
-  // not fail anything. Either add it to a script or delete it; do not just extend this list.
+  // Keep known routing debt explicit until the package scripts are fixed.
   const KNOWN_UNRUN = ['deferred-apply.test.ts'];
 
   test('the unrun set is exactly the list above', () => {

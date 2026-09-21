@@ -1,101 +1,98 @@
 # Architecture decision records
 
 Genre: manual
-Canonical for: when to write an ADR in this repository, numbered-ADR Status
-Proposed / Accepted / Superseded, Genre contract and Canonical for, and how
-a decision is retired
+Canonical for: when this repository needs an ADR, the local numbered-ADR
+lifecycle, and how obsolete decisions leave the active document set
 
-> Shared two-line header, five genres, REFUSED three-liner, and retirement
-> catalogue are [eerraa-agent-docs](https://github.com/eerraa/eerraa-agent-docs)
-> tag **v1**
-> [`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/v1/AGENT_DOCS_CONVENTION.md).
-> This file does not copy that spec. Path · header · index · citation checks,
-> and that `Status:` is required only on numbered ADRs, are
-> `tests/docs-contract.test.ts`. Constraint-cause and no-dates rules for every
-> document are `docs/MAP.md` §9. Product direction is
-> `docs/PROJECT_DIRECTION.md`.
+`AGENTS.md` owns the repository's shared documentation-convention declaration
+and routing. `tests/docs-contract.test.ts` checks the local document fields,
+links, paths, and reachability. This manual owns only ADR-specific choices; it
+does not copy the shared convention.
 
-Re-measured from `tests/docs-contract.test.ts` (`KNOWN_STATUS`, numbered-ADR
-match `/^docs\/adr\/\d/`) and the numbered files in this directory.
+Current numbered decisions:
 
-| # | Decision |
+| ADR | Current decision |
 | --- | --- |
-| [0001](0001-state-sync-protocol.md) | State Sync revision validation (selector `0x06`) |
-| [0002](0002-h7s-usb-diagnostics.md) | H7S USB delivery diagnostics (selector `0x07`) |
-| [0003](0003-era-menu-help-ui.md) | ERA menu help and diagnostics screen UI |
+| [0001](0001-state-sync-protocol.md) | State Sync authority, compatibility, and exact-ms requirements |
+| [0002](0002-h7s-usb-diagnostics.md) | H7S USB diagnostics wire interpretation and product boundary |
+| [0003](0003-era-menu-help-ui.md) | ERA menu help and diagnostics UI placement |
 
-## 1. When to write
+## 1. When an ADR is warranted
 
-Write an ADR for a decision the next change must preserve: protocol
-compatibility, persistent data, cross-repository ownership, deploy, license,
-or a durable UI/product contract with refused alternatives. The numbered files
-in this directory are that set.
+Write or extend an ADR when a future change must preserve a decision that
+cannot be recovered reliably from one source file: protocol compatibility,
+persistent-data rules, cross-repository ownership, deploy or license boundaries,
+or a durable product/UI choice with a non-obvious reason.
 
-Not an ADR: branch state, process ids, ordinary implementation detail, or a
-list of candidates with no decision. Transient work is recorded nowhere —
-`git log` and the verification commands answer it (`AGENTS.md` §6).
+Do not use an ADR for branch state, current HEAD, process ids, test-run results,
+ordinary implementation detail, candidate lists, or a completed work log.
+Implementation facts stay in source and tests; transient work stays in Git and
+the current execution.
 
-Product-wide durable non-goals that are not one decision live in
-`docs/PROJECT_DIRECTION.md`. An accepted ADR that becomes product direction is
-**linked** from there; the decision stays in the ADR.
+Prefer extending the current owner when a decision already belongs to an
+existing ADR. Create a new numbered ADR only when the new decision has a
+distinct ownership boundary that would otherwise be ambiguous.
 
-A new numbered file is unreachable until `AGENTS.md` or `docs/MAP.md` names it
-(`every document is reachable from the entry chain` in
-`tests/docs-contract.test.ts`).
+## 2. Local numbered-ADR fields
 
-## 2. Numbered ADR header
-
-A numbered file `docs/adr/NNNN-*.md` declares, in this order, as 0001–0003 do:
+A numbered `docs/adr/NNNN-*.md` is a contract document and carries these
+local fields near its title:
 
 ```text
-# NNNN — decision title
-
 Status: Accepted
 Genre: contract
-Canonical for: the facts this ADR is the single source of
+Canonical for: the durable facts this ADR owns
 ```
 
-- **Status** — exactly one of `Proposed`, `Accepted`, `Superseded`
-  (`KNOWN_STATUS` in `tests/docs-contract.test.ts`). Required on numbered
-  ADRs. This README is a manual, not a numbered record, so it has no
-  `Status:`.
-  - `Proposed` — drafted, not yet in force.
-  - `Accepted` — in force.
-  - `Superseded` — no longer in force; a successor owns Canonical for those
-    facts.
-- **Genre** — `contract` on every numbered ADR. This README is `manual`.
-- **Canonical for** — non-empty. An empty declaration is worse than none. Two
-  Accepted ADRs must not claim the same facts.
+`tests/docs-contract.test.ts` enforces the accepted local values. `Status`
+is one of `Proposed`, `Accepted`, or `Superseded`; non-numbered documents
+do not need an ADR status. `Canonical for` must identify a real ownership
+boundary rather than restating a filename or a temporary task.
 
-`Read when:` is forbidden. Routing is `AGENTS.md`.
+Routing belongs in `AGENTS.md` and `docs/MAP.md`; do not add a document-side
+`Read when:` list.
 
-## 3. Body
+These fields are a local indexing choice, not a required body template. Section
+names, counts, and prose structure follow the decision being recorded.
 
-Four sentence kinds. They are not a required heading list: 0001 titles the
-choice `Decision and rationale`; 0003 uses numbered sections. Section names and
-counts are not an interface. 0001 and 0002 have `## Consequences` and
-`## Verification`.
+## 3. What the body preserves
 
-- **Context** — which verified constraint or failure required a decision.
-- **Decision** — what was chosen and where it stops.
-- **Consequences** — what became easier, harder, or deferred.
-- **Verification** — what would confirm or falsify the decision.
+Keep the current requirement, the reason it exists, the boundary of the
+decision, and the verification or compatibility consequence needed by future
+changes.
 
-Refused alternatives sit next to the decision as the v1 three-liner. This
-file does not restate that shape.
+A rejected alternative belongs in the ADR only while the rejection still
+constrains current work. Preserve the reason and any meaningful condition that
+would justify revisiting it; do not preserve the review conversation, dates,
+old implementation inventories, or a fixed prose shape merely to show that the
+decision was once discussed.
 
-## 4. How to retire
+Wire or storage values remain explicit when the ADR is the requirement owner.
+Source-owned constants, component names, generated inventories, and test counts
+should instead be referenced by stable path plus symbol or heading.
 
-Inside one ADR: delete the overturned text. Do not annotate "this judgment was
-overturned in the section below." `git log` holds the old text. If the reason
-for overturning now grounds the current rule, keep **only that reason**.
+## 4. Changing or retiring a decision
 
-[ADR 0003](0003-era-menu-help-ui.md) §1 keeps "a top-level tab failed
-discoverability" because that is why inline placement is the contract; the
-top-level-tab spec is gone. §3 keeps **Cause:** because dropping it leaves
-nothing to stop the next dashboard from adding a score. The general
-constraint-cause rule for every document is `docs/MAP.md` §9.
+When the current decision changes, edit the owning ADR so it states the new
+requirement and current rationale. Git holds the superseded wording; do not add
+an in-file chronology.
 
-When a numbered ADR as a whole is no longer in force: set `Status:
-Superseded`. Do not add an archive tree. Write the successor as a new numbered
-file. Do not reuse `NNNN`.
+Use `Status: Superseded` only while an explicit successor or compatibility
+transition still needs the old record to remain reachable. If an ADR no longer
+constrains current work and no active successor depends on it, remove it from
+the active document set rather than creating an archive.
+
+Never create an archive directory for retired ADRs and never reuse an ADR
+number. A new independent decision receives the next number.
+
+Before retiring an ADR, move any still-valid product requirement, safety or
+compatibility boundary, or unique rationale to its proper current owner. Do not
+delete a requirement merely because the implementation has moved.
+
+## 5. Verification
+
+A new or changed ADR must remain reachable through the existing entry chain and
+must pass `tests/docs-contract.test.ts`. Run the focused product or protocol
+tests as well when the ADR changes a product contract; documentation-only
+wording cleanup does not by itself require a full product build or hardware
+test.
