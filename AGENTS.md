@@ -92,8 +92,9 @@ bun run build
   보고한다.
 - 지속되는 결정은 `docs/PROJECT_DIRECTION.md`나 간결한 ADR에 남긴다. 진행 상태·브랜치·
   다음 할 일은 어디에도 기록하지 않는다 — `git log`와 실행이 답한다.
-- 문서 작성 규칙의 공통 규약은
-  [eerraa-agent-docs](https://github.com/eerraa/eerraa-agent-docs) 태그 **v1**의
-  [`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/v1/AGENT_DOCS_CONVENTION.md)다.
-  이 저장소가 보태는 것(경로 접두사, 링크, 스크립트)은 `docs/MAP.md` §9에 있다.
-  루트 `AGENTS.md`·`CLAUDE.md`는 진입 사슬이므로 헤더를 갖지 않는다 — 그것도 v1이 정한다.
+- 문서 작성 규칙의 공통 규약은 **eerraa-agent-docs v2**, commit
+  `4bd84f45dd3e970bf25505059431058efbe7680a`의
+  [`AGENT_DOCS_CONVENTION.md`](https://github.com/eerraa/eerraa-agent-docs/blob/4bd84f45dd3e970bf25505059431058efbe7680a/AGENT_DOCS_CONVENTION.md)다.
+  일반 개발은 이 로컬 진입만으로 시작하고 중앙 규약은 문서체계 변경·신규 채택·버전
+  업그레이드 때만 확인한다. 이 저장소의 경로·링크·검사 포인터 규칙은 `docs/MAP.md` §9가
+  소유한다.
