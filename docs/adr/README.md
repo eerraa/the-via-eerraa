@@ -72,8 +72,8 @@ Canonical for: the facts this ADR is the single source of
 ## 3. Body
 
 Four sentence kinds. They are not a required heading list: 0001 titles the
-choice `Decision and rationale`; 0003 uses numbered sections and ends at
-`## 10. Verification`. 0001 and 0002 have `## Consequences` and
+choice `Decision and rationale`; 0003 uses numbered sections. Section names and
+counts are not an interface. 0001 and 0002 have `## Consequences` and
 `## Verification`.
 
 - **Context** — which verified constraint or failure required a decision.

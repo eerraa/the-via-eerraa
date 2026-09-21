@@ -26,7 +26,7 @@ git status --short
 | 제품 방향과 영구 금지사항 | `docs/PROJECT_DIRECTION.md` | — | `tests/docs-contract.test.ts` |
 | State Sync·exact-ms wire | `docs/adr/0001-state-sync-protocol.md` | `docs/MAP.md` §3 | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
 | H7S USB 진단 wire·계측 | `docs/adr/0002-h7s-usb-diagnostics.md` | `docs/MAP.md` §3 | `tests/era-usb-diagnostics.test.ts` |
-| ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` | `docs/MAP.md` §1 | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| ERA 메뉴 설명과 진단 화면 UI | `docs/adr/0003-era-menu-help-ui.md` | `docs/MAP.md` §1 | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/diagnostics-pane.test.tsx`, `tests/era-definition.test.ts` |
 | 공개 배포 | `docs/DEPLOYMENT.md` | `docs/MAP.md` §5·§7 | `bun run build` |
 | 죽은 코드·은퇴 아키텍처 장부 | `docs/DEAD_CODE.md` | — | `tests/docs-contract.test.ts` |
 

@@ -26,8 +26,10 @@ looks right, report it; do not silently invert the table.
 | Explicit validation of firmware-local VIA V3 files | `scripts/validate-external-v3.ts`, using the app's `@the-via/reader` guard and transform | `tests/validate-external-v3.test.ts` |
 | Host wire encode/decode implementation | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
 | VERSION ASCII display grammar | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
-| What the diagnostics screen may and must not say | `src/locales/*.json` | `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
-| ERA menu help copy and attach targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| Diagnostics observation / no-verdict boundary | [ADR 0003](adr/0003-era-menu-help-ui.md) §3 | `src/locales/*.json`, `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
+| Current shipped diagnostics strings | `src/locales/*.json` | `tests/locales.test.ts`, `tests/diagnostics-pane.test.tsx` |
+| ERA menu-help summary / disclosure / attach policy | [ADR 0003](adr/0003-era-menu-help-ui.md) §6 | `src/utils/era-feature-help.ts`, `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| Current ERA help copy and command targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx` | none — `public/_redirects` is hand-matched (§7) |
 
 ## 2. Definition inventory ownership

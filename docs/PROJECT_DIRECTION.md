@@ -2,9 +2,9 @@
 
 Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
-lookup order, the brick65 exception, Tap Dance and exact-ms/exact-sec product rules,
-H7S RGB sleep dual-surface rules, State Sync product guarantees, and
-the durable non-goals
+lookup order, user-facing VIA compatibility boundary, the brick65 exception,
+Tap Dance and exact-ms/exact-sec product rules, H7S RGB sleep dual-surface rules,
+State Sync product guarantees, and the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
 > it. Where a fact lives and which side is canonical is `docs/MAP.md`. Individual
@@ -14,8 +14,9 @@ the durable non-goals
 Implementation/source ownership and verification entry points are
 `docs/MAP.md` §§1–4. Wire and exact-ms requirements are
 [ADR 0001](adr/0001-state-sync-protocol.md); USB diagnostics requirements are
-[ADR 0002](adr/0002-h7s-usb-diagnostics.md). This file keeps product boundaries
-and reasons rather than a second implementation inventory.
+[ADR 0002](adr/0002-h7s-usb-diagnostics.md); user-facing ERA help and diagnostics
+UI requirements are [ADR 0003](adr/0003-era-menu-help-ui.md). This file keeps
+product boundaries and reasons rather than a second implementation inventory.
 
 ## Mission
 
@@ -152,15 +153,26 @@ confirmed on hardware.
 
 ## Identity UI
 
-The approved global UI keeps VIA's visual language.
-`src/components/menus/external-links.tsx` puts language selection and a
-non-interactive `ERA` wordmark (`EraMark` / `EraWordmark`; no click handler;
-`user-select: none`) in the upper-right of the global menu.
+The fork keeps VIA's visual language and ordinary workflow. ERA identifies the
+fork/platform; it is secondary product identity, not keyboard-manufacturer
+branding and not a separate design system. Global language selection remains a
+user-facing shell capability; exact placement, components, and styling are
+source-owned.
+
+This project is an unofficial VIA fork, not official VIA. Ordinary VIA keyboards
+keep the upstream workflow. ERA-only help and diagnostics are additive and
+capability-gated, so they may exist only in this fork without implying that
+official VIA provides the same host UI. Firmware features covered by the
+compatibility contract must still work through official `usevia.app` plus the
+official V3 definition. [ADR 0003](adr/0003-era-menu-help-ui.md) owns the
+custom help/diagnostics support, wording, localization, and accessibility
+boundaries.
 
 > **REFUSED:** manufacturer branding, an ERA-specific design system, or a
 > redesign of the overall interface.
 > **WHY:** this fork is neither a clean-sheet configurator nor a manufacturer
-> rebrand; the approved global UI keeps VIA's visual language.
+> rebrand; preserving VIA's interaction language keeps ordinary VIA users and
+> keyboards on a familiar path.
 > **REOPENS:** never.
 
 ## Tap Dance and exact-ms
@@ -168,42 +180,26 @@ non-interactive `ERA` wordmark (`EraMark` / `EraWordmark`; no click handler;
 TOMAK firmware and VIA V3 JSON implement TD0–TD7, four action slots, tapping
 term, storage, and the engine. This host does not replace that engine.
 
-Custom-app UI contract, re-measured from `src/utils/keycode-picker.ts`,
-`src/components/inputs/keycode-picker.tsx`,
-`src/components/inputs/pelpi/keycode-input.tsx`, and
-`tests/keycode-picker.test.ts`:
+V3 `keycode` controls preserve VIA's existing category/card picker rather than
+introducing an ERA-only editor. Search, clear, modifiers, layers, Mod-Tap,
+Layer-Tap, and the advanced QMK/hex escape hatch remain available. Unknown
+16-bit values are preserved rather than silently rewritten.
 
-- V3 `keycode` controls open VIA's existing category/card picker
-  (`PelpiKeycodeInput` → `KeycodePicker`).
-- Search, clear, modifiers, layers, Mod-Tap, and Layer-Tap composition stay.
-- Unknown 16-bit values are preserved as hex. The Special-category Any card
-  and `KeycodeModal` remain the advanced QMK/hex escape hatch.
-- Composition is Layers-only (`isComposerCategory`). The user chooses
-  Layer-Tap, Mod-Tap, or Modifier first, then a compatible Basic tap key and
-  the hold action. A grid pick while `pickingBase` fills the composer; it does
-  not call `onSelect` for the selected keyboard key.
-- Compose base is resolved from explicit input only, not from the previously
-  assigned grid card (`resolveComposeBaseCode`). Ordinary categories do not
-  expose a permanent compose form.
-- The action dialog is a stable wide overlay (`width: min(1600px, calc(100vw -
-  40px))`); width does not depend on the selected category's content. It
-  exposes every keycode category enabled by the connected definition, including
-  layer cards such as `MO(n)`.
-- That does not relax the Basic-key-only operand rule inside `LT`/`MT`.
-  Firmware remains authoritative for the runtime semantics of the selected
-  16-bit action.
+Composition begins only after the user chooses a composition action; a grid
+selection made while choosing its operand fills that composition instead of
+reassigning the keyboard key. The Basic-key operand rule for Layer-Tap/Mod-Tap
+remains. The picker presentation stays stable while categories change and exposes
+the categories enabled by the connected definition. Exact component structure and
+layout values are source-owned.
 
 Tapping-family time values must be directly editable as integer milliseconds.
-The first scope is the global TAPPING term and the TD0–TD7 terms
-(`isExactTermCommand` in `src/utils/era-exact-ms.ts`). Boolean tapping toggles
-and unrelated debounce or KKUK timings are not silently included. A
-representative non-step value such as `137 ms` must round-trip, persist, and
-drive runtime behavior without snapping to the legacy 20 ms grid
-(`tests/millisecond-field.test.ts`, `tests/state-sync-transport.test.ts`).
-Out-of-range, empty, decimal, and non-integer drafts do not write
-(`parseMillisecondDraft`). Exact `range` controls render `MillisecondInput` by
-default. Reuse that input for other TAPPING time fields only after their
-storage and wire semantics have been audited.
+The initial scope is the global TAPPING term and the TD0–TD7 terms. Boolean
+tapping toggles and unrelated debounce or KKUK timings are not silently included.
+A representative non-step value such as `137 ms` must round-trip, persist, and
+drive runtime behavior without snapping to the legacy 20 ms grid. Out-of-range,
+empty, decimal, and non-integer drafts do not write. Reuse the exact integer
+editor for another timing only after that field's storage and wire semantics have
+been audited.
 
 Firmware must keep working with the official VIA app (`www.usevia.app`) plus
 the official V3 definition.
@@ -224,13 +220,11 @@ restated here.
 
 This is an additive exact-ms path on existing Custom Value commands, not removal
 of firmware legacy compatibility. Preserve every legacy value ID and official
-VIA behavior. ERA custom JSON exposes only the nine exact controls and must not
-duplicate their legacy dropdowns (`isLegacyTermCommand`;
-`scripts/build-keyboards.ts` rejects them). Generic official or uploaded
-definitions may still contain legacy controls. Custom JSON may add
-`tapdanceKeycodes` as an additional field; official JSON must not.
-`splitTapDanceKeycodesFromRaw` strips that field so official V3 validation can
-run.
+VIA behavior. ERA custom JSON exposes the exact controls without duplicating
+their corresponding legacy dropdowns; generic official or uploaded definitions
+may still contain legacy controls. Custom JSON may add `tapdanceKeycodes` as an
+app extension; official JSON must not. Source validation owns the current field
+handling rather than this document.
 
 ### TOMAK RGB sleep exact-sec
 
@@ -254,17 +248,17 @@ every other RGB-capable QMK ERA definition, which has the toggle even when it
 has no idle-timeout control.
 
 This is the same dual-surface compatibility principle as exact-ms, but the two
-encodings require separate value ids because a 32-byte V3 Custom Value request
-does not identify which definition/client produced it. The exact id is additive,
-not a custom-app-only substitute: official/usevia-compatible firmware JSON still
-offers the complete feature through the preset id. `src/utils/era-exact-sec.ts`
-selects the exact control; `src/components/inputs/integer-input.tsx` supplies the
-shared integer editor used by the seconds field and the millisecond wrapper.
-The SLEEP submenu uses the same deferred-Apply contract as TAPPING/TAPDANCE:
-editing the field does not write immediately, Apply is disabled while the draft
-matches the authoritative value, and becomes available only for a different
-valid 1..65535-second draft. It also participates in the normal ERA submenu
-summary + folded-detail help surface.
+encodings require separate value ids because a V3 Custom Value request does not
+identify which definition/client produced it. The exact id is additive, not a
+custom-app-only substitute: official/usevia-compatible firmware JSON still
+offers the complete feature through the preset id.
+
+The custom client edits exact seconds as an integer. The SLEEP timeout uses the
+same deferred-Apply contract as TAPPING/TAPDANCE: editing does not write
+immediately, Apply is disabled while the valid draft matches the authoritative
+value, and it becomes available only for a different valid 1..65535-second
+draft. The RGB Sleep master remains an independent immediate control; changing
+the timeout never stages or rewrites the master.
 
 ### H7S RGB sleep exact-sec
 
@@ -276,9 +270,10 @@ TOMAK's channel numbers. Firmware-local official VIA JSON keeps SYSTEM channel
 1..65535 inclusive. Firmware stores one uint16-second value (default 600 / 10
 minutes); both setters update it and SAVE persists it. Official GET floors an
 exact value onto the preset list without writing, so reading the keyboard in
-official VIA never snaps a custom 137-second value. The custom submenu uses the
-existing exact-second integer editor and deferred-Apply surface. Help copy is
-the same idle-timeout object as TOMAK (`src/utils/era-feature-help.ts`).
+official VIA never snaps a custom 137-second value.
+The custom client keeps the same exact-second integer and deferred-Apply
+behavior. User help describes the same input-idle timeout object as TOMAK;
+current editor and help-source details remain source-owned.
 
 Both H7S clients add the RGB Sleep master `id_qmk_rgb_sleep_enable` on channel
 18 / value 3. It defaults on, preserves the timeout while off, and the timeout
