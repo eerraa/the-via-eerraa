@@ -1020,3 +1020,39 @@ describe('USB diagnostics placement', () => {
     expect(html).not.toContain('USB Polling Diagnostics');
   });
 });
+
+
+describe('H7S shipped exact-term controls', () => {
+  test('all five definitions render every global/slot term above the stock limit without an invalid field', async () => {
+    optIn(false);
+    const paths = [
+      'brick60-h7s/BRICK60-H7S-VIA.json', 'brick65-h7s/BRICK65-H7S-VIA.json',
+      'intigrity80-h7s/INTIGRITY80-H7S-VIA.json', 'may65-h7s/MAY65-H7S-VIA.json',
+      'sculpturei-h7s/SCULPTUREI-H7S-VIA.json',
+    ];
+    for (const path of paths) {
+      const definition = await Bun.file(`era-definitions/custom/v3/${path}`).json();
+      const controls: any[] = [];
+      const visit = (node: any) => {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) { node.forEach(visit); return; }
+        if (node.type === 'range' && String(node.content?.[0]).endsWith('_term_exact')) {
+          controls.push(node);
+        }
+        Object.values(node).forEach(visit);
+      };
+      visit(definition.menus);
+      expect(controls).toHaveLength(9);
+      for (const control of controls) {
+        for (const value of [501, 65535]) {
+          const html = render(makeStore({era: true, menuData: {
+            [control.content[0]]: [value >> 8, value & 255],
+          }}), {label: 'TAPPING', content: [{label: 'Term', _id: '-0',
+            content: [{...control, _id: '-0-0'}]}]});
+          expect(html).toContain(`value="${value}"`);
+          expect(html).not.toContain('aria-invalid="true"');
+        }
+      }
+    }
+  });
+});

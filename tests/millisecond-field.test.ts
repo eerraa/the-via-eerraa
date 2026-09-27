@@ -4,7 +4,7 @@ import {
   commitMillisecondDraft,
   parseFailureMessage,
   parseMillisecondDraft,
-  QMK_EXACT_TAPPING_TERM_BOUNDS,
+  EXACT_TAPPING_TERM_BOUNDS,
   revertMillisecondDraft,
   type MillisecondCommitState,
 } from '../src/utils/millisecond-field';
@@ -210,13 +210,13 @@ describe('commitMillisecondDraft', () => {
     expect(exactGlobalTermControl.options).toEqual([100, 500]);
     expect(customExactGlobalTermControl.options).toEqual([1, 65535]);
     expect(exactGlobalTermControl.type).toBe('range');
-    expect(QMK_EXACT_TAPPING_TERM_BOUNDS).toEqual({minMs: 1, maxMs: 65535});
+    expect(EXACT_TAPPING_TERM_BOUNDS).toEqual({minMs: 1, maxMs: 65535});
   });
 
-  test('QMK exact adapter commits 1 and 65535 without widening stock JSON options', async () => {
+  test('ERA exact adapter commits 1 and 65535 without widening stock JSON options', async () => {
     const device = new FakeMillisecondDevice(200, {
-      minMs: QMK_EXACT_TAPPING_TERM_BOUNDS.minMs,
-      maxMs: QMK_EXACT_TAPPING_TERM_BOUNDS.maxMs,
+      minMs: EXACT_TAPPING_TERM_BOUNDS.minMs,
+      maxMs: EXACT_TAPPING_TERM_BOUNDS.maxMs,
     });
     const low = await commitMillisecondDraft('1', idle(200), device);
     expect(low.wrote).toBe(true);

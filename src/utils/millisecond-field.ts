@@ -16,10 +16,10 @@ export const DEFAULT_TAPPING_TERM_BOUNDS = {
 } as const;
 
 /**
- * Custom VIA JSON QMK exact-ms field. Existing 2-byte big-endian uint16 wire.
+ * ERA Custom VIA exact-ms field (QMK and H7S). Existing BE16 uint16 wire.
  * Stock JSON `options` stay [100, 500] for official VIA.
  */
-export const QMK_EXACT_TAPPING_TERM_BOUNDS = {
+export const EXACT_TAPPING_TERM_BOUNDS = {
   minMs: 1,
   maxMs: 65535,
 } as const;

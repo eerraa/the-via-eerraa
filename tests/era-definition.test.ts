@@ -737,7 +737,7 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
-  test('preserves the H7S 100-500 custom exact-ms exception', () => {
+  test('gives H7S the same nonzero uint16 exact-ms range as QMK', () => {
     const entry = manifest.definitions.find(
       ({exactMsFamily}) => exactMsFamily === 'h7s',
     );
@@ -746,7 +746,7 @@ describe('canonical ERA definition inventory', () => {
       ({name}) => name.endsWith('_exact'),
     );
     expect(customExact.map(({options}) => options)).toEqual(
-      Array.from({length: 9}, () => [100, 500]),
+      Array.from({length: 9}, () => [1, 65535]),
     );
     expect(
       collectTermControls(readJSON(entry!.path)).filter(

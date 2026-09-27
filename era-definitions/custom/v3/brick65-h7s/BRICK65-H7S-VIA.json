@@ -248,7 +248,7 @@
               "label": "Global Tapping Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapping_global_term_exact", 15, 5],
-              "options": [100, 500]
+              "options": [1, 65535]
             },
             {
               "label": "Permissive Hold",
@@ -366,7 +366,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_1_term_exact", 16, 41],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -397,7 +397,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_2_term_exact", 16, 42],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -428,7 +428,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_3_term_exact", 16, 43],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -459,7 +459,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_4_term_exact", 16, 44],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -490,7 +490,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_5_term_exact", 16, 45],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -521,7 +521,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_6_term_exact", 16, 46],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -552,7 +552,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_7_term_exact", 16, 47],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         },
@@ -583,7 +583,7 @@
               "label": "Term (ms)",
               "type": "range",
               "content": ["id_qmk_tapdance_8_term_exact", 16, 48],
-              "options": [100, 500]
+              "options": [1, 65535]
             }
           ]
         }

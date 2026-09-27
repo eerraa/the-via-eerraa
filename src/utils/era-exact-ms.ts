@@ -1,6 +1,6 @@
 import {
   DEFAULT_TAPPING_TERM_BOUNDS,
-  QMK_EXACT_TAPPING_TERM_BOUNDS,
+  EXACT_TAPPING_TERM_BOUNDS,
 } from './millisecond-field';
 import type {ExactMsFamily} from './era-advanced-metadata';
 
@@ -14,11 +14,11 @@ export const isLegacyTermCommand = (name: string) =>
 
 /** Fallback when a definition omits exact range options. */
 export const exactTermBoundsForFamily = (family: ExactMsFamily | null) =>
-  family === 'qmk'
-    ? QMK_EXACT_TAPPING_TERM_BOUNDS
+  family === 'qmk' || family === 'h7s'
+    ? EXACT_TAPPING_TERM_BOUNDS
     : DEFAULT_TAPPING_TERM_BOUNDS;
 
-/** Loaded JSON `options` win. Stock [100, 500] vs custom QMK [1, 65535]. */
+/** Loaded JSON `options` win. Stock [100, 500] vs ERA custom [1, 65535]. */
 export const exactTermBoundsFromOptions = (
   options: unknown,
   family: ExactMsFamily | null,

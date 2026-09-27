@@ -1685,6 +1685,50 @@ describe('incoming 0x16 routing', () => {
 });
 
 describe('exact-ms HID transport', () => {
+  test('all QMK/H7S exact addresses preserve uint16 bounds through SET/SAVE/GET', async () => {
+    const {device} = await connectFake('exact-full-range');
+    const values = new Map<string, number>();
+    device.onSend = (data) => {
+      const key = `${data[1]}:${data[2]}`;
+      const response = data.slice();
+      if (data[0] === 0x07) values.set(key, (data[3] << 8) | data[4]);
+      if (data[0] === 0x08) {
+        const stored = values.get(key) ?? 200;
+        response[3] = stored >> 8;
+        response[4] = stored & 0xff;
+      }
+      device.emit(response);
+    };
+    const api = new KeyboardAPI('exact-full-range');
+    const addresses = [[15, 5], ...Array.from({length: 8}, (_, i) => [16, 41 + i]),
+      ...Array.from({length: 8}, (_, i) => [0, 72 + i])];
+    for (const [channel, id] of addresses) {
+      for (const value of [1, 99, 137, 500, 501, 1000, 32768, 65535]) {
+        await api.setCustomMenuValue(channel, id, ...shiftFrom16Bit(value));
+        await api.commitCustomMenu(channel);
+        const response = await api.getCustomMenuValue([channel, id]);
+        expect(shiftTo16Bit([response[1], response[2]])).toBe(value);
+        expect(values.get(`${channel}:${id}`)).toBe(value);
+      }
+    }
+    const writes = device.sentReports.filter(({data}) => data[0] === 0x07);
+    expect(writes).toHaveLength(addresses.length * 8);
+    expect(Array.from(writes.at(-1)!.data.slice(0, 5))).toEqual([0x07, 0, 79, 255, 255]);
+  });
+
+  test('old H7S rejection is not replaced by a legacy SET or clamped value', async () => {
+    const {device} = await connectFake('exact-rejected');
+    device.onSend = (data) => {
+      const response = data.slice();
+      response[0] = 0xff;
+      device.emit(response);
+    };
+    const api = new KeyboardAPI('exact-rejected');
+    await expect(api.setCustomMenuValue(15, 5, ...shiftFrom16Bit(501))).rejects.toThrow();
+    expect(device.sentReports).toHaveLength(1);
+    expect(Array.from(device.sentReports[0].data.slice(0, 5))).toEqual([0x07, 15, 5, 1, 245]);
+  });
+
   test('exact SET 137 then GET returns 137 without 20ms snapping', async () => {
     const {device} = await connectFake('exact');
     let stored = 200;

@@ -6,7 +6,7 @@ Canonical for: State Sync authority, identity/capability, revision/envelope and
 compatibility; transport/freshness/write coordination; exact macro, import,
 continuous-control, and exact-ms requirements
 
-Exact-ms is a 2-byte big-endian `uint16` on the existing Custom Value commands (`CUSTOM_MENU_SET_VALUE` `0x07`, `CUSTOM_MENU_GET_VALUE` `0x08`). Host encode/decode is `shiftFrom16Bit` / `shiftTo16Bit` in `src/utils/keyboard-api.ts`. `getRangeValue` in `src/components/panes/configure-panes/custom/custom-control.tsx` uses those two bytes whenever `max > 255`; both family maxima (500 and 65535) are above that. HID: command, channel, value id, then BE16. `99999` is not a uint16.
+Exact-ms is a 2-byte big-endian `uint16` on the existing Custom Value commands (`CUSTOM_MENU_SET_VALUE` `0x07`, `CUSTOM_MENU_GET_VALUE` `0x08`). Host encode/decode is `shiftFrom16Bit` / `shiftTo16Bit` in `src/utils/keyboard-api.ts`. `getRangeValue` in `src/components/panes/configure-panes/custom/custom-control.tsx` uses those two bytes whenever `max > 255`; the stock-shaped and Custom maxima (500 and 65535) are above that. HID: command, channel, value id, then BE16. `99999` is not a uint16.
 
 Channel and value ids are the `docs/MAP.md` §3 table. This re-measure of custom JSON `_term_exact` `content` and `scripts/build-keyboards.ts` `expectedTermKeys`:
 
@@ -21,17 +21,17 @@ Exact value ids are additive to the legacy ids. Firmware still implements both. 
 
 ### SET range and which JSON owns it
 
-Loaded JSON `options` win (`exactTermBoundsFromOptions` in `src/utils/era-exact-ms.ts`). The host then clamps to `[1, 65535]`. Out-of-range, empty, decimal, and non-integer drafts do not write (`parseMillisecondDraft` in `src/utils/millisecond-field.ts`).
+Loaded JSON `options` win (`exactTermBoundsFromOptions` in `src/utils/era-exact-ms.ts`). The host bounds the declared range to `[1, 65535]`; it never clamps an entered value into that range. Out-of-range, empty, decimal, and non-integer drafts do not write (`parseMillisecondDraft` in `src/utils/millisecond-field.ts`).
 
 | Definition | exact `options` | Host SET |
 | --- | --- | --- |
 | Custom QMK (`exactMsFamily: qmk`) | `[1, 65535]` | 1–65535 inclusive. 0 and 65536 are rejected. |
-| Custom H7S (`exactMsFamily: h7s`) | `[100, 500]` | 100–500 inclusive |
-| Family fallback when `options` are omitted | `qmk` → `QMK_EXACT_TAPPING_TERM_BOUNDS`; otherwise `DEFAULT_TAPPING_TERM_BOUNDS` `[100, 500]` | same as that fallback |
+| Custom H7S (`exactMsFamily: h7s`) | `[1, 65535]` | 1–65535 inclusive. 0 and 65536 are rejected. |
+| Family fallback when `options` are omitted | `qmk` and `h7s` → `EXACT_TAPPING_TERM_BOUNDS`; unknown family → `DEFAULT_TAPPING_TERM_BOUNDS` `[100, 500]` | same as that fallback |
 | Stock-shaped exact range (fixture `exactGlobalTermControl`; JSON `[100, 500]` even on a `qmk` family) | `[100, 500]` | 100–500. Loaded options win over family. |
 | Installed official `via-keyboards` snapshot | no `_term_exact` controls | this host does not send exact-ms on that snapshot |
 
-H7S firmware (`eerraa-qmk-h7s-fw/src/ap/modules/qmk/quantum/via.h`, `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/tapping_term.c`, `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/tapdance.c`, `eerraa-qmk-h7s-fw/docs/contract_via.md` §3): the same ids; exact SET is 2-byte BE uint16, 100–500 only; out of range or fewer than two value bytes is refused and the store is unchanged. That matches this repo's H7S custom JSON.
+H7S firmware (`eerraa-qmk-h7s-fw/src/ap/modules/qmk/quantum/via.h`, `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/tapping_term.c`, `eerraa-qmk-h7s-fw/src/ap/modules/qmk/port/tapdance.c`, `eerraa-qmk-h7s-fw/docs/contract_via.md` §3) must accept the same nonzero uint16 range at the existing H7S IDs. Zero or fewer than two value bytes is refused and the store is unchanged. Exact storage must survive SAVE/reload; the runtime interval must remain representable beyond 65535 ms. This is a paired host/firmware requirement, not evidence from an app-only test. Older H7S firmware may reject values outside 100–500; rejection is a failed write, never permission for the host to clamp or silently send a legacy SET.
 
 ### Legacy GET projection
 
@@ -39,7 +39,7 @@ Legacy GET returns 1-byte units of 10 ms. It floors the stored exact millisecond
 
 This host's custom JSON has no legacy term commands, so it does not issue that GET. A client using a definition that still has the dropdown does. Exact GET/SET of 137 does not snap (`tests/state-sync-transport.test.ts`).
 
-> **REFUSED:** widening official JSON exact `options` to the custom-app QMK range.
+> **REFUSED:** widening official JSON exact `options` to the custom-app range.
 > **WHY:** official VIA plus official definitions remain required; a custom-app-only path is an error. Stock-shaped exact `options` stay `[100, 500]`.
 > **REOPENS:** never.
 

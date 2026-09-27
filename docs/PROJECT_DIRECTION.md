@@ -210,11 +210,13 @@ the official V3 definition.
 > **REOPENS:** never.
 
 Official VIA continues to use the existing legacy 1-byte dropdown (100–500 ms /
-20 ms grid) and the official exact range `options: [100, 500]`. Custom VIA JSON
-for QMK boards uses exact `options: [1, 65535]` (uint16 maximum; `99999` does
-not fit) on the same 2-byte exact IDs. H7S stays on `[100, 500]` in the official
-definition and in app-owned custom JSON until its firmware is approved to match.
-Loaded JSON `options` win; channel and value ids, encode/decode, SET clamp, and
+20 ms grid); a stock-shaped exact range retains its loaded `options: [100, 500]`.
+Custom VIA JSON for both QMK and H7S uses exact `options: [1, 65535]`
+(uint16 maximum; `99999` does not fit) on the existing family-specific BE16 IDs.
+Official definitions remain legacy dropdowns; widening the Custom presentation
+does not widen or remove them. Firmware must preserve the exact value through
+SAVE/reload and must use an execution clock wide enough to expire the maximum term.
+Loaded JSON `options` win; channel and value ids, encode/decode, SET validation, and
 legacy GET projection are [ADR 0001](adr/0001-state-sync-protocol.md) — not
 restated here.
 

@@ -17,6 +17,7 @@ import {
   isExactTermCommand,
   isLegacyTermCommand,
 } from '../src/utils/era-exact-ms';
+import {EXACT_TAPPING_TERM_BOUNDS} from '../src/utils/millisecond-field';
 
 type ExactMsFamily = 'qmk' | 'h7s';
 
@@ -417,8 +418,10 @@ const validateCustomDefinitionContract = (
     );
   }
 
-  const expectedExactOptions =
-    entry.exactMsFamily === 'qmk' ? [1, 65535] : [100, 500];
+  const expectedExactOptions = [
+    EXACT_TAPPING_TERM_BOUNDS.minMs,
+    EXACT_TAPPING_TERM_BOUNDS.maxMs,
+  ];
   for (const control of customTerms) {
     if (isExactTermCommand(control.name)) {
       invariant(
