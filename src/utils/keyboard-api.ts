@@ -29,6 +29,11 @@ export {
   type UISyncRequest,
 } from './ui-sync';
 
+type HIDCommandOptions = HIDExchangeOptions & {
+  /** An explicitly optional capability probe may answer id_unhandled. */
+  unhandledIsUnsupported?: boolean;
+};
+
 // VIA Command IDs
 
 const COMMAND_START = 0x00; // This is really a HID Report ID
@@ -411,6 +416,21 @@ export class KeyboardAPI {
     return res.slice(0 + commandBytes.length);
   }
 
+  async getOptionalCustomMenuValue(commandBytes: number[]): Promise<number[] | null> {
+    try {
+      const response = await this.hidCommand(
+        APICommand.CUSTOM_MENU_GET_VALUE,
+        commandBytes,
+        'CUSTOM_MENU_GET_VALUE',
+        {unhandledIsUnsupported: true},
+      );
+      return response.slice(commandBytes.length);
+    } catch (error) {
+      if (error instanceof UnhandledCommandError) return null;
+      throw error;
+    }
+  }
+
   async setCustomMenuValue(...args: number[]): Promise<void> {
     await this.hidCommand(
       APICommand.CUSTOM_MENU_SET_VALUE,
@@ -733,7 +753,7 @@ export class KeyboardAPI {
     command: Command,
     bytes: Array<number> = [],
     commandName?: string,
-    options?: HIDExchangeOptions,
+    options?: HIDCommandOptions,
   ): Promise<number[]> {
     const connectionGeneration =
       this.reservationGeneration ?? this.getConnectionGeneration();
@@ -830,7 +850,7 @@ export class KeyboardAPI {
     command: Command,
     bytes: Array<number> = [],
     commandName?: string,
-    options?: HIDExchangeOptions,
+    options?: HIDCommandOptions,
   ): Promise<any> {
     const commandBytes = [...[COMMAND_START, command], ...bytes];
     const paddedArray = new Array(33).fill(0);
@@ -857,6 +877,9 @@ export class KeyboardAPI {
     const bufferCommandBytes = buffer.slice(0, requestBytes.length);
     logCommand(this.kbAddr, commandBytes, buffer);
     if (!eqArr(requestBytes, bufferCommandBytes)) {
+      if (options?.unhandledIsUnsupported && isUnhandledEcho(sentBytes, response)) {
+        throw new UnhandledCommandError();
+      }
       console.error(
         `Command for ${this.kbAddr}:`,
         commandBytes,

@@ -584,6 +584,34 @@ describe('per-device WebHID transport', () => {
     expect(errors[0].message.length).toBeGreaterThan(0);
   });
 
+  test.each([false, true])('optional Custom GET under reservation=%s only tolerates an explicit unsupported reply', async (reserved) => {
+    const path = `optional-custom-${reserved}`;
+    const {device, hid} = await connectFake(path);
+    const generation = hid.getConnectionGeneration();
+    device.onSend = (data) => {
+      const response = data[2] === 49
+        ? Uint8Array.from([0xff, ...data.slice(1)])
+        : payload(0x08, 16, 1, 0, 43);
+      setTimeout(() => device.emit(response), 2);
+    };
+    const api = new KeyboardAPI(path);
+    const read = async (reader: KeyboardAPI) => {
+      expect(await reader.getOptionalCustomMenuValue([16, 49])).toBeNull();
+      expect((await reader.getCustomMenuValue([16, 1])).slice(1, 3)).toEqual([0, 43]);
+    };
+    if (reserved) await api.withPathReservation(generation, Symbol('optional-read'), read);
+    else await read(api);
+    expect(getAppErrors(appStore.getState())).toEqual([]);
+    expect(getHIDTransportDebugState(path)).toMatchObject({generation, poisoned: false, hasPendingResponse: false});
+    await expect(api.getCustomMenuValue([16, 49])).rejects.toBeInstanceOf(UnhandledCommandError);
+    expect(getAppErrors(appStore.getState())).toHaveLength(1);
+    device.onSend = () => {};
+    configureHIDTransport({responseTimeoutMs: 20});
+    await expect(api.getOptionalCustomMenuValue([16, 49])).rejects.toBeInstanceOf(HIDTransportTimeoutError);
+    expect(getHIDTransportDebugState(path)?.poisoned).toBe(true);
+    expect(getAppErrors(appStore.getState())).toHaveLength(2);
+  });
+
   test('an unhandled reply fails only its own request, at once, and keeps the connection', async () => {
     const {device, hid} = await connectFake('unhandled');
     const generation = hid.getConnectionGeneration();

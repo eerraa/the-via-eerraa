@@ -980,21 +980,30 @@ const readCustomMenuValues = async (
   ids?: string[],
 ): Promise<CustomMenuData> => {
   const idsToSync = (ids ?? Object.keys(commands)).filter((id) => commands[id]);
-  const commandPromises = idsToSync.map((id) => ({
-    id,
-    promise: api.getCustomMenuValue(commands[id]),
-  }));
-  const results = await Promise.all(
-    commandPromises.map(({promise}) => promise),
-  );
-
-  return commandPromises.reduce<CustomMenuData>(
-    (res, {id}, idx) => ({
-      ...res,
-      [id]: results[idx].slice(1),
-    }),
-    {},
-  );
+  const advanced = idsToSync.filter((id) => /^id_qmk_tapdance_[1-8]_hold_(term|other)$/.test(id));
+  const modeOf = (id: string) => id.replace(/hold_(term|other)$/, 'mode');
+  const baseIds = [...new Set([
+    ...idsToSync.filter((id) => !advanced.includes(id)),
+    ...advanced.map(modeOf).filter((id) => commands[id]),
+  ])];
+  // A State Sync candidate holds the path reservation. Reserved calls run
+  // directly, without the outer FIFO; await each reply before sending another.
+  const data: CustomMenuData = {};
+  for (const id of baseIds) {
+    // Old firmware can reject the newly added mode probe. Only this optional
+    // capability query may be absent; existing actions/settings stay required.
+    const response = /^id_qmk_tapdance_[1-8]_mode$/.test(id)
+      ? await api.getOptionalCustomMenuValue(commands[id])
+      : await api.getCustomMenuValue(commands[id]);
+    data[id] = response?.slice(1) ?? [0, 0, 0];
+  }
+  for (const id of advanced) {
+    const mode = data[modeOf(id)];
+    data[id] = mode?.[1] === 0xd2 && [0, 1, 2].includes(mode[0] as number) && mode[2] === 0xd3
+      ? (await api.getCustomMenuValue(commands[id])).slice(1)
+      : [0, 0, 0];
+  }
+  return data;
 };
 
 export const syncCustomMenuValues =
@@ -1193,13 +1202,9 @@ export const readV3MenuStateSyncCandidate = async (
     return {};
   }
 
-  const menuData: CustomMenuData = {};
-  for (const [name, channelId, ...command] of commands) {
-    const response = await api.getCustomMenuValue(
-      [channelId].concat(command),
-    );
-    menuData[name] = response.slice(1);
-  }
+  const menuData = await readCustomMenuValues(
+    api, Object.fromEntries(commands.map(([name, ...bytes]) => [name, bytes])),
+  );
 
   const maxLedIndex = collectMaxLedIndex(definition);
   if (maxLedIndex >= 0) {

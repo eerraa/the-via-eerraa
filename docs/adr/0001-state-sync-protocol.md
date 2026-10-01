@@ -198,6 +198,11 @@ The transport contract is:
 - Disconnect or device replacement invalidates that transport lifetime and
   rejects active, pending, and waiting work. Timeout, send/response failure, or
   callback failure must not strand a reservation or block later queue work.
+  Inside a reservation, callers await every response before issuing the next
+  command; the reservation bypasses the outer FIFO and is not an inner command
+  queue. CONFIG menu readers obey this even while probing optional capabilities.
+  Transport regression fixtures deliver multi-value replies asynchronously, so
+  synchronous fake input reports cannot hide overlapping requests.
 - An untagged legacy request timeout fails closed for that generation. Reopening
   a handle, enumeration, or reauthorization is not evidence that an old
   firmware reply can no longer reach the current listener. The

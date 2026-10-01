@@ -3986,3 +3986,104 @@ describe('queryStateSync HID path', () => {
     expect(await queryStateSync(api)).toEqual({kind: 'unhandled'});
   });
 });
+
+
+describe('Tap Dance timing capability before Custom GET', () => {
+  test('reads advanced fields only after the mode reply advertises them', async () => {
+    const {store, connected, firmware, generation} = await prepareSelectedStateSyncDevice('td-timing-capability');
+    const definition = makeV3Definition(true);
+    definition.menus[0].content[0].content = [
+      {label: 'Mode', type: 'range', content: ['id_qmk_tapdance_1_mode', 0, 80], options: [0, 2]},
+      {label: 'Hold', type: 'range', content: ['id_qmk_tapdance_1_hold_term', 0, 88], options: [0, 65535]},
+      {label: 'Other', type: 'range', content: ['id_qmk_tapdance_1_hold_other', 0, 96], options: [0, 1]},
+    ];
+    installEraDefinition(store, definition);
+    let capable = false;
+    const reads: number[] = [];
+    firmware.device.onSend = (data) => {
+      if (data[0] === 0x08 && data[1] === 0 && [80, 88, 96].includes(data[2])) {
+        reads.push(data[2]);
+        if (data[2] === 80) firmware.device.emit(payload(0x08, 0, 80, 2, 0xd2, capable ? 0xd3 : 0));
+        else if (!capable) firmware.device.emit(payload(0xff, ...Array.from(data.slice(1))));
+        else if (data[2] === 88) firmware.device.emit(payload(0x08, 0, 88, 0, 180, 0xd3));
+        else firmware.device.emit(payload(0x08, 0, 96, 1, 0xd3));
+        return;
+      }
+      firmware.onSend(data);
+    };
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    await dispatch(refreshStateSyncDomain(connected, 'config'));
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads).toEqual(reads.map(() => 80));
+    expect(getCustomMenuAvailabilityForDevice(store.getState() as any, connected)).toBe('available');
+    capable = true; reads.length = 0;
+    await dispatch(syncCustomMenuValues(connected.path, generation, ['id_qmk_tapdance_1_hold_term']));
+    expect(reads[0]).toBe(80);
+    expect(reads).toContain(88);
+    expect(store.getState().menus.customMenuDataMap[connected.path]?.id_qmk_tapdance_1_hold_term?.slice(0, 3)).toEqual([0, 180, 0xd3]);
+  });
+});
+
+
+describe('asynchronous multi-value CONFIG reads', () => {
+  test.each(['legacy', 'unhandled', 'mode-only', 'advanced'] as const)(
+    '%s firmware loads settings when HID replies arrive after sendReport',
+    async (support) => {
+      const {store, connected, firmware, generation} =
+        await prepareSelectedStateSyncDevice(`async-config-${support}`, {withMenu: true});
+      const definition = makeV3Definition(true);
+      const content = definition.menus[0].content[0].content;
+      for (let slot = 1; slot <= 8; ++slot) {
+        for (const [role, id, maximum] of [
+          ['mode', 48 + slot, 2], ['hold_term', 56 + slot, 65535], ['hold_other', 64 + slot, 1],
+          ['tap', (slot - 1) * 5 + 1, 65535], ['hold', (slot - 1) * 5 + 2, 65535],
+          ['dtap', (slot - 1) * 5 + 3, 65535], ['thold', (slot - 1) * 5 + 4, 65535],
+          ['term_exact', 40 + slot, 65535],
+        ] as const) {
+          content.push({label: role, type: 'range', content: [`id_qmk_tapdance_${slot}_${role}`, 16, id], options: [0, maximum]});
+        }
+      }
+      installEraDefinition(store, definition);
+      const emit = firmware.device.emit.bind(firmware.device);
+      // WebHID delivers inputreport separately, after sendReport has returned.
+      firmware.device.emit = (message) => {setTimeout(() => emit(message), 2);};
+      firmware.device.onSend = (data) => {
+        if (data[0] === 0x08 && data[1] === 16) {
+          const id = data[2];
+          if (id >= 49 && id <= 56 && support === 'unhandled') {
+            firmware.device.emit(payload(0xff, ...Array.from(data.slice(1))));
+            return;
+          }
+          const value = id >= 65 ? [1, 0xd3] : id >= 57 ? [0, 180, 0xd3] : id >= 49
+            ? support === 'legacy' ? [0, 0, 0] : [2, 0xd2, support === 'advanced' ? 0xd3 : 0]
+            : id >= 41 ? [0, 200] : [0, 43];
+          firmware.device.emit(payload(0x08, 16, id, ...value));
+          return;
+        }
+        firmware.onSend(data);
+      };
+      appStore.dispatch(clearAppErrors());
+      const dispatch = store.dispatch as any;
+      await dispatch(probeStateSyncForDevice(connected));
+      await dispatch(refreshStateSyncDomain(connected, 'config'));
+      expect(getAppErrors(appStore.getState())).toEqual([]);
+      expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe('available');
+      const menu = store.getState().menus.customMenuDataMap[connected.path]!;
+      expect(menu.id_test_value?.[0]).toBe(0);
+      for (let slot = 1; slot <= 8; ++slot) {
+        expect(menu[`id_qmk_tapdance_${slot}_tap`]?.slice(0, 2)).toEqual([0, 43]);
+        expect(menu[`id_qmk_tapdance_${slot}_term_exact`]?.slice(0, 2)).toEqual([0, 200]);
+        expect(menu[`id_qmk_tapdance_${slot}_hold_term`]?.slice(0, 3)).toEqual(
+          support === 'advanced' ? [0, 180, 0xd3] : [0, 0, 0],
+        );
+      }
+      const advancedReads = firmware.device.sentReports.filter(({data}) => data[0] === 0x08 && data[1] === 16 && data[2] >= 57);
+      expect(advancedReads.length > 0).toBe(support === 'advanced');
+      expect(getHIDTransportDebugState(connected.path)).toMatchObject({hasPendingResponse: false, hasActiveReservation: false, poisoned: false});
+      await dispatch(syncCustomMenuValues(connected.path, generation, ['id_qmk_tapdance_8_hold_term']));
+      expect(getAppErrors(appStore.getState())).toEqual([]);
+      expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe('available');
+    },
+  );
+});
