@@ -39,6 +39,8 @@ import {
   planTapDanceWrites,
   searchPalette,
   TAP_DANCE_ACTION_ROLES,
+  tapDanceVisibleRoles,
+  editTapDanceBehavior,
   withTapDanceChanges,
   type PaletteItem,
   type PaletteKey,
@@ -517,9 +519,11 @@ export const KeycodePalette = ({
   const termBounds =
     slot && tapDance ? tapDance.termBounds(slot) : {minMs: 1, maxMs: 65535};
   const termValid = slotShown?.termValid ?? true;
-  const focusRole = editor
-    ? TAP_DANCE_ACTION_ROLES[editor.focus]
-    : TAP_DANCE_ACTION_ROLES[0];
+  const visibleRoles = draft ? tapDanceVisibleRoles(draft) : [...TAP_DANCE_ACTION_ROLES];
+  const selectedFocus = editor?.focus ?? 0;
+  const editorFocus = visibleRoles.includes(TAP_DANCE_ACTION_ROLES[selectedFocus]) ? selectedFocus : 0;
+  const focusRole = TAP_DANCE_ACTION_ROLES[editorFocus];
+  const focusRoleLabel = draft?.mode !== undefined && focusRole === 'tap' ? t('Base key') : t(ROLE_LABEL[focusRole]);
   const slotValue = (item: TapDanceSlot) =>
     selectKeycodeFromMenuCode(item.code, basicKeyToByte);
 
@@ -547,7 +551,7 @@ export const KeycodePalette = ({
     ? TAP_DANCE_ACTION_ROLES.reduce<KeycodeDisabledReason | null>(
         (reason, role) =>
           reason ||
-          (slotShown.dirty.has(role)
+          (slotShown.dirty.has(role) && !(slotShown.draft.mode && role !== 'tap' && slotShown.draft.actions[role] === 1)
             ? (tapDance?.getDisabledReason?.(slotShown.draft.actions[role]) ?? null)
             : null),
         null,
@@ -620,7 +624,7 @@ export const KeycodePalette = ({
       return;
     }
     if (accepted) {
-      exitEditor(t('Applied'));
+      exitEditor(t('Saved'));
       return;
     }
     setEditor(
@@ -638,7 +642,7 @@ export const KeycodePalette = ({
   // ------------------------------------------------------------- picking
   const destinationLabel =
     editing && slot
-      ? `${slot.name} · ${t(ROLE_LABEL[focusRole])}`
+      ? `${slot.name} · ${focusRoleLabel}`
       : target?.name;
   const targetLabel = compose
     ? `${t('Combined key')} · ${t('On tap')}`
@@ -653,13 +657,13 @@ export const KeycodePalette = ({
         return false;
       }
       const changes = {...tapDance.changes(slot)};
-      changes[focusRole] = value & 0xffff;
+      Object.assign(changes, draft ? editTapDanceBehavior(draft, {[focusRole]: value & 0xffff}) : {[focusRole]: value & 0xffff});
       tapDance.setChanges(slot, changes);
       setEditor({
         ...editor,
         focus: options?.stay
-          ? editor.focus
-          : (editor.focus + 1) % TAP_DANCE_ACTION_ROLES.length,
+          ? editorFocus
+          : TAP_DANCE_ACTION_ROLES.indexOf(visibleRoles[(visibleRoles.indexOf(focusRole) + 1) % visibleRoles.length]),
         error: null,
       });
       setFlash(`${destinationLabel} ← ${name}`);
@@ -738,7 +742,14 @@ export const KeycodePalette = ({
   // Which category the grid shows: the pick bar's while editing, else the tab's.
   const shownCategory = editing ? pickCategory : category;
   const selectCategory = (id: string) => {
-    if (editing) {
+    if (editing && editor && id === TAP_DANCE_CATEGORY) {
+      exitEditor('');
+      setCategory(id);
+      refocus.current = {
+        after: 'editor',
+        keys: [`td:${editor.index}`, `tab:${id}`],
+      };
+    } else if (editing) {
       setPickCategory(id);
     } else {
       setCategory(id);
@@ -815,7 +826,7 @@ export const KeycodePalette = ({
         disabled={disabled}
         ariaLabel={
           editing && !compose
-            ? `${t(ROLE_LABEL[focusRole])}: ${name}`
+            ? `${focusRoleLabel}: ${name}`
             : name || keycode.code
         }
         title={
@@ -1105,7 +1116,7 @@ export const KeycodePalette = ({
       ? {
           ...slotShown,
           slot,
-          focus: editor.focus,
+          focus: editorFocus,
           termBounds,
           canApply:
             slotShown.dirty.size > 0 &&
@@ -1228,7 +1239,6 @@ export const KeycodePalette = ({
                   categoryLabel={menuLabel(TAP_DANCE_CATEGORY)}
                   colors={colors.alpha}
                   legendOf={legendOf}
-                  onBack={() => exitEditor('')}
                   onPlace={() => {
                     const value = slotValue(view.slot);
                     if (value !== null && target) {
@@ -1237,6 +1247,22 @@ export const KeycodePalette = ({
                     }
                   }}
                   onFocusSlot={(focus) => setEditor({...editor, focus})}
+                  onMode={(mode) => {
+                    tapDance?.setChanges(view.slot, {...tapDance.changes(view.slot), ...editTapDanceBehavior(view.draft, {mode})});
+                    setEditor({...editor, error: null});
+                  }}
+                  onAddAction={(role) => {
+                    tapDance?.setChanges(view.slot, {...tapDance.changes(view.slot), ...editTapDanceBehavior(view.draft, {[role]: -1})});
+                    setEditor({...editor, focus: TAP_DANCE_ACTION_ROLES.indexOf(role), error: null});
+                  }}
+                  onRemoveAction={(role) => {
+                    tapDance?.setChanges(view.slot, {...tapDance.changes(view.slot), ...editTapDanceBehavior(view.draft, {[role]: 1})});
+                    setEditor({...editor, focus: 0, error: null});
+                  }}
+                  onTiming={(changes) => {
+                    tapDance?.setChanges(view.slot, {...tapDance.changes(view.slot), ...editTapDanceBehavior(view.draft, changes)});
+                    setEditor({...editor, error: null});
+                  }}
                   onTerm={(term) => {
                     tapDance?.setChanges(view.slot, {
                       ...tapDance.changes(view.slot),

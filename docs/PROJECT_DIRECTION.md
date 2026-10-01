@@ -235,12 +235,86 @@ Tap Dance actions. An unchanged unknown loaded action is preserved; editing
 another action or its term must not silently rewrite it.
 
 Tap Dance actions and terms are edited from KEYMAP's Tap Dance category, not from
-a Configure menu. Edits stay a draft until Apply, an action may come from any
-category, and Cancel or Apply returns to the category the edit started from.
+a Configure menu. Edits stay a draft until Save, an action may come from any
+category, and Cancel or Save returns to the category the edit started from.
 Like a Configure menu draft, a slot's draft belongs to the keyboard: leaving the
-editor keeps it without a prompt until Apply, Cancel or disconnection ends it.
-Apply writes only the changed fields, in slot order, and stops at the first write
+editor keeps it without a prompt until Save, Cancel or disconnection ends it.
+Save writes only the changed fields, in slot order, and stops at the first write
 the keyboard refuses, which stays a draft with the fields after it.
+
+Supported H7S and QMK keyboards use one Tap Dance editor with Base key and
+inline add buttons for Hold, Double Tap and Tap+Hold. Only configured action
+slots are visible; each missing action has a one-click text button.
+Removing an action inherits the base behavior; choosing No input suppresses
+that gesture. Input start exposes After decision and On press as two directly
+selectable, underlined radio choices, and Decision time
+keeps the existing integer term. Timing and Input start each have an independent
+contextual information disclosure next to their controls, using the same help
+component as other menus. A separate Preview disclosure shows the four outcomes
+and fallback rules below the actions; its results follow the current draft before
+Save. Its button stays beside Put in, so the action row does not wrap around it.
+Each disclosure starts closed. The basic
+editor contains controls rather than explanatory rows. Write
+errors and invalid-field feedback remain visible. With no additional
+actions the new modes behave as a normal key and hide Decision time. An On
+press slot keeps Input start accessible so it can return to After decision
+before adding a separate Hold action.
+
+On press sends the first physical base key immediately, including its release
+and a long first hold. Only the second press waits; the first input remains
+even if a double-tap or tap+hold action follows. A separate first-hold action
+requires After decision, because exclusive replacement cannot retract an input
+already sent. Incompatible selections are disabled with an explanation; the
+app never changes input timing automatically to resolve a conflict.
+
+Support requires the firmware response marker, not just a current definition.
+Unsupported firmware retains the four-action editor and an update hint inside
+its help disclosure.
+Opening a legacy slot preserves its values and timing. An explicit action or
+input-mode edit stages the new semantics, converting only legacy empty fallback
+fields to inheritance; unknown assigned actions stay unchanged. Save/Cancel,
+per-device drafts and refusal handling include the mode. A newly added action
+must receive a key before Save. Backup includes the mode and preserves the
+inheritance/silence distinction. Importing unsupported or contradictory modes
+is refused before any write; a pre-mode backup restores legacy semantics.
+Official V3 definitions expose the same firmware settings through their menu.
+
+Independent Tap Dance timing has its own Advanced settings disclosure with an
+expand/collapse indicator beside the time fields and before their information
+control. Its two checkboxes expand directly below that timing row without
+repeating their labels as explanatory text. Settings, time help, input-start help
+and preview open independently. Time help explains the timing values and their
+effects; input-start help compares the two choices in one sentence each.
+The reason an input-start choice is unavailable stays on that choice. Help does
+not contain editable settings. Dots beside action names, time fields,
+input-start choices and checkboxes indicate unsaved changes, not selected or
+enabled states. They clear when a change is saved, cancelled or restored to the
+keyboard's value. The settings control also summarizes each pending advanced
+timing field with a vertically stacked dot, hold time above hold-on-other-key.
+The Save action reflects all pending changes.
+By default a single Decision time drives both consecutive-press and hold
+judgments. Enabling Separate hold decision time reveals Hold decision beside Tap interval
+in a dedicated timing row above the input-start choices. Both values remain
+visible and editable when Advanced settings is closed; disabling separation
+restores one Decision time field in the same row. The interval runs from the
+preceding press. The optional
+Hold when another key is pressed resolves an assigned hold before that key's
+layer lookup; with On press only the second press can resolve to Tap+Hold.
+Both settings are captured for the active gesture and are ignored in legacy mode.
+Editing them explicitly stages the new semantics, as action edits do.
+Preview sits before Put in in the right-hand button group; a divider with equal
+spacing separates that row from Cancel/Save below. The group is vertically
+centered within the editor, with a single horizontal row below the controls on
+narrow screens. Selecting the Tap Dance
+category during editing returns to its list while retaining the keyboard's draft,
+with focus on the slot's Edit button. Other categories remain action pickers.
+
+Advanced timing requires the extra `0xD3` mode-response capability and valid
+markers on both new fields. Older firmware is not queried for unknown timing
+IDs. Per-device drafts, write refusal retention and backup include these values.
+Older backups restore shared time (zero) and the disabled interruption option;
+non-default values cannot be imported to unsupported firmware. Official VIA
+exposes a 0..65535 range and an Off/On control with the same wire behavior.
 
 Tapping-family time values must be directly editable as integer milliseconds.
 The initial scope is the global TAPPING term and the TD0–TD7 terms. Boolean

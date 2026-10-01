@@ -309,7 +309,7 @@ describe('keycode palette render', () => {
     });
     // Keys and the dots between them are separate spans, so the dots can step back.
     expect(html.replace(/<[^>]+>/g, '')).toContain('Esc·Left Ctrl·—·—');
-    expect(html).toMatch(/<span class="[^"]+">·<\/span>Left Ctrl/);
+    expect(html).toMatch(/Left Ctrl<span class="[^"]+">·<\/span>/);
     expect(html).toContain('200 ms');
     expect(html).toContain('>Empty<');
     expect(html).not.toContain('use Edit');
@@ -734,7 +734,8 @@ describe('the palette in Korean', () => {
     act(() => search().props.onChange({target: {value: ''}}));
     click(tab(root, '탭댄스'));
     click(button(root, 'TD0 동작 편집'));
-    expect(textOf(button(root, '← 탭댄스'))).toBe('← 탭댄스');
+    click(tab(root, '탭댄스'));
+    expect(button(root, 'TD0 동작 편집').props.disabled).toBeFalsy();
     expect(JSON.stringify(renderer!.toJSON())).not.toContain('TAPDANCE');
   });
 });
@@ -820,8 +821,8 @@ describe('editing a Tap Dance', () => {
 
   type Store = Awaited<ReturnType<typeof connect>>['store'];
 
-  const Keymap = ({layerCount = 4}: {layerCount?: number}) => {
-    const tapDance = useTapDanceBinding(definition);
+  const Keymap = ({layerCount = 4, selectedDefinition = definition}: {layerCount?: number; selectedDefinition?: typeof definition}) => {
+    const tapDance = useTapDanceBinding(selectedDefinition);
     return (
       <KeycodePalette
         menus={baseMenus}
@@ -836,13 +837,13 @@ describe('editing a Tap Dance', () => {
   };
 
   // KEYMAP as the rail, a route or an encoder leaves it and comes back: built anew.
-  const show = (store: Store, layerCount = 4) => {
+  const show = (store: Store, layerCount = 4, selectedDefinition = definition) => {
     act(() => renderer?.unmount());
     act(() => {
       renderer = create(
         <Provider store={store}>
           <I18nextProvider i18n={translations}>
-            <Keymap layerCount={layerCount} />
+            <Keymap layerCount={layerCount} selectedDefinition={selectedDefinition} />
           </I18nextProvider>
         </Provider>,
       );
@@ -911,7 +912,7 @@ describe('editing a Tap Dance', () => {
   // The underline around the number, which marks a value the keyboard would refuse.
   const termField = (root: ReactTestInstance) =>
     root.find((node) => node.props.$invalid !== undefined);
-  const apply = (root: ReactTestInstance) => button(root, 'Apply');
+  const apply = (root: ReactTestInstance) => button(root, 'Save');
   const clickApply = async (root: ReactTestInstance) => {
     await act(async () => {
       await apply(root).props.onClick();
@@ -958,6 +959,55 @@ describe('editing a Tap Dance', () => {
     };
   };
 
+  test('added actions and input timing stay drafts, survive refused mode writes, and round-trip', async () => {
+    const {keyboard, store} = await connect();
+    const modeDefinition = structuredClone(definition);
+    const modeName = 'id_qmk_tapdance_1_mode';
+    modeDefinition.tapdanceKeycodes[0].controls.push({
+      label: 'Input start', type: 'dropdown', content: [modeName, 16, 49],
+      options: [['Legacy', 0], ['After decision', 1], ['On press', 2]],
+    });
+    store.dispatch(updateEraDefinitions({[VPID]: {v3: modeDefinition}} as any));
+    store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {
+      ...store.getState().menus.customMenuDataMap[PATH], [modeName]: [0, 0xd2],
+    }}));
+    const root = show(store, 4, modeDefinition);
+    openTd0(root);
+    expect(slotButtons(root)).toHaveLength(2);
+    const timing = (label: string) => root.find((node) => node.type === 'input' && node.props.type === 'radio' && node.props['aria-label'] === label);
+    const remove = (name: string) => root.find((node) => node.type === 'button' && node.props['aria-label'] === `Remove ${name}`);
+    act(() => remove('On Hold').props.onClick());
+    expect(slotButtons(root)).toHaveLength(1);
+    click(button(root, 'Add action: Tap+Hold'));
+    expect(apply(root).props.disabled).toBe(true);
+    click(button(root, 'Tap+Hold: B'));
+    act(() => timing('On press').props.onChange());
+    expect(slotButtons(root)).toHaveLength(2);
+    expect(writes(keyboard)).toEqual([]);
+    click(button(root, 'Base key: A'));
+    expect(slotButton(root, 'Tap+Hold').props['aria-pressed']).toBe(true);
+    click(button(root, 'Tap+Hold: B'));
+    expect(slotButton(root, 'Base key').props['aria-pressed']).toBe(true);
+    keyboard.refuse = (bytes) => bytes[0] === SET && bytes[2] === 49;
+    await clickApply(root);
+    expect(alerts(root)).toEqual([REFUSED]);
+    expect(store.getState().drafts[PATH]).toEqual({'tapDance:0': {mode: 2}});
+    keyboard.refuse = () => false;
+    await clickApply(root);
+    expect(writes(keyboard).slice(-2)).toEqual([[SET, 16, 49, 2, 0xd2], [SAVE, 16]]);
+    expect(store.getState().menus.customMenuDataMap[PATH][TD0.actions.hold.name]).toEqual([0, 1]);
+    openTd0(root);
+    expect(timing('On press').props.checked).toBe(true);
+    act(() => timing('After decision').props.onChange());
+    click(button(root, 'Add action: On Hold'));
+    expect(slotButtons(root)).toHaveLength(3);
+    expect(apply(root).props.disabled).toBe(true);
+    click(button(root, 'Cancel'));
+    openTd0(root);
+    expect(timing('On press').props.checked).toBe(true);
+    expect(slotButtons(root)).toHaveLength(2);
+  });
+
   test('an edit is kept for the keyboard when the editor, the tab or KEYMAP is left, until Cancel', async () => {
     const {keyboard, store} = await connect();
     let root = show(store);
@@ -967,7 +1017,7 @@ describe('editing a Tap Dance', () => {
     expect(apply(root).props.disabled).toBe(false);
 
     // Back to the list: no question asked, the change shows on its row and tab.
-    click(button(root, '← Tap Dance'));
+    click(tab(root, 'Tap Dance'));
     expect(
       root.findAll((node) => node.props.role === 'alertdialog'),
     ).toHaveLength(0);
@@ -1054,7 +1104,7 @@ describe('editing a Tap Dance', () => {
     ]);
     expect(store.getState().drafts).toEqual({});
     expect(textOf(row(root, 'TD0'))).toContain('A·Left Ctrl·B·—');
-    expect(textOf(row(root, 'TD0'))).toContain('Applied');
+    expect(textOf(row(root, 'TD0'))).toContain('Saved');
     expect(hasDot(row(root, 'TD0'))).toBe(false);
   });
 
@@ -1271,7 +1321,7 @@ describe('editing a Tap Dance', () => {
     ]) {
       openTd0(root);
       typeTerm(root, typed);
-      click(button(root, '← Tap Dance'));
+      click(tab(root, 'Tap Dance'));
       expect({typed, row: textOf(row(root, 'TD0'))}).toEqual({
         typed,
         row: `TD0Esc·Left Ctrl·—·—${listed} msEdit`,
@@ -1358,7 +1408,7 @@ describe('editing a Tap Dance', () => {
       [SAVE, TD0.term!.channel],
     ]);
     expect(store.getState().drafts).toEqual({});
-    expect(textOf(row(root, 'TD0'))).toContain('Applied');
+    expect(textOf(row(root, 'TD0'))).toContain('Saved');
   });
 
   // A term the keyboard reports outside the range is its own, not a mistake: the
@@ -1469,7 +1519,10 @@ describe('editing a Tap Dance', () => {
     const {keyboard, store} = await connect();
     const root = show(store);
     openTd0(root);
-    click(tab(root, 'Tap Dance'));
+    const search = root.find(
+      (node) => node.type === 'input' && node.props.type === 'search',
+    );
+    act(() => search.props.onChange({target: {value: 'TD'}}));
     const recursive = buttons(root, (node) =>
       node.props.title?.includes('cannot start another Tap Dance'),
     );
@@ -1481,9 +1534,6 @@ describe('editing a Tap Dance', () => {
     }
     click(recursive[0]);
     expect(store.getState().drafts).toEqual({});
-    const search = root.find(
-      (node) => node.type === 'input' && node.props.type === 'search',
-    );
     for (const input of ['TD(0)', 'MO(15)', '0x00FF', 'KC_TRNS']) {
       act(() => search.props.onChange({target: {value: input}}));
       act(() => search.props.onKeyDown({key: 'Enter'}));
@@ -2533,7 +2583,7 @@ describe('keyboard focus', () => {
     expect(focused).toMatchObject(LIST_EDIT_TD1);
 
     click(button(root, 'Edit TD1'));
-    click(button(root, '← Tap Dance'));
+    click(tab(root, 'Tap Dance'));
     expect(focused).toMatchObject(LIST_EDIT_TD1);
   });
 
@@ -2572,10 +2622,10 @@ describe('keyboard focus', () => {
       click(tab(root, 'Tap Dance'));
       click(button(root, 'Edit TD1'));
       click(button(root, 'On Tap: A'));
-      focused = lastMade('Apply');
+      focused = lastMade('Save');
       let applying: unknown;
       act(() => {
-        applying = button(root, 'Apply').props.onClick();
+        applying = button(root, 'Save').props.onClick();
       });
       expect(focused?.text).toBe('On Hold');
       if (moveTo) {

@@ -25,7 +25,7 @@ export const HelpBody = styled.div`
 
 // A span laid out as a block, so a folded body holds no nested div and reads as one
 // element to anything that strips it.
-const Paragraph = styled.span`
+export const HelpParagraph = styled.span`
   display: block;
   margin: 0 0 8px;
   white-space: pre-line;
@@ -78,7 +78,7 @@ export const HelpContent: FC<{
   return (
     <>
       {content.detail?.map((paragraph) => (
-        <Paragraph key={paragraph}>{t(paragraph)}</Paragraph>
+        <HelpParagraph key={paragraph}>{t(paragraph)}</HelpParagraph>
       ))}
       {content.choices?.length ? (
         <Choices>
