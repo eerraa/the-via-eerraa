@@ -3,7 +3,7 @@
 Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
 lookup order, user-facing VIA compatibility boundary, the brick65 exception,
-Tap Dance and exact-ms/exact-sec product rules, H7S RGB sleep dual-surface rules,
+Tap Dance and exact-ms/exact-sec product rules, QMK and H7S lighting sleep dual-surface rules,
 State Sync product guarantees, and the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
@@ -157,7 +157,24 @@ The fork keeps VIA's visual language and ordinary workflow. ERA identifies the
 fork/platform; it is secondary product identity, not keyboard-manufacturer
 branding and not a separate design system. Global language selection remains a
 user-facing shell capability; exact placement, components, and styling are
-source-owned.
+source-owned. The firmware download surface groups releases by keyboard maker
+with plain text selectors; that is distribution, not manufacturer branding
+([ADR 0004](adr/0004-firmware-distribution.md)).
+
+Configuration panes and the keycode palette use centred content columns and
+centred category tabs. Keep this alignment consistent across ordinary and ERA
+configuration menus and the firmware download surface.
+
+Palette keycaps share the keyboard's inward hover motion and brightness effect.
+Unavailable keycaps are darkened without added symbols and do not animate on hover.
+
+Configure, the key tester, Design, Debug and board firmware pages share one
+keyboard-area height at the same window width. Size that area for the ordinary
+tester and mounted keyboard layouts so navigation or the test mode does not
+shrink keys or move the boundary above the controls. Routes without a keyboard
+stage do not reserve one.
+Short windows allow the page to scroll so the shared keyboard stage and the
+controls below it remain reachable without shrinking the keys further.
 
 This project is an unofficial VIA fork, not official VIA. Ordinary VIA keyboards
 keep the upstream workflow. ERA-only help and diagnostics are additive and
@@ -167,6 +184,14 @@ compatibility contract must still work through official `usevia.app` plus the
 official V3 definition. [ADR 0003](adr/0003-era-menu-help-ui.md) owns the
 custom help/diagnostics support, wording, localization, and accessibility
 boundaries.
+
+The key tester starts with the ordinary browser key test for every keyboard.
+Matrix testing is an explicit toggle for a connected keyboard with the existing
+VIA matrix-read command; enabling it shows that keyboard's own layout. Its
+permission explanation uses the ordinary menu helper's presentation. Matrix
+permission is firmware-owned. A zero response cannot distinguish an idle board
+from a protected read, and must not be presented as proof that VIA_INSECURE is
+disabled. A failed read returns to the ordinary test with an explanation.
 
 > **REFUSED:** manufacturer branding, an ERA-specific design system, or a
 > redesign of the overall interface.
@@ -180,17 +205,42 @@ boundaries.
 TOMAK firmware and VIA V3 JSON implement TD0–TD7, four action slots, tapping
 term, storage, and the engine. This host does not replace that engine.
 
-V3 `keycode` controls preserve VIA's existing category/card picker rather than
-introducing an ERA-only editor. Search, clear, modifiers, layers, Mod-Tap,
-Layer-Tap, and the advanced QMK/hex escape hatch remain available. Unknown
-16-bit values are preserved rather than silently rewritten.
+KEYMAP and every V3 `keycode` control use one keycode palette: KEYMAP shows it
+under the keyboard, a `keycode` control opens it as a bottom dock. Search, clear,
+modifiers, layers, Mod-Tap, Layer-Tap, and the QMK/hex code input remain
+available. Unknown 16-bit values are preserved rather than silently rewritten.
 
-Composition begins only after the user chooses a composition action; a grid
-selection made while choosing its operand fills that composition instead of
-reassigning the keyboard key. The Basic-key operand rule for Layer-Tap/Mod-Tap
-remains. The picker presentation stays stable while categories change and exposes
-the categories enabled by the connected definition. Exact component structure and
-layout values are source-owned.
+The palette serves every keyboard, not only ERA ones. It keeps VIA's
+select-a-key-then-pick flow and draws keycaps in the keyboard theme, so it is a
+renewal of one component inside VIA's shell, not the overall redesign refused
+under Identity UI. Like the keyboard drawing, it names keys for the OS layout
+picked in VIA's layout badge, and a `keycode` control's button shows the key as
+the palette draws it, with the QMK code only in its tooltip.
+
+A combined key begins only after the user opens the builder; a key picked while
+it is open becomes its operand instead of reassigning the keyboard key, and
+nothing is placed until the user puts the result in. The builder offers the same
+categories as the ordinary palette and Tap Dance editor. Layer-Tap, Mod-Tap and
+modifier combinations require an encodable 8-bit keycode, regardless of its
+category. The palette shows the categories the connected definition enables and
+the keyboard has. Exact component structure and layout values are source-owned.
+
+Combined-key and Tap Dance selection keep unavailable keys in enabled categories
+visible but disabled, with darkened keycaps, native disabled semantics and reason
+tooltips instead of added prohibition marks. Macro and Tap Dance slots are
+generated from the connected keyboard's declared capacities. Selection,
+search, direct code input and writes use the same eligibility checks. Tap Dance
+checks the connected definition and keyboard capacities and forbids recursive
+Tap Dance actions. An unchanged unknown loaded action is preserved; editing
+another action or its term must not silently rewrite it.
+
+Tap Dance actions and terms are edited from KEYMAP's Tap Dance category, not from
+a Configure menu. Edits stay a draft until Apply, an action may come from any
+category, and Cancel or Apply returns to the category the edit started from.
+Like a Configure menu draft, a slot's draft belongs to the keyboard: leaving the
+editor keeps it without a prompt until Apply, Cancel or disconnection ends it.
+Apply writes only the changed fields, in slot order, and stops at the first write
+the keyboard refuses, which stays a draft with the fields after it.
 
 Tapping-family time values must be directly editable as integer milliseconds.
 The initial scope is the global TAPPING term and the TD0–TD7 terms. Boolean
@@ -225,29 +275,35 @@ of firmware legacy compatibility. Preserve every legacy value ID and official
 VIA behavior. ERA custom JSON exposes the exact controls without duplicating
 their corresponding legacy dropdowns; generic official or uploaded definitions
 may still contain legacy controls. Custom JSON may add `tapdanceKeycodes` as an
-app extension; official JSON must not. Source validation owns the current field
-handling rather than this document.
+app extension; official JSON must not. Custom JSON keeps each TD's settings on
+its `tapdanceKeycodes` entry instead of a TAPDANCE menu, because the custom app
+edits Tap Dance from KEYMAP; the firmware-local stock JSON keeps its TAPDANCE menu
+for official VIA, and both address the same Custom Value commands. Source
+validation owns the current field handling rather than this document.
 
-### TOMAK RGB sleep exact-sec
+### QMK lighting sleep exact-sec
 
-The six TOMAK split definitions expose the same persisted RGB idle timeout in
-two client-compatible forms. Firmware-local stock VIA definitions use SYSTEM
-channel 9 / value 10 as a one-byte fixed-minute dropdown (1/3/5/10/30/60).
-Custom ERA definitions use value 11 as a two-byte big-endian exact-second range,
-1..65535 inclusive. Both setters update the same firmware value; exact GET/SET
-does not snap to the stock menu, while stock GET only projects the exact value
-down to the nearest supported preset and never mutates it. Firmware defaults the
-setting, including legacy zero migration, to 600 seconds / 10 minutes.
+Every QMK ERA definition except brick65 exposes each light's persisted idle
+timeout in two client-compatible forms. For RGB, firmware-local stock VIA
+definitions use SYSTEM channel 9 / value 10 as a one-byte fixed-minute dropdown
+(1/3/5/10/30/60), and custom ERA definitions use value 11 as a two-byte
+big-endian exact-second range, 1..65535 inclusive. A board with a backlight has
+the same pair for the backlight's own timeout: value 14 (stock minutes) and
+value 15 (custom exact seconds). Both setters of a pair update the same firmware
+value; exact GET/SET does not snap to the stock menu, while stock GET only
+projects the exact value down to the nearest supported preset and never mutates
+it. A zero SET is refused. Firmware defaults each timeout, including legacy zero
+migration, to 600 seconds / 10 minutes.
 
-Both clients also expose the QMK-family RGB Sleep master on SYSTEM channel 9 /
-value 12. It defaults on. Turning it off preserves the stored timeout and gates
-**all** automatic RGB sleep reasons: the TOMAK input-idle timeout, explicit USB
-suspend, and host-frame-loss sleep. The timeout row is hidden with V3 `showIf`
-until the master is on again. Compile-time `keyboard.json` `rgb_matrix.sleep:
-true` stays enabled because it is the capability; the VIA master decides whether
-that capability may darken RGB at runtime. The same master address is used by
-every other RGB-capable QMK ERA definition, which has the toggle even when it
-has no idle-timeout control.
+Both clients also expose one master per light, each defaulting on: RGB Sleep on
+SYSTEM channel 9 / value 12 and Backlight Sleep on value 13. Turning a master off
+preserves its stored timeout and gates **all** automatic sleep reasons for that
+light: its input-idle timeout, explicit USB suspend, and host-frame-loss sleep.
+Its timeout row is hidden with V3 `showIf` until the master is on again. Sleep
+only darkens the output; lighting settings are unchanged. Compile-time
+`keyboard.json` `rgb_matrix.sleep: true` / `rgblight.sleep: true` stays enabled
+because it is the capability; the VIA master decides whether that capability may
+darken RGB at runtime.
 
 This is the same dual-surface compatibility principle as exact-ms, but the two
 encodings require separate value ids because a V3 Custom Value request does not
@@ -255,17 +311,22 @@ identify which definition/client produced it. The exact id is additive, not a
 custom-app-only substitute: official/usevia-compatible firmware JSON still
 offers the complete feature through the preset id.
 
-The custom client edits exact seconds as an integer. The SLEEP timeout uses the
-same deferred-Apply contract as TAPPING/TAPDANCE: editing does not write
-immediately, Apply is disabled while the valid draft matches the authoritative
-value, and it becomes available only for a different valid 1..65535-second
-draft. The RGB Sleep master remains an independent immediate control; changing
-the timeout never stages or rewrites the master.
+The custom client edits exact seconds as an integer. The SLEEP timeouts use the
+same deferred-Apply contract as TAPPING and the Tap Dance editor: editing does
+not write immediately, Apply is disabled while the valid draft matches the
+authoritative value, and it becomes available only for a different valid
+1..65535-second draft. The masters remain independent immediate controls;
+changing a timeout never stages or rewrites a master. In the Configure menus such
+a draft belongs to the keyboard rather than the screen, because a change lost on
+leaving is lost silently and a prompt on every exit breaks the flow: it survives
+tab, pane and page changes and ends only when Apply writes it, Cancel drops it or
+the keyboard disconnects. Apply writes a page's drafts in row order and stops at
+the first one the keyboard refuses, which stays a draft.
 
 ### H7S RGB sleep exact-sec
 
-H7S definitions use the same dual-surface rule as TOMAK without sharing
-TOMAK's channel numbers. Firmware-local official VIA JSON keeps SYSTEM channel
+H7S definitions use the same dual-surface rule as the QMK family without sharing
+its channel numbers. Firmware-local official VIA JSON keeps SYSTEM channel
 18 / value 1 (`id_qmk_rgb_sleep_timeout`) as the one-byte minute dropdown
 1/3/5/10/30/60. The ERA overlay uses additive channel 18 / value 2
 (`id_qmk_rgb_sleep_timeout_exact`) as two-byte big-endian exact seconds,
@@ -274,7 +335,7 @@ minutes); both setters update it and SAVE persists it. Official GET floors an
 exact value onto the preset list without writing, so reading the keyboard in
 official VIA never snaps a custom 137-second value.
 The custom client keeps the same exact-second integer and deferred-Apply
-behavior. User help describes the same input-idle timeout object as TOMAK;
+behavior. User help describes the same input-idle timeout object as the QMK family;
 current editor and help-source details remain source-owned.
 
 Both H7S clients add the RGB Sleep master `id_qmk_rgb_sleep_enable` on channel
@@ -286,7 +347,7 @@ single `rgb_sleep.c` owner, while the VIA master decides whether the owner may
 enter RGB sleep. The enable bit is additive and does not replace the shipped
 value-1 official timeout contract.
 
-> **REFUSED:** moving H7S RGB sleep onto TOMAK channel 9 / value 11, or replacing
+> **REFUSED:** moving H7S RGB sleep onto QMK channel 9 / value 11, or replacing
 > the official value-1 preset with the exact encoding.
 > **WHY:** H7S already shipped channel 18 / value 1 to official VIA; additive
 > value 2 adds precision without changing the shipped official wire contract.

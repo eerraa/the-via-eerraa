@@ -16,6 +16,7 @@ Current numbered decisions:
 | [0001](0001-state-sync-protocol.md) | State Sync authority, compatibility, and exact-ms requirements |
 | [0002](0002-h7s-usb-diagnostics.md) | H7S USB diagnostics wire interpretation and product boundary |
 | [0003](0003-era-menu-help-ui.md) | ERA menu help and diagnostics UI placement |
+| [0004](0004-firmware-distribution.md) | Firmware download surface and maker USB identity |
 
 ## 1. When an ADR is warranted
 

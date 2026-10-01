@@ -5,11 +5,11 @@ Canonical for: Cloudflare Pages release procedure, deploy authority, SPA rewrite
 requirements, and response-header requirements
 
 The executable deploy path is `.github/workflows/deploy-to-cloudflare.yml`.
-Current route definitions live in `src/utils/pane-config.ts` and
-`src/components/panes/errors.tsx`; host rewrites and headers live in
-`public/_redirects`, `public/404.html`, and `public/_headers`. This manual
-keeps the operational constraints and reasons that are not useful to duplicate
-from those files.
+Current route definitions live in `src/utils/pane-config.ts`,
+`src/components/panes/errors.tsx` and `src/utils/firmware-route.ts`; host
+rewrites and headers live in `public/_redirects`, `public/404.html`, and
+`public/_headers`. This manual keeps the operational constraints and reasons
+that are not useful to duplicate from those files.
 
 ## 1. Deployment path and authority
 
@@ -78,18 +78,24 @@ rewrites with a wildcard fallback such as `/* /index.html 200`. Missing
 200 status makes definition probes look successful and then fail as JSON.
 
 Only real application routes belong in `public/_redirects`. When a route is
-added or removed, compare that file with `src/utils/pane-config.ts` and
-`src/components/panes/errors.tsx`. The `/diagnostics` path is intentionally
-an in-app redirect in `src/Routes.tsx`, not a host deep-link rewrite.
+added or removed, compare that file with `src/utils/pane-config.ts`,
+`src/components/panes/errors.tsx` and `src/utils/firmware-route.ts`. The
+`/diagnostics` path is intentionally an in-app redirect in `src/Routes.tsx`,
+not a host deep-link rewrite.
 
 Rewrite destinations are `/`, not `/index.html`. Cloudflare Pages
 canonicalizes `/index.html` to `/`; using it as the rewrite target can turn
 a route-preserving rewrite into a redirect that loses the requested path.
+The firmware routes rewrite to `/firmware-app` for the same reason, not
+`/firmware-app.html`: that is the build's copy of the shell with the firmware
+link-preview head (docs/adr/0004-firmware-distribution.md §4).
 
 A host check after deployment should establish all of the following without
 claiming device validation:
 
 - declared SPA deep links return the app without changing the requested URL;
+- a firmware link such as `/firmware/sirind/brick60-h7s` returns the shell
+  titled `Firmware`, still without changing the URL;
 - an unknown path returns 404;
 - known definition JSON returns JSON;
 - a missing definition returns 404 rather than HTML.

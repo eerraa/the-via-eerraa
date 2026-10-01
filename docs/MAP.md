@@ -19,18 +19,24 @@ looks right, report it; do not silently invert the table.
 | Fact | Canonical | What bites it |
 | --- | --- | --- |
 | ERA custom definition contents (menus, controls, addresses, labels) | JSON under `era-definitions/custom/v3/` | `tests/era-definition.test.ts` |
+| What older firmware under a legacy identity is served | frozen JSON under `era-definitions/legacy/v3/`, never edited ([ADR 0004](adr/0004-firmware-distribution.md) §2) | the legacy digest in `tests/era-definition.test.ts`, `scripts/build-keyboards.ts` |
 | Fork-managed external stock V3 definitions | JSON under `era-definitions/external/v3/` + `config/external-definitions.manifest.json` | `tests/validate-external-v3.test.ts`, `scripts/build-keyboards.ts` |
 | Which board has which feature | the same JSON | `FEATURE_COVERAGE` in that file |
 | Per-board capability opt-in (state sync / exact-ms / diagnostics / split pair) | `config/era-definitions.manifest.json` | `tests/era-definition.test.ts` |
 | Official VIA V3 definitions | `the-via/keyboards` — the installed `node_modules/via-keyboards` is a pinned snapshot only | `Verify build output` in the deploy workflow |
 | Explicit validation of firmware-local VIA V3 files | `scripts/validate-external-v3.ts`, using the app's `@the-via/reader` guard and transform | `tests/validate-external-v3.test.ts` |
 | Host wire encode/decode implementation | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
-| VERSION ASCII display grammar | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
+| VERSION ASCII display grammar and build ordering | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts`, `tests/firmware-distribution.test.tsx` |
 | Diagnostics observation / no-verdict boundary | [ADR 0003](adr/0003-era-menu-help-ui.md) §3 | `src/locales/*.json`, `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
 | Current shipped diagnostics strings | `src/locales/*.json` | `tests/locales.test.ts`, `tests/diagnostics-pane.test.tsx` |
-| ERA menu-help summary / disclosure / attach policy | [ADR 0003](adr/0003-era-menu-help-ui.md) §6 | `src/utils/era-feature-help.ts`, `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| ERA menu-help summary / disclosure / attach policy | [ADR 0003](adr/0003-era-menu-help-ui.md) §6 | `src/utils/era-feature-help.ts`, `src/components/panes/configure-panes/custom/help-content.tsx`, `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | Current ERA help copy and command targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
-| App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx` | none — `public/_redirects` is hand-matched (§7) |
+| Keycode chooser (KEYMAP pane, V3 `keycode` dock) and Tap Dance editing from KEYMAP | `docs/PROJECT_DIRECTION.md` **Tap Dance and exact-ms**; Basic layout, search, combined keys and Tap Dance write planning in `src/utils/keycode-palette.ts` | `tests/keycode-palette.test.ts`, `tests/keycode-palette-render.test.tsx` |
+| App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx`, `src/utils/firmware-route.ts` | none — `public/_redirects` is hand-matched (§7) |
+| Maker VID block, PID allocation, legacy identity resolution, firmware download surface | [ADR 0004](adr/0004-firmware-distribution.md); concrete USB identities stay firmware-owned and mirrored in `config/era-definitions.manifest.json` | `tests/docs-contract.test.ts`, `tests/era-definition.test.ts`, `tests/firmware-distribution.test.tsx` |
+| Firmware link previews (the `/firmware-app` shell) and short board links | [ADR 0004](adr/0004-firmware-distribution.md) §4 | `scripts/firmware-share-page.ts`, `vite.config.ts`, `public/_redirects`, `tests/firmware-distribution.test.tsx` |
+| Saved layout files across identities and layer counts, Tap Dance in them | [ADR 0004](adr/0004-firmware-distribution.md) §2; transaction and lazy macros in [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/layout-import.ts`, `src/store/layoutFileThunks.ts`, `tests/layout-import.test.ts`, `tests/state-sync-transport.test.ts`, `tests/save-load-pane.test.tsx`, `tests/era-definition.test.ts` |
+| Distributed makers, board membership, published firmware files | `config/firmware-catalog.json`; family and identity come from `config/era-definitions.manifest.json` | `tests/firmware-distribution.test.tsx`, `scripts/validate-firmware-catalog.ts` in the build |
 
 ## 2. Definition inventory ownership
 
@@ -56,7 +62,7 @@ does not duplicate their addresses, ranges, packet layouts, or polling values.
 | --- | --- | --- | --- |
 | State Sync, exact-ms, legacy projection, Custom Menu invalidation | [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/era-state-sync.ts`, `src/utils/era-exact-ms.ts`, `src/utils/ui-sync.ts` | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
 | H7S USB diagnostics app acceptance, observation/comparison, and lifecycle | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) | `src/utils/era-usb-diagnostics.ts` | `tests/era-usb-diagnostics.test.ts`, `tests/diagnostics-pane.test.tsx` |
-| RGB sleep preset/exact/master compatibility | `docs/PROJECT_DIRECTION.md` **TOMAK RGB sleep exact-sec**, **H7S RGB sleep exact-sec**, **RGB Sleep master** | `era-definitions/custom/v3`, `src/utils/era-exact-sec.ts` | `tests/era-definition.test.ts`, `tests/custom-menu-pane.test.tsx` |
+| Lighting sleep preset/exact/master compatibility | `docs/PROJECT_DIRECTION.md` **QMK lighting sleep exact-sec**, **H7S RGB sleep exact-sec**, **RGB Sleep master** | `era-definitions/custom/v3`, `src/utils/era-exact-sec.ts` | `tests/era-definition.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | VERSION display compatibility | [ADR 0003](adr/0003-era-menu-help-ui.md) | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 
 Do not invent a freshness decision outside this ownership:
@@ -75,7 +81,8 @@ Do not invent a freshness decision outside this ownership:
 
 ```
 era-definitions/custom/v3/**.json    ← ERA custom canonical (authored)
-config/era-definitions.manifest.json ← paths, VID/PID, pair, capability opt-in
+era-definitions/legacy/v3/**.json    ← frozen definitions for legacy identities (never edited)
+config/era-definitions.manifest.json ← paths, VID/PID (+ extra and legacy identities), pair, capability opt-in
 era-definitions/external/v3/**.json  ← fork-managed external stock V3 (authored)
 config/external-definitions.manifest.json ← paths and VID/PID
 node_modules/via-keyboards           ← pinned official snapshot (github:the-via/keyboards#79ae8d2 + patches/)
@@ -87,7 +94,7 @@ node_modules/via-keyboards           ← pinned official snapshot (github:the-vi
 public/definitions/
   v2/                  official V2 bundle as-is
   v3/                  official V3 bundle + non-colliding external stock definitions
-  era/v3/              ERA overlay from the manifest-bound custom source
+  era/v3/              ERA overlay, one file per served identity (custom source, legacy frozen source)
   supported_kbs.json   full V2 plus V3 VPIDs that V2 does not have
   era_advanced.json    schemaVersion 2, per-definition runtime capability
   hash.json            cache-invalidation key (§7)
@@ -146,8 +153,6 @@ bun run build            # typecheck:scripts → build:kbs → tsc → vite buil
   calls `fs.remove('dist')` against cwd first. `bun run build` runs `build:kbs`
   first, which is fine; running `build:kbs` alone after a build to re-count
   definitions removes the `dist/` just produced.
-- `tests/deferred-apply.test.ts` is in **no script.** Run it directly.
-  `tests/docs-contract.test.ts` locks that set, so it cannot grow quietly.
 
 ## 6. Intentional dual copies — deleting one is a regression
 
@@ -159,8 +164,9 @@ speak the same HID bytes. Product rules:
 | Dual copy | Official | Custom |
 | --- | --- | --- |
 | tapping/TD term | legacy official presentation | exact integer presentation |
-| RGB sleep timeout (TOMAK / H7S) | shipped preset presentation | exact-seconds presentation of the same persisted timeout |
+| Lighting sleep timeout (QMK RGB and backlight / H7S RGB) | shipped preset presentation | exact-seconds presentation of the same persisted timeout |
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
+| Tap Dance settings | TAPDANCE menu page | `controls` on each `tapdanceKeycodes` entry, edited from KEYMAP — the same Custom Value commands |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
 
 Exact encodings, ranges, and family-specific ids are owned by
@@ -172,8 +178,9 @@ compatible and converge on the same firmware-owned state.
 
 Tests do not bite these. Touch one side, look at the other.
 
-- **Routes ↔ `public/_redirects`.** Routes are canonical in `src/utils/pane-config.ts`
-  and `src/components/panes/errors.tsx`; the deploy rewrite list is hand-matched.
+- **Routes ↔ `public/_redirects`.** Routes are canonical in `src/utils/pane-config.ts`,
+  `src/components/panes/errors.tsx` and, for the firmware download routes,
+  `src/utils/firmware-route.ts`; the deploy rewrite list is hand-matched.
   `/diagnostics` redirects to `/` in `src/Routes.tsx` but is absent from
   `_redirects`. In-app navigation works; a **cold deep link on the deploy host
   404s**. Inline placement is [ADR 0003](adr/0003-era-menu-help-ui.md).

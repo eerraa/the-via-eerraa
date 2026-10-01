@@ -342,16 +342,14 @@ describe('every document declares its own scope', () => {
 });
 
 describe('every test file is reachable from a package script', () => {
-  // Keep known routing debt explicit until the package scripts are fixed.
-  const KNOWN_UNRUN = ['deferred-apply.test.ts'];
-
-  test('the unrun set is exactly the list above', () => {
+  // No gate runs a test file that no script names.
+  test('the unrun set is empty', () => {
     const referenced = Object.values(packageJson.scripts).join(' ');
     const unrun = readdirSync(path.join(repoRoot, 'tests'))
       .filter((name) => /\.test\.tsx?$/.test(name))
       .filter((name) => statSync(path.join(repoRoot, 'tests', name)).isFile())
       .filter((name) => !referenced.includes(`tests/${name}`))
       .sort();
-    expect(unrun).toEqual([...KNOWN_UNRUN].sort());
+    expect(unrun).toEqual([]);
   });
 });

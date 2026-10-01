@@ -93,11 +93,13 @@ accepted. The coordinator representation and state fields are source-owned by
 - `dirty` means UI may keep the last accepted component tree for continuity, but
   must not treat it as current or as the basis for a new write. With no accepted
   snapshot, or after a lifecycle context change, the loading boundary stays
-  (`getCustomMenuAvailabilityForDevice` returns `checking`).
+  (`getCustomMenuAvailabilityForDevice` returns `checking`, or `failed` after
+  an unhandled read).
 - `refreshing` means one loop per domain owns the candidate. Further
   invalidation coalesces onto the same path/generation owner. A lifecycle full
   refresh that arrives while a domain is in flight is queued (`fullPending`) and
-  that domain is read again after the in-flight bracket.
+  that domain is read again after the in-flight bracket unless the firmware
+  answered the in-flight read as unhandled.
 - A successful SET may update UI immediately. On an advanced device it does not
   extend `fresh` until a later revision query and authoritative GET finish.
 - Change between polls is an unavoidable stale window of a distributed read.
@@ -105,10 +107,18 @@ accepted. The coordinator representation and state fields are source-owned by
 - Hidden (`document.hidden`) has no periodic traffic (`shouldPoll`). Resume
   full-refreshes implemented domains without trusting revision equality
   (`refreshAllDomains`).
+- A domain read that the firmware answers as unhandled (`0xFF`) is its settled
+  answer, not a transient failure, so neither a poll nor a full refresh repeats
+  it, and CONFIG reports `failed` instead of `checking`/`reconciling`, until the
+  domain's revision changes, a foreground write touches it, or the selection,
+  definition or connection is replaced.
 - Reconnect and connection-generation replacement do not reuse a previous
   generation's accepted snapshots. A capable ERA selection reacquires KEYMAP
-  before ready, CONFIG immediately after ready, and MACRO before first Macro-pane
-  use; none of those decisions trusts numeric equality with an older generation.
+  before ready, CONFIG immediately after ready, and MACRO before the first use of
+  its contents (the Macro pane, saving a layout file); none of those decisions
+  trusts numeric equality with an older generation. The selection also reads
+  the layout options once with the existing GET before ready, which grants no
+  CONFIG freshness, and writes none until this connection has read them.
 
 ### Host domains and revision validity
 
@@ -195,6 +205,9 @@ The transport contract is:
   releases host resources but does not cancel a command already received by
   firmware, so legacy recovery waits for an observable device lifecycle
   boundary.
+- A reply whose first byte is `0xFF` (`id_unhandled`) and whose other bytes
+  echo the request fails that request without poisoning the generation: it is
+  the firmware's answer, so no late reply is left to match a later request.
 - A uniquely tagged State Sync query may abandon only its timed-out request
   without poisoning the generation because that delayed tag cannot satisfy the
   next query. Failure of the initial proof leaves that generation `unverified`;
@@ -212,11 +225,12 @@ The freshness contract is:
   context. Candidate data is not partially applied before that decision.
 - Refresh requests for the same path/generation coalesce. A lifecycle full
   refresh requested while a domain is already in flight must still cause a read
-  after that in-flight boundary rather than be lost.
+  after that in-flight boundary rather than be lost, unless the firmware
+  answered the in-flight read as unhandled.
 - Foreground mutation makes the affected domain dirty before its first packet so
-  an older candidate cannot overwrite it. Failed or unstable reconciliation
-  keeps the last accepted snapshot only for display continuity; it remains
-  dirty and retryable, not write authority.
+  an older candidate cannot overwrite it. Transiently failed or unstable
+  reconciliation keeps the last accepted snapshot only for display continuity;
+  it remains dirty and retryable, not write authority.
 - Exact coordinator fields, domain read composition/order, lazy MACRO demand,
   and retry counts are source/test-owned implementation details rather than a
   second algorithm in this contract.
@@ -227,7 +241,10 @@ never falls through to ordinary VIA, a new write requires a capable accepted
 CONFIG snapshot for the current context that is still fresh against observation,
 and external-only dirty/refreshing state cannot bootstrap write authority. An
 already-open foreground write session that entered through that gate may finish
-its interaction.
+its interaction. A discrete write asked for while CONFIG reconciles is not
+dropped, because its control still looks usable: it requests that authoritative
+re-read, waits for it and then passes the same gate, and choosing another
+keyboard meanwhile abandons it.
 
 Optimistic UI does not create freshness: authoritative reconciliation still
 comes from revision-bracketed existing VIA GET. A failed optimistic write must
@@ -256,7 +273,9 @@ buffer size GET
 → marker GET verification
 ```
 
-RESET is a standalone mutation. RESET, opener, or payload failure does not send
+A payload over `B-1` bytes or holding a value outside 0-255 is refused before
+RESET, so a write that cannot finish never erases the macros. RESET is a
+standalone mutation. RESET, opener, or payload failure does not send
 the final zero. Final-zero failure does not retry the transcript. After zero
 acknowledgement, marker GET is immediate once, then delays
 `MACRO_CLOSE_RETRY_DELAYS_MS` `[25, 50, 100, 200]` and then
@@ -269,11 +288,20 @@ requests one authoritative reconciliation. Marker zero is this host transcript's
 observable completion. It is not a generic QMK power-loss durability proof.
 
 Full layout import (`importLayoutToDevice`) runs macro write/verification,
-keymap write, and encoder write as one outer reservation and one foreground
-operation. Nested helpers reuse that owner. Independent `Promise.all` owners are
-not created. Macro failure does not start keymap/encoder. Partial failure stops
+keymap write, encoder write, and the file's Custom Values (Tap Dance) as one
+outer reservation and one foreground operation over every domain it touches.
+Nested helpers reuse that owner. Independent `Promise.all` owners are not
+created. Custom Values are SET in order and SAVEd once per channel after the last
+SET. Macro failure does not start the later stages. Partial failure stops
 remaining steps, dirties affected domains, and requests one reconciliation on
 the same generation. UI success waits for every stage.
+
+A write that replaces every macro (`replaceMacros`, used by layout import) needs
+only the macro count, so it does not pull the lazy MACRO buffer first. A write
+rebuilt from the macros on screen (`saveMacros`) needs them read. Whatever needs
+the contents asks through one store operation (`ensureMacroContents`), not a
+pane-local rule; the operations that read or write a layout file live in
+`src/store/layoutFileThunks.ts`, so the pane holds no State Sync knowledge.
 
 ### Continuous-control write ownership
 
@@ -283,7 +311,10 @@ ownership is scoped to path/generation, not component-local state; device switch
 may finish the previous still-valid generation, while disconnect or generation
 replacement cancels that ownership and leaves capable CONFIG dirty. Controls
 without a reliable completion boundary remain discrete, and no trailing timer or
-maximum-drag SAVE is invented. The exact control set and event plumbing are owned
+maximum-drag SAVE is invented. The one timer guards a lost completion: an entry
+still waiting after several idle seconds with no pointer pressed is completed
+once, so a control that drops its completion cannot stall every later write on
+its path. The exact control set and event plumbing are owned
 by `src/utils/continuous-hid-transaction.ts` and its UI call sites; integration
 counterexamples live in `tests/state-sync-transport.test.ts`.
 
@@ -381,6 +412,13 @@ input queue overflow, VIA latency/timeout) is remaining hardware measurement.
   authority.
 - **VIA protocol version:** it is not State Sync capability evidence; canonical
   identity opt-in plus a capable envelope is required.
+- **QMK VIA protocol 13:** it gives GET keyboard-value `0x06` to
+  `id_keycodes_version`, which official VIA and this app read from protocol-13
+  devices only. ERA firmware stays at protocol 12, so selector `0x06` never
+  meets that read. Before ERA firmware adopts protocol 13 or merges QMK code
+  carrying it, State Sync and H7S diagnostics (`0x07`) move to new selectors;
+  the app then probes the new selector first and keeps `0x06` for shipped
+  firmware.
 
 Official `usevia.app` operation with official VIA V3 definitions remains a
 required compatibility path. A feature that works only through this custom app

@@ -122,6 +122,16 @@ matching and help text live in source; this ADR owns their user-facing shape.
   supplied by the submenu summary or a self-explanatory unit.
 - Help for one firmware family may resolve from different command identities in
   another family, but the user-visible feature meaning stays aligned.
+- Help is minimal. Detail is a few short paragraphs; named choices are a list of
+  the option name and one sentence, in the dropdown's order, and that list must
+  match the options the definitions actually offer. The shipped default is only a
+  mark on that list. Anything the reader does not need in order to set the value
+  is left out: a switch's default, a sentence that describes the screen, generic
+  advice. Help that is one sentence has no disclosure. Inside a control's own list
+  the option it currently holds may read brighter, because every alternative stays
+  in view.
+- Help text sits at the size of the text around it, not as fine print, and each
+  shipped locale uses one word per thing across its help.
 
 > **REFUSED:** turning submenu-top help into a long implementation guide, making
 > top help change with the currently selected option, or attaching ⓘ to every
@@ -132,10 +142,26 @@ matching and help text live in source; this ADR owns their user-facing shape.
 
 ## 7. Names and controls must match real supported behavior
 
-Labels describe observable behavior and scope. A firmware behavior with only one
-legal mode is explained rather than presented as a one-choice selector. A client
+Labels describe observable behavior and scope. An ERA definition's submenu, row
+and option names are shown as the definition spells them, in the custom app and in
+its help, so a catalog word shared with another board never translates one name
+among its neighbours. A row whose own field draws its unit after the number drops
+the same closing "(ms)" or "(s)" from its name; the definition keeps it for official
+VIA, which draws no unit. Rows the app draws itself and the top-level menu names stay
+translated. A
+firmware behavior with only one legal mode is explained rather than presented as a
+one-choice selector. A client
 must not invent a control the connected firmware does not implement; current
 feature membership and labels are source-owned.
+
+On an ERA definition's page, a switch the firmware always reads back off, because
+turning it on is an action, is a one-word button. A value the firmware only holds
+until such a switch puts it into effect, like the split link speed, is a draft that
+Apply writes together with that switch, shown as the value the keyboard reports in
+effect where it reports one: a held value or a switch left on would claim a change
+the keyboard has not made. Until the keyboard reports a value both in effect and
+kept, choosing it is a change Apply can send, even at the value shown, so a speed
+the pair fell back to can still be kept.
 
 Custom-app presentation may add help and diagnostics that official VIA does not
 provide, but it must not imply that the firmware depends on this fork. Features

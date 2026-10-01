@@ -44,7 +44,6 @@ coverage.
 | Unused package entries | `@microsoft/applicationinsights-web`, `concurrently`, `redux-logger`, `@types/raf-schd` | Remove only with lockfile changes in a dependency-authorized session after confirming scripts and dynamic loading do not use them. |
 | Export-level dead code | output of `bun run find-deadcode` | The exact symbol set is source-derived and must be re-measured; test-only helpers and slice-internal actions are known false positives if import context is ignored. |
 | Locale cleanup | unused keys in `src/locales/` | Dynamic `t(label)` values from ERA definition JSON must be included in the reachability check, and all shipped locale catalogs move together. |
-| Test routing | `KNOWN_UNRUN` in `tests/docs-contract.test.ts` | A test that package scripts do not execute is not coverage. Resolve by wiring it into a script or retiring it in a code-authorized session. |
 | Stale source comment | TODO in `src/components/panes/configure-panes/custom/satisfaction75/menu.tsx` | The pane is still mounted for the supported V2 Rotary Encoder path; the TODO is stale, not proof that the pane is dead. |
 
 Current export-level candidates to re-measure are
