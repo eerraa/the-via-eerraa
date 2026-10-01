@@ -551,6 +551,16 @@
       "shortName": "TD0",
       "controls": [
         {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_1_mode", 16, 49],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
+        {
           "label": "On Tap",
           "type": "keycode",
           "content": ["id_qmk_tapdance_1_tap", 16, 1]
@@ -575,6 +585,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_1_term_exact", 16, 41],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_1_hold_term", 16, 57]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_1_hold_other", 16, 65]
         }
       ]
     },
@@ -583,6 +608,16 @@
       "title": "Tap Dance 1",
       "shortName": "TD1",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_2_mode", 16, 50],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -608,6 +643,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_2_term_exact", 16, 42],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_2_hold_term", 16, 58]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_2_hold_other", 16, 66]
         }
       ]
     },
@@ -616,6 +666,16 @@
       "title": "Tap Dance 2",
       "shortName": "TD2",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_3_mode", 16, 51],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -641,6 +701,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_3_term_exact", 16, 43],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_3_hold_term", 16, 59]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_3_hold_other", 16, 67]
         }
       ]
     },
@@ -649,6 +724,16 @@
       "title": "Tap Dance 3",
       "shortName": "TD3",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_4_mode", 16, 52],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -674,6 +759,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_4_term_exact", 16, 44],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_4_hold_term", 16, 60]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_4_hold_other", 16, 68]
         }
       ]
     },
@@ -682,6 +782,16 @@
       "title": "Tap Dance 4",
       "shortName": "TD4",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_5_mode", 16, 53],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -707,6 +817,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_5_term_exact", 16, 45],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_5_hold_term", 16, 61]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_5_hold_other", 16, 69]
         }
       ]
     },
@@ -715,6 +840,16 @@
       "title": "Tap Dance 5",
       "shortName": "TD5",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_6_mode", 16, 54],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -740,6 +875,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_6_term_exact", 16, 46],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_6_hold_term", 16, 62]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_6_hold_other", 16, 70]
         }
       ]
     },
@@ -748,6 +898,16 @@
       "title": "Tap Dance 6",
       "shortName": "TD6",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_7_mode", 16, 55],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -773,6 +933,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_7_term_exact", 16, 47],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_7_hold_term", 16, 63]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_7_hold_other", 16, 71]
         }
       ]
     },
@@ -781,6 +956,16 @@
       "title": "Tap Dance 7",
       "shortName": "TD7",
       "controls": [
+        {
+          "label": "Input start",
+          "type": "dropdown",
+          "content": ["id_qmk_tapdance_8_mode", 16, 56],
+          "options": [
+            ["Legacy", 0],
+            ["After decision (Transparent = base, None = no input)", 1],
+            ["On press (Hold must be Transparent)", 2]
+          ]
+        },
         {
           "label": "On Tap",
           "type": "keycode",
@@ -806,6 +991,21 @@
           "type": "range",
           "content": ["id_qmk_tapdance_8_term_exact", 16, 48],
           "options": [1, 65535]
+        },
+        {
+          "label": "Hold decision time (ms, 0 = same)",
+          "type": "range",
+          "options": [0, 65535],
+          "content": ["id_qmk_tapdance_8_hold_term", 16, 64]
+        },
+        {
+          "label": "Hold on other key press",
+          "type": "dropdown",
+          "options": [
+            ["Off", 0],
+            ["On", 1]
+          ],
+          "content": ["id_qmk_tapdance_8_hold_other", 16, 72]
         }
       ]
     }

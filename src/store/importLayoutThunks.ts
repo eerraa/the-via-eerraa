@@ -1,4 +1,5 @@
-import {KeyboardAPI, shiftFrom16Bit} from '../utils/keyboard-api';
+import {tapDanceWriteBytes} from '../utils/keycode-palette';
+import {KeyboardAPI} from '../utils/keyboard-api';
 import type {TapDanceWrite} from '../utils/keycode-palette';
 import type {ConnectedDevice} from '../types/types';
 import type {AppThunk} from './index';
@@ -135,11 +136,12 @@ export const importLayoutToDevice =
           }
 
           if (customValues.length > 0) {
-            for (const {channel, id, value} of customValues) {
+            for (const write of customValues) {
+              const {channel, id} = write;
               await reservedApi.setCustomMenuValue(
                 channel,
                 id,
-                ...shiftFrom16Bit(value),
+                ...tapDanceWriteBytes(write),
               );
             }
             for (const channel of new Set(
@@ -154,9 +156,9 @@ export const importLayoutToDevice =
                 menuData: {
                   ...getSelectedCustomMenuData(getState()),
                   ...Object.fromEntries(
-                    customValues.map(({name, value}) => [
-                      name,
-                      shiftFrom16Bit(value),
+                    customValues.map((write) => [
+                      write.name,
+                      tapDanceWriteBytes(write),
                     ]),
                   ),
                 },

@@ -10,7 +10,7 @@ import {
 } from './keycode-palette';
 
 /** One Tap Dance slot as a layout file keeps it: keycode names and the term in ms. */
-export type SavedTapDance = Record<TapDanceActionRole, string> & {term?: number};
+export type SavedTapDance = Record<TapDanceActionRole, string> & {term?: number; mode?: number; holdTerm?: number; holdOnOther?: number};
 
 export type ViaSaveFile = {
   name: string;
@@ -46,7 +46,9 @@ export type LayoutImportError =
   | 'macro-count'
   | 'extra-layers'
   /** Something the file sets cannot be written yet: the keyboard is still loading. */
-  | 'keyboard-not-ready';
+  | 'keyboard-not-ready'
+  | 'tap-dance-mode-unsupported'
+  | 'tap-dance-invalid';
 
 export type LayoutImport = {
   keymap: number[][];
@@ -107,6 +109,11 @@ export const saveTapDance = (
     saved[slot.index] = draft.term
       ? {...actions, term: Number(draft.term)}
       : actions;
+    if (draft.mode !== undefined) saved[slot.index]!.mode = draft.mode;
+    if (draft.holdTerm !== undefined) {
+      saved[slot.index]!.holdTerm = Number(draft.holdTerm);
+      saved[slot.index]!.holdOnOther = draft.holdOnOther ?? 0;
+    }
   }
   return {tapDance: Array.from(saved, (entry) => entry ?? null)};
 };
@@ -150,7 +157,11 @@ const planSavedTapDance = (
       actions: {tap: -1, hold: -1, dtap: -1, thold: -1},
       term: '',
     };
-    return planTapDanceWrites(slot, {actions, term}, known, bounds) ?? [];
+    const mode = current?.mode !== undefined
+      ? (entry.mode ?? 0) : undefined;
+    return planTapDanceWrites(slot, {actions, term, mode, ...(current?.holdTerm !== undefined ? {
+      holdTerm: String(entry.holdTerm ?? 0), holdOnOther: entry.holdOnOther ?? 0,
+    } : {})}, known, bounds) ?? [];
   });
 };
 
@@ -210,6 +221,38 @@ export const planLayoutImport = (
   ) {
     return {error: 'extra-layers'};
   }
+
+  if (Array.isArray(file.tapDance) && file.tapDance.some((entry) => entry && (
+    (entry.holdTerm !== undefined && (!Number.isInteger(entry.holdTerm) || entry.holdTerm < 0 || entry.holdTerm > 65535)) ||
+    (entry.holdOnOther !== undefined && ![0, 1].includes(entry.holdOnOther))
+  ))) return {error: 'tap-dance-invalid'};
+
+  if (Array.isArray(file.tapDance) && file.tapDance.some((entry, index) => {
+    if (!entry?.holdTerm && !entry?.holdOnOther) return false;
+    const slot = target.tapDance?.slots.find((slot) => slot.index === index);
+    return !slot || target.tapDance?.read(slot)?.holdTerm === undefined;
+  })) return {error: 'tap-dance-mode-unsupported'};
+
+  if (Array.isArray(file.tapDance) && file.tapDance.some((entry, index) => {
+    if (!entry?.mode) return false;
+    const slot = target.tapDance?.slots.find((slot) => slot.index === index);
+    return !slot || target.tapDance?.read(slot)?.mode === undefined;
+  })) return {error: 'tap-dance-mode-unsupported'};
+
+  if (Array.isArray(file.tapDance) && file.tapDance.some((entry) => {
+    if (!entry || entry.mode === undefined) return false;
+    if (![0, 1, 2].includes(entry.mode)) return true;
+    try {
+      if (TAP_DANCE_ACTION_ROLES.some((role) => {
+        if (typeof entry[role] !== 'string') return true;
+        const value = toByte(entry[role]);
+        return !Number.isInteger(value) || value < 0 || value > 0xffff;
+      })) return true;
+      return entry.mode === 2 && toByte(entry.hold) !== 1;
+    } catch {
+      return true;
+    }
+  })) return {error: 'tap-dance-invalid'};
 
   const customValues = target.tapDance
     ? planSavedTapDance(file.tapDance, target.tapDance, toByte)

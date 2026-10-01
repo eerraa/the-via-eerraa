@@ -635,7 +635,7 @@ describe('era definition tapdanceKeycodes', () => {
         }).toEqual({
           id: entry.id,
           name: keycode.name,
-          roles: ['tap', 'hold', 'dtap', 'thold', 'term_exact'],
+          roles: ['mode', 'tap', 'hold', 'dtap', 'thold', 'term_exact', 'hold_term', 'hold_other'],
         });
       });
     }

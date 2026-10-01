@@ -181,6 +181,46 @@ protocol change and requires a new envelope version plus paired host/firmware
 review. v1 does not add a new top-level VIA command or unsolicited State Sync
 packet.
 
+## Tap Dance input modes and timing
+
+H7S channel 16 / values 49..56 and QMK keyboard channel 0 / values 80..87
+use existing Custom Value GET/SET/SAVE. Payload byte 0 is the per-slot input
+mode (0 legacy, 1 after-decision, 2 on-press). GET and SET echo append `0xD2`
+in byte 1 as explicit support evidence. An absent/invalid marker retains the
+old editor. The custom app sends the same two bytes; firmware reads the mode
+byte, so official VIA uses a normal one-byte dropdown. CONFIG invalidation
+and authoritative rereads include this control.
+
+Modes 1/2 reserve additional-action `KC_TRNS` for inheritance and `KC_NO`
+for explicit silence. Mode 2 requires Hold = `KC_TRNS`. Saving sends changed
+actions/term before entering a mode, but leaves mode 2 before writing a new
+first-hold action. A refusal stops the batch and keeps the remaining draft.
+The inheritance sentinel passes action eligibility only in these additional
+fields; it does not become a selectable executable Tap Dance keycode.
+
+H7S storage and runtime contracts are in
+`eerraa-qmk-h7s-fw/docs/contract_via.md` and
+`eerraa-qmk-h7s-fw/docs/contract_eeprom.md`. QMK persistence and same-image
+split requirements are in
+`qmk_firmware_eerraa/keyboards/era/common/docs/contracts/era_host_peer_storage_contract.md`.
+
+Tap Dance advanced timing adds hold-term IDs 57..64 / hold-other IDs 65..72
+on H7S channel 16, and 88..95 / 96..103 on QMK channel 0. The term is BE16
+0..65535 (zero follows the existing decision term); the flag is byte 0/1.
+The existing mode response retains value byte 1 `0xD2`, adds byte 2 `0xD3`,
+and gates queries for the new IDs. Hold-term replies carry value byte 2
+`0xD3`; hold-other replies carry value byte 1 `0xD3`. This extends Custom
+Value payloads, not the State Sync envelope. Both settings belong to CONFIG.
+
+An optional Tap Dance input-mode probe may return an exact `id_unhandled`
+echo from older firmware. Only that explicit unsupported response means the
+new mode/timing features are unavailable; existing action, term, lighting and
+feature reads still populate CONFIG. An unmarked mode reply also leaves those
+extensions unavailable. Advertised advanced timing requires the complete mode
+and timing markers. Missing required values, timeouts, disconnects, and malformed
+replies remain failures and retain their transport/error handling; the optional
+probe must not turn them into a default setting or a fresh snapshot.
+
 ## App transport, lifetime, and refresh coordination
 
 Transport lifetime is per WebHID path; selected Redux state is not transport

@@ -840,5 +840,7 @@
   "Choose a tap key": "Tipp-Taste wählen",
   "Keyboard maker": "Tastaturhersteller",
   "Keyboard": "Tastatur",
-  "Find firmware": "Finde die passende Firmware."
+  "Find firmware": "Finde die passende Firmware.",
+  "Update firmware to restore these Tap Dance settings.": "Firmware aktualisieren, um diese Tap-Dance-Einstellungen wiederherzustellen.",
+  "Could not import layout: invalid Tap Dance settings.": "Layout konnte nicht importiert werden: ungültige Tap-Dance-Einstellungen."
 }

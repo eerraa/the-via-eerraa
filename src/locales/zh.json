@@ -840,5 +840,7 @@
   "Choose a tap key": "选择点按键",
   "Keyboard maker": "键盘制造商",
   "Keyboard": "键盘",
-  "Find firmware": "请查找所需的固件。"
+  "Find firmware": "请查找所需的固件。",
+  "Update firmware to restore these Tap Dance settings.": "请更新固件以恢复这些Tap Dance设置。",
+  "Could not import layout: invalid Tap Dance settings.": "无法导入布局：Tap Dance设置无效。"
 }

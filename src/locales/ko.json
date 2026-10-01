@@ -840,5 +840,7 @@
   "Choose a tap key": "탭 키 선택",
   "Keyboard maker": "키보드 메이커",
   "Keyboard": "키보드",
-  "Find firmware": "펌웨어를 찾아보세요."
+  "Find firmware": "펌웨어를 찾아보세요.",
+  "Update firmware to restore these Tap Dance settings.": "이 탭댄스 설정을 복원하려면 펌웨어를 업데이트하세요.",
+  "Could not import layout: invalid Tap Dance settings.": "레이아웃을 가져올 수 없습니다. 탭댄스 설정이 유효하지 않습니다."
 }

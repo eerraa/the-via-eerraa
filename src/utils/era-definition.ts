@@ -14,9 +14,9 @@ import {
  */
 export type EraTapDanceControl = {
   label: string;
-  type: 'keycode' | 'range';
+  type: 'keycode' | 'range' | 'dropdown';
   content: [string, number, number];
-  options?: [number, number];
+  options?: [number, number] | [string, number][];
 };
 
 /**
@@ -95,8 +95,8 @@ const parseTapDanceControls = (
     if (typeof label !== 'string' || label.length === 0) {
       throw new Error(`${where}.label is required.`);
     }
-    if (type !== 'keycode' && type !== 'range') {
-      throw new Error(`${where}.type must be keycode or range.`);
+    if (type !== 'keycode' && type !== 'range' && type !== 'dropdown') {
+      throw new Error(`${where}.type must be keycode, range or dropdown.`);
     }
     if (
       !Array.isArray(content) ||
@@ -107,11 +107,20 @@ const parseTapDanceControls = (
     ) {
       throw new Error(`${where}.content must be [command, channel, id].`);
     }
+    if (type === 'dropdown' && !/^id_qmk_tapdance_[1-8]_(mode|hold_other)$/.test(content[0])) {
+      throw new Error(`${where}: only input mode and hold-on-other use dropdowns.`);
+    }
     const parsed: EraTapDanceControl = {
       label,
       type,
       content: [content[0], content[1], content[2]],
     };
+    if (type === 'dropdown') {
+      if (!Array.isArray(options) || options.length !== (content[0].endsWith('_mode') ? 3 : 2) || options.some((option, i) =>
+        !Array.isArray(option) || option.length !== 2 || typeof option[0] !== 'string' || option[1] !== i,
+      )) throw new Error(`${where}.options must name each supported value in order.`);
+      parsed.options = options as [string, number][];
+    }
     if (type === 'range') {
       if (
         !Array.isArray(options) ||

@@ -470,9 +470,20 @@ const validateCustomDefinitionContract = (
       .sort();
     invariant(
       !entry.exactMsFamily ||
-        roles.join('|') === ['dtap', 'hold', 'tap', 'term_exact', 'thold'].join('|'),
+        roles.join('|') === ['dtap', 'hold', ...(roles.includes('hold_term') ? ['hold_other', 'hold_term'] : []), ...(roles.includes('mode') ? ['mode'] : []), 'tap', 'term_exact', 'thold'].join('|'),
       `${entry.id}: ${name} controls must be its own tap, hold, dtap, thold and term_exact.`,
     );
+    if (roles.includes('mode')) {
+      const mode = controls.find(({name: command}) => command.endsWith('_mode'));
+      const h7s = entry.exactMsFamily === 'h7s';
+      invariant(mode?.type === 'dropdown' && mode.channel === (h7s ? 16 : 0) && mode.id === (h7s ? 49 : 80) + slot,
+        `${entry.id}: ${name} input mode must use its family's stock VIA address.`);
+    }
+    for (const [role, type, base] of [['hold_term', 'range', entry.exactMsFamily === 'h7s' ? 57 : 88], ['hold_other', 'dropdown', entry.exactMsFamily === 'h7s' ? 65 : 96]] as const) {
+      const control = controls.find(({name: command}) => command.endsWith(`_${role}`));
+      if (roles.includes('hold_term')) invariant(control?.type === type && control.channel === (entry.exactMsFamily === 'h7s' ? 16 : 0) && control.id === base + slot,
+        `${entry.id}: ${name} advanced timing must use its family's stock VIA address.`);
+    }
     return controls;
   });
   const menuControls = [...menuOnlyControls, ...tapDanceEntryControls.flat()];

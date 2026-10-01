@@ -24,8 +24,8 @@ import {
   getSelectedCustomMenuData,
   updateCustomMenuValue,
 } from 'src/store/menusSlice';
-import {shiftFrom16Bit} from 'src/utils/keyboard-api';
 import {
+  tapDanceWriteBytes,
   editedTapDanceChanges,
   getTapDanceSlots,
   tapDanceFieldOf,
@@ -50,7 +50,7 @@ export type TapDanceBinding = {
   read: (slot: TapDanceSlot) => TapDanceDraft | null;
   /**
    * What the user set on a slot and has not applied. It belongs to the keyboard,
-   * not to the editor, so leaving the editor keeps it until Apply writes it,
+   * not to the editor, so leaving the editor keeps it until Save writes it,
    * Cancel drops it or the keyboard disconnects.
    */
   changes: (slot: TapDanceSlot) => TapDanceChanges;
@@ -109,12 +109,12 @@ const writeForSelection = (
       write.name,
       write.channel,
       write.id,
-      ...shiftFrom16Bit(write.value),
+      ...tapDanceWriteBytes(write),
     ),
   );
 };
 
-// The values Apply has sent to a keyboard's slots and not had answered yet, kept
+// The values Save has sent to a keyboard's slots and not had answered yet, kept
 // per keyboard like its drafts, as the editor may be left and opened again
 // meanwhile. The keyboard's values show one before it is answered, so an edit that
 // sets a field to it again would otherwise read as no change, and be lost if the
@@ -136,8 +136,8 @@ const beginSending = (
   }
   const key = sendingKey(devicePath, slot);
   const entry: TapDanceChanges = {...sending.get(key)};
-  if (field === 'term') {
-    entry.term = String(write.value);
+  if (field === 'term' || field === 'holdTerm') {
+    entry[field] = String(write.value);
   } else {
     entry[field] = write.value;
   }
@@ -327,12 +327,15 @@ export const useTapDanceBinding = (
       const changed = writes.filter((item) => {
         const field = tapDanceFieldOf(slot, item.name);
         return !field || item.value !== Number(
-          field === 'term' ? current.term : current.actions[field],
+          field === 'term' || field === 'mode' || field === 'holdTerm' || field === 'holdOnOther' ? current[field] : current.actions[field],
         );
       });
+      const resultingMode = changed.find((item) => tapDanceFieldOf(slot, item.name) === 'mode')?.value ?? current.mode;
+      const resultingHold = changed.find((item) => tapDanceFieldOf(slot, item.name) === 'hold')?.value ?? current.actions.hold;
+      if (resultingMode === 2 && resultingHold !== 1) return false;
       for (const item of changed) {
         const field = tapDanceFieldOf(slot, item.name);
-        const control = field === 'term' ? slot.term : field && slot.actions[field];
+        const control = field === 'term' || field === 'mode' || field === 'holdTerm' || field === 'holdOnOther' ? slot[field] : field && slot.actions[field];
         const bounds = termBounds(slot);
         if (
           !field ||
@@ -342,9 +345,15 @@ export const useTapDanceBinding = (
           !Number.isInteger(item.value) ||
           item.value < 0 ||
           item.value > 0xffff ||
-          (field === 'term'
+          (field === 'holdTerm'
+            ? current.holdTerm === undefined
+            : field === 'holdOnOther'
+            ? current.holdOnOther === undefined || ![0, 1].includes(item.value)
+            : field === 'mode'
+            ? current.mode === undefined || ![0, 1, 2].includes(item.value)
+            : field === 'term'
             ? item.value < bounds.minMs || item.value > bounds.maxMs
-            : getDisabledReason(item.value))
+            : !(resultingMode && field !== 'tap' && item.value === 1) && getDisabledReason(item.value))
         ) {
           return false;
         }

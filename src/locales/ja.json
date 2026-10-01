@@ -840,5 +840,7 @@
   "Choose a tap key": "タップキーを選択",
   "Keyboard maker": "キーボードメーカー",
   "Keyboard": "キーボード",
-  "Find firmware": "ファームウェアを探してみましょう。"
+  "Find firmware": "ファームウェアを探してみましょう。",
+  "Update firmware to restore these Tap Dance settings.": "このタップダンス設定を復元するにはファームウェアを更新してください。",
+  "Could not import layout: invalid Tap Dance settings.": "レイアウトを読み込めません。タップダンス設定が無効です。"
 }

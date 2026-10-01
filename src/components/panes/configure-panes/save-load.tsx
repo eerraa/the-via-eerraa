@@ -156,6 +156,8 @@ export const Pane: FC = () => {
           'extra-layers': t(
             'Could not import layout: this file has more layers than this keyboard.',
           ),
+          'tap-dance-mode-unsupported': t('Update firmware to restore these Tap Dance settings.'),
+          'tap-dance-invalid': t('Could not import layout: invalid Tap Dance settings.'),
           'keyboard-not-ready': t(
             'Could not import layout: the keyboard has not finished loading.',
           ),

@@ -1083,6 +1083,9 @@ export type TapDanceSlot = {
   /** Keycode that places this TD on a key, e.g. `TD(0)`. */
   code: string;
   actions: Record<TapDanceActionRole, TapDanceCommand>;
+  mode?: TapDanceCommand;
+  holdTerm?: TapDanceCommand;
+  holdOnOther?: TapDanceCommand;
   term: (TapDanceCommand & {options?: [number, number]}) | null;
 };
 
@@ -1098,6 +1101,9 @@ export const getTapDanceSlots = (
     const prefix = `id_qmk_tapdance_${index + 1}_`;
     const actions: Partial<Record<TapDanceActionRole, TapDanceCommand>> = {};
     let term: TapDanceSlot['term'] = null;
+    let mode: TapDanceSlot['mode'];
+    let holdTerm: TapDanceSlot['holdTerm'];
+    let holdOnOther: TapDanceSlot['holdOnOther'];
     for (const control of keycode.controls ?? []) {
       const [name, channel, id] = control.content;
       if (!name.startsWith(prefix)) {
@@ -1105,8 +1111,14 @@ export const getTapDanceSlots = (
       }
       const role = name.slice(prefix.length);
       const command = {name, channel, id, label: control.label};
-      if (role === 'term_exact') {
-        term = {...command, options: control.options};
+      if (role === 'mode' && control.type === 'dropdown') {
+        mode = command;
+      } else if (role === 'hold_term' && control.type === 'range') {
+        holdTerm = command;
+      } else if (role === 'hold_other' && control.type === 'dropdown') {
+        holdOnOther = command;
+      } else if (role === 'term_exact') {
+        term = {...command, options: control.options as [number, number] | undefined};
       } else if ((TAP_DANCE_ACTION_ROLES as readonly string[]).includes(role)) {
         actions[role as TapDanceActionRole] = command;
       }
@@ -1121,11 +1133,18 @@ export const getTapDanceSlots = (
         code: `TD(${index})`,
         actions: actions as Record<TapDanceActionRole, TapDanceCommand>,
         term,
+        ...(mode ? {mode} : {}),
+        ...(holdTerm && holdOnOther ? {holdTerm, holdOnOther} : {}),
       },
     ];
   });
 
 export type TapDanceDraft = {
+  /** Undefined until the firmware confirms support; 0 keeps legacy semantics; 1 waits, 2 sends the first press immediately. */
+  mode?: number;
+  /** Zero follows term; undefined means this firmware has no advanced timing. */
+  holdTerm?: string;
+  holdOnOther?: number;
   actions: Record<TapDanceActionRole, number>;
   term: string;
 };
@@ -1146,7 +1165,7 @@ export const isValidTermDraft = (term: string, min: number, max: number) => {
 };
 
 /**
- * What Apply has to send: every action or term that differs from the keyboard's
+ * What Save has to send: every action or term that differs from the keyboard's
  * value, in slot order. Returns null when the term draft is not a whole number
  * inside the firmware range, so an invalid draft never writes anything.
  */
@@ -1158,6 +1177,7 @@ export const planTapDanceWrites = (
   getDisabledReason?: (value: number | null) => KeycodeDisabledReason | null,
 ): TapDanceWrite[] | null => {
   const writes: TapDanceWrite[] = [];
+  if (draft.mode === 2 && draft.actions.hold !== 1) return null;
   for (const role of TAP_DANCE_ACTION_ROLES) {
     if (draft.actions[role] !== current.actions[role]) {
       const value = draft.actions[role];
@@ -1165,7 +1185,7 @@ export const planTapDanceWrites = (
         !Number.isInteger(value) ||
         value < 0 ||
         value > 0xffff ||
-        getDisabledReason?.(value)
+        (!(draft.mode && role !== 'tap' && value === 1) && getDisabledReason?.(value))
       ) {
         return null;
       }
@@ -1180,14 +1200,42 @@ export const planTapDanceWrites = (
     const {name, channel, id} = slot.term;
     writes.push({name, channel, id, value: Number(draft.term)});
   }
+  if (draft.mode !== undefined && draft.mode !== current.mode) {
+    if (!slot.mode || current.mode === undefined || ![0, 1, 2].includes(draft.mode)) return null;
+    const {name, channel, id} = slot.mode;
+    const modeWrite = {name, channel, id, value: draft.mode};
+    // Leave immediate mode before writing a new first-hold action.
+    if (current.mode === 2) writes.unshift(modeWrite);
+    else writes.push(modeWrite);
+  }
+  if (draft.holdTerm !== undefined && draft.holdTerm !== current.holdTerm) {
+    if (!slot.holdTerm || current.holdTerm === undefined || !isValidTermDraft(draft.holdTerm, 0, 65535)) return null;
+    const {name, channel, id} = slot.holdTerm;
+    writes.push({name, channel, id, value: Number(draft.holdTerm)});
+  }
+  if (draft.holdOnOther !== undefined && draft.holdOnOther !== current.holdOnOther) {
+    if (!slot.holdOnOther || current.holdOnOther === undefined || ![0, 1].includes(draft.holdOnOther)) return null;
+    const {name, channel, id} = slot.holdOnOther;
+    writes.push({name, channel, id, value: draft.holdOnOther});
+  }
   return writes;
 };
 
-export type TapDanceField = TapDanceActionRole | 'term';
+/** One-byte stock VIA dropdown plus the firmware's support marker; actions/terms are BE16. */
+export const tapDanceWriteBytes = (write: TapDanceWrite): number[] =>
+  /_mode$/.test(write.name) ? [write.value, 0xd2] :
+  /_hold_other$/.test(write.name) ? [write.value, 0xd3] :
+  /_hold_term$/.test(write.name) ? [write.value >> 8, write.value & 0xff, 0xd3] :
+  [write.value >> 8, write.value & 0xff];
+
+export type TapDanceField = TapDanceActionRole | 'term' | 'mode' | 'holdTerm' | 'holdOnOther';
 
 /** What the user set on a slot and has not applied, field by field. */
 export type TapDanceChanges = Partial<Record<TapDanceActionRole, number>> & {
   term?: string;
+  mode?: number;
+  holdTerm?: string;
+  holdOnOther?: number;
 };
 
 /** A slot's values with its unapplied changes in place. */
@@ -1202,6 +1250,11 @@ export const withTapDanceChanges = (
     ]),
   ) as TapDanceDraft['actions'],
   term: changes.term ?? current.term,
+  ...(current.mode !== undefined ? {mode: changes.mode ?? current.mode} : {}),
+  ...(current.holdTerm !== undefined ? {
+    holdTerm: changes.holdTerm ?? current.holdTerm,
+    holdOnOther: changes.holdOnOther ?? current.holdOnOther,
+  } : {}),
 });
 
 /** The changes that still differ from what the keyboard holds. */
@@ -1219,6 +1272,9 @@ export const pendingTapDanceChanges = (
   if (changes.term !== undefined && changes.term !== current.term) {
     pending.term = changes.term;
   }
+  if (changes.mode !== undefined && changes.mode !== current.mode) pending.mode = changes.mode;
+  if (changes.holdTerm !== undefined && changes.holdTerm !== current.holdTerm) pending.holdTerm = changes.holdTerm;
+  if (changes.holdOnOther !== undefined && changes.holdOnOther !== current.holdOnOther) pending.holdOnOther = changes.holdOnOther;
   return pending;
 };
 
@@ -1254,6 +1310,12 @@ export const editedTapDanceChanges = (
   ) {
     edited.term = term;
   }
+  if (next.mode !== undefined && (next.mode === previous.mode ||
+      next.mode === sending.mode || next.mode !== current.mode)) edited.mode = next.mode;
+  if (next.holdTerm !== undefined && (next.holdTerm === previous.holdTerm ||
+      next.holdTerm === sending.holdTerm || next.holdTerm !== current.holdTerm)) edited.holdTerm = next.holdTerm;
+  if (next.holdOnOther !== undefined && (next.holdOnOther === previous.holdOnOther ||
+      next.holdOnOther === sending.holdOnOther || next.holdOnOther !== current.holdOnOther)) edited.holdOnOther = next.holdOnOther;
   return edited;
 };
 
@@ -1262,8 +1324,33 @@ export const tapDanceFieldOf = (
   slot: TapDanceSlot,
   command: string,
 ): TapDanceField | null =>
+  slot.holdTerm?.name === command ? 'holdTerm' :
+  slot.holdOnOther?.name === command ? 'holdOnOther' :
+  slot.mode?.name === command ? 'mode' :
   slot.term?.name === command
     ? 'term'
     : (TAP_DANCE_ACTION_ROLES.find(
         (role) => slot.actions[role].name === command,
       ) ?? null);
+
+/** KC_TRNS inherits the base action in the new modes; KC_NO is explicit silence. */
+export const tapDanceVisibleRoles = (draft: TapDanceDraft): TapDanceActionRole[] =>
+  draft.mode === undefined ? [...TAP_DANCE_ACTION_ROLES] : TAP_DANCE_ACTION_ROLES.filter(
+    (role) => role === 'tap' || (draft.mode === 0
+      ? draft.actions[role] !== 0 && draft.actions[role] !== 1
+      : draft.actions[role] !== 1),
+  );
+
+export const tapDanceImmediate = (draft: TapDanceDraft): boolean =>
+  draft.mode === 2 || (draft.mode === 1 && tapDanceVisibleRoles(draft).length === 1);
+
+/** Opening a legacy slot never migrates it; an explicit edit stages the conversion. */
+export const editTapDanceBehavior = (
+  draft: TapDanceDraft, next: TapDanceChanges,
+): TapDanceChanges => draft.mode === 0 ? {
+  mode: 1,
+  ...Object.fromEntries((['hold', 'dtap', 'thold'] as const).map((role) =>
+    [role, draft.actions[role] === 0 ? 1 : draft.actions[role]],
+  )),
+  ...next,
+} : next;

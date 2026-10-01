@@ -840,5 +840,7 @@
   "Choose a tap key": "Elige una tecla de toque",
   "Keyboard maker": "Fabricante del teclado",
   "Keyboard": "Teclado",
-  "Find firmware": "Busca el firmware."
+  "Find firmware": "Busca el firmware.",
+  "Update firmware to restore these Tap Dance settings.": "Actualiza el firmware para restaurar estos ajustes de Tap Dance.",
+  "Could not import layout: invalid Tap Dance settings.": "No se pudo importar el diseño: ajustes de Tap Dance no válidos."
 }

@@ -55,5 +55,14 @@ export const readTapDanceDraft = (
       termBounds.maxMs > 255 ? shiftTo16Bit([value[0], value[1] ?? 0]) : value[0],
     );
   }
-  return {actions, term};
+  const response = slot.mode ? bytes(slot.mode.name) : null;
+  const mode = response && response[1] === 0xd2 && [0, 1, 2].includes(response[0])
+    ? response[0] : undefined;
+  const hold = slot.holdTerm ? bytes(slot.holdTerm.name) : null;
+  const other = slot.holdOnOther ? bytes(slot.holdOnOther.name) : null;
+  const timing = mode !== undefined && response?.[2] === 0xd3 &&
+    hold?.[2] === 0xd3 && other?.[1] === 0xd3 && [0, 1].includes(other[0]);
+  return {actions, term, ...(mode !== undefined ? {mode} : {}), ...(timing ? {
+    holdTerm: String(shiftTo16Bit([hold![0], hold![1]])), holdOnOther: other![0],
+  } : {})};
 };

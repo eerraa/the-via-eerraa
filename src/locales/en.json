@@ -840,5 +840,7 @@
   "Choose a tap key": "Choose a tap key",
   "Keyboard maker": "Keyboard maker",
   "Keyboard": "Keyboard",
-  "Find firmware": "Find firmware."
+  "Find firmware": "Find firmware.",
+  "Update firmware to restore these Tap Dance settings.": "Update firmware to restore these Tap Dance settings.",
+  "Could not import layout: invalid Tap Dance settings.": "Could not import layout: invalid Tap Dance settings."
 }
