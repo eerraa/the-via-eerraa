@@ -8,6 +8,7 @@ import {
   type KeyboardDefinitionV3,
   type VIADefinitionV3,
 } from '@the-via/reader';
+import {eraAdvancedEntry} from '../src/utils/era-advanced-metadata';
 import {
   isTapDanceKeycodeName,
   parseEraV3Definition,
@@ -18,14 +19,24 @@ import {
   isLegacyTermCommand,
 } from '../src/utils/era-exact-ms';
 import {EXACT_TAPPING_TERM_BOUNDS} from '../src/utils/millisecond-field';
+import {validateFirmwareCatalogAt} from './validate-firmware-catalog';
 
 type ExactMsFamily = 'qmk' | 'h7s';
+
+type UsbIdentity = {
+  vendorId: string;
+  productId: string;
+};
 
 type DefinitionEntry = {
   id: string;
   path: string;
   vendorId: string;
   productId: string;
+  /** More identities served by the same JSON: one board sold under several makers. */
+  identities?: UsbIdentity[];
+  /** Frozen definition for the identity older firmware still reports (ADR 0004 §2). */
+  legacy?: UsbIdentity & {path: string};
   pair?: string;
   stateSync: boolean;
   usbDiagnostics?: boolean;
@@ -56,6 +67,8 @@ type DefinitionIndex = {
 
 type CompiledDefinition = {
   entry: DefinitionEntry;
+  /** The JSON's own identity, a declared extra identity, or the legacy definition. */
+  served: 'primary' | 'extra' | 'legacy';
   raw: KeyboardDefinitionV3;
   via: EraVIADefinitionV3;
 };
@@ -79,6 +92,7 @@ const externalManifestPath = path.join(
 const definitionsOutputPath = path.join(projectRoot, 'public', 'definitions');
 const eraDefinitionsRoot = path.join(projectRoot, 'era-definitions');
 const customDefinitionsRoot = path.join(eraDefinitionsRoot, 'custom', 'v3');
+const legacyDefinitionsRoot = path.join(eraDefinitionsRoot, 'legacy', 'v3');
 const externalDefinitionsRoot = path.join(eraDefinitionsRoot, 'external', 'v3');
 const officialBuilderPath = path.join(
   projectRoot,
@@ -152,6 +166,32 @@ function validateManifest(value: unknown): asserts value is DefinitionManifest {
       isHexId(definition.productId),
       `${definition.id}.productId is invalid.`,
     );
+    invariant(
+      definition.identities === undefined ||
+        (Array.isArray(definition.identities) &&
+          definition.identities.length > 0 &&
+          definition.identities.every(
+            (identity) =>
+              isRecord(identity) &&
+              isHexId(identity.vendorId) &&
+              isHexId(identity.productId),
+          )),
+      `${definitionId}.identities is invalid.`,
+    );
+    if (definition.legacy !== undefined) {
+      const legacy = definition.legacy;
+      invariant(isRecord(legacy), `${definitionId}.legacy must be an object.`);
+      validateRelativePath(legacy.path, `${definitionId}.legacy.path`);
+      invariant(
+        legacy.path.startsWith('era-definitions/legacy/v3/') &&
+          /\.json$/i.test(legacy.path),
+        `${definitionId}.legacy.path must point to a JSON file under era-definitions/legacy/v3.`,
+      );
+      invariant(
+        isHexId(legacy.vendorId) && isHexId(legacy.productId),
+        `${definitionId}.legacy identity is invalid.`,
+      );
+    }
     invariant(
       definition.pair === undefined ||
         (typeof definition.pair === 'string' && definition.pair.length > 0),
@@ -328,6 +368,20 @@ const resolveCustomDefinitionPath = async (entry: DefinitionEntry) => {
   return currentPath;
 };
 
+const resolveLegacyDefinitionPath = async (
+  entry: DefinitionEntry & {legacy: {path: string}},
+) => {
+  const label = `${entry.id}.legacy.path`;
+  const legacyPath = await resolveRepoPath(entry.legacy.path, label);
+  assertUnderRoot(
+    legacyPath,
+    legacyDefinitionsRoot,
+    label,
+    'era-definitions/legacy/v3',
+  );
+  return legacyPath;
+};
+
 const resolveExternalDefinitionPath = async (
   entry: ExternalDefinitionEntry,
 ) => {
@@ -389,7 +443,39 @@ const validateCustomDefinitionContract = (
   entry: DefinitionEntry,
   customRaw: Record<string, unknown>,
 ) => {
-  const menuControls = collectMenuControls(customRaw.menus);
+  // Custom JSON keeps Tap Dance settings on each TD keycode (the app edits them
+  // from KEYMAP). A TAPDANCE menu row here would be a second copy of the same
+  // Custom Value, so it is rejected; the stock JSON in the firmware repository is
+  // where the official-VIA TAPDANCE menu lives.
+  const menuOnlyControls = collectMenuControls(customRaw.menus);
+  invariant(
+    !menuOnlyControls.some(({name}) => name.startsWith('id_qmk_tapdance_')),
+    `${entry.id}: Tap Dance controls belong on tapdanceKeycodes[].controls, not in menus.`,
+  );
+  const tapDanceEntries = Array.isArray(customRaw.tapdanceKeycodes)
+    ? customRaw.tapdanceKeycodes
+    : [];
+  const tapDanceEntryControls = tapDanceEntries.map((tapDanceEntry) => {
+    const name = keycodeName(tapDanceEntry);
+    const slot = Number(name.slice(2));
+    const controls = collectMenuControls(
+      isRecord(tapDanceEntry) ? tapDanceEntry.controls : undefined,
+    );
+    const roles = controls
+      .map(({name: command}) =>
+        command.startsWith(`id_qmk_tapdance_${slot + 1}_`)
+          ? command.slice(`id_qmk_tapdance_${slot + 1}_`.length)
+          : `foreign:${command}`,
+      )
+      .sort();
+    invariant(
+      !entry.exactMsFamily ||
+        roles.join('|') === ['dtap', 'hold', 'tap', 'term_exact', 'thold'].join('|'),
+      `${entry.id}: ${name} controls must be its own tap, hold, dtap, thold and term_exact.`,
+    );
+    return controls;
+  });
+  const menuControls = [...menuOnlyControls, ...tapDanceEntryControls.flat()];
   const customTerms = menuControls.filter(
     ({name}) => isExactTermCommand(name) || isLegacyTermCommand(name),
   );
@@ -519,18 +605,25 @@ const validateCustomDefinitionContract = (
   );
 };
 
-const compileDefinition = async (
+const compileServedDefinition = (
   entry: DefinitionEntry,
-): Promise<CompiledDefinition> => {
-  const definitionPath = await resolveCustomDefinitionPath(entry);
-  const raw = await readDefinitionJSON(definitionPath, `${entry.id}.path`);
+  raw: Record<string, unknown>,
+  identity: UsbIdentity,
+  served: CompiledDefinition['served'],
+): CompiledDefinition => {
+  const label =
+    served === 'primary'
+      ? entry.id
+      : served === 'legacy'
+        ? `${entry.id} legacy`
+        : `${entry.id} ${identity.vendorId}:${identity.productId}`;
   invariant(
-    String(raw.vendorId).toLowerCase() === entry.vendorId.toLowerCase(),
-    `${entry.id}: vendorId does not match the manifest.`,
+    String(raw.vendorId).toLowerCase() === identity.vendorId.toLowerCase(),
+    `${label}: vendorId does not match the manifest.`,
   );
   invariant(
-    String(raw.productId).toLowerCase() === entry.productId.toLowerCase(),
-    `${entry.id}: productId does not match the manifest.`,
+    String(raw.productId).toLowerCase() === identity.productId.toLowerCase(),
+    `${label}: productId does not match the manifest.`,
   );
   validateCustomDefinitionContract(entry, raw);
 
@@ -538,18 +631,53 @@ const compileDefinition = async (
   try {
     via = parseEraV3Definition(raw);
   } catch (error) {
-    throw new Error(`${entry.id}: VIA V3 validation failed.`, {cause: error});
+    throw new Error(`${label}: VIA V3 validation failed.`, {cause: error});
   }
 
   const expectedVendorProductId = vendorProductId(
-    entry.vendorId,
-    entry.productId,
+    identity.vendorId,
+    identity.productId,
   );
   invariant(
     via.vendorProductId === expectedVendorProductId,
-    `${entry.id}: generated VPID ${via.vendorProductId} does not match ${expectedVendorProductId}.`,
+    `${label}: generated VPID ${via.vendorProductId} does not match ${expectedVendorProductId}.`,
   );
-  return {entry, raw: raw as KeyboardDefinitionV3, via};
+  return {entry, served, raw: raw as KeyboardDefinitionV3, via};
+};
+
+// One canonical JSON can serve several identities; each emitted overlay carries
+// the identity it is served under. A legacy identity is served by its own frozen
+// JSON, because older firmware lacks commands the current definition reads.
+const compileDefinition = async (
+  entry: DefinitionEntry,
+): Promise<CompiledDefinition[]> => {
+  const definitionPath = await resolveCustomDefinitionPath(entry);
+  const raw = await readDefinitionJSON(definitionPath, `${entry.id}.path`);
+  const compiled = [compileServedDefinition(entry, raw, entry, 'primary')];
+  for (const identity of entry.identities ?? []) {
+    compiled.push(
+      compileServedDefinition(
+        entry,
+        {...raw, vendorId: identity.vendorId, productId: identity.productId},
+        identity,
+        'extra',
+      ),
+    );
+  }
+  if (entry.legacy) {
+    const legacyPath = await resolveLegacyDefinitionPath({
+      ...entry,
+      legacy: entry.legacy,
+    });
+    const legacyRaw = await readDefinitionJSON(
+      legacyPath,
+      `${entry.id}.legacy.path`,
+    );
+    compiled.push(
+      compileServedDefinition(entry, legacyRaw, entry.legacy, 'legacy'),
+    );
+  }
+  return compiled;
 };
 
 const compileExternalDefinition = async (
@@ -615,11 +743,13 @@ const pairComparableDefinition = (definition: KeyboardDefinitionV3) => {
 };
 
 const validatePairs = (definitions: CompiledDefinition[]) => {
+  // Halves pair per served identity: the two current halves, the two legacy halves.
   const pairs = definitions.reduce<Record<string, CompiledDefinition[]>>(
     (acc, definition) => {
       const pair = definition.entry.pair;
       if (pair) {
-        acc[pair] = [...(acc[pair] ?? []), definition];
+        const key = `${pair} ${definition.served} ${String(definition.raw.vendorId).toLowerCase()}`;
+        acc[key] = [...(acc[key] ?? []), definition];
       }
       return acc;
     },
@@ -813,9 +943,11 @@ const writeEraOverlay = async (
   baseIndex: DefinitionIndex,
   externalDefinitions: CompiledExternalDefinition[],
 ) => {
-  const definitions = await Promise.all(
-    manifest.definitions.map((entry) => compileDefinition(entry)),
-  );
+  const definitions = (
+    await Promise.all(
+      manifest.definitions.map((entry) => compileDefinition(entry)),
+    )
+  ).flat();
   validatePairs(definitions);
 
   const eraIds = new Set<number>();
@@ -898,19 +1030,19 @@ const writeEraOverlay = async (
     path.join(definitionsOutputPath, 'era_advanced.json'),
     JSON.stringify({
       schemaVersion: 2,
-      definitions: definitions.map(({entry, via}) => ({
-        id: entry.id,
-        vendorProductId: via.vendorProductId,
-        stateSync: entry.stateSync === true,
-        usbDiagnostics: entry.usbDiagnostics === true,
-        exactMsFamily: entry.exactMsFamily ?? null,
-      })),
+      definitions: definitions.map(({entry, via}) =>
+        eraAdvancedEntry(entry, via.vendorProductId),
+      ),
     }),
   );
 
   for (const definition of definitions) {
     console.log(
-      `Added ERA definition ${definition.entry.id}: ${definition.via.vendorProductId} (${definition.entry.path})`,
+      `Added ERA definition ${definition.entry.id}: ${definition.via.vendorProductId} (${
+        definition.served === 'legacy'
+          ? definition.entry.legacy?.path
+          : definition.entry.path
+      }${definition.served === 'extra' ? ', extra identity' : ''})`,
     );
   }
   return {definitions, mergedIndex};
@@ -1053,6 +1185,21 @@ const validateSourceInventory = async (
     `Custom definition manifest/source inventory differs: expected ${expected.length}, found ${actual.length}.`,
   );
 
+  const expectedLegacy = manifest.definitions
+    .flatMap(({legacy}) => (legacy ? [legacy.path.replaceAll('\\', '/')] : []))
+    .sort();
+  const actualLegacy = (await pathExists(legacyDefinitionsRoot))
+    ? (await listJSONFilesRecursively(legacyDefinitionsRoot))
+        .map((filePath) =>
+          path.relative(projectRoot, filePath).replaceAll('\\', '/'),
+        )
+        .sort()
+    : [];
+  invariant(
+    expectedLegacy.join('|') === actualLegacy.join('|'),
+    `Legacy definition manifest/source inventory differs: expected ${expectedLegacy.length}, found ${actualLegacy.length}.`,
+  );
+
   const expectedExternal = externalManifest.definitions.map(
     ({path: definitionPath}) => definitionPath.replaceAll('\\', '/'),
   );
@@ -1095,6 +1242,13 @@ const main = async () => {
     loadExternalManifest(),
   ]);
   await validateSourceInventory(manifest, externalManifest);
+  // The firmware catalog deploys with the app, so a broken entry fails here
+  // rather than as a dead download link (ADR 0004 §5).
+  const catalogErrors = await validateFirmwareCatalogAt(projectRoot);
+  invariant(
+    catalogErrors.length === 0,
+    ['Firmware catalog is invalid:', ...catalogErrors].join('\n'),
+  );
   await validateForbiddenOutputsAbsent();
   await rm(definitionsOutputPath, {recursive: true, force: true});
   await mkdir(definitionsOutputPath, {recursive: true});

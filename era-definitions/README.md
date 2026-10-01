@@ -6,6 +6,7 @@ JSON을 서로 다른 namespace에 보관한다.
 | 정의 종류       | canonical source                          |
 | --------------- | ----------------------------------------- |
 | ERA 커스텀 V3   | 이 저장소의 `era-definitions/custom/v3`   |
+| 이전 식별자용 동결 V3 | 이 저장소의 `era-definitions/legacy/v3` (수정 금지) |
 | 관리 외부 순정 V3 | 이 저장소의 `era-definitions/external/v3` |
 | 공식 VIA V3     | `the-via/keyboards` 저장소의 `v3/`        |
 
@@ -48,6 +49,11 @@ RP2040 변형만 해당 capability를 선언한다.
 
 ## 커스텀 JSON 수정
 
+- 정의는 메이커 식별자(ADR 0004)를 쓴다. 여러 메이커가 파는 보드는 한 JSON을
+  manifest `identities`로 여러 식별자에 쓰고, build가 식별자마다 overlay를 낸다.
+- 이전 식별자(`0x4552`)는 manifest `legacy`가 가리키는 `era-definitions/legacy/v3`의
+  동결 JSON으로 인식한다. 이 트리는 이전 펌웨어가 나온 그대로이므로 고치지 않는다.
+  현재 작업은 `custom/v3`에만 한다.
 - QMK exact `options`는 `[1, 65535]`다.
 - H7S exact `options`는 `[100, 500]`을 유지한다.
 - VID/PID, legacy/exact command 주소, 레이아웃을 바꾸면 공식 source와 관련 firmware의

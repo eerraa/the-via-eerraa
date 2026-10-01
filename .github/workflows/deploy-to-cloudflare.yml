@@ -54,6 +54,7 @@ jobs:
       - name: Verify build output
         run: |
           test -f dist/index.html
+          test -f dist/firmware-app.html
           test -f dist/404.html
           test -f dist/_redirects
           test -f dist/_headers
@@ -61,8 +62,9 @@ jobs:
           test -f dist/definitions/era_advanced.json
           era_count=$(find dist/definitions/era/v3 -type f -name '*.json' | wc -l)
           src_count=$(find era-definitions/custom/v3 -type f -iname '*.json' | wc -l)
-          echo "ERA overlay files: $era_count (canonical sources: $src_count)"
-          test "$era_count" -eq "$src_count"
+          expected_era_count=$(node -e 'const {definitions} = require("./config/era-definitions.manifest.json"); console.log(definitions.reduce((count, entry) => count + 1 + (entry.identities?.length ?? 0) + (entry.legacy ? 1 : 0), 0));')
+          echo "ERA overlay files: $era_count (manifest identities: $expected_era_count, canonical sources: $src_count)"
+          test "$era_count" -eq "$expected_era_count"
           bundled_count=$(find dist/definitions/v3 -type f -name '*.json' | wc -l)
           snapshot_count=$(find node_modules/via-keyboards/v3 -type f -name '*.json' | wc -l)
           external_count=$(find era-definitions/external/v3 -type f -iname '*.json' | wc -l)

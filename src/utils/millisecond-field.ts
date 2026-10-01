@@ -62,24 +62,12 @@ export function canApplyMillisecondDraft(
   return parsed.ok && parsed.valueMs !== authoritativeMs;
 }
 
-export function parseFailureMessage(reason: MillisecondParseFailure): string {
-  switch (reason) {
-    case 'empty':
-      return 'Enter an integer';
-    case 'decimal':
-      return 'Fractional milliseconds are not accepted.';
-    case 'nan':
-      return 'Value is not an integer.';
-    case 'out_of_range':
-      return 'Out of range';
-  }
-}
-
 export type MillisecondCommitState = {
   authoritativeMs: number;
   draft: string;
   inFlight: boolean;
-  error: string | null;
+  /** Why the last draft was not written. */
+  error: MillisecondParseFailure | null;
 };
 
 export async function commitMillisecondDraft(
@@ -99,7 +87,7 @@ export async function commitMillisecondDraft(
     return {
       next: {
         ...state,
-        error: parseFailureMessage(parsed.reason),
+        error: parsed.reason,
       },
       wrote: false,
     };

@@ -2,6 +2,8 @@ export type ExactMsFamily = 'qmk' | 'h7s';
 
 type EraAdvancedEntry = {
   id: string;
+  /** What a saved layout belongs to: the id, or the pair a split half is part of. */
+  board?: string;
   vendorProductId: number;
   stateSync: boolean;
   usbDiagnostics?: boolean;
@@ -20,6 +22,28 @@ let loadPromise: Promise<EraAdvancedMetadata> | null = null;
 const emptyMetadata = (): EraAdvancedMetadata => ({
   schemaVersion: 2,
   definitions: [],
+});
+
+/**
+ * The entry the build writes for one identity a manifest definition is served
+ * under. Both halves of a split keyboard get their pair as `board`.
+ */
+export const eraAdvancedEntry = (
+  definition: {
+    id: string;
+    pair?: string;
+    stateSync: boolean;
+    usbDiagnostics?: boolean;
+    exactMsFamily?: ExactMsFamily;
+  },
+  vendorProductId: number,
+): EraAdvancedEntry => ({
+  id: definition.id,
+  board: definition.pair ?? definition.id,
+  vendorProductId,
+  stateSync: definition.stateSync === true,
+  usbDiagnostics: definition.usbDiagnostics === true,
+  exactMsFamily: definition.exactMsFamily ?? null,
 });
 
 export const setEraAdvancedMetadataForTesting = (
@@ -81,6 +105,23 @@ export const isEraBundledDefinition = (vendorProductId: number) => {
   return metadata.definitions.some(
     (entry) => entry.vendorProductId === vendorProductId,
   );
+};
+
+/**
+ * Whether two identities are the same ERA board: the one its JSON is served under,
+ * another maker's identity for it, the identity its older firmware reported, or
+ * the other half of a split keyboard. The build gives all of them one `board`.
+ */
+export const isSameEraBoard = (left: number, right: number) => {
+  const definitions = getEraAdvancedMetadataSync()?.definitions ?? [];
+  const boardOf = (vendorProductId: number) => {
+    const entry = definitions.find(
+      (item) => item.vendorProductId === vendorProductId,
+    );
+    return entry && (entry.board ?? entry.id);
+  };
+  const board = boardOf(left);
+  return board !== undefined && board === boardOf(right);
 };
 
 export const loadEraAdvancedMetadata = async () => {
