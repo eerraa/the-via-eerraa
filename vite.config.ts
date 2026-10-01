@@ -4,6 +4,10 @@ import path from 'path';
 import {splitVendorChunkPlugin} from 'vite';
 import {createHtmlPlugin} from 'vite-plugin-html';
 import fs from 'fs';
+import {
+  FIRMWARE_SHARE_PAGE,
+  toFirmwareSharePage,
+} from './scripts/firmware-share-page';
 
 const hash = fs.readFileSync('public/definitions/hash.json', 'utf8');
 
@@ -19,6 +23,19 @@ export default defineConfig({
       },
     }),
     splitVendorChunkPlugin(),
+    {
+      // The /firmware routes are rewritten to this copy of the shell, which
+      // carries the firmware title and description for chat link previews.
+      name: 'firmware-share-page',
+      apply: 'build',
+      closeBundle() {
+        const index = fs.readFileSync(path.join('dist', 'index.html'), 'utf8');
+        fs.writeFileSync(
+          path.join('dist', FIRMWARE_SHARE_PAGE),
+          toFirmwareSharePage(index),
+        );
+      },
+    },
   ],
   assetsInclude: ['**/*.glb'],
   envDir: '.',

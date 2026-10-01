@@ -1,8 +1,9 @@
 # ERA VIA fork - Cloudflare Pages / Netlify route rewrites.
 #
-# The app is a wouter SPA whose routes are declared in src/utils/pane-config.ts
-# and src/components/panes/errors.tsx. Only those paths are rewritten to
-# index.html so that a deep link keeps working after a full page load.
+# The app is a wouter SPA whose routes are declared in src/utils/pane-config.ts,
+# src/components/panes/errors.tsx and src/utils/firmware-route.ts. Only those
+# paths are rewritten to index.html so that a deep link keeps working after a
+# full page load.
 #
 # A wildcard rule (/* /index.html 200) is deliberately NOT used. The definition
 # loader in src/utils/device-store.ts relies on a real 404 for a missing
@@ -22,3 +23,14 @@
 /debug     /  200
 /console   /  200
 /errors    /  200
+
+# Firmware downloads: /firmware, /firmware/<maker>, /firmware/<maker>/<board>
+# and the short /firmware/<board>. They rewrite to /firmware-app, the build's copy
+# of the shell (scripts/firmware-share-page.ts) whose head carries the firmware
+# title and description: a chat link preview reads only that head. The rewrite
+# keeps the requested URL, which the app reads. Rules apply before static files,
+# so the firmware paths cannot be served as separate HTML files instead.
+# Release ZIPs are served from /firmware-files/, outside this prefix, so a file
+# request can never be answered with the app shell.
+/firmware    /firmware-app  200
+/firmware/*  /firmware-app  200
