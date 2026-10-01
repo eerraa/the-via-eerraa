@@ -19,6 +19,13 @@ import {
 } from 'src/store/settingsSlice';
 import {getDarkenedColor} from 'src/utils/color-math';
 import {OVERRIDE_HID_CHECK} from 'src/utils/override';
+import {isFirmwarePath} from 'src/utils/firmware-route';
+import {
+  keyboardAreaHeight,
+  KeyboardAreaContext,
+  KeyboardAreaStyle,
+  useKeyboardAreaHeight,
+} from 'src/utils/keyboard-area';
 import {useSize} from 'src/utils/use-size';
 import styled from 'styled-components';
 import {useLocation} from 'wouter';
@@ -93,26 +100,32 @@ export const CanvasRouter = () => {
   const hideCanvasScene =
     !showAuthorizeButton ||
     ['/settings', '/errors', '/console'].includes(path) ||
+    isFirmwarePath(path) ||
     hideDesignScene ||
     hideConfigureScene;
   const configureKeyboardIsSelectable = useAppSelector(
     getConfigureKeyboardIsSelectable,
   );
   const hideTerrainBG = showLoader;
+  const keyboardAreaPx = useKeyboardAreaHeight(dimensions?.width);
 
   return (
     <>
+      <KeyboardAreaStyle $height={keyboardAreaPx} $scrollPage={!hideCanvasScene} />
       <div
         style={{
-          height: 500,
+          height: keyboardAreaHeight,
+          flex: 'none',
           width: '100%',
           top: 0,
           transform: hideCanvasScene
             ? !hideTerrainBG
-              ? 'translateY(-500px)'
+              ? `translateY(calc(-1 * ${keyboardAreaHeight}))`
               : !dimensions
               ? ''
-              : `translateY(${-300 + dimensions!.height / 2}px)`
+              : `translateY(calc(${
+                  dimensions!.height / 2 - 50
+                }px - ${keyboardAreaHeight} / 2))`
             : '',
           position: hideCanvasScene && !hideTerrainBG ? 'absolute' : 'relative',
           overflow: 'visible',
@@ -125,20 +138,19 @@ export const CanvasRouter = () => {
         }}
         ref={containerRef}
       >
-        {hideCanvasScene ? null : (
-          <>
-            <KeyboardBG
-              onClick={terrainOnClick}
-              $color={accentColor}
-              $visible={!hideTerrainBG}
-            />
-            <KeyboardGroup
-              containerDimensions={containerDimensions}
-              configureKeyboardIsSelectable={configureKeyboardIsSelectable}
-              loadProgress={loadProgress}
-            />
-          </>
-        )}
+        <KeyboardBG
+          onClick={terrainOnClick}
+          $color={accentColor}
+          $visible={!hideTerrainBG}
+        />
+        {/* Hidden routes keep their frames so navigation cannot resize the area. */}
+        <KeyboardAreaContext.Provider value={true}>
+          <KeyboardGroup
+            containerDimensions={containerDimensions}
+            configureKeyboardIsSelectable={configureKeyboardIsSelectable}
+            loadProgress={loadProgress}
+          />
+        </KeyboardAreaContext.Provider>
       </div>
     </>
   );

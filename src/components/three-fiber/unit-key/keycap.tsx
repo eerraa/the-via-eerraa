@@ -383,6 +383,17 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
     pressedState === KeycapState.Pressed
       ? [zDown, rotation[2]]
       : [zUp, rotation[2] + Math.PI * Number(shouldRotate)];
+  const keyboardHover = mode === DisplayMode.Configure && hovered && !selected;
+  const hoverGlow = useSpring({
+    config: {duration: 500},
+    from: {brightness: keyboardHover ? 0.75 : 1},
+    to: {brightness: keyboardHover ? 1.25 : 1},
+    reset: keyboardHover,
+    immediate: !keyboardHover,
+  });
+  const hoverColor = hoverGlow.brightness.to((brightness) =>
+    new THREE.Color('lightgrey').multiplyScalar(brightness).getStyle(),
+  );
   const wasPressed = keyState === TestKeyState.KeyUp;
   const keycapColor =
     DisplayMode.Test === mode
@@ -396,8 +407,8 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
       : 'lightgrey';
 
   const {z, b, rotateZ, tooltipScale} = useSpring({
-    config: {duration: 100},
-    z: keycapZ,
+    config: {duration: mode === DisplayMode.Configure ? 200 : 100},
+    z: keyboardHover ? zDown - 8 : keycapZ,
     b: keycapColor,
     rotateZ: rotationZ,
     tooltipScale: !hovered ? 0 : 1,
@@ -455,7 +466,10 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
         onPointerOut={meshOnPointerOut}
         geometry={keycapGeometry}
       >
-        <AniMeshMaterial attach="material" color={selected ? glow.y : b}>
+        <AniMeshMaterial
+          attach="material"
+          color={selected ? glow.y : mode === DisplayMode.Configure ? hoverColor : b}
+        >
           <canvasTexture
             ref={textureRef as any}
             attach="map"

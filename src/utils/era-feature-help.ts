@@ -1,41 +1,114 @@
 // Short help for the ERA firmware's own menus.
 //
-// Every entry is keyed off a command name the ERA firmware defines, never off a menu
-// label. Labels are free text that an ordinary VIA definition could also use, whereas
-// these command ids only exist in ERA firmware, so an unrelated keyboard with a menu
-// called "TAPPING" never picks up text written about a different implementation.
+// It is shown only for a keyboard opened through the app's own ERA definition, and the
+// callers check that, not the command name: VIA's shared lighting menus use the same
+// `id_qmk_rgblight_*` and `id_qmk_rgb_matrix_*` ids as the ERA firmware. Within an ERA
+// definition, an entry is picked by command name rather than by label, so the H7S and
+// the RP2040 spelling of one menu get the same text.
 //
-// Voice: the summary names the setting, it does not narrate it — "Enters the bootloader
-// when switched on", not "Puts the keyboard into bootloader mode so that you can flash
-// firmware onto it". The detail says what happens when the setting is on and when it is
-// off, and stops there. Explaining what the feature *is* in the abstract is what made
-// the first version of this text too long to read on the screen it appears on.
+// Voice, kept minimal on purpose. The summary names the setting, it does not narrate
+// it — "Restarts the keyboard into the bootloader". The detail is a few short paragraphs
+// of user-visible behaviour and which way to move a value, nothing about how the
+// firmware does it and nothing the screen already shows. Named choices are a list of
+// name and one sentence, so they can be compared at a glance; the shipped default is
+// only a mark on that list. What a reader does not need in order to set the value —
+// a switch's default, a sentence describing the screen, generic advice — is left out.
 //
 // Where the firmware's own user guide is thin or wrong — KKUK and the three tapping
 // switches — the text comes from reading the firmware instead: `port/kkuk.c`,
 // `port/debounce_profile.c` with the algorithms under `quantum/debounce/`, and
 // `port/tapping_term.c` on top of stock `action_tapping.c`.
 
-export type EraFeatureHelp = {
+/** One named option, compared side by side with its neighbours. */
+export type EraHelpChoice = {
+  /** The option exactly as the dropdown names it (option labels are not translated). */
+  name: string;
+  /** One sentence: what picking it does. */
+  text: string;
+};
+
+/** What a disclosure shows when it opens. Every part is optional. */
+export type EraHelpContent = {
+  /** Short paragraphs, each one or two sentences. */
+  detail?: readonly string[];
+  choices?: readonly EraHelpChoice[];
+  /** The choice the keyboard ships with; it is marked on the list. */
+  defaultChoice?: string;
+};
+
+export type EraFeatureHelp = EraHelpContent & {
   /** One line, always visible above the controls. Names the setting, does not narrate it. */
   summary: string;
-  /** Shown when the reader opens the disclosure. Omit when the summary is the whole answer. */
-  detail?: string;
 };
+
+export const hasHelpBody = (content: EraHelpContent) =>
+  !!(content.detail?.length || content.choices?.length);
 
 // The SOCD menu is the same feature under two command families: H7S firmware names it
 // `id_qmk_kill_switch_*`, the RP2040 firmware `id_qmk_socd_*`. One object, two prefixes,
 // so the two families cannot drift apart into two different explanations.
 const SOCD_HELP: EraFeatureHelp = {
   summary: 'Resolves simultaneous input between two opposing keys.',
-  detail:
-    'A normal keyboard can report opposing keys such as A and D at the same time. With SOCD enabled, the key pressed later takes priority while both are held. Releasing it restores the key that is still physically held. This is mainly useful when a game needs unambiguous directional input.',
+  detail: [
+    'While both keys of a pair are held, Mode decides which one is sent.',
+    'Keys sent by Tap Dance or macros count too. Two pairs that share a key do not work.',
+  ],
 };
 
-const RGB_INDICATOR_HELP: EraFeatureHelp = {
-  summary: 'LED for Caps Lock, Scroll Lock and Num Lock.',
-  detail:
-    'Choose which lock each indicator follows, then set its brightness and colour. While that lock is on, the indicator display takes priority on that LED.',
+// The Mode choices are names that have to be compared, so each Mode row lists them.
+const SOCD_SHARED_CHOICES: readonly EraHelpChoice[] = [
+  {
+    name: 'Last Input',
+    text: 'The key pressed later wins; releasing it brings the other back.',
+  },
+  {name: 'Neutral', text: 'Neither key is sent.'},
+  {name: 'First Input', text: 'The key pressed first wins.'},
+];
+const SOCD_LEFT_RIGHT_MODE_HELP: EraHelpContent = {
+  choices: [
+    ...SOCD_SHARED_CHOICES,
+    {name: 'Left Priority', text: 'The Left Key always wins.'},
+    {name: 'Right Priority', text: 'The Right Key always wins.'},
+  ],
+  defaultChoice: 'Last Input',
+};
+const SOCD_UP_DOWN_MODE_HELP: EraHelpContent = {
+  choices: [
+    ...SOCD_SHARED_CHOICES,
+    {name: 'Up Priority', text: 'The Up Key always wins.'},
+    {name: 'Down Priority', text: 'The Down Key always wins.'},
+  ],
+  defaultChoice: 'Last Input',
+};
+
+// One SLEEP page can hold the RGB and the backlight switch, and a page shows one
+// explanation, so the text covers either light alone and both together. The lock
+// indicators the backlight lights are mentioned only where there is a backlight switch.
+const RGB_SLEEP_HELP: EraFeatureHelp = {
+  summary: 'Controls when the lighting turns off by itself.',
+  detail: [
+    'With a switch on, its light goes out after the timeout without input, and when the computer sleeps or the connection drops. A key press brings it back.',
+  ],
+};
+const BACKLIGHT_SLEEP_HELP: EraFeatureHelp = {
+  ...RGB_SLEEP_HELP,
+  detail: [
+    ...(RGB_SLEEP_HELP.detail ?? []),
+    'Lock indicators lit by the backlight go out with it.',
+  ],
+};
+
+// Where the indicator LED is part of the lighting, the no-lock choice is RGB Effect;
+// where it is an LED of its own, it is Off. Both lists live under the same command ids,
+// so this one covers both and each dropdown shows the choices it offers.
+const LOCK_INDICATOR_HELP: EraHelpContent = {
+  choices: [
+    {name: 'RGB Effect', text: 'Follows the lighting effect.'},
+    {name: 'Off', text: 'Stays dark.'},
+    {name: 'Caps Lock', text: 'Lights while Caps Lock is on.'},
+    {name: 'Scroll Lock', text: 'Lights while Scroll Lock is on.'},
+    {name: 'Num Lock', text: 'Lights while Num Lock is on.'},
+  ],
 };
 
 // Ordered: the first prefix that matches a command in the submenu wins, so more
@@ -44,9 +117,11 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
   [
     'id_qmk_tapdance_',
     {
-      summary: 'Four actions on one key.',
-      detail:
-        'Fill in the actions, then place the matching TD key on your keymap from KEYMAP → TAPDANCE. Nothing here does anything until that key is somewhere you can press it. Term is how long the keyboard waits before deciding which action you meant.',
+      summary: 'Puts four actions on one key.',
+      detail: [
+        'Takes effect once its TD key is on the keymap.',
+        'Term is how long the keyboard waits to tell the actions apart.',
+      ],
     },
   ],
   ['id_qmk_kill_switch_', SOCD_HELP],
@@ -55,127 +130,93 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     'id_qmk_kkuk_',
     {
       summary: 'Repeats multiple keys while they remain held.',
-      detail:
-        'While two or more ordinary keys remain held, KKUK periodically releases the held key group and presses it again. For example, holding A, S and D usually produces "asdasdasd..." instead of the ordinary "asdddd..." auto-repeat. Keys assigned to SOCD are excluded.',
+      detail: [
+        'While two or more keys are held, the group is released and pressed again over and over: holding A, S and D types "asdasd…" instead of "asddd…".',
+        'Keys assigned to SOCD are left out.',
+      ],
     },
   ],
   [
     'id_qmk_debounce_',
     {
       summary: 'Configures debounce to prevent switch chatter.',
-      detail:
-        'If one physical press sometimes produces multiple inputs, increase the relevant delay a little at a time. If there is no chatter, keeping the default settings is recommended.',
+      detail: [
+        'If one press sometimes types twice, raise the relevant time a little at a time.',
+      ],
     },
   ],
   [
     'id_qmk_tapping_',
     {
       summary: 'Sets how tap-hold keys distinguish taps from holds.',
-      detail:
-        'For Mod-Tap and Layer-Tap keys, 200 ms by default. Shorter triggers the hold sooner but turns fast typing into accidental holds; longer is safer but the hold arrives late. The three switches below change what happens when you press another key first.',
+      detail: [
+        'Applies to Mod-Tap and Layer-Tap keys. A shorter Term brings the hold sooner but can turn fast typing into holds.',
+      ],
     },
   ],
   [
     'id_qmk_mousekey_',
     {
-      summary: 'Configures speed when using mouse-control keys.',
-      detail:
-        'These settings have no effect unless your keymap contains mouse keys. The values affect one another, so adjusting one at a time is recommended.',
+      summary: 'Sets how fast mouse keys move the pointer and wheel.',
+      detail: ['Takes effect only with mouse keys on the keymap.'],
     },
   ],
   [
     'id_qmk_custom_nkro_',
     {
       summary: 'Removes the six-key rollover limit for simultaneous key input.',
-      detail:
-        'Turn it off if an old BIOS or a KVM switch cannot see your typing. Off, the keyboard falls back to 6KRO and registers six keys at once.',
+      detail: [
+        'Turn it off if an old BIOS or a KVM switch cannot see the keyboard; it then registers up to six keys at once.',
+      ],
     },
   ],
   [
     'id_qmk_usb_bootmode',
     {
       summary: 'Sets the USB polling rate; applying restarts the keyboard.',
-      detail:
-        'Pick a mode, then turn on Apply. 1 kHz works on any port; the high-speed rates need a port that negotiates USB High Speed, which hubs and front-panel headers often cannot.',
+      detail: [
+        '1 kHz works on any port. The faster rates need a port running at USB High Speed; hubs and front-panel ports often do not.',
+      ],
     },
   ],
   [
     'id_qmk_system_dfu',
     {
-      summary: 'Enters the bootloader when switched on.',
-      detail:
-        'The keyboard enters the bootloader the moment you switch this on, and a new removable drive appears on your PC. Copy the firmware .uf2 file onto that drive. The toggle always reads back off, which is expected.',
+      summary: 'Restarts the keyboard into the bootloader.',
+      detail: [
+        'A removable drive appears on the computer; copy the firmware .uf2 file onto it.',
+      ],
     },
   ],
   [
     'id_qmk_system_reset_',
     {
       summary: 'Erases the keymap and every setting.',
-      detail:
-        'Switch all three toggles within ten seconds to run it. Everything stored is erased and the keyboard restarts. Miss the ten seconds and the toggles you switched clear themselves.',
+      detail: [
+        'Turn on all three switches within ten seconds to erase everything and restart. After ten seconds they turn themselves off.',
+      ],
     },
   ],
   [
     'id_qmk_split_link_',
     {
-      summary: 'Link speed of the cable between the two units.',
-      detail:
-        'Apply changes the cable speed without restarting the keyboard or disconnecting USB. Default is High.\n\nOn TOMAK split keyboards, one green STATUS flash confirms Apply on the unit receiving the command, including an already matching running and saved speed. One red flash means the request was busy, cancelled or failed.\n\nTwo short green flashes on both halves mean the link recovered after a speed search. Three long red flashes warn of link-speed failure and recovery to Low. If this repeats, check or replace the split cable; the signal alone does not identify the cause. STATUS is hidden during RGB sleep.',
+      summary: 'Sets the link speed of the cable between the two units.',
+      detail: [
+        'Apply changes the speed without restarting the keyboard or reconnecting USB.',
+        'On TOMAK, one green STATUS flash confirms Apply and one red flash means it did not take. Three long red flashes mean the link fell back to Low; if that repeats, check the split cable.',
+      ],
     },
   ],
   [
     'id_qmk_eeprom_sync_',
     {
       summary: 'Makes the two units behave as one keyboard.',
-      detail:
-        'All three are on by default, and each covers a different part of what the two units share.',
     },
   ],
-  [
-    'id_qmk_rgb_sleep_',
-    {
-      summary: 'Controls automatic RGB sleep.',
-      detail:
-        'On by default. Turning it off disables RGB sleep for idle timeout, USB suspend, and host loss.',
-    },
-  ],
-  [
-    'id_qmk_ver_',
-    {
-      summary: 'Firmware version on this keyboard.',
-      detail:
-        'Year, month, day and revision, read from the keyboard. Quote it when you report a problem.',
-    },
-  ],
-  ['id_qmk_custom_ind_', RGB_INDICATOR_HELP],
-  ['id_qmk_custom_riley_ind', RGB_INDICATOR_HELP],
-  // The badge menu is gated on `id_custom_badge_only`, the one command in it that no
-  // other keyboard would plausibly name the same way; the indicator commands beside it
-  // are generic enough that keying on them would be a weaker gate.
-  [
-    'id_custom_badge_only',
-    {
-      summary: 'Configures badge lighting and lock indicators.',
-    },
-  ],
-  [
-    'id_custom_backlight_',
-    {
-      summary: 'Configures backlight brightness and effects.',
-    },
-  ],
-  [
-    'id_qmk_rgblight_',
-    {
-      summary: 'Configures RGB lighting brightness, effects, speed and color.',
-    },
-  ],
-  [
-    'id_qmk_rgb_matrix_',
-    {
-      summary: 'Configures switch RGB brightness, effects, speed and color.',
-    },
-  ],
+  ['id_qmk_backlight_sleep_', BACKLIGHT_SLEEP_HELP],
+  ['id_qmk_rgb_sleep_', RGB_SLEEP_HELP],
+  // VERSION and the lighting pages have no line here: their rows already say
+  // everything a sentence above them would.
 ];
 
 export const findEraFeatureHelp = (
@@ -200,91 +241,98 @@ export const findEraFeatureHelp = (
 // delay before and after (same value)" says what the firmware does with the number but
 // not that raising it delays every keystroke.
 //
-// MOUSE was left out of this on the first pass, on the grounds that a row reading
-// "Cursor Top Speed / 16 px" already carries its own answer. On the actual screen it
-// does not: the unit says how much, never of what. "1.0 s" of acceleration is a ramp
-// time, "100 /s" is an event rate that does not change that ramp, and the pointer rows
-// swap meaning depending on whether acceleration is on. Each row now carries one line.
+// MOUSE rows each carry one line: the unit says how much, never of what. "1.0 s" of
+// acceleration is a ramp time, "100 /s" is an event rate that does not change that ramp,
+// and the pointer rows swap meaning depending on whether acceleration is on.
 //
-// Still left out: controls the submenu summary already takes as its subject (Global
-// Tapping Term, KKUK's Enable), and controls whose label plus unit really is the whole
-// answer (Indicator Brightness).
+// Left out: controls the submenu summary already takes as its subject (Global Tapping
+// Term, KKUK's Enable), controls whose label plus unit really is the whole answer
+// (Indicator Brightness), and Tap Dance's On Tap / On Hold / On Double Tap / Tap+Hold,
+// whose names already say when each is sent.
 //
-// Keyed off exact firmware command names, the same gate the submenu text uses. Two rows
+// Keyed off exact firmware command names, like the submenu text. Two rows
 // can share one command id and mean different things — the debounce window depending on
 // the mode, the pointer speed depending on acceleration — so those entries also name the
 // labels they belong to; both the H7S spelled-out labels and the shorter RP2040 ones are
 // listed. An unmatched label renders no help, which is the right failure: text about the
 // wrong side of the debounce window is worse than none.
-type EraControlHelp = {
+export type EraControlHelpEntry = {
   /** Exact firmware command name. */
-  command?: string;
-  /**
-   * Used instead of `command` when one entry covers a family of numbered commands —
-   * TAPDANCE repeats the same five controls across eight slots, so matching
-   * `id_qmk_tapdance_` plus the row label beats writing forty identical entries.
-   */
-  commandPrefix?: string;
+  command: string;
   labels?: readonly string[];
-  help: string;
+  help: EraHelpContent;
 };
 
-const HELP_BY_CONTROL: readonly EraControlHelp[] = [
-  {
-    commandPrefix: 'id_qmk_tapdance_',
-    labels: ['On Tap'],
-    help: 'The keycode sent when the press is judged a short one.',
-  },
-  {
-    commandPrefix: 'id_qmk_tapdance_',
-    labels: ['On Hold'],
-    help: 'The keycode sent when the press is judged a long one.',
-  },
-  {
-    commandPrefix: 'id_qmk_tapdance_',
-    labels: ['On Double Tap'],
-    help: 'The keycode sent when the key is tapped twice inside Term.',
-  },
-  {
-    commandPrefix: 'id_qmk_tapdance_',
-    labels: ['Tap+Hold'],
-    help: 'The keycode sent when a tap is followed by holding the key down.',
-  },
+const line = (text: string): EraHelpContent => ({detail: [text]});
+
+const HELP_BY_CONTROL: readonly EraControlHelpEntry[] = [
+  {command: 'id_qmk_socd_lr_mode', help: SOCD_LEFT_RIGHT_MODE_HELP},
+  {command: 'id_qmk_kill_switch_mode_lr', help: SOCD_LEFT_RIGHT_MODE_HELP},
+  {command: 'id_qmk_socd_ud_mode', help: SOCD_UP_DOWN_MODE_HELP},
+  {command: 'id_qmk_kill_switch_mode_ud', help: SOCD_UP_DOWN_MODE_HELP},
   {
     command: 'id_qmk_kkuk_delay_time',
-    help: 'How long to wait after multiple keys are held before repeating begins.',
+    help: line('How long the keys are held before the repeating starts.'),
   },
   {
     command: 'id_qmk_kkuk_repeat_time',
-    help: 'How often the held key group repeats. A shorter value repeats it faster.',
+    help: line('How often the group repeats. Shorter repeats faster.'),
   },
   {
     command: 'id_qmk_debounce_mode',
-    help: 'Balanced — The most stable default. A press or release is applied only after the switch has remained settled for the configured time, so both directions are delayed by that amount.\n\nFast — Prioritizes response speed. The first press or release change is applied immediately, then further changes from that key are ignored for the configured time. It adds almost no input delay, but leaves the least margin for chatter.\n\nAdvanced — Treats press and release differently. A press is applied immediately, then further press-side changes are ignored for Press Delay. A release is applied only after the signal remains settled for Release Delay. Use this when you want immediate press response with more conservative release filtering.\n\nBalanced is recommended as the starting point.',
+    help: {
+      choices: [
+        {
+          name: 'Balanced',
+          text: 'A change counts once the switch has settled for the set time, so press and release are both delayed by it.',
+        },
+        {
+          name: 'Fast',
+          text: 'The first change counts at once, then the key is ignored for the set time: the least delay and the least margin for chatter.',
+        },
+        {
+          name: 'Advanced',
+          text: 'A press counts at once and the key is then ignored for Press Delay; a release counts once settled for Release Delay.',
+        },
+      ],
+      defaultChoice: 'Balanced',
+    },
   },
   {
     command: 'id_custom_badge_only',
-    help: 'Applies RGB effects only to the badge area.',
+    help: line('Applies RGB effects only to the badge area.'),
   },
   {
     command: 'id_custom_indicator_toggle',
-    help: 'Selects which lock indicator the badge area shows.',
+    help: line(
+      'Selects which lock the badge shows. At RGB Effect the badge keeps the lighting effect.',
+    ),
   },
   {
     command: 'id_custom_indicator_override',
-    help: 'Reserves the badge area for the selected lock indicator. Normal RGB effects do not use it; temporary link and synchronization STATUS signals can still appear.',
+    help: line(
+      'Keeps the badge for the lock indicator; RGB effects leave it out. Link and sync STATUS signals can still appear.',
+    ),
   },
+  {command: 'id_qmk_custom_ind_selec', help: LOCK_INDICATOR_HELP},
+  {command: 'id_qmk_custom_ind_1_select', help: LOCK_INDICATOR_HELP},
+  {command: 'id_qmk_custom_ind_2_select', help: LOCK_INDICATOR_HELP},
+  {command: 'id_qmk_custom_riley_ind1_mode', help: LOCK_INDICATOR_HELP},
+  {command: 'id_qmk_custom_riley_ind2_mode', help: LOCK_INDICATOR_HELP},
+  {command: 'id_qmk_custom_riley_ind3_mode', help: LOCK_INDICATOR_HELP},
   {
     command: 'id_qmk_velocikey_toggle',
-    help: 'Changes RGBLight effect speed according to typing speed while enabled.',
+    help: line('Speeds the lighting effect up and down with typing speed.'),
   },
   {
     command: 'id_qmk_custom_velocikey_enable',
-    help: 'Changes RGBLight effect speed according to typing speed while enabled.',
+    help: line('Speeds the lighting effect up and down with typing speed.'),
   },
   {
     command: 'id_qmk_debounce_time_single',
-    help: 'One value for both press and release. A change is reported only after the switch signal has remained stable for this long, so this is also the added input delay. 5 to 10 ms covers most switches.',
+    help: line(
+      'A change counts only after the switch has been stable this long, which is also the added delay. 5 to 10 ms suits most switches.',
+    ),
   },
   {
     command: 'id_qmk_debounce_time_post',
@@ -292,11 +340,15 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
       'Press & Release - delay after change (post-only)',
       'Press & Release Cooldown',
     ],
-    help: 'The change is sent immediately, then that key is ignored for this long. It costs no response time, so raise it only while a press still doubles.',
+    help: line(
+      'The change is sent at once, then the key is ignored this long. It adds no delay; raise it only while presses still double.',
+    ),
   },
   {
     command: 'id_qmk_debounce_time_pre',
-    help: 'The press side. It is sent immediately and the key is then ignored for this long, so raising it does not slow the keyboard down.',
+    help: line(
+      'The press is sent at once, then the key is ignored this long. It adds no delay.',
+    ),
   },
   {
     command: 'id_qmk_debounce_time_post',
@@ -304,103 +356,160 @@ const HELP_BY_CONTROL: readonly EraControlHelp[] = [
       'Release - delay before and after release (pre+post window)',
       'Release Delay',
     ],
-    help: 'The release side. A release is reported only after the switch signal has remained stable for this long. It delays release, not press.',
+    help: line(
+      'A release counts only after the switch has been stable this long. It delays release, not press.',
+    ),
   },
   {
     command: 'id_qmk_tapping_permissive_hold',
-    help: 'Use this when a tap-hold key is still treated as a tap during fast typing. When enabled, it becomes a hold after another key is pressed and released while you are still holding it. Hold on Other Key Press decides earlier: when the other key is pressed rather than when it is released.',
+    help: line(
+      'Becomes a hold when another key is pressed and released while it is held. Use it when a quick hold still comes out as a tap.',
+    ),
   },
   {
     command: 'id_qmk_tapping_hold_on_other_key_press',
-    help: 'The key becomes a hold as soon as any other key is pressed. Enable this if a key you intend to hold is still treated as a tap with Permissive Hold enabled. The trade-off is that rolling key presses can turn intended taps into holds, especially with home-row Mod-Tap keys.',
+    help: line(
+      'Becomes a hold as soon as another key is pressed, earlier than Permissive Hold. Rolled typing can turn taps into holds.',
+    ),
   },
   {
     command: 'id_qmk_tapping_retro_tapping',
-    help: 'Use this when a tap-hold key held past the term is released without another key press and would otherwise produce no tap. When enabled, that release still sends the tap.',
+    help: line(
+      'Sends the tap when the key is held past Term and released with no other key pressed.',
+    ),
   },
   {
     command: 'id_qmk_mousekey_cursor_acceleration',
-    help: 'How long the pointer takes to go from start speed to top speed. Off holds it at the start speed.',
+    help: line('Time from start speed to top speed. Off keeps the start speed.'),
   },
   {
     command: 'id_qmk_mousekey_cursor_min_speed',
     labels: ['Cursor Speed'],
-    help: 'How far the pointer moves per step. Acceleration is off, so this is the speed the whole time.',
+    help: line(
+      'Distance per step. With acceleration off, this is the speed the whole time.',
+    ),
   },
   {
     command: 'id_qmk_mousekey_cursor_min_speed',
     labels: ['Cursor Start Speed'],
-    help: 'How far the pointer moves per step the instant you press the key.',
+    help: line('Distance per step when the key is first pressed.'),
   },
   {
     command: 'id_qmk_mousekey_cursor_max_speed',
-    help: 'How far the pointer moves per step once acceleration has finished.',
+    help: line('Distance per step once acceleration has finished.'),
   },
   {
     command: 'id_qmk_mousekey_cursor_interval',
-    help: 'How many move steps go out each second. Higher is smoother and does not change the acceleration time.',
+    help: line(
+      'Steps sent per second. Higher is smoother and leaves the acceleration time alone.',
+    ),
   },
   {
     command: 'id_qmk_mousekey_wheel_interval',
-    help: 'How many scroll steps go out each second.',
+    help: line('Scroll steps sent per second.'),
   },
   {
     command: 'id_qmk_mousekey_wheel_acceleration',
-    help: 'How much scrolling speeds up while you hold the key. Off keeps it steady.',
+    help: line('How much scrolling speeds up while held. Off keeps it steady.'),
   },
   {
     command: 'id_qmk_split_link_level',
-    help: 'High — 460800 bps; 1 ms polling for DUAL-HOST layer sharing.\n\nMedium — 230400 bps; 2 ms polling for DUAL-HOST layer sharing.\n\nLow — 115200 bps; 4 ms polling for DUAL-HOST layer sharing.\n\nMaster–Slave (HOST-PEER) operation changes very little. The practical difference is mainly DUAL-HOST layer-sharing response time.',
+    help: {
+      detail: [
+        'The speed matters mainly for layer sharing when both units are plugged into the computer.',
+      ],
+      choices: [
+        {name: 'High', text: 'Layer changes reach the other unit soonest.'},
+        {
+          name: 'Medium',
+          text: 'A little slower; for a cable that is unstable at High.',
+        },
+        {
+          name: 'Low',
+          text: 'Slowest; for a cable that is unstable at the faster speeds.',
+        },
+      ],
+      defaultChoice: 'High',
+    },
   },
   {
     command: 'id_qmk_eeprom_sync_requested',
-    help: 'Copies stored settings between the split halves. On TOMAK keyboards, blue STATUS shows EEPROM synchronization work. INPUT SYNC and RGB SYNC need this enabled to work fully. STATUS is hidden during RGB sleep.',
+    help: line(
+      'Copies stored settings between the halves; INPUT SYNC and RGB SYNC need it. On TOMAK, blue STATUS shows it working.',
+    ),
   },
+  // Only split boards have this row, which is why the SOCD rule for them lives here:
+  // each unit plugged into the computer sends its own keys, with or without INPUT SYNC.
   {
     command: 'id_qmk_input_sync_requested',
-    help: 'With both units plugged into the PC, they share layer state and key decisions so they act as one keyboard.',
+    help: line(
+      'With both units plugged into the computer, they share layers and key decisions; both keys of an SOCD pair must be on the same unit.',
+    ),
   },
   {
     command: 'id_qmk_rgb_sync_requested',
-    help: 'Lines the lighting up across both units, reactive effects included.',
+    help: line('Keeps the lighting in step on both units, reactive effects included.'),
   },
 ];
+
+/** Every control entry, for tests that hold the help to the real definitions. */
+export const eraControlHelpEntries = (): readonly EraControlHelpEntry[] =>
+  HELP_BY_CONTROL;
 
 // Every string in both tables is rendered through `t()`, so each one has to exist as a
 // key in all six catalogs or that language silently falls back to English. Editing the
 // English text without updating the locales is the easy mistake here, so the locale test
-// reads this list rather than trusting anyone to remember.
+// reads this list rather than trusting anyone to remember. Choice names are left out:
+// they are the dropdown's own option labels, which stay as the firmware names them.
 // The always-visible half, on its own: `tests/locales.test.ts` holds these to one
 // short impersonal sentence so no menu reads differently from its neighbours.
 export const eraMenuSummaries = (): string[] => [
   ...new Set(HELP_BY_COMMAND_PREFIX.map(([, {summary}]) => summary)),
 ];
 
-export const eraHelpStrings = (): string[] => [
-  ...HELP_BY_COMMAND_PREFIX.flatMap(([, {summary, detail}]) =>
-    detail ? [summary, detail] : [summary],
-  ),
-  ...HELP_BY_CONTROL.map(({help}) => help),
+const contentStrings = (content: EraHelpContent): string[] => [
+  ...(content.detail ?? []),
+  ...(content.choices ?? []).map(({text}) => text),
 ];
 
+export const eraHelpStrings = (): string[] => [
+  ...new Set([
+    ...HELP_BY_COMMAND_PREFIX.flatMap(([, help]) => [
+      help.summary,
+      ...contentStrings(help),
+    ]),
+    ...HELP_BY_CONTROL.flatMap(({help}) => contentStrings(help)),
+  ]),
+];
+
+// Given the options a dropdown offers, its choices come back as that dropdown lists
+// them: in its order, and only the ones it has. One command id can offer different
+// lists on different boards, like a lock indicator's RGB Effect or Off.
 export const findEraControlHelp = (
   commandName: unknown,
   label: unknown,
-): string | null => {
+  options?: readonly string[],
+): EraHelpContent | null => {
   if (typeof commandName !== 'string') {
     return null;
   }
   for (const entry of HELP_BY_CONTROL) {
-    const matches = entry.command
-      ? entry.command === commandName
-      : !!entry.commandPrefix && commandName.startsWith(entry.commandPrefix);
-    if (!matches) {
+    if (entry.command !== commandName) {
       continue;
     }
     if (entry.labels && !entry.labels.some((known) => known === label)) {
       continue;
     }
-    return entry.help;
+    const {choices} = entry.help;
+    if (!choices || !options) {
+      return entry.help;
+    }
+    const offered = options.flatMap(
+      (option) => choices.find(({name}) => name === option) ?? [],
+    );
+    return offered.length || entry.help.detail?.length
+      ? {...entry.help, choices: offered}
+      : null;
   }
   return null;
 };

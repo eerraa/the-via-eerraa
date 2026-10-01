@@ -129,11 +129,17 @@ export const AccentRange: React.FC<
       onInteractionComplete?.();
       return;
     }
-    if (parsedValue !== currentValue) {
+    // Hold a typed number to the slider's range: some callers send it to the
+    // keyboard unchecked.
+    const nextValue = Math.min(
+      Math.max(parsedValue, Number(inputProps.min ?? -Infinity)),
+      Number(inputProps.max ?? Infinity),
+    );
+    if (nextValue !== currentValue) {
       // Keep the controlled value authoritative. The parent may constrain the
       // requested value, including resolving it back to currentValue.
       setDraftValue(String(currentValue));
-      onChange(parsedValue);
+      onChange(nextValue);
     } else {
       setDraftValue(String(currentValue));
     }

@@ -484,7 +484,7 @@ function buildLayerMenu(): IKeycodeMenu {
         type: 'layer',
         layer: 0,
         title:
-          "Normally acts like MO unless it's tapped multple times which toggles layer on",
+          "Normally acts like MO unless it's tapped multiple times which toggles layer on",
       },
       {
         name: 'OSL',

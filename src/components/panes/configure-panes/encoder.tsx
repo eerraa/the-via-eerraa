@@ -5,21 +5,23 @@ import styled from 'styled-components';
 import {useTranslation} from 'react-i18next';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {PelpiKeycodeInput} from 'src/components/inputs/pelpi/keycode-input';
+import {AccentButton} from 'src/components/inputs/accent-button';
 import {getSelectedKeyDefinitions} from 'src/store/definitionsSlice';
 import {
   getSelectedKey,
   getSelectedKeymap,
   getSelectedLayerIndex,
   getSelectedEncoderMap,
+  loadEncoderValues,
   updateEncoderValue,
   updateKey,
 } from 'src/store/keymapSlice';
 import type {VIAKey} from '@the-via/reader';
 import {
   getSelectedConnectedDevice,
+  getSelectedDevicePath,
   getSelectedKeyboardAPI,
 } from 'src/store/devicesSlice';
-import {KeyboardAPI} from 'src/utils/keyboard-api';
 import {ErrorMessage} from 'src/components/styled';
 
 const Encoder = styled(CenterPane)`
@@ -36,10 +38,32 @@ const Container = styled.div`
 
 const EMPTY_KEYMAP: number[] = [];
 
+// A turn's key, an empty slot until the keyboard has answered for the knob.
+const RotationKeycode: FC<{
+  value?: number;
+  label: string;
+  setValue: (val: number) => void;
+}> = ({value, label, setValue}) =>
+  value === undefined ? (
+    <AccentButton disabled aria-busy aria-label={label} />
+  ) : (
+    <PelpiKeycodeInput value={value} meta={{label}} setValue={setValue} />
+  );
+
+// Each knob on each layer has its own pane, so what was read or picked for
+// another knob or layer is never drawn for it.
 export const Pane: FC = () => {
+  const selectedKey = useAppSelector(getSelectedKey);
+  const keys: (VIAKey & {ei?: number})[] = useAppSelector(
+    getSelectedKeyDefinitions,
+  );
+  const layer = useAppSelector(getSelectedLayerIndex);
+  const path = useAppSelector(getSelectedDevicePath);
+  return <KnobPane key={`${path}:${keys[selectedKey ?? -1]?.ei}:${layer}`} />;
+};
+
+const KnobPane: FC = () => {
   const {t} = useTranslation();
-  const [cwValue, setCWValue] = useState<number>();
-  const [ccwValue, setCCWValue] = useState<number>();
   const selectedKey = useAppSelector(getSelectedKey);
   const dispatch = useAppDispatch();
   const keys: (VIAKey & {ei?: number})[] = useAppSelector(
@@ -60,6 +84,9 @@ export const Pane: FC = () => {
     encoderId === undefined
       ? undefined
       : selectedEncoderMap?.[encoderId]?.[layer];
+  const [cwValue, setCWValue] = useState(cachedEncoderValues?.[1]);
+  const [ccwValue, setCCWValue] = useState(cachedEncoderValues?.[0]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const canClick =
     !!encoderKey && encoderKey.col !== -1 && encoderKey.row !== -1;
 
@@ -99,12 +126,6 @@ export const Pane: FC = () => {
       }
     }
   };
-  const loadValues = async (layer: number, id: number, api: KeyboardAPI) => {
-    const cw = await api.getEncoderValue(layer, id, true);
-    const ccw = await api.getEncoderValue(layer, id, false);
-    setCWValue(cw);
-    setCCWValue(ccw);
-  };
   useEffect(() => {
     if (
       selectedDevice &&
@@ -118,7 +139,24 @@ export const Pane: FC = () => {
         setCCWValue(cachedEncoderValues[0]);
         setCWValue(cachedEncoderValues[1]);
       } else {
-        void loadValues(layer, encoderId, api);
+        // A reply for a knob or layer no longer shown is dropped.
+        let current = true;
+        void dispatch(loadEncoderValues(layer, encoderId)).then(
+          ([ccw, cw]) => {
+            if (current) {
+              setCCWValue(ccw);
+              setCWValue(cw);
+            }
+          },
+          () => {
+            if (current) {
+              setLoadFailed(true);
+            }
+          },
+        );
+        return () => {
+          current = false;
+        };
       }
     }
   }, [
@@ -133,8 +171,7 @@ export const Pane: FC = () => {
   if (
     encoderKey === undefined ||
     (selectedDevice && selectedDevice.protocol < 10) ||
-    ccwValue === undefined ||
-    cwValue === undefined
+    loadFailed
   ) {
     return (
       <SpanOverflowCell>
@@ -153,9 +190,9 @@ export const Pane: FC = () => {
           <ControlRow>
             <Label>{t('Rotate Counterclockwise')}</Label>
             <Detail>
-              <PelpiKeycodeInput
+              <RotationKeycode
                 value={ccwValue}
-                meta={{}}
+                label={t('Rotate Counterclockwise')}
                 setValue={(val: number) => setEncoderValue('ccw', val)}
               />
             </Detail>
@@ -163,9 +200,9 @@ export const Pane: FC = () => {
           <ControlRow>
             <Label>{t('Rotate Clockwise')}</Label>
             <Detail>
-              <PelpiKeycodeInput
+              <RotationKeycode
                 value={cwValue}
-                meta={{}}
+                label={t('Rotate Clockwise')}
                 setValue={(val: number) => setEncoderValue('cw', val)}
               />
             </Detail>
@@ -176,7 +213,7 @@ export const Pane: FC = () => {
               <Detail>
                 <PelpiKeycodeInput
                   value={val}
-                  meta={{}}
+                  meta={{label: t('Press Encoder')}}
                   setValue={(val: number) => setEncoderValue('click', val)}
                 />
               </Detail>

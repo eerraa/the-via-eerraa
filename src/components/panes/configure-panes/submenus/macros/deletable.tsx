@@ -36,11 +36,13 @@ export const Deletable: React.FC<
       style={{pointerEvents: !props.disabled ? 'all' : 'none'}}
     >
       {props.children}
-      <FontAwesomeIcon
-        icon={faXmarkCircle}
-        size={'lg'}
-        onClick={() => props.deleteItem(props.index)}
-      />
+      {props.disabled ? null : (
+        <FontAwesomeIcon
+          icon={faXmarkCircle}
+          size={'lg'}
+          onClick={() => props.deleteItem(props.index)}
+        />
+      )}
     </DeletableContainer>
   );
 };

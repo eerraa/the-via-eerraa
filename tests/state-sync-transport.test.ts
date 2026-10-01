@@ -1,5 +1,10 @@
 import {afterEach, beforeEach, describe, expect, test} from 'bun:test';
 import {configureStore} from '@reduxjs/toolkit';
+import i18n from 'i18next';
+import {createElement as h} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {I18nextProvider} from 'react-i18next';
+import {Provider} from 'react-redux';
 import {
   configureHIDTransport,
   disconnectHIDDeviceForTesting,
@@ -20,6 +25,8 @@ import {
 } from '../src/utils/era-state-sync';
 import {UISyncRequestType} from '../src/utils/ui-sync';
 import {setEraAdvancedMetadataForTesting} from '../src/utils/era-advanced-metadata';
+import {store as appStore} from '../src/store';
+import {clearAppErrors, getAppErrors} from '../src/store/errorsSlice';
 import devicesReducer, {
   markDeviceReady,
   selectDevice,
@@ -27,6 +34,7 @@ import devicesReducer, {
 } from '../src/store/devicesSlice';
 import keymapReducer, {
   getLoadProgress,
+  getSelectedKey,
   loadKeymapFromDevice,
   replaceEncoderMap,
   setLayer,
@@ -38,6 +46,7 @@ import macrosReducer, {
   getExpressions,
   getIsMacrosReady,
   getMacroCount,
+  getPaletteMacroCount,
   loadMacroMetadata,
   loadMacros,
   loadMacrosSuccess,
@@ -46,6 +55,10 @@ import macrosReducer, {
 } from '../src/store/macrosSlice';
 import definitionsReducer, {
   getDefinitionSyncIdentity,
+  getSelectedDefinition,
+  getSelectedKeyDefinitions,
+  getSelectedLayoutOptions,
+  getSelectedLayoutOptionsPending,
   loadCustomDefinitions,
   updateDefinitions,
   updateEraDefinitions,
@@ -91,6 +104,12 @@ import {
 import {keyColorsFromPerKeyRGB} from '../src/utils/use-color-painter';
 import {importLayoutToDevice} from '../src/store/importLayoutThunks';
 import {
+  canExportLayoutFile,
+  exportLayoutFile,
+  importLayoutFile,
+} from '../src/store/layoutFileThunks';
+import definitionNameReducer from '../src/store/definitionNameSlice';
+import {
   collectUniqueEncoderIds,
   collectMaxLedIndex,
 } from '../src/utils/via-definition-keys';
@@ -99,7 +118,11 @@ import {
   completeContinuousHIDTransactionsForPath,
   hasContinuousHIDTransactionsForPath,
   resetContinuousHIDTransactionsForTesting,
+  setContinuousIdleCompletionMsForTesting,
 } from '../src/utils/continuous-hid-transaction';
+import {selectConnectedDevice} from '../src/store/devicesThunks';
+import {getKeysKeys} from '../src/components/n-links/key-group';
+import {Pane as LayoutsPane} from '../src/components/panes/configure-panes/layouts';
 
 type InputListener = (event: {data: DataView}) => void;
 
@@ -227,6 +250,7 @@ const makeStore = () =>
       keymap: keymapReducer,
       macros: macrosReducer,
       definitions: definitionsReducer,
+      definitionName: definitionNameReducer,
       menus: menusReducer,
       firmware: firmwareReducer,
       stateSync: stateSyncReducer,
@@ -743,7 +767,13 @@ const prepareSelectedStateSyncDevice = async (
       macroCount: 1,
     }),
   );
-  store.dispatch(updateLayoutOptions({[path]: [firmware.layoutValue]}));
+  store.dispatch(
+    updateLayoutOptions({
+      devicePath: path,
+      connectionGeneration: generation,
+      options: [firmware.layoutValue],
+    }),
+  );
   if (options?.withMenu) {
     store.dispatch(
       updateSelectedCustomMenuData({
@@ -1273,6 +1303,660 @@ describe('progressive State Sync initial load', () => {
     expect(await dispatch(refreshMacroDomain(connected))).toBe(true);
     expect(getIsMacrosReady(store.getState())).toBe(true);
   });
+
+  // A macro write reads back its end marker; only a read from offset 0 pulls the
+  // macros themselves.
+  const macroContentReads = (firmware: FakeStateSyncFirmware) =>
+    firmware.device.sentReports.filter(
+      ({data}) => data[0] === 0x0e && ((data[1] << 8) | data[2]) === 0,
+    ).length;
+
+  test('a layout import replaces the macros without reading the lazy buffer', async () => {
+    const {firmware, dispatch, connected} =
+      await prepareLazyMacros('lazy-macro-import');
+    // An edit rebuilds the set from the macros on screen, so it still needs them.
+    await expect(dispatch(saveMacros(connected, ['B']))).rejects.toThrow(
+      'Macro state does not belong to the current device',
+    );
+    firmware.operationLog = [];
+
+    await dispatch(
+      importLayoutToDevice(connected, {
+        macros: ['C'],
+        keymap: [Array.from({length: 20}, () => 0x0004)],
+      }),
+    );
+
+    expect(macroContentReads(firmware)).toBe(0);
+    expect(firmware.operationLog).toContain('macro-payload');
+    expect(firmware.operationLog).toContain('keymap');
+    expect(firmware.macroText).toBe('C');
+  });
+
+  test('a layout import writes its Tap Dance values in the same transaction, saved once per channel', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareLazyMacros('lazy-macro-import-custom');
+    firmware.customEvents = [];
+    const reportsBefore = firmware.device.sentReports.length;
+
+    await dispatch(
+      importLayoutToDevice(connected, {
+        keymap: [Array.from({length: 20}, () => 0x0004)],
+        customValues: [
+          {name: 'id_test_value', channel: 1, id: 1, value: 0x0300},
+          {name: 'id_test_value', channel: 1, id: 1, value: 0x0400},
+        ],
+      }),
+    );
+
+    const commands = firmware.device.sentReports
+      .slice(reportsBefore)
+      .map(({data}) => data[0]);
+    expect(commands.indexOf(0x07)).toBeGreaterThan(commands.lastIndexOf(0x13));
+    expect(firmware.customEvents).toEqual(['set:3', 'set:4', 'save:1']);
+    expect(
+      store.getState().menus.customMenuDataMap[connected.path]?.id_test_value,
+    ).toEqual([4, 0]);
+    expect(
+      store.getState().stateSync.byPath[connected.path]?.config,
+    ).toMatchObject({mutationEpoch: 1, status: 'dirty'});
+  });
+
+  test('saving a layout reads the lazy macros itself', async () => {
+    const {firmware, dispatch, connected} =
+      await prepareLazyMacros('lazy-macro-export');
+    firmware.macroText = 'Q';
+
+    const result = await dispatch(exportLayoutFile(connected));
+
+    expect(macroContentReads(firmware)).toBeGreaterThan(0);
+    expect(result).toMatchObject({
+      file: {vendorProductId: TOMAK_VPID, macros: ['Q']},
+    });
+  });
+});
+
+// Three layout rows: Enter ANSI/ISO, Space 6.25U/7U, Split Left Shift. The
+// board stores 6, ISO Enter with a 7U Space. The two arrangements put different
+// keys at the same place in the key list, and ANSI's key at (1, 3) has no ISO
+// counterpart.
+describe('layout options on a State Sync board', () => {
+  const layoutKey = (row: number, col: number, x: number, y: number, w = 1) => ({
+    x,
+    y,
+    w,
+    h: 1,
+    row,
+    col,
+    color: 'alpha',
+    d: false,
+    r: 0,
+    rx: 0,
+    ry: 0,
+  });
+
+  const makeLayoutDefinition = () => ({
+    ...makeV3Definition(),
+    layouts: {
+      keys: [layoutKey(0, 0, 0, 0)],
+      labels: [
+        ['Enter', 'ANSI', 'ISO'],
+        ['Space', '6.25U', '7U'],
+        'Split Left Shift',
+      ],
+      width: 8,
+      height: 3,
+      optionKeys: {
+        0: {
+          0: [layoutKey(1, 2, 2, 1, 2.25), layoutKey(1, 3, 4.25, 1)],
+          1: [layoutKey(1, 1, 1, 1), layoutKey(1, 2, 2, 1, 1.25)],
+        },
+        1: {
+          0: [layoutKey(2, 0, 0, 2, 6.25)],
+          1: [layoutKey(2, 0, 0, 2, 7)],
+        },
+        2: {1: [layoutKey(2, 3, 7, 2)]},
+      },
+    },
+    matrix: {rows: 3, cols: 4},
+  });
+
+  const connectBoard = async (path: string) => {
+    const {device} = await connectFake(path);
+    const firmware = new FakeStateSyncFirmware(device);
+    firmware.layoutValue = 0b110;
+    const answer = (data: Uint8Array) => {
+      // FIRMWARE_VERSION, read while the board is selected.
+      if (data[0] === 0x02 && data[1] === 0x04) {
+        device.emit(payload(0x02, 0x04, 0x00, 0x00, 0x00, 0x01));
+        return;
+      }
+      firmware.onSend(data);
+    };
+    device.onSend = answer;
+    const store = makeStore();
+    const connected = makeConnectedDevice(path, TOMAK_VPID);
+    installEraDefinition(store, makeLayoutDefinition() as any);
+    store.dispatch(updateConnectedDevices({[path]: connected}));
+    return {
+      device,
+      firmware,
+      store,
+      connected,
+      answer,
+      dispatch: store.dispatch as any,
+      state: () => store.getState() as any,
+    };
+  };
+  type Board = Awaited<ReturnType<typeof connectBoard>>;
+
+  // The read before ready gets no value, so the defaults stay on screen until
+  // the CONFIG read brings the stored options.
+  const refuseFirstLayoutRead = (board: Board) => {
+    let refused = false;
+    board.device.onSend = (data) => {
+      if (!refused && data[0] === 0x02 && data[1] === 0x02) {
+        refused = true;
+        board.device.emit(payload(0xff, ...Array.from(data.slice(1))));
+        return;
+      }
+      board.answer(data);
+    };
+  };
+
+  // Holds the CONFIG read that starts at ready: the moment the keyboard has
+  // just appeared.
+  const selectHoldingConfig = async (board: Board) => {
+    const unsubscribe = board.store.subscribe(() => {
+      if (board.state().devices.readyDevicePath === board.connected.path) {
+        board.firmware.holdNextStateSync = true;
+        unsubscribe();
+      }
+    });
+    await board.dispatch(selectConnectedDevice(board.connected));
+    await waitUntil(() => board.firmware.heldStateSyncRequest !== undefined);
+  };
+
+  const configFresh = (board: Board) =>
+    board.state().stateSync.byPath[board.connected.path]?.config.status ===
+    'fresh';
+
+  // Clicks the key as the keyboard picture does.
+  const pick = (board: Board, row: number, col: number) => {
+    const keys = getSelectedKeyDefinitions(board.state());
+    const index = keys.findIndex((key) => key.row === row && key.col === col);
+    const {coords} = getKeysKeys(
+      {keys, definition: getSelectedDefinition(board.state())} as any,
+      {},
+      board.dispatch,
+      () => [0, 0, 0],
+    );
+    coords[index].onClick({stopPropagation: () => undefined}, index);
+  };
+
+  const layoutWrites = (board: Board) =>
+    board.device.sentReports
+      .filter(({data}) => data[0] === 0x03)
+      .map(({data}) => data[5]);
+
+  test('the keyboard is first drawn in its stored layout', async () => {
+    const board = await connectBoard('layout-first-drawing');
+    let firstDrawing: {options: number[]; config?: string} | undefined;
+    const unsubscribe = board.store.subscribe(() => {
+      const state = board.state();
+      if (!firstDrawing && getLoadProgress(state) === 1) {
+        firstDrawing = {
+          options: getSelectedLayoutOptions(state),
+          config: state.stateSync.byPath[board.connected.path]?.config.status,
+        };
+      }
+    });
+    await board.dispatch(selectConnectedDevice(board.connected));
+    unsubscribe();
+
+    expect(firstDrawing?.options).toEqual([1, 1, 0]);
+    // One plain GET before the keymap; it is not a CONFIG snapshot.
+    expect(firstDrawing?.config).not.toBe('fresh');
+    const sent = board.device.sentReports.map(({data}) => data);
+    const layoutRead = sent.findIndex(
+      (data) => data[0] === 0x02 && data[1] === 0x02,
+    );
+    expect(layoutRead).toBeGreaterThan(-1);
+    expect(layoutRead).toBeLessThan(sent.findIndex((data) => data[0] === 0x12));
+    await waitUntil(() => configFresh(board));
+    expect(board.firmware.layoutReads).toBe(2);
+  });
+
+  test('a layout change right after the keyboard appears keeps the stored rows', async () => {
+    const board = await connectBoard('layout-early-change');
+    await selectHoldingConfig(board);
+
+    const changing = board.dispatch(updateLayoutOption(2, 1));
+    board.firmware.releaseHeldStateSync();
+    await changing;
+
+    expect(layoutWrites(board)).toEqual([0b111]);
+    expect(board.firmware.layoutValue).toBe(0b111);
+    expect(
+      await board.dispatch(refreshStateSyncDomain(board.connected, 'config')),
+    ).toBe(true);
+    expect(getSelectedLayoutOptions(board.state())).toEqual([1, 1, 1]);
+  });
+
+  test('LAYOUTS waits, and writes nothing, until this connection has read the options', async () => {
+    const board = await connectBoard('layout-not-read');
+    refuseFirstLayoutRead(board);
+    await selectHoldingConfig(board);
+    const translations = i18n.createInstance();
+    await translations.init({lng: 'en'});
+    const renderLayouts = () =>
+      renderToStaticMarkup(
+        h(
+          Provider,
+          {store: board.store} as any,
+          h(I18nextProvider, {i18n: translations} as any, h(LayoutsPane)),
+        ),
+      );
+
+    expect(getSelectedLayoutOptionsPending(board.state())).toBe(true);
+    expect(renderLayouts()).toContain('Loading...');
+    await board.dispatch(updateLayoutOption(2, 1));
+    expect(layoutWrites(board)).toEqual([]);
+    expect(
+      board.state().stateSync.byPath[board.connected.path]?.config
+        .mutationEpoch,
+    ).toBe(0);
+
+    board.firmware.releaseHeldStateSync();
+    await waitUntil(() => configFresh(board));
+    const settled = renderLayouts();
+    expect(settled).not.toContain('Loading...');
+    expect(settled).toContain('ISO');
+    await board.dispatch(updateLayoutOption(2, 1));
+    expect(layoutWrites(board)).toEqual([0b111]);
+  });
+
+  test('a key picked in the default layout is the key written once the stored layout arrives', async () => {
+    const board = await connectBoard('layout-picked-key-moves');
+    refuseFirstLayoutRead(board);
+    await selectHoldingConfig(board);
+    pick(board, 1, 2);
+    expect(getSelectedKey(board.state())).toBe(1);
+
+    board.firmware.releaseHeldStateSync();
+    await waitUntil(() => configFresh(board));
+
+    const selected = getSelectedKey(board.state());
+    expect(getSelectedKeyDefinitions(board.state())[selected]).toMatchObject({
+      row: 1,
+      col: 2,
+    });
+    await board.dispatch(updateKey(selected, 0x0029));
+    expect(
+      board.device.sentReports
+        .filter(({data}) => data[0] === 0x05)
+        .map(({data}) => [data[2], data[3]]),
+    ).toEqual([[1, 2]]);
+  });
+
+  test('a picked key the stored layout does not have is no longer selected', async () => {
+    const board = await connectBoard('layout-picked-key-gone');
+    refuseFirstLayoutRead(board);
+    await selectHoldingConfig(board);
+    pick(board, 1, 3);
+    expect(getSelectedKey(board.state())).toBe(2);
+
+    board.firmware.releaseHeldStateSync();
+    await waitUntil(() => configFresh(board));
+
+    expect(getSelectedKey(board.state())).toBeNull();
+  });
+});
+
+// An ordinary VIA keyboard reads its macros at connect, has no State Sync and no
+// Tap Dance: layout files must behave exactly as in official VIA.
+describe('layout files on an ordinary VIA keyboard', () => {
+  const prepareOrdinary = async (path: string) => {
+    const {device} = await connectFake(path);
+    const firmware = new FakeStateSyncFirmware(device);
+    device.onSend = firmware.onSend;
+    setEraAdvancedMetadataForTesting({
+      schemaVersion: 2,
+      definitions: [
+        {
+          id: 'tomak',
+          vendorProductId: TOMAK_VPID,
+          stateSync: true,
+          exactMsFamily: 'qmk',
+        },
+      ],
+    });
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = makeConnectedDevice(path, ORDINARY_VPID);
+    dispatch(
+      updateDefinitions({
+        [ORDINARY_VPID]: {
+          v3: {...makeV3Definition(true), vendorProductId: ORDINARY_VPID},
+        },
+      } as any),
+    );
+    dispatch(updateConnectedDevices({[path]: connected}));
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+    await dispatch(loadMacros(connected));
+    dispatch(
+      saveKeymapSuccess({
+        devicePath: path,
+        connectionGeneration: generation,
+        layers: [{keymap: [0x0004], isLoaded: true}],
+      }),
+    );
+    return {firmware, store, dispatch, connected};
+  };
+
+  test('saves in official VIA form and loads it back', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareOrdinary('ordinary-layout-round-trip');
+    expect(getIsMacrosReady(store.getState())).toBe(true);
+    firmware.macroText = 'A';
+
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved).toMatchObject({
+      file: {vendorProductId: ORDINARY_VPID, macros: ['A'], layers: [['KC_A']]},
+    });
+    expect(saved.file).not.toHaveProperty('tapDance');
+
+    firmware.customEvents = [];
+    const reportsBefore = firmware.device.sentReports.length;
+    // A Tap Dance list in the file is ignored: this keyboard has none.
+    const loaded = await dispatch(
+      importLayoutFile(connected, {
+        ...saved.file,
+        macros: ['B'],
+        tapDance: [
+          {tap: 'KC_ESC', hold: 'KC_NO', dtap: 'KC_NO', thold: 'KC_NO', term: 200},
+        ],
+      }),
+    );
+
+    expect(loaded).toEqual({ok: true});
+    expect(firmware.macroText).toBe('B');
+    const commands = firmware.device.sentReports
+      .slice(reportsBefore)
+      .map(({data}) => data[0]);
+    expect(commands).toContain(0x13);
+    expect(commands).not.toContain(0x07);
+    expect(firmware.customEvents).toEqual([]);
+    expect(firmware.stateSyncReads).toBe(0);
+  });
+
+  test('takes only its own identity', async () => {
+    const {dispatch, connected} = await prepareOrdinary('ordinary-layout-identity');
+    const file = {name: 'TOMAK', vendorProductId: TOMAK_VPID, layers: [['KC_A']]};
+    expect(await dispatch(importLayoutFile(connected, file))).toEqual({
+      error: 'different-keyboard',
+    });
+  });
+});
+
+// An ERA board with one Tap Dance slot. Its settings share the fake firmware's one
+// Custom Value, which is all the reads and writes below need.
+const TAP_DANCE_ROLES = ['tap', 'hold', 'dtap', 'thold'] as const;
+const makeTapDanceDefinition = () => ({
+  ...makeV3Definition(true),
+  tapdanceKeycodes: [
+    {
+      name: 'TD0',
+      title: 'Tap Dance 0',
+      shortName: 'TD0',
+      controls: TAP_DANCE_ROLES.map((role) => ({
+        label: role,
+        type: 'keycode',
+        content: [`id_qmk_tapdance_1_${role}`, 1, 1],
+      })),
+    },
+  ],
+});
+
+describe('layout files and Tap Dance values', () => {
+  const prepareTapDance = async (path: string) => {
+    const {device} = await connectFake(path);
+    const firmware = new FakeStateSyncFirmware(device);
+    device.onSend = firmware.onSend;
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = makeConnectedDevice(path, TOMAK_VPID);
+    installEraDefinition(store, makeTapDanceDefinition() as any);
+    dispatch(updateConnectedDevices({[path]: connected}));
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    dispatch(
+      selectDevice({device: connected, connectionGeneration: generation}),
+    );
+    const markReady = () =>
+      dispatch(
+        markDeviceReady({
+          devicePath: path,
+          connectionGeneration: generation,
+          selectionGeneration: store.getState().devices.selectionGeneration,
+        }),
+      );
+    return {
+      device,
+      firmware,
+      store,
+      dispatch,
+      connected,
+      generation,
+      markReady,
+    };
+  };
+
+  // Ready, with CONFIG (and so Tap Dance) not read yet.
+  const prepareCapable = async (path: string) => {
+    const prepared = await prepareTapDance(path);
+    const {dispatch, connected} = prepared;
+    expect(await dispatch(probeStateSyncCapabilityForDevice(connected))).toBe(
+      true,
+    );
+    await dispatch(loadMacroMetadata(connected));
+    expect(
+      await dispatch(
+        refreshStateSyncDomain(connected, 'keymap', {allowBeforeReady: true}),
+      ),
+    ).toBe(true);
+    prepared.markReady();
+    return prepared;
+  };
+
+  test('a save waits for Tap Dance values still being read, instead of refusing', async () => {
+    const {firmware, store, dispatch, connected} = await prepareCapable(
+      'tap-dance-checking-save',
+    );
+    expect(
+      getCustomMenuAvailabilityForDevice(store.getState() as any, connected),
+    ).toBe('checking');
+    // Nothing that is still being read stops the file dialog from opening.
+    expect(dispatch(canExportLayoutFile(connected))).toBe(true);
+
+    const saved = await dispatch(exportLayoutFile(connected));
+
+    expect(firmware.menuReads).toBeGreaterThan(0);
+    expect(saved).toMatchObject({
+      file: {
+        vendorProductId: TOMAK_VPID,
+        tapDance: [
+          {tap: 'KC_NO', hold: 'KC_NO', dtap: 'KC_NO', thold: 'KC_NO'},
+        ],
+      },
+    });
+  });
+
+  test('a load waits for Tap Dance values being read again, then writes them', async () => {
+    const {firmware, store, dispatch, connected, generation} =
+      await prepareCapable('tap-dance-reconciling-load');
+    // Every action of the slot reads back as the same held modifier.
+    firmware.menuValue = 4;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(
+      true,
+    );
+    // Back from a hidden tab: the accepted values are being checked again.
+    dispatch(
+      setDomainStatus({
+        path: connected.path,
+        generation,
+        domain: 'config',
+        status: 'dirty',
+      }),
+    );
+    expect(
+      getCustomMenuAvailabilityForDevice(store.getState() as any, connected),
+    ).toBe('reconciling');
+    const readsBefore = firmware.menuReads;
+    firmware.customEvents = [];
+
+    const loaded = await dispatch(
+      importLayoutFile(connected, {
+        name: 'TOMAK',
+        vendorProductId: TOMAK_VPID,
+        layers: [['KC_A']],
+        tapDance: [
+          {tap: 'KC_NO', hold: 'KC_NO', dtap: 'KC_NO', thold: 'KC_NO'},
+        ],
+      }),
+    );
+
+    expect(loaded).toEqual({ok: true});
+    expect(firmware.menuReads).toBeGreaterThan(readsBefore);
+    expect(firmware.customEvents).toEqual([
+      'set:0',
+      'set:0',
+      'set:0',
+      'set:0',
+      'save:1',
+    ]);
+  });
+
+  // Old firmware answers the State Sync query as unhandled. Its Tap Dance is never
+  // read, so its files are official VIA's and its Tap Dance is left alone.
+  test('firmware that could not be verified saves and loads without Tap Dance', async () => {
+    const {
+      device,
+      firmware,
+      store,
+      dispatch,
+      connected,
+      generation,
+      markReady,
+    } = await prepareTapDance('tap-dance-unverified');
+    device.onSend = (data) => {
+      if (data[0] === 0x02 && data[1] === ERA_STATE_SYNC_SELECTOR) {
+        const response = data.slice();
+        response[0] = 0xff;
+        device.emit(response);
+        return;
+      }
+      return firmware.onSend(data);
+    };
+    expect(await dispatch(probeStateSyncCapabilityForDevice(connected))).toBe(
+      false,
+    );
+    await dispatch(loadMacros(connected));
+    dispatch(
+      saveKeymapSuccess({
+        devicePath: connected.path,
+        connectionGeneration: generation,
+        layers: [{keymap: [0x0004], isLoaded: true}],
+      }),
+    );
+    markReady();
+    expect(
+      getCustomMenuAvailabilityForDevice(store.getState() as any, connected),
+    ).toBe('unverified');
+    expect(dispatch(canExportLayoutFile(connected))).toBe(true);
+
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved).toMatchObject({
+      file: {vendorProductId: TOMAK_VPID, layers: [['KC_A']]},
+    });
+    expect(saved.file).not.toHaveProperty('tapDance');
+
+    const reportsBefore = firmware.device.sentReports.length;
+    const loaded = await dispatch(
+      importLayoutFile(connected, {
+        ...saved.file,
+        layers: [['KC_B']],
+        tapDance: [
+          {tap: 'KC_ESC', hold: 'KC_NO', dtap: 'KC_NO', thold: 'KC_NO'},
+        ],
+      }),
+    );
+
+    expect(loaded).toEqual({ok: true});
+    const commands = firmware.device.sentReports
+      .slice(reportsBefore)
+      .map(({data}) => data[0]);
+    expect(commands).toContain(0x13);
+    expect(
+      commands.filter((command) => [0x07, 0x08, 0x09].includes(command)),
+    ).toEqual([]);
+    expect(firmware.menuReads).toBe(0);
+  });
+
+  // The file dialog opens before anything is read, so what would refuse the save
+  // without waiting is checked first.
+  test('a save that could not be completed is refused before the file dialog', async () => {
+    const {store, dispatch, connected} =
+      await prepareTapDance('tap-dance-unread');
+    // An ERA board without State Sync reads its values at connect.
+    setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+    expect(
+      getCustomMenuAvailabilityForDevice(store.getState() as any, connected),
+    ).toBe('available');
+    const tapDanceValues = Object.fromEntries(
+      TAP_DANCE_ROLES.map((role) => [`id_qmk_tapdance_1_${role}`, [0, 0]]),
+    );
+    dispatch(
+      updateSelectedCustomMenuData({
+        devicePath: connected.path,
+        menuData: tapDanceValues,
+      }),
+    );
+    // Macros neither read nor readable on demand.
+    expect(dispatch(canExportLayoutFile(connected))).toBe(false);
+    await dispatch(loadMacros(connected));
+    expect(dispatch(canExportLayoutFile(connected))).toBe(true);
+    // A Tap Dance value the keyboard never reported.
+    dispatch(
+      updateSelectedCustomMenuData({devicePath: connected.path, menuData: {}}),
+    );
+    expect(dispatch(canExportLayoutFile(connected))).toBe(false);
+  });
+
+  // Firmware older than its definition can answer a Tap Dance value as unhandled,
+  // and waiting will not change that answer. The save is refused before the file
+  // dialog, not after a file has been chosen.
+  test('a save is refused before the file dialog once the keyboard has refused its Tap Dance values', async () => {
+    const {device, firmware, store, dispatch, connected} = await prepareCapable(
+      'tap-dance-refused-save',
+    );
+    device.onSend = (data) => {
+      if (data[0] === 0x08 && data[1] === 0x01 && data[2] === 0x01) {
+        device.emit(payload(0xff, ...Array.from(data.slice(1))));
+        return;
+      }
+      return firmware.onSend(data);
+    };
+    await dispatch(refreshStateSyncDomain(connected, 'config'));
+    expect(
+      getCustomMenuAvailabilityForDevice(store.getState() as any, connected),
+    ).toBe('failed');
+
+    expect(dispatch(canExportLayoutFile(connected))).toBe(false);
+    expect(await dispatch(exportLayoutFile(connected))).toEqual({
+      error: 'keyboard-not-ready',
+    });
+  });
 });
 
 describe('continuous custom controls', () => {
@@ -1380,6 +2064,59 @@ describe('continuous custom controls', () => {
     );
 
     expect(firmware.customEvents).toEqual(['set:66', 'save:1']);
+  });
+
+  // A control that never reports the end of its interaction would otherwise hold
+  // the path, and every later write to the keyboard would wait behind it.
+  test('an interaction left uncompleted is saved once when idle, freeing the path', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('continuous-idle', {withMenu: true});
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+    setContinuousIdleCompletionMsForTesting(150);
+
+    await dispatch(updateCustomMenuRangeValueContinuous('id_test_value', 12));
+    const later = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 77));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(firmware.customEvents).toEqual(['set:12']);
+
+    expect(await later).toBe(true);
+    expect(firmware.customEvents).toEqual([
+      'set:12',
+      'save:1',
+      'set:77',
+      'save:1',
+    ]);
+    expect(
+      hasContinuousHIDTransactionsForPath(connected.path, generation),
+    ).toBe(false);
+    // The control completing late sends nothing more.
+    const events = [...firmware.customEvents];
+    await dispatch(completeCustomMenuRangeValueContinuous('id_test_value'));
+    expect(firmware.customEvents).toEqual(events);
+  });
+
+  test('a pressed pointer keeps an idle interaction open until it is released', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
+      'continuous-idle-pressed',
+      {withMenu: true},
+    );
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.customEvents = [];
+    setContinuousIdleCompletionMsForTesting(20);
+    const pointer = (type: string) =>
+      window.dispatchEvent(Object.assign(new Event(type), {pointerId: 3}));
+
+    pointer('pointerdown');
+    await dispatch(updateCustomMenuRangeValueContinuous('id_test_value', 12));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(firmware.customEvents).toEqual(['set:12']);
+
+    pointer('pointerup');
+    await waitUntil(() => firmware.customEvents.includes('save:1'), 400);
+    expect(firmware.customEvents).toEqual(['set:12', 'save:1']);
   });
 
   test('discrete controls still SET and SAVE immediately', async () => {
@@ -1531,11 +2268,11 @@ describe('continuous custom controls', () => {
     ).toBe(20);
   });
 
-  test('a capable device with dirty CONFIG cannot start another mutation', async () => {
+  // No write goes out on a CONFIG snapshot that is no longer current. One asked for
+  // meanwhile is not dropped: it waits for the re-read and goes out after it.
+  const dirtyConfigWrite = async (path: string) => {
     const {store, connected, firmware, generation} =
-      await prepareSelectedStateSyncDevice('config-authority-dirty', {
-        withMenu: true,
-      });
+      await prepareSelectedStateSyncDevice(path, {withMenu: true});
     const dispatch = store.dispatch as any;
     await dispatch(probeStateSyncForDevice(connected));
     dispatch(
@@ -1547,15 +2284,112 @@ describe('continuous custom controls', () => {
       }),
     );
     firmware.customEvents = [];
-
     expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
       'reconciling',
     );
 
-    expect(
-      await dispatch(updateCustomMenuValue('id_test_value', 1, 1, 88)),
-    ).toBe(false);
+    firmware.holdNextMenuGet = true;
+    const writing = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 88));
+    await waitUntil(() => firmware.heldMenuGetRequest !== undefined, 800);
     expect(firmware.customEvents).toEqual([]);
+    return {store, firmware, writing};
+  };
+
+  test('a capable device with dirty CONFIG writes only after re-reading it', async () => {
+    const {firmware, writing} = await dirtyConfigWrite('config-authority-dirty');
+
+    firmware.releaseHeldMenuGet();
+
+    expect(await writing).toBe(true);
+    expect(firmware.customEvents).toEqual(['set:88', 'save:1']);
+  });
+
+  test('a write waiting for the CONFIG re-read is dropped once another keyboard is selected', async () => {
+    const {store, firmware, writing} = await dirtyConfigWrite(
+      'config-authority-reselected',
+    );
+
+    store.dispatch(selectDevice({device: null, connectionGeneration: null}));
+    firmware.releaseHeldMenuGet();
+
+    expect(await writing).toBe(false);
+    expect(firmware.customEvents).toEqual([]);
+  });
+});
+
+// The palette leaves out its Macro category only for a keyboard that has said it
+// has no macros. A read that fails on the way must not take the category away.
+describe('the palette Macro category', () => {
+  const macroFirmware =
+    (count: number, bufferSize: number) => (data: Uint8Array) => {
+      switch (data[0]) {
+        case 0x0d:
+          return payload(0x0d, 0x00, bufferSize);
+        case 0x0e:
+          return payload(0x0e, data[1], data[2], data[3]);
+        case 0x0c:
+          return payload(0x0c, count);
+      }
+      return null;
+    };
+
+  const paletteMacroCount = async (
+    path: string,
+    protocol: number,
+    answer: (data: Uint8Array) => Uint8Array | null,
+  ) => {
+    const {device} = await connectFake(path);
+    device.onSend = (data) => {
+      const reply = answer(data);
+      if (reply) {
+        device.emit(reply);
+      }
+    };
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = {...makeConnectedDevice(path, ORDINARY_VPID), protocol};
+    dispatch(
+      updateDefinitions({
+        [ORDINARY_VPID]: {
+          v3: {...makeV3Definition(), vendorProductId: ORDINARY_VPID},
+        },
+      } as any),
+    );
+    dispatch(updateConnectedDevices({[path]: connected}));
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    dispatch(
+      selectDevice({device: connected, connectionGeneration: generation}),
+    );
+    await dispatch(loadMacros(connected));
+    return getPaletteMacroCount(store.getState() as any);
+  };
+
+  test('a keyboard with macros offers each slot', async () => {
+    expect(
+      await paletteMacroCount('palette-macros', 12, macroFirmware(4, 5)),
+    ).toBe(4);
+  });
+
+  test('a keyboard that says it has none offers no Macro category', async () => {
+    expect(
+      await paletteMacroCount('palette-old-via', 7, () => null),
+    ).toBeNull();
+    expect(
+      await paletteMacroCount('palette-zero-macros', 12, macroFirmware(0, 1)),
+    ).toBeNull();
+    expect(
+      await paletteMacroCount('palette-unhandled-macros', 12, (data) => {
+        const reply = payload(...data);
+        reply[0] = 0xff;
+        return reply;
+      }),
+    ).toBeNull();
+  });
+
+  test('a macro read that times out does not read as no macros', async () => {
+    expect(
+      await paletteMacroCount('palette-macro-timeout', 12, () => null),
+    ).not.toBeNull();
   });
 });
 
@@ -2536,7 +3370,7 @@ describe('State Sync freshness coordinator regressions', () => {
     ).toBe(1);
   });
 
-  test('SET success and SAVE failure keeps CONFIG dirty for readback', async () => {
+  test('SET success and SAVE failure is a failed write that keeps CONFIG dirty for readback', async () => {
     const {store, connected, firmware} = await prepareSelectedStateSyncDevice(
       'set-ok-save-fail',
       {withMenu: true},
@@ -2544,7 +3378,9 @@ describe('State Sync freshness coordinator regressions', () => {
     const dispatch = store.dispatch as any;
     await dispatch(probeStateSyncForDevice(connected));
     firmware.rejectNextCustomSave = true;
-    await dispatch(updateCustomMenuValue('id_test_value', 1, 1, 9));
+    expect(
+      await dispatch(updateCustomMenuValue('id_test_value', 1, 1, 9)),
+    ).toBe(false);
     expect(firmware.menuValue).toBe(9);
     expect(
       store.getState().menus.customMenuDataMap[connected.path]
@@ -2857,6 +3693,102 @@ describe('State Sync freshness coordinator regressions', () => {
     expect(
       store.getState().stateSync.byPath[connected.path]?.keymap.status,
     ).toBe('fresh');
+  });
+
+  // Firmware older than its definition answers a Custom Value it does not know
+  // with id_unhandled, and reading CONFIG again cannot change that answer.
+  test('a CONFIG value the firmware does not handle is read and logged once per revision', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('config-unhandled', {
+        withMenu: true,
+      });
+    const dispatch = store.dispatch as any;
+    const {device} = firmware;
+    const isValueRead = (data: Uint8Array) =>
+      data[0] === 0x08 && data[1] === 0x01 && data[2] === 0x01;
+    device.onSend = (data) => {
+      if (isValueRead(data)) {
+        device.emit(payload(0xff, ...Array.from(data.slice(1))));
+        return;
+      }
+      return firmware.onSend(data);
+    };
+    const valueReads = () =>
+      device.sentReports.filter(({data}) => isValueRead(data)).length;
+    // Entries about this refusal, whatever else the suite has logged.
+    const errors = () =>
+      getAppErrors(appStore.getState()).filter(
+        ({message}) =>
+          message.includes('Command: 8 1 1\n') ||
+          message.includes('UnhandledCommandError'),
+      );
+    const sync = () => store.getState().stateSync.byPath[connected.path];
+    appStore.dispatch(clearAppErrors());
+
+    await dispatch(probeStateSyncForDevice(connected));
+    // The same full refresh goes on to the domains after CONFIG.
+    expect(sync()?.macro.status).toBe('fresh');
+    dispatch(setConfigureVisible(true));
+    for (let poll = 0; poll < 5; poll++) {
+      await dispatch(pollStateSync());
+    }
+    // Coming back to the tab reads every domain again, but not this answer.
+    await dispatch(refreshAllDomains(connected));
+
+    expect(valueReads()).toBe(1);
+    expect(errors()).toHaveLength(1);
+    expect(errors()[0].message).toContain('Command Name: CUSTOM_MENU_GET_VALUE');
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'failed',
+    );
+    expect(getHIDTransportDebugState(connected.path)?.poisoned).toBe(false);
+    expect(sync()?.keymap.status).toBe('fresh');
+    expect(sync()?.macro.status).toBe('fresh');
+
+    // A new revision, or a write to CONFIG, is worth one more read.
+    firmware.revisions.config += 1;
+    await dispatch(pollStateSync());
+    await dispatch(pollStateSync());
+    expect(valueReads()).toBe(2);
+    expect(errors()).toHaveLength(2);
+    dispatch(
+      beginForegroundMutation({
+        path: connected.path,
+        generation,
+        domains: ['config'],
+      }),
+    );
+    await dispatch(pollStateSync());
+    await dispatch(pollStateSync());
+    expect(valueReads()).toBe(3);
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'failed',
+    );
+
+    // Choosing the keyboard again reads it again, as its selection does.
+    dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+    dispatch(
+      markDeviceReady({
+        devicePath: connected.path,
+        connectionGeneration: generation,
+        selectionGeneration: store.getState().devices.selectionGeneration,
+      }),
+    );
+    await dispatch(refreshStateSyncDomain(connected, 'config'));
+    expect(valueReads()).toBe(4);
+    expect(errors()).toHaveLength(4);
+
+    // A new definition is read again too: it may not even hold that value.
+    installEraDefinition(store, makeV3Definition(true, {shape: 'replaced'}));
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'checking',
+    );
+    await dispatch(refreshAfterDefinitionChange(TOMAK_VPID));
+    expect(valueReads()).toBe(5);
+    expect(errors()).toHaveLength(5);
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'failed',
+    );
   });
 });
 

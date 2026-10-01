@@ -66,11 +66,13 @@ type HIDTransportGenerationChange = {
   path: string;
   generation: number;
   reason: string;
+  poisoned: boolean;
 };
 
 class HIDTransportError extends Error {}
 export class HIDTransportTimeoutError extends HIDTransportError {}
 export class HIDTransportGenerationError extends HIDTransportError {}
+export class HIDTransportInvalidReportError extends HIDTransportError {}
 export class HIDTransportLifecycleCancellationError extends HIDTransportGenerationError {
   readonly path: string;
   readonly generation: number;
@@ -145,6 +147,9 @@ export const isQMKConsoleDevice = (device: HIDDevice) =>
 
 const getVIAPathIdentifier = () =>
   globalThis.crypto?.randomUUID?.() || `via-path:${Math.random()}`;
+
+const isByte = (value: number) =>
+  Number.isInteger(value) && value >= 0 && value <= 0xff;
 
 const makeTransportError = (path: string, reason: string) =>
   new HIDTransportGenerationError(`HID transport ${path} ${reason}`);
@@ -264,7 +269,12 @@ const replaceGeneration = (
   state.diagnostics = [];
   generationChangeListeners.forEach((listener) => {
     try {
-      listener({path: state.path, generation: state.generation, reason});
+      listener({
+        path: state.path,
+        generation: state.generation,
+        reason,
+        poisoned: state.poisoned,
+      });
     } catch (listenerError) {
       console.warn('HID generation listener failed', listenerError);
     }
@@ -545,16 +555,17 @@ const ExtendedHID = {
     }
   },
   devices: async (requestAuthorize = false) => {
-    let devices = await ExtendedHID.getFilteredDevices();
-    // Avoid repeatedly opening the authorization popup.
-    if (devices.length === 0 || requestAuthorize) {
+    // Only a click may ask for the browser's device chooser; without one the
+    // browser refuses it. Every other scan lists the keyboards the browser
+    // already allows, which is how a restarted keyboard is found again.
+    if (requestAuthorize) {
       try {
         await ExtendedHID.requestDevice();
       } catch (e) {
-        return [];
+        // A refused chooser leaves the allowed keyboards listed.
       }
-      devices = await ExtendedHID.getFilteredDevices();
     }
+    const devices = await ExtendedHID.getFilteredDevices();
     // Enumeration and host close/open cannot cancel a delayed firmware reply.
     // Keep a timed-out legacy session poisoned until device reconnect: a new
     // JS generation cannot distinguish identical, untagged VIA responses.
@@ -658,6 +669,10 @@ const ExtendedHID = {
       );
     }
 
+    isConnectionLocked() {
+      return this.state.poisoned;
+    }
+
     async classifyLifecycleCancellation(
       error: unknown,
       expectedGeneration: number,
@@ -746,6 +761,15 @@ const ExtendedHID = {
       options?: HIDExchangeOptions,
     ): Promise<Uint8Array> {
       const state = this.state;
+      // new Uint8Array would send 300 as 44: the keyboard's reply would never
+      // match the request, and the timeout would then poison the connection.
+      const payload = report.slice(1);
+      const invalidByte = payload.findIndex((value) => !isByte(value));
+      if (invalidByte !== -1) {
+        throw new HIDTransportInvalidReportError(
+          `HID transport ${state.path} refused a report: byte ${invalidByte} is ${payload[invalidByte]}, not 0-255`,
+        );
+      }
       const run = async () => {
         const expectedGeneration = options?.expectedGeneration;
         if (

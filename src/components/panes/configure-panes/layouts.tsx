@@ -1,18 +1,26 @@
 import React from 'react';
 import styled from 'styled-components';
 import {title, component} from '../../icons/layouts';
-import {ControlRow, SpanOverflowCell, Label, Detail} from '../grid';
+import {ControlRow, Label, Detail} from '../grid';
+import {
+  SubmenuTab,
+  SubmenuTabBar,
+  TabbedBody,
+  TabbedCell,
+} from '../submenu-tabs';
 import {AccentSlider} from '../../inputs/accent-slider';
 import {AccentSelect} from '../../inputs/accent-select';
 import {CenterPane} from '../pane';
+import {ConfigureStatusMessage} from './status-message';
 import {
   getSelectedDefinition,
   getSelectedLayoutOptions,
+  getSelectedLayoutOptionsPending,
   updateLayoutOption,
 } from 'src/store/definitionsSlice';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import type {LayoutLabel} from '@the-via/reader';
-import type {FC} from 'react';
+import type {FC, ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
 
 const LayoutControl: React.FC<{
@@ -72,36 +80,62 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
+const LayoutsCell: FC<{children: ReactNode}> = ({children}) => {
+  const {t} = useTranslation();
+  return (
+    <TabbedCell>
+      <SubmenuTabBar label={t(title)}>
+        <SubmenuTab type="button" $selected={true} aria-pressed={true}>
+          {t(title)}
+        </SubmenuTab>
+      </SubmenuTabBar>
+      <TabbedBody>
+        <ContainerPane>
+          <Container>{children}</Container>
+        </ContainerPane>
+      </TabbedBody>
+    </TabbedCell>
+  );
+};
+
 export const Pane: FC = () => {
+  const {t} = useTranslation();
   const dispatch = useAppDispatch();
 
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const selectedLayoutOptions = useAppSelector(getSelectedLayoutOptions);
+  const layoutOptionsPending = useAppSelector(getSelectedLayoutOptionsPending);
 
   if (!selectedDefinition || !selectedLayoutOptions) {
     return null;
+  }
+
+  if (layoutOptionsPending) {
+    return (
+      <LayoutsCell>
+        <ConfigureStatusMessage role="status">
+          {t('Loading...')}
+        </ConfigureStatusMessage>
+      </LayoutsCell>
+    );
   }
 
   const {layouts} = selectedDefinition;
 
   const labels = layouts.labels || [];
   return (
-    <SpanOverflowCell>
-      <ContainerPane>
-        <Container>
-          {labels.map((label: LayoutLabel, idx: number) => (
-            <LayoutControl
-              key={idx}
-              onChange={(val) => dispatch(updateLayoutOption(idx, val))}
-              meta={{
-                labels: label,
-                selectedOption: selectedLayoutOptions[idx],
-              }}
-            />
-          ))}
-        </Container>
-      </ContainerPane>
-    </SpanOverflowCell>
+    <LayoutsCell>
+      {labels.map((label: LayoutLabel, idx: number) => (
+        <LayoutControl
+          key={idx}
+          onChange={(val) => dispatch(updateLayoutOption(idx, val))}
+          meta={{
+            labels: label,
+            selectedOption: selectedLayoutOptions[idx],
+          }}
+        />
+      ))}
+    </LayoutsCell>
   );
 };
 export const Title = title;

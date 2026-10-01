@@ -24,6 +24,7 @@ import type {AppThunk, RootState} from './index';
 import {
   getSelectedDevicePath,
   getSelectedConnectedDevice,
+  getSelectedConnectionGeneration,
   ensureSupportedIds,
   getSelectedKeyboardAPI,
 } from './devicesSlice';
@@ -34,14 +35,18 @@ import {getBasicKeyDict} from 'src/utils/key-to-byte/dictionary-store';
 import {getByteToKey} from 'src/utils/key';
 import {del, entries, setMany, update} from 'idb-keyval';
 import {isFulfilledPromise} from 'src/utils/type-predicates';
-import {extractDeviceInfo, logAppError} from './errorsSlice';
+import {
+  APP_ERROR_TITLES,
+  extractDeviceInfo,
+  logAppError,
+} from './errorsSlice';
 import {getSelectedKeycodesVersion} from './firmwareSlice';
 import {
   commitStableConfigCandidate,
   invalidateStateSyncDomain,
   type StateSyncConfigCandidate,
 } from './stateSyncCandidateActions';
-import {beginForegroundMutation} from './stateSyncSlice';
+import {beginForegroundMutation, getPathSyncState} from './stateSyncSlice';
 
 type LayoutOption = number;
 type LayoutOptionsMap = {[devicePath: string]: LayoutOption[] | null}; // TODO: is this null valid?
@@ -52,6 +57,7 @@ type DefinitionsState = {
   customDefinitions: KeyboardDictionary;
   eraDefinitions: KeyboardDictionary;
   layoutOptionsMap: LayoutOptionsMap;
+  layoutOptionsGenerationMap: Record<string, number>;
   definitionEpochs: Record<string, number>;
 };
 
@@ -60,6 +66,7 @@ const initialState: DefinitionsState = {
   customDefinitions: {},
   eraDefinitions: {},
   layoutOptionsMap: {},
+  layoutOptionsGenerationMap: {},
   definitionEpochs: {},
 };
 
@@ -212,15 +219,25 @@ const definitionsSlice = createSlice({
         }
       });
     },
-    updateLayoutOptions: (state, action: PayloadAction<LayoutOptionsMap>) => {
-      state.layoutOptionsMap = {...state.layoutOptionsMap, ...action.payload};
+    updateLayoutOptions: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        connectionGeneration: number;
+        options: LayoutOption[];
+      }>,
+    ) => {
+      const {devicePath, connectionGeneration, options} = action.payload;
+      state.layoutOptionsMap[devicePath] = options;
+      state.layoutOptionsGenerationMap[devicePath] = connectionGeneration;
     },
   },
   extraReducers: (builder) => {
     builder.addCase(commitStableConfigCandidate, (state, action) => {
-      const {devicePath, candidate} = action.payload;
+      const {devicePath, connectionGeneration, candidate} = action.payload;
       if (candidate.layoutOptions !== undefined) {
         state.layoutOptionsMap[devicePath] = candidate.layoutOptions;
+        state.layoutOptionsGenerationMap[devicePath] = connectionGeneration;
       }
     });
   },
@@ -293,6 +310,15 @@ export const getDefinitionSourceForDevice = (
   return null;
 };
 
+// mergeDefinitionLookup uses a Design upload only when neither bundled source
+// has its id and version.
+export const getHasBundledDefinition = createSelector(
+  getBaseDefinitions,
+  getEraDefinitions,
+  (official, era) => (id: number, version: DefinitionVersion) =>
+    Boolean(era[id]?.[version] ?? official[id]?.[version]),
+);
+
 export const getDefinitionSyncIdentity = (
   state: RootState,
   connectedDevice: ConnectedDevice | AuthorizedDevice | null | undefined,
@@ -322,10 +348,14 @@ export const getBasicKeyToByte = createSelector(
   getSelectedConnectedDevice,
   getSelectedKeycodesVersion,
   (connectedDevice, keycodesVersion) => {
-    const basicKeyToByte = getBasicKeyDict(
-      connectedDevice ? connectedDevice.protocol : 0,
-      keycodesVersion,
-    );
+    const protocol = connectedDevice ? connectedDevice.protocol : 0;
+    // Protocol 13 keycodes are unknown until the board's keycodes version is
+    // read. getBasicKeyDict throws then, and a selector that throws during
+    // render unmounts the whole app.
+    if (protocol >= 13 && keycodesVersion === undefined) {
+      return {basicKeyToByte: {}, byteToKey: {}};
+    }
+    const basicKeyToByte = getBasicKeyDict(protocol, keycodesVersion);
     return {basicKeyToByte, byteToKey: getByteToKey(basicKeyToByte)};
   },
 );
@@ -341,6 +371,23 @@ export const getSelectedLayoutOptions = createSelector(
       definition.layouts.labels.map((_) => 0)) ||
     [],
 );
+
+// Until this connection has read the layout options, the defaults on screen
+// are not the board's. Only a State Sync board waits: its CONFIG read after
+// ready brings them. Other boards keep stock VIA's defaults, as nothing reads
+// them again.
+export const getSelectedLayoutOptionsPending = (state: RootState) => {
+  const path = getSelectedDevicePath(state);
+  const generation = getSelectedConnectionGeneration(state);
+  const sync = getPathSyncState(state, path);
+  return (
+    !!path &&
+    !!getSelectedDefinition(state)?.layouts.labels?.length &&
+    sync?.capability === 'capable' &&
+    sync.generation === generation &&
+    state.definitions.layoutOptionsGenerationMap[path] !== generation
+  );
+};
 
 export const getSelectedOptionKeys = createSelector(
   getSelectedLayoutOptions,
@@ -376,6 +423,11 @@ export const updateLayoutOption =
     const path = getSelectedDevicePath(state);
 
     if (!definition || !api || !path || !definition.layouts.labels) {
+      return;
+    }
+    // Every row is written at once, so rows this connection has not read would
+    // be overwritten with the defaults on screen.
+    if (getSelectedLayoutOptionsPending(state)) {
       return;
     }
     const connectionGeneration = api.getConnectionGeneration();
@@ -420,7 +472,9 @@ export const updateLayoutOption =
 
     dispatch(
       updateLayoutOptions({
-        [path]: options,
+        devicePath: path,
+        connectionGeneration,
+        options,
       }),
     );
     dispatch(
@@ -527,7 +581,9 @@ export const loadLayoutOptions =
       }
       dispatch(
         updateLayoutOptions({
-          [path]: options,
+          devicePath: path,
+          connectionGeneration,
+          options,
         }),
       );
     } catch {
@@ -627,6 +683,7 @@ export const reloadDefinitions =
         logAppError({
           message: `Fetching ${device.requiredDefinitionVersion} definition failed`,
           deviceInfo: extractDeviceInfo(device),
+          title: APP_ERROR_TITLES.definition,
         }),
       );
     });
@@ -637,6 +694,7 @@ export const reloadDefinitions =
           logAppError({
             message: `Fetching ERA ${device.requiredDefinitionVersion} definition failed`,
             deviceInfo: extractDeviceInfo(device),
+            title: APP_ERROR_TITLES.definition,
           }),
         );
       }

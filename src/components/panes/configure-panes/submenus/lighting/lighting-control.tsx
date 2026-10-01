@@ -89,6 +89,9 @@ export const LightingControl = (props: AdvancedControlProps) => {
           <Detail>
             <ArrayColorPicker
               color={valArr as [number, number]}
+              label={
+                typeof labelContent === 'string' ? labelContent : undefined
+              }
               setColor={(hue, sat) =>
                 dispatch(updateBacklightValueContinuous(command, hue, sat))
               }

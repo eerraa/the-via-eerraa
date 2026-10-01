@@ -36,9 +36,14 @@ export const PromptText = styled.div`
   color: var(--color_label);
   font-size: 20px;
   line-height: 1.4;
-  max-width: calc(100vw - 80px);
+  max-width: min(640px, calc(100vw - 80px));
   white-space: pre-line;
-  text-align: center;
+  text-align: left;
+  /* Korean breaks between words. Applied to every language, keep-all would
+     make a Japanese or Chinese sentence one unbreakable word. */
+  &:lang(ko) {
+    word-break: keep-all;
+  }
 `;
 
 export const RowDiv = styled.div`

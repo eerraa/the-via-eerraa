@@ -1,4 +1,4 @@
-import {PropsWithChildren, useCallback, useEffect, useRef} from 'react';
+import {PropsWithChildren, useCallback, useEffect, useId, useRef} from 'react';
 import styled from 'styled-components';
 import {AccentButton} from './accent-button';
 import {ModalContainer, PromptText} from './dialog-base';
@@ -26,6 +26,7 @@ const Controls = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: 20px;
 `;
 export const MessageDialog: React.FC<
   PropsWithChildren<{
@@ -33,9 +34,13 @@ export const MessageDialog: React.FC<
     onConfirm?(): void;
     onCancel?(): void;
     confirmLabel?: string;
+    /** A second button after Confirm, for a dialog that offers a way forward. */
+    secondaryLabel?: string;
+    onSecondary?(): void;
   }>
 > = (props) => {
   const {t} = useTranslation();
+  const promptId = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const closeModal = useCallback(() => {
     if (ref.current) {
@@ -57,13 +62,16 @@ export const MessageDialog: React.FC<
   return (
     <MessageDialogContainer
       ref={ref}
+      aria-describedby={promptId}
       onCancel={(evt) => {
         evt.preventDefault();
-        props.onCancel?.();
+        // Escape answers like Confirm unless the dialog gives it another meaning.
+        (props.onCancel ?? props.onConfirm)?.();
+        closeModal();
       }}
     >
       <ModalContainer>
-        <PromptText>{props.children}</PromptText>
+        <PromptText id={promptId}>{props.children}</PromptText>
         <Controls>
           <AccentButton
             onClick={() => {
@@ -73,6 +81,16 @@ export const MessageDialog: React.FC<
           >
             {t(props.confirmLabel || 'Confirm')}
           </AccentButton>
+          {props.secondaryLabel && (
+            <AccentButton
+              onClick={() => {
+                props.onSecondary?.();
+                closeModal();
+              }}
+            >
+              {t(props.secondaryLabel)}
+            </AccentButton>
+          )}
         </Controls>
       </ModalContainer>
     </MessageDialogContainer>

@@ -1,4 +1,4 @@
-import {FC, useMemo, useState} from 'react';
+import {FC, useId, useMemo, useRef, useState} from 'react';
 import {faLanguage} from '@fortawesome/free-solid-svg-icons';
 import {CategoryIconContainer} from '../panes/grid';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
@@ -25,6 +25,8 @@ const LanguageList = styled.ul<{$show: boolean}>`
   transition: all 0.2s ease-out;
   z-index: 11;
   opacity: ${(props) => (props.$show ? 1 : 0)};
+  /* Hidden once faded out, so a closed list's buttons leave the Tab order. */
+  visibility: ${(props) => (props.$show ? 'visible' : 'hidden')};
   overflow: hidden;
   transform: ${(props) => (props.$show ? 0 : `translateY(-5px)`)};
 `;
@@ -50,7 +52,8 @@ const LanugaeButton = styled.button<{$selected?: boolean}>`
   font-size: 14px;
   text-transform: uppercase;
   padding: 5px 10px;
-  &:hover {
+  &:hover,
+  &:focus-visible {
     border: none;
     background: ${(props) =>
       props.$selected ? 'var(--bg_icon-highlighted)' : 'var(--bg_control)'};
@@ -74,8 +77,10 @@ const ClickCover = styled.div`
 `;
 
 const LanguageSelectors: React.FC<{
+  id: string;
   show: boolean;
   onClickOut: () => void;
+  onChosen: () => void;
 }> = (props) => {
   const langs = [
     {code: 'en', lang: 'English'},
@@ -88,7 +93,7 @@ const LanguageSelectors: React.FC<{
   const {i18n} = useTranslation();
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng);
-    props.onClickOut();
+    props.onChosen();
   };
 
   const selectLang = useMemo(() => {
@@ -100,7 +105,7 @@ const LanguageSelectors: React.FC<{
   return (
     <>
       {props.show && <ClickCover onClick={props.onClickOut} />}
-      <LanguageList $show={props.show}>
+      <LanguageList id={props.id} $show={props.show}>
         {langs.map(({lang, code}) => {
           return (
             <LanugaeButton
@@ -118,19 +123,45 @@ const LanguageSelectors: React.FC<{
 };
 
 export const LanguageSelect: FC = () => {
+  const {t} = useTranslation();
   const [showList, setShowList] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  // Choosing or Escape closes the list and gives focus back to its button;
+  // focus that moves on past the list closes it too.
+  const closeToButton = () => {
+    setShowList(false);
+    buttonRef.current?.focus();
+  };
   return (
-    <Container>
-      <CategoryIconContainer>
-        <FontAwesomeIcon
-          size={'xl'}
-          icon={faLanguage}
-          onClick={() => setShowList(true)}
-        />
+    <Container
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && showList) {
+          closeToButton();
+        }
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setShowList(false);
+        }
+      }}
+    >
+      <CategoryIconContainer
+        as="button"
+        type="button"
+        ref={buttonRef}
+        aria-label={t('Language')}
+        aria-expanded={showList}
+        aria-controls={listId}
+        onClick={() => setShowList((show) => !show)}
+      >
+        <FontAwesomeIcon size={'xl'} icon={faLanguage} />
       </CategoryIconContainer>
       <LanguageSelectors
+        id={listId}
         show={showList}
         onClickOut={() => setShowList(false)}
+        onChosen={closeToButton}
       />
     </Container>
   );

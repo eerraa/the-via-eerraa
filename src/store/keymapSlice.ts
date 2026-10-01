@@ -1,4 +1,5 @@
 import {createSelector, createSlice, PayloadAction} from '@reduxjs/toolkit';
+import type {MatrixPosition, VIAKey} from '@the-via/reader';
 import type {
   ConnectedDevice,
   DeviceLayerMap,
@@ -30,6 +31,8 @@ import {
 } from './stateSyncCandidateActions';
 import {beginForegroundMutation} from './stateSyncSlice';
 
+type SelectedKeyPosition = Pick<MatrixPosition, 'row' | 'col' | 'ei'>;
+
 type KeymapState = {
   rawDeviceMap: DeviceLayerMap;
   encoderDeviceMap: Record<string, StateSyncEncoderMap>;
@@ -37,6 +40,7 @@ type KeymapState = {
   loadGenerationMap: Record<string, number>;
   selectedLayerIndex: number;
   selectedKey: number | null;
+  selectedKeyPosition: SelectedKeyPosition | null;
   configureKeyboardIsSelectable: boolean;
   selectedPaletteColor: [number, number];
 };
@@ -48,6 +52,7 @@ const initialState: KeymapState = {
   loadGenerationMap: {},
   selectedLayerIndex: 0,
   selectedKey: null,
+  selectedKeyPosition: null,
   configureKeyboardIsSelectable: false,
   selectedPaletteColor: [0, 0],
 };
@@ -85,6 +90,10 @@ const keymapSlice = createSlice({
           {length: numberOfLayers},
           () => ({keymap: [], isLoaded: false}),
         );
+      }
+      // A knob read on an earlier connection is read again.
+      if (state.loadGenerationMap[devicePath] !== connectionGeneration) {
+        delete state.encoderDeviceMap[devicePath];
       }
       state.numberOfLayersMap[devicePath] = numberOfLayers;
       state.loadGenerationMap[devicePath] = connectionGeneration;
@@ -126,9 +135,30 @@ const keymapSlice = createSlice({
     },
     clearSelectedKey: (state) => {
       state.selectedKey = null;
+      state.selectedKeyPosition = null;
     },
-    updateSelectedKey: (state, action: PayloadAction<number | null>) => {
-      state.selectedKey = action.payload;
+    // The index is into the drawn keys, which a layout option change can
+    // reorder, so the key's matrix position is kept with it.
+    updateSelectedKey: {
+      reducer: (
+        state,
+        action: PayloadAction<{
+          index: number | null;
+          position: SelectedKeyPosition | null;
+        }>,
+      ) => {
+        state.selectedKey = action.payload.index;
+        state.selectedKeyPosition = action.payload.position;
+      },
+      prepare: (index: number | null, keys?: VIAKey[]) => {
+        const key = index === null ? undefined : keys?.[index];
+        return {
+          payload: {
+            index,
+            position: key ? {row: key.row, col: key.col, ei: key.ei} : null,
+          },
+        };
+      },
     },
     saveKeymapSuccess: (
       state,
@@ -167,17 +197,35 @@ const keymapSlice = createSlice({
     ) => {
       const {devicePath, encoderId, layerIndex, isClockwise, value} =
         action.payload;
-      const current = state.encoderDeviceMap[devicePath] ?? {};
-      const layers = current[encoderId] ? [...current[encoderId]] : [];
-      const pair: [number, number] = layers[layerIndex]
-        ? [...layers[layerIndex]]
-        : [0, 0];
-      pair[isClockwise ? 1 : 0] = value;
-      layers[layerIndex] = pair;
-      state.encoderDeviceMap[devicePath] = {
-        ...current,
-        [encoderId]: layers,
-      };
+      // The other direction is not guessed: a knob without a read pair is
+      // read from the keyboard when it is next shown.
+      const pair =
+        state.encoderDeviceMap[devicePath]?.[encoderId]?.[layerIndex];
+      if (pair) {
+        pair[isClockwise ? 1 : 0] = value;
+      }
+    },
+    // Both directions of a knob on one layer, read when the knob was shown.
+    loadEncoderValuesSuccess: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        encoderId: number;
+        layerIndex: number;
+        values: [number, number];
+        connectionGeneration: number;
+      }>,
+    ) => {
+      const {devicePath, encoderId, layerIndex, values, connectionGeneration} =
+        action.payload;
+      if (state.loadGenerationMap[devicePath] !== connectionGeneration) {
+        return;
+      }
+      const encoders = state.encoderDeviceMap[devicePath] ?? {};
+      const layers = encoders[encoderId] ?? [];
+      layers[layerIndex] = values;
+      encoders[encoderId] = layers;
+      state.encoderDeviceMap[devicePath] = encoders;
     },
     replaceEncoderMap: (
       state,
@@ -194,6 +242,7 @@ const keymapSlice = createSlice({
     builder
       .addCase(selectDevice, (state) => {
         state.selectedKey = null;
+        state.selectedKeyPosition = null;
       })
       .addCase(commitStableKeymapCandidate, (state, action) => {
         const {devicePath, connectionGeneration, candidate} = action.payload;
@@ -217,6 +266,7 @@ export const {
   setSelectedPaletteColor,
   resetKeymapCache,
   setEncoderValue,
+  loadEncoderValuesSuccess,
   replaceEncoderMap,
 } = keymapSlice.actions;
 
@@ -469,6 +519,42 @@ export const updateKey =
     );
   };
 
+// A keyboard without State Sync loads no knob with its keymap, so each knob
+// is read when it is first shown. Its pair is kept for this connection.
+export const loadEncoderValues =
+  (
+    layerIndex: number,
+    encoderId: number,
+  ): AppThunk<Promise<[number, number]>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const devicePath = getSelectedDevicePath(state);
+    const api = getSelectedKeyboardAPI(state);
+    if (!devicePath || !api) {
+      throw new Error('Cannot read an encoder without a selected keyboard');
+    }
+    const connectionGeneration = api.getConnectionGeneration();
+    const clockwise = await api.getEncoderValue(layerIndex, encoderId, true);
+    const counterclockwise = await api.getEncoderValue(
+      layerIndex,
+      encoderId,
+      false,
+    );
+    const values: [number, number] = [counterclockwise, clockwise];
+    if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+      dispatch(
+        loadEncoderValuesSuccess({
+          devicePath,
+          encoderId,
+          layerIndex,
+          values,
+          connectionGeneration,
+        }),
+      );
+    }
+    return values;
+  };
+
 export const updateEncoderValue =
   (
     layerIndex: number,
@@ -525,7 +611,32 @@ export const updateEncoderValue =
 
 export const getConfigureKeyboardIsSelectable = (state: RootState) =>
   state.keymap.configureKeyboardIsSelectable;
-export const getSelectedKey = (state: RootState) => state.keymap.selectedKey;
+const getSelectedKeyIndex = (state: RootState) => state.keymap.selectedKey;
+const getSelectedKeyPosition = (state: RootState) =>
+  state.keymap.selectedKeyPosition;
+// When the drawn keys change, the selection follows the picked key's matrix
+// position; while no drawn key has that position, no key is selected.
+export const getSelectedKey = createSelector(
+  getSelectedKeyIndex,
+  getSelectedKeyPosition,
+  getSelectedKeyDefinitions,
+  (index, position, keys) => {
+    if (index === null || !position) {
+      return index;
+    }
+    const isSelectedKey = (key: VIAKey | undefined) =>
+      !!key &&
+      !key.d &&
+      key.row === position.row &&
+      key.col === position.col &&
+      key.ei === position.ei;
+    if (isSelectedKey(keys[index])) {
+      return index;
+    }
+    const moved = keys.findIndex(isSelectedKey);
+    return moved === -1 ? null : moved;
+  },
+);
 export const getRawDeviceMap = (state: RootState) => state.keymap.rawDeviceMap;
 export const getEncoderDeviceMap = (state: RootState) =>
   state.keymap.encoderDeviceMap;

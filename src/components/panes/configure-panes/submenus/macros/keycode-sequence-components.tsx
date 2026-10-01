@@ -7,6 +7,7 @@ import {
   OptimizedKeycodeSequenceItem,
   RawKeycodeSequenceAction,
 } from 'src/utils/macro-api/types';
+import {MAX_MACRO_DELAY_MS} from 'src/utils/macro-api/macro-api.common';
 import styled from 'styled-components';
 
 const CharacterStreamContainer = styled.div`
@@ -119,7 +120,7 @@ export const KeycodeSequenceWait = styled.div`
 `;
 export const NumberInput = styled.input.attrs({
   type: 'number',
-  placeholder: 'XXXXX',
+  placeholder: 'XXXX',
 })`
   appearance: none;
   background: none;
@@ -151,6 +152,7 @@ export const WaitInput: React.FC<{
   value: number | string;
   index: number;
   updateValue: (id: number, wait: number) => void;
+  disabled?: boolean;
 }> = (props) => {
   const inputRef = useRef(null);
   const onBeforeInput = (evt: InputEvent) => {
@@ -159,7 +161,7 @@ export const WaitInput: React.FC<{
     }
   };
   const onChange = (evt: ChangeEvent<HTMLInputElement>) => {
-    if (+evt.target.value > 0 && +evt.target.value < 100000) {
+    if (+evt.target.value > 0 && +evt.target.value <= MAX_MACRO_DELAY_MS) {
       // Update external value
       props.updateValue(props.index, +evt.target.value);
     }
@@ -172,6 +174,7 @@ export const WaitInput: React.FC<{
         onBeforeInput={onBeforeInput as any}
         value={props.value}
         onChange={onChange}
+        disabled={props.disabled}
       />
       ms
     </KeycodeSequenceWait>

@@ -1,6 +1,6 @@
 import styled from 'styled-components';
 
-export const Pane = styled.div`
+export const Pane = styled.div.attrs({'data-routed-keyboard-pane': true})`
   background: var(--gradient);
   display: flex;
   flex: 1;

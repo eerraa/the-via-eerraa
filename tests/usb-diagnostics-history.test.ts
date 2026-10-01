@@ -140,8 +140,11 @@ describe('USB diagnostics local history', () => {
     expect(p50?.label).toBe('≤ 0.75×');
     expect(p99?.label).toBe('≤ 1.50×');
 
+    // Stored identity keeps the raw wire string; the report shows the same
+    // token as CONFIGURE → SYSTEM → VERSION.
     const report = buildUsbDiagnosticReport(runAt(0));
-    expect(report).toContain('Firmware: V260823R2');
+    expect(report).toContain('Firmware: 260823R2');
+    expect(report).not.toContain('V260823R2');
     expect(report).toContain('Mode: HS 8K');
     expect(report).toContain('Reports observed: 100');
     expect(report).toContain('p50 / p95 / p99 histogram bounds');

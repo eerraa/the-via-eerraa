@@ -1,7 +1,8 @@
 import getIconColor from '../icons/get-icon-color';
+import {keyboardAreaHeight} from 'src/utils/keyboard-area';
 import styled from 'styled-components';
 
-export const Grid = styled.div`
+export const Grid = styled.div.attrs({'data-pane-grid': true})`
   height: 100%;
   width: 100%;
   display: grid;
@@ -69,9 +70,11 @@ export const SinglePaneFlexCell = styled(Cell)`
 
 export const ConfigureFlexCell = styled(SinglePaneFlexCell)`
   pointer-events: none;
-  height: 500px;
+  height: ${keyboardAreaHeight};
 `;
 
+// Drawn as a link or a button so the keyboard reaches it; their own face is
+// cleared, and keyboard focus looks as the pointer's hover does.
 export const CategoryIconContainer = styled.span<{$selected?: boolean}>`
   position: relative;
   color: var(--color_inside-accent);
@@ -84,8 +87,14 @@ export const CategoryIconContainer = styled.span<{$selected?: boolean}>`
     props.$selected ? 'var(--color_accent)' : 'transparent'};
   border-radius: 10px;
   width: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  opacity: 1;
 
-  &:hover {
+  &:hover,
+  &:focus-visible {
     color: ${(props) =>
       props.$selected ? 'var(--color_inside-accent)' : 'var(--color_accent)'};
 
@@ -148,8 +157,8 @@ export const Detail = styled.span`
   align-items: center;
 `;
 
-export const Row = styled.div<{$selected: boolean}>`
-  cursor: pointer;
+export const Row = styled.div<{$selected: boolean; $static?: boolean}>`
+  cursor: ${(props) => (props.$static ? 'default' : 'pointer')};
   white-space: nowrap;
   margin-bottom: 15px;
   font-size: 20px;
@@ -164,7 +173,10 @@ export const Row = styled.div<{$selected: boolean}>`
   }
 
   &:hover {
-    color: var(--color_label-highlighted);
+    color: ${(props) =>
+      props.$static
+        ? getIconColor(props.$selected).style.color
+        : 'var(--color_label-highlighted)'};
 
     & .tooltip {
       transform: scale(1) translateX(0px);

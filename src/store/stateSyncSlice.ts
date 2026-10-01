@@ -15,6 +15,15 @@ import {
 export type StateSyncDomain = keyof StateSyncRevisions;
 export type DomainFreshness = 'unknown' | 'dirty' | 'refreshing' | 'fresh';
 
+// A read the firmware answered as unhandled. That is its own answer, not a lost
+// packet, so the same read cannot succeed until one of these changes.
+export type DomainReadFailure = {
+  revision: number;
+  mutationEpoch: number;
+  selectionGeneration: number;
+  definitionIdentity: string;
+};
+
 export type DomainState = {
   status: DomainFreshness;
   observedRevision: number;
@@ -23,6 +32,7 @@ export type DomainState = {
   foregroundWriteDepth: number;
   acceptedSelectionGeneration: number | null;
   acceptedDefinitionIdentity: string | null;
+  failedRead: DomainReadFailure | null;
 };
 
 export type PathSyncState = {
@@ -50,6 +60,7 @@ const initialDomain = (): DomainState => ({
   foregroundWriteDepth: 0,
   acceptedSelectionGeneration: null,
   acceptedDefinitionIdentity: null,
+  failedRead: null,
 });
 
 const initialPathSyncState = (generation: number): PathSyncState => ({
@@ -104,6 +115,7 @@ const acceptStableRevision = (
     foregroundWriteDepth: current[domain].foregroundWriteDepth,
     acceptedSelectionGeneration: selectionGeneration,
     acceptedDefinitionIdentity: definitionIdentity,
+    failedRead: null,
   };
 };
 
@@ -264,6 +276,24 @@ const stateSyncSlice = createSlice({
         current[domain].observedRevision = revision;
       }
     },
+    markDomainReadFailed: (
+      state,
+      action: PayloadAction<
+        {
+          path: string;
+          generation: number;
+          domain: StateSyncDomain;
+        } & DomainReadFailure
+      >,
+    ) => {
+      const {path, generation, domain, ...failedRead} = action.payload;
+      const current = state.byPath[path];
+      if (!current || current.generation !== generation) {
+        return;
+      }
+      current[domain].status = 'dirty';
+      current[domain].failedRead = failedRead;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -298,9 +328,23 @@ export const {
   beginForegroundWriteSession,
   endForegroundWriteSession,
   setDomainStatus,
+  markDomainReadFailed,
 } = stateSyncSlice.actions;
 
 export default stateSyncSlice.reducer;
+
+// Whether the last read of this domain was refused in the current context, so
+// reading it again would get the same answer.
+export const isDomainReadFailed = (
+  domain: DomainState,
+  selectionGeneration: number,
+  definitionIdentity: string | null,
+) =>
+  !!domain.failedRead &&
+  domain.failedRead.revision === domain.observedRevision &&
+  domain.failedRead.mutationEpoch === domain.mutationEpoch &&
+  domain.failedRead.selectionGeneration === selectionGeneration &&
+  domain.failedRead.definitionIdentity === definitionIdentity;
 
 const getStateSyncState = (state: RootState) => state.stateSync;
 export const getConfigureVisible = (state: RootState) =>

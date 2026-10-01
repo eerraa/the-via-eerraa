@@ -13,7 +13,10 @@ import {
 } from 'src/components/panes/configure-panes/custom/menu-generator';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
 import {getUISyncCommandIds, type UISyncRequest} from 'src/utils/ui-sync';
-import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
+import {
+  decodeCustomMenuText,
+  isCustomMenuCommandContent,
+} from 'src/utils/custom-menu';
 import {
   collectRangeControls,
   decodeRangeValue,
@@ -29,7 +32,10 @@ import {
   getSelectedDefinition,
 } from './definitionsSlice';
 import {collectMaxLedIndex} from '../utils/via-definition-keys';
-import {isEraVIADefinitionV3} from '../utils/era-definition';
+import {
+  getTapDanceControlMenu,
+  isEraVIADefinitionV3,
+} from '../utils/era-definition';
 import {
   getConnectedDevices,
   getSelectedConnectionGeneration,
@@ -48,6 +54,7 @@ import {
   beginForegroundWriteSession,
   endForegroundWriteSession,
   getPathSyncState,
+  isDomainReadFailed,
 } from './stateSyncSlice';
 import {isStateSyncOptIn} from 'src/utils/era-advanced-metadata';
 import {
@@ -82,6 +89,7 @@ type CustomMenuAvailability =
   | 'available'
   | 'reconciling'
   | 'checking'
+  | 'failed'
   | 'unverified';
 
 const isSameCustomMenuValue = (
@@ -161,16 +169,26 @@ export const getCustomMenuAvailabilityForDevice = (
     state,
     connectedDevice,
   );
-  const hasCurrentSnapshot =
+  const isSelectedConnection =
     sync?.capability === 'capable' &&
     sync.generation === getSelectedConnectionGeneration(state) &&
-    connectedDevice.path === getSelectedDevicePath(state) &&
+    connectedDevice.path === getSelectedDevicePath(state);
+  const hasCurrentSnapshot =
+    isSelectedConnection &&
     sync.config.acceptedRevision !== 0 &&
     sync.config.acceptedSelectionGeneration === getSelectionGeneration(state) &&
     definitionIdentity !== null &&
     sync.config.acceptedDefinitionIdentity === definitionIdentity;
+  // Waiting would not load a CONFIG read the firmware refused.
+  const readFailed =
+    isSelectedConnection &&
+    isDomainReadFailed(
+      sync.config,
+      getSelectionGeneration(state),
+      definitionIdentity,
+    );
   if (!hasCurrentSnapshot) {
-    return 'checking';
+    return readFailed ? 'failed' : 'checking';
   }
   if (
     (sync.config.status === 'fresh' &&
@@ -179,7 +197,7 @@ export const getCustomMenuAvailabilityForDevice = (
   ) {
     return 'available';
   }
-  return 'reconciling';
+  return readFailed ? 'failed' : 'reconciling';
 };
 
 const pendingCustomMenuSyncs: Record<string, PendingCustomMenuSync> = {};
@@ -196,6 +214,48 @@ const reconcileCapableConfig = async (
   const {refreshConfigDomain} = await import('./stateSyncThunks');
   await dispatch(refreshConfigDomain(connectedDevice));
 };
+
+// How many CONFIG re-reads a write waits through before it gives up. A second
+// read covers a keyboard whose settings changed while the first was running.
+const RECONCILE_WRITE_ATTEMPTS = 2;
+
+// While CONFIG is being re-read (a returning tab, a change made on the keyboard)
+// the menu still shows and takes input. A write asked for then waits for that
+// read and goes out after it, rather than being dropped: writing before it would
+// act on a snapshot that is no longer current (ADR 0001). False when another
+// keyboard was chosen meanwhile; the caller checks availability again either way.
+const awaitConfigReread = async (
+  dispatch: (action: any) => any,
+  getState: () => RootState,
+): Promise<boolean> => {
+  const selectionGeneration = getSelectionGeneration(getState());
+  for (let attempt = 0; attempt < RECONCILE_WRITE_ATTEMPTS; attempt++) {
+    const connectedDevice = getSelectedConnectedDevice(getState());
+    if (
+      !connectedDevice ||
+      getCustomMenuAvailabilityForDevice(getState(), connectedDevice) !==
+        'reconciling'
+    ) {
+      break;
+    }
+    const {refreshStateSyncDomain} = await import('./stateSyncThunks');
+    await dispatch(refreshStateSyncDomain(connectedDevice, 'config'));
+    if (getSelectionGeneration(getState()) !== selectionGeneration) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// A write that may go out now starts in the same tick, so its value shows at
+// once; only one waiting on a re-read is deferred.
+const awaitCustomMenuWriteAuthority = (
+  dispatch: (action: any) => any,
+  getState: () => RootState,
+): boolean | Promise<boolean> =>
+  getSelectedCustomMenuAvailability(getState()) === 'reconciling'
+    ? awaitConfigReread(dispatch, getState)
+    : true;
 
 const beginConfigWriteSession = (
   dispatch: (action: any) => any,
@@ -314,6 +374,10 @@ export default menusSlice.reducer;
 export const updateCustomMenuValue =
   (command: string, ...rest: number[]): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
+    const authority = awaitCustomMenuWriteAuthority(dispatch, getState);
+    if (authority !== true && !(await authority)) {
+      return false;
+    }
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
     if (
@@ -392,7 +456,10 @@ export const updateCustomMenuValue =
           }),
         );
       }
-      return setCompleted;
+      // A value the keyboard took but did not save is lost on its next power
+      // cycle, so the write did not succeed. The re-read below still shows what
+      // the keyboard holds now.
+      return false;
     } finally {
       invalidateConfig();
       try {
@@ -409,8 +476,12 @@ export const updateCustomMenuValue =
   };
 
 export const updateCustomMenuRangeValue =
-  (command: string, requestedValue: number): AppThunk<Promise<void>> =>
+  (command: string, requestedValue: number): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
+    const authority = awaitCustomMenuWriteAuthority(dispatch, getState);
+    if (authority !== true && !(await authority)) {
+      return false;
+    }
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
     const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
@@ -426,7 +497,7 @@ export const updateCustomMenuRangeValue =
       !menuData ||
       !control
     ) {
-      return;
+      return false;
     }
     const connectionGeneration = api.getConnectionGeneration();
 
@@ -450,7 +521,7 @@ export const updateCustomMenuRangeValue =
     );
 
     if (!updates.length) {
-      return;
+      return true;
     }
 
     beginConfigWriteSession(
@@ -521,6 +592,7 @@ export const updateCustomMenuRangeValue =
           }
         },
       );
+      return true;
     } catch (error) {
       console.warn(
         setsCompleted
@@ -537,6 +609,7 @@ export const updateCustomMenuRangeValue =
           }),
         );
       }
+      return false;
     } finally {
       invalidateConfig();
       try {
@@ -554,6 +627,104 @@ export const updateCustomMenuRangeValue =
         );
       }
     }
+  };
+
+// How Apply watches a held value take effect. The split link pair has five seconds
+// to agree on a new speed, and a speed the cable cannot hold falls back 200 ms after
+// the switch, so the new name has to stay past that to count.
+const LABEL_WATCH = {intervalMs: 250, holdMs: 500, timeoutMs: 6000};
+let labelWatch = LABEL_WATCH;
+
+export const setLabelWatchForTesting = (timing: typeof LABEL_WATCH | null) => {
+  labelWatch = timing ?? LABEL_WATCH;
+};
+
+// Reads one Custom Value of the selected keyboard into its menu data. A reading is
+// merged as it arrives, so a CONFIG read that finished meanwhile keeps the rest. It
+// gives null when the keyboard did not answer or is no longer the one selected.
+const customMenuValueReader = (state: RootState, command: string) => {
+  const devicePath = getSelectedDevicePath(state);
+  const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+  const commandBytes = getCustomCommandsForSelectedDefinition(state)[command];
+  if (!devicePath || !api || !commandBytes) {
+    return null;
+  }
+  const connectionGeneration = api.getConnectionGeneration();
+  return async (
+    dispatch: (action: any) => any,
+    getState: () => RootState,
+  ): Promise<number[] | null> => {
+    let value: number[];
+    try {
+      value = (await api.getCustomMenuValue(commandBytes)).slice(1);
+    } catch {
+      return null;
+    }
+    const current = getState();
+    const menuData = getSelectedCustomMenuData(current);
+    if (
+      !menuData ||
+      getSelectedDevicePath(current) !== devicePath ||
+      !api.isConnectionGenerationCurrent(connectionGeneration)
+    ) {
+      return null;
+    }
+    if (!isSameCustomMenuValue(menuData[command], value)) {
+      dispatch(
+        updateSelectedCustomMenuData({
+          devicePath,
+          menuData: {...menuData, [command]: value},
+        }),
+      );
+    }
+    return value;
+  };
+};
+
+/** Reads a value the keyboard changes without a CONFIG revision, such as a label. */
+export const refreshCustomMenuValue =
+  (command: string): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    await customMenuValueReader(getState(), command)?.(dispatch, getState);
+  };
+
+/**
+ * Reads label values until every one reads `text` and keeps reading it, or the watch
+ * runs out. Each changed reading goes into the menu data, so the menu shows the last
+ * one.
+ */
+export const awaitCustomMenuLabels =
+  (commands: string[], text: string): AppThunk<Promise<boolean>> =>
+  async (dispatch, getState) => {
+    const reads = commands.flatMap((command) => {
+      const read = customMenuValueReader(getState(), command);
+      return read ? [read] : [];
+    });
+    if (reads.length === 0 || reads.length < commands.length) {
+      return false;
+    }
+    const {intervalMs, holdMs, timeoutMs} = labelWatch;
+    const start = Date.now();
+    let readingSince: number | null = null;
+    while (Date.now() - start < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      let reading = true;
+      for (const read of reads) {
+        const value = await read(dispatch, getState);
+        if (!value) {
+          return false;
+        }
+        reading = reading && decodeCustomMenuText(value) === text;
+      }
+      if (!reading) {
+        readingSince = null;
+      } else if (readingSince === null) {
+        readingSince = Date.now();
+      } else if (Date.now() - readingSince >= holdMs) {
+        return true;
+      }
+    }
+    return false;
   };
 
 const continuousMenuKey = (kind: 'range' | 'color', command: string) =>
@@ -1129,11 +1300,24 @@ const extractCommands = (
 
 type MenuDefinition = NonNullable<ReturnType<typeof getDefinitionForDevice>>;
 
+// Marks the Tap Dance menu rebuilt from TD keycodes. Its commands are real Custom
+// Values, but the settings are edited from KEYMAP, so Configure does not list it.
+const COMMANDS_ONLY_MENU = '_eraCommandsOnly';
+
 const getV3MenusForDefinition = (definition: MenuDefinition): V3Menu[] => {
   if (!isEraVIADefinitionV3(definition)) {
     return [];
   }
-  return (definition.menus || [])
+  // Tap Dance settings live on the TD keycodes in custom JSON. Adding them back as
+  // a menu keeps every Custom Value path (fetch, write, State Sync reread, range
+  // limits) identical to when they were a TAPDANCE menu page.
+  const tapDanceMenu = getTapDanceControlMenu(definition);
+  return [
+    ...(definition.menus || []),
+    ...(tapDanceMenu
+      ? [{...tapDanceMenu, [COMMANDS_ONLY_MENU]: true} as unknown as V3Menu]
+      : []),
+  ]
     .flatMap(tryResolveCommonMenu)
     .map((menu, idx) =>
       isVIAMenu(menu) ? compileMenu('custom_menu', 3, menu, idx) : menu,
@@ -1192,8 +1376,10 @@ export const getV3Menus = createSelector(
 export const getV3MenuComponents = createSelector(
   getV3Menus,
   (menus) =>
-    menus.map(
-      (menu: any, idx) => (isVIAMenu(menu) ? makeCustomMenu(menu, idx) : menu),
+    menus.flatMap((menu: any, idx) =>
+      menu[COMMANDS_ONLY_MENU]
+        ? []
+        : [isVIAMenu(menu) ? makeCustomMenu(menu, idx) : menu],
     ) as ReturnType<typeof makeCustomMenus>,
 );
 

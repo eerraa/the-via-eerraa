@@ -16,26 +16,26 @@ type DevicesState = {
   selectedDevicePath: string | null;
   selectedConnectionGeneration: number | null;
   selectedConnectionNeedsReload: boolean;
+  selectedConnectionLocked: boolean;
   selectionGeneration: number;
   readyDevicePath: string | null;
   connectedDevicePaths: ConnectedDevices;
   unresolvedDefinitionDevicePaths: AuthorizedDevices;
   invalidProtocolDevicePaths: Record<string, Device>;
   supportedIds: VendorProductIdMap;
-  forceAuthorize: boolean;
 };
 
 const initialState: DevicesState = {
   selectedDevicePath: null,
   selectedConnectionGeneration: null,
   selectedConnectionNeedsReload: false,
+  selectedConnectionLocked: false,
   selectionGeneration: 0,
   readyDevicePath: null,
   connectedDevicePaths: {},
   unresolvedDefinitionDevicePaths: {},
   invalidProtocolDevicePaths: {},
   supportedIds: {},
-  forceAuthorize: false,
 };
 
 const deviceSlice = createSlice({
@@ -53,6 +53,7 @@ const deviceSlice = createSlice({
       state.selectionGeneration += 1;
       state.selectedConnectionGeneration = action.payload.connectionGeneration;
       state.selectedConnectionNeedsReload = false;
+      state.selectedConnectionLocked = false;
       if (!action.payload.device) {
         state.selectedDevicePath = null;
       } else {
@@ -64,13 +65,15 @@ const deviceSlice = createSlice({
       action: PayloadAction<{
         devicePath: string;
         connectionGeneration: number;
+        locked: boolean;
       }>,
     ) => {
-      const {devicePath, connectionGeneration} = action.payload;
+      const {devicePath, connectionGeneration, locked} = action.payload;
       if (state.selectedDevicePath === devicePath) {
         state.readyDevicePath = null;
         state.selectedConnectionGeneration = connectionGeneration;
         state.selectedConnectionNeedsReload = true;
+        state.selectedConnectionLocked = locked;
         state.selectionGeneration += 1;
       }
     },
@@ -91,9 +94,6 @@ const deviceSlice = createSlice({
       ) {
         state.readyDevicePath = devicePath;
       }
-    },
-    setForceAuthorize: (state, action: PayloadAction<boolean>) => {
-      state.forceAuthorize = action.payload;
     },
     updateConnectedDevices: (
       state,
@@ -126,6 +126,7 @@ const deviceSlice = createSlice({
       state.selectedDevicePath = null;
       state.selectedConnectionGeneration = null;
       state.selectedConnectionNeedsReload = false;
+      state.selectedConnectionLocked = false;
       state.selectionGeneration += 1;
       state.readyDevicePath = null;
       state.connectedDevicePaths = {};
@@ -161,13 +162,10 @@ export const {
   dismissInvalidProtocolDevice,
   updateSupportedIds,
   ensureSupportedIds,
-  setForceAuthorize,
 } = deviceSlice.actions;
 
 export default deviceSlice.reducer;
 
-export const getForceAuthorize = (state: RootState) =>
-  state.devices.forceAuthorize;
 export const getConnectedDevices = (state: RootState) =>
   state.devices.connectedDevicePaths;
 export const getUnresolvedDefinitionDevices = (state: RootState) =>
@@ -188,6 +186,10 @@ export const getSelectedConnectionGeneration = (state: RootState) =>
   state.devices.selectedConnectionGeneration;
 export const getSelectedConnectionNeedsReload = (state: RootState) =>
   state.devices.selectedConnectionNeedsReload;
+// A timed-out or failed request locks the connection until the keyboard is
+// physically reconnected (ADR 0001); nothing the app sends can unlock it.
+export const getSelectedConnectionLocked = (state: RootState) =>
+  state.devices.selectedConnectionLocked;
 export const getSelectionGeneration = (state: RootState) =>
   state.devices.selectionGeneration;
 export const isSelectedDeviceOperationCurrent = (

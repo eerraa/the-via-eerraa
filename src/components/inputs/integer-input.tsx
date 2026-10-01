@@ -1,34 +1,26 @@
-import {useCallback, useEffect, useId, useRef, useState} from 'react';
-import styled from 'styled-components';
-import {useTranslation} from 'react-i18next';
-import {
-  canApplyIntegerDraft,
-  commitIntegerDraft,
-  integerFailureMessage,
-  parseIntegerDraft,
-  revertIntegerDraft,
-  type IntegerAdapter,
-  type IntegerCommitState,
-  type IntegerParseFailure,
-} from '../../utils/integer-field';
-import {useDeferredApplyRegistration} from '../panes/configure-panes/custom/deferred-apply';
+import {useId, useState} from 'react';
+import styled, {css} from 'styled-components';
+import {parseIntegerDraft} from '../../utils/integer-field';
 
 const Root = styled.span`
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
 `;
 
-const Field = styled.span`
+export const Field = styled.span<{$invalid?: boolean}>`
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  border-bottom: 1px solid var(--color_accent);
+  border-bottom: 1px solid
+    ${(props) =>
+      props.$invalid ? 'var(--color_error)' : 'var(--color_accent-text)'};
   padding: 2px 0;
 `;
 
-const NumberBox = styled.input`
+export const NumberBox = styled.input`
   width: 88px;
   background: none;
   border: none;
@@ -38,143 +30,107 @@ const NumberBox = styled.input`
   &:focus {
     outline: none;
   }
-  &:disabled {
-    opacity: 0.6;
-  }
 `;
 
-const Suffix = styled.span`
+export const Suffix = styled.span`
   color: var(--color_label-highlighted);
 `;
 
-const ErrorText = styled.span`
-  color: var(--color_error, #c44848);
+// Whatever is wrong with a draft, the field only says the range it takes; the unit
+// is the one beside the number.
+const Range = styled.span<{$below: boolean}>`
+  color: var(--color_label);
   font-size: 16px;
   white-space: nowrap;
+  ${(props) =>
+    props.$below &&
+    css`
+      position: absolute;
+      top: 100%;
+      right: 0;
+      line-height: 20px;
+    `}
 `;
 
 type Props = {
-  adapter: IntegerAdapter;
+  /** The text in the field: the saved value until it is edited. */
+  draft: string;
+  savedValue: number;
+  min: number;
+  max: number;
+  onDraftChange: (draft: string) => void;
+  /** What Enter does: the page's Apply, while it has something to write. */
+  onEnter?: () => void;
   id?: string;
   ariaLabel: string;
-  failureMessage?: (reason: IntegerParseFailure) => string;
-  savedValue: number;
   suffix: string;
+  /** Puts the range under the field, for a field in a line with no room beside it. */
+  rangeBelow?: boolean;
 };
 
+// Edits a whole number whose text is kept by its owner, which also writes it:
+// the field itself never sends anything to the keyboard.
 export const IntegerInput = ({
-  adapter,
+  draft,
+  savedValue,
+  min,
+  max,
+  onDraftChange,
+  onEnter,
   id,
   ariaLabel,
-  failureMessage = integerFailureMessage,
-  savedValue,
   suffix,
+  rangeBelow = false,
 }: Props) => {
-  const {t} = useTranslation();
   const generatedId = useId();
   const fieldId = id ?? generatedId;
-  const errorId = `${fieldId}-error`;
-  const [state, setState] = useState<IntegerCommitState>({
-    authoritativeValue: savedValue,
-    draft: String(savedValue),
-    inFlight: false,
-    error: null,
-  });
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  useEffect(() => {
-    setState((current) => {
-      if (
-        canApplyIntegerDraft(
-          current.draft,
-          current.authoritativeValue,
-          adapter,
-          current.inFlight,
-        )
-      ) {
-        return current;
-      }
-      if (
-        current.authoritativeValue === savedValue &&
-        current.draft === String(savedValue)
-      ) {
-        return current;
-      }
-      return {
-        authoritativeValue: savedValue,
-        draft: String(savedValue),
-        inFlight: false,
-        error: null,
-      };
-    });
-  }, [adapter, savedValue]);
-
-  const parsed = parseIntegerDraft(state.draft, adapter.min, adapter.max);
-  const canApply = canApplyIntegerDraft(
-    state.draft,
-    state.authoritativeValue,
-    adapter,
-    state.inFlight,
-  );
-  const validationMessage = state.error
-    ? state.error
-    : !parsed.ok && state.draft !== String(state.authoritativeValue)
-      ? failureMessage(parsed.reason)
-      : null;
-
-  const apply = useCallback(async () => {
-    const current = stateRef.current;
-    const parsedDraft = parseIntegerDraft(
-      current.draft,
-      adapter.min,
-      adapter.max,
-    );
-    if (!parsedDraft.ok) {
-      setState({...current, error: failureMessage(parsedDraft.reason)});
-      return;
-    }
-    const result = await commitIntegerDraft(
-      current.draft,
-      current,
-      adapter,
-    );
-    setState(result.next);
-  }, [adapter, failureMessage]);
-
-  useDeferredApplyRegistration(fieldId, canApply, apply);
+  const rangeId = `${fieldId}-range`;
+  // A value the keyboard reports is its own, even outside the range. A field cleared
+  // to type another number is not wrong yet either: an empty draft is marked once
+  // the field is left or Enter is pressed, not on the way.
+  const [typing, setTyping] = useState(false);
+  const parsed = parseIntegerDraft(draft, min, max);
+  const invalid =
+    !parsed.ok &&
+    draft !== String(savedValue) &&
+    !(typing && parsed.reason === 'empty');
+  const range = invalid ? (
+    <Range id={rangeId} role="alert" $below={rangeBelow}>
+      {`${min}–${max}`}
+    </Range>
+  ) : null;
 
   return (
     <Root>
-      {validationMessage ? (
-        <ErrorText id={errorId} role="alert">
-          {t(validationMessage)}
-        </ErrorText>
-      ) : null}
-      <Field>
+      {rangeBelow ? null : range}
+      <Field $invalid={invalid}>
         <NumberBox
           id={fieldId}
           inputMode="numeric"
           aria-label={ariaLabel}
-          aria-invalid={parsed.ok ? undefined : true}
-          aria-describedby={validationMessage ? errorId : undefined}
-          value={state.draft}
-          disabled={state.inFlight}
-          onChange={(event) =>
-            setState((current) => ({
-              ...current,
-              draft: event.target.value,
-              error: null,
-            }))
-          }
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? rangeId : undefined}
+          value={draft}
+          onChange={(event) => {
+            setTyping(true);
+            onDraftChange(event.target.value);
+          }}
+          onBlur={() => setTyping(false)}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
-              setState((current) => revertIntegerDraft(current));
+              onDraftChange(String(savedValue));
+            } else if (
+              event.key === 'Enter' &&
+              !event.nativeEvent?.isComposing
+            ) {
+              setTyping(false);
+              onEnter?.();
             }
           }}
         />
         <Suffix>{suffix}</Suffix>
       </Field>
+      {rangeBelow ? range : null}
     </Root>
   );
 };

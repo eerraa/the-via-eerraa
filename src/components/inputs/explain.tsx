@@ -1,6 +1,7 @@
 import {useId, useState, type ReactNode} from 'react';
 import styled from 'styled-components';
 import {useTranslation} from 'react-i18next';
+import {focusRing} from './accent-button';
 
 // Caveat text is not content — it is an answer to a question the reader may not have
 // asked yet. Rendering every caveat permanently is what pushed the diagnostics result
@@ -10,22 +11,30 @@ import {useTranslation} from 'react-i18next';
 // This is a plain in-flow disclosure rather than a floating popover: it cannot be
 // clipped by a card's overflow, it works on touch, it is keyboard-operable for free,
 // and the text stays selectable and findable with the browser's own find-in-page.
+// Quiet until it is wanted: the app's own face, the label colour, the accent only on
+// hover and while open.
 const Toggle = styled.button<{$open: boolean}>(({$open}) => ({
   appearance: 'none',
   flex: 'none',
-  width: 18,
-  height: 18,
-  lineHeight: '16px',
+  width: 20,
+  height: 20,
+  lineHeight: '18px',
   padding: 0,
   borderRadius: '50%',
-  border: '1px solid var(--color_accent)',
+  border: `1px solid ${$open ? 'var(--color_accent)' : 'var(--color_label)'}`,
   background: $open ? 'var(--color_accent)' : 'transparent',
-  color: $open ? 'var(--color_inside-accent)' : 'var(--color_accent)',
+  color: $open ? 'var(--color_inside-accent)' : 'var(--color_label)',
+  fontFamily: 'inherit',
   fontSize: 13,
-  fontStyle: 'italic',
-  fontFamily: 'Georgia, serif',
+  fontWeight: 400,
   cursor: 'pointer',
-  ':hover': {filter: 'brightness(1.25)'},
+  '&:hover': $open
+    ? {filter: 'brightness(1.1)'}
+    : {
+        borderColor: 'var(--color_accent-text)',
+        color: 'var(--color_accent-text)',
+      },
+  ...focusRing,
 }));
 
 // Exported so a caller that cannot keep the button and the body adjacent — a control

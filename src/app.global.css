@@ -66,13 +66,21 @@ a:hover {
   --box-shadow-keycap: inset -1px -1px 0 rgb(0 0 0 / 20%),
     inset 1px 1px 0 rgb(255 255 255 / 20%);
   --box-shadow-keyboard: var(--box-shadow-keycap);
+  /* The accent is tuned for fills; as text it is mixed toward the label colour.
+     VIA's accent buttons and links keep the pure accent in dark mode, where it
+     reads, and take the mix on the light surface, where it does not. */
+  --color_accent-mix: color-mix(
+    in srgb,
+    var(--color_accent) 55%,
+    var(--color_label-highlighted)
+  );
+  --color_accent-text: var(--color_accent);
 
 }
 
 html[data-theme-mode='dark'] {
   --color_label: var(--color_medium-grey);
   --color_label-highlighted: var(--color_light-grey);
-  --color_error: var(--color_error);
   --border_color_icon: var(--color_medium-grey);
   --border_color_cell: var(--color_dark-grey);
   --bg_icon: var(--color_medium-grey);
@@ -90,7 +98,6 @@ html[data-theme-mode='dark'] {
 html[data-theme-mode='light'] {
   --color_label: var(--color_medium-grey);
   --color_label-highlighted: var(--color_light-jet);
-  --color_error: var(--color_error);
   --border_color_icon: var(--color_medium-grey);
   --border_color_cell: var(--color_tinge-dark);
   --bg_icon: var(--color_medium-grey);
@@ -101,6 +108,7 @@ html[data-theme-mode='light'] {
   --color_control-disabled: var(--color_tinge-light);
   --bg_control: var(--color_tinge);
   --bg_outside-accent: var(--color_tinge-light);
+  --color_accent-text: var(--color_accent-mix);
   --bg_control-highlighted: var(--color_warm-white);
   --bg_control-disabled: transparent;
   --bg_gradient: linear-gradient(

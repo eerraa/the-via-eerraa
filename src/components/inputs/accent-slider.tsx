@@ -1,5 +1,5 @@
-import React, {useRef} from 'react';
 import styled from 'styled-components';
+import {focusOutline} from './accent-button';
 
 export const HiddenInput = styled.input`
   opacity: 0;
@@ -13,9 +13,10 @@ const Switch = styled.label`
   width: 60px;
   height: 34px;
 `;
-const Slider = styled.span<{$ischecked?: boolean}>`
+const Slider = styled.span<{$ischecked?: boolean; $disabled?: boolean}>`
   position: absolute;
-  cursor: pointer;
+  cursor: ${(props) => (props.$disabled ? 'not-allowed' : 'pointer')};
+  opacity: ${(props) => (props.$disabled ? 0.5 : 1)};
   top: 0;
   left: 0;
   right: 0;
@@ -39,42 +40,38 @@ const Slider = styled.span<{$ischecked?: boolean}>`
     transition: 0.4s;
     ${(props) => (props.$ischecked ? 'transform: translateX(26px)' : '')};
   }
+  /* The checkbox that takes focus is not drawn, so the switch shows it. */
+  ${HiddenInput}:focus-visible + & {
+    ${focusOutline}
+  }
 `;
 
 type Props = {
   isChecked: boolean;
+  disabled?: boolean;
   onChange: (val: boolean) => void;
+  /** The id of the row label that names the switch. */
+  labelledBy?: string;
 };
 
+// The switch shows only what its owner holds. A write the keyboard never took
+// must not leave it looking flipped, so it keeps no state of its own.
 export function AccentSlider(props: Props) {
-  const {isChecked, onChange} = props;
-
-  const [isHiddenChecked, setIsHiddenChecked] = React.useState(isChecked);
-  const ref = useRef<HTMLInputElement>(null);
-
-  // If the parent isChecked changes, update our local checked state
-  React.useEffect(() => {
-    setIsHiddenChecked(isChecked);
-  }, [isChecked]);
-
-  const hiddenOnChange = () => {
-    const newIsChecked = !isChecked;
-    setIsHiddenChecked(newIsChecked);
-    onChange(newIsChecked);
-    if (ref.current) {
-      ref.current.blur();
-    }
-  };
-
+  const {isChecked, disabled, onChange, labelledBy} = props;
   return (
     <Switch>
       <HiddenInput
-        ref={ref}
         type="checkbox"
-        checked={isHiddenChecked}
-        onChange={hiddenOnChange}
+        aria-labelledby={labelledBy}
+        checked={isChecked}
+        disabled={disabled}
+        onChange={() => {
+          if (!disabled) {
+            onChange(!isChecked);
+          }
+        }}
       />
-      <Slider $ischecked={isHiddenChecked} />
+      <Slider $ischecked={isChecked} $disabled={disabled} />
     </Switch>
   );
 }

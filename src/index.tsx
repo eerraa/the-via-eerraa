@@ -26,6 +26,14 @@ i18n
     },
   });
 
+// Screen readers pick their voice from the page language.
+const setPageLanguage = () => {
+  document.documentElement.lang =
+    i18n.resolvedLanguage ?? i18n.language ?? 'en';
+};
+setPageLanguage();
+i18n.on('languageChanged', setPageLanguage);
+
 const {MODE} = import.meta.env;
 
 const elem = document.getElementById('root');

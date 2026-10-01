@@ -13,6 +13,7 @@ import {
   dismissUnresolvedDefinitionDevice,
   getConnectedDevices,
   getInvalidProtocolDeviceWarning,
+  getSelectedConnectedDevice,
   getSelectedKeyboardAPI,
   getUnresolvedDefinitionDeviceWarning,
   invalidateDeviceConnection,
@@ -21,7 +22,7 @@ import {
   loadSupportedIds,
   reloadConnectedDevices,
 } from 'src/store/devicesThunks';
-import {getDisableFastRemap} from '../store/settingsSlice';
+import {getDisableFastRemap, setShowDesignTab} from '../store/settingsSlice';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getSelectedKey,
@@ -29,19 +30,27 @@ import {
   updateSelectedKey as updateSelectedKeyAction,
 } from 'src/store/keymapSlice';
 import {
-  getBasicKeyToByte,
   getSelectedDefinition,
   getSelectedKeyDefinitions,
 } from 'src/store/definitionsSlice';
+import {
+  APP_ERROR_TITLES,
+  extractDeviceInfo,
+  getMessageFromError,
+  logAppError,
+} from 'src/store/errorsSlice';
 import {handleUISyncRequest} from 'src/store/stateSyncThunks';
 import {OVERRIDE_HID_CHECK} from 'src/utils/override';
 import {KeyboardAPI, KeyboardValue} from 'src/utils/keyboard-api';
-import {useTranslation} from 'react-i18next';
+import {Trans, useTranslation} from 'react-i18next';
+import {focusRing} from './inputs/accent-button';
 import {MessageDialog} from './inputs/message-dialog';
+import {hideDesignWarningThisSession} from './panes/design';
 import {formatNumberAsHex} from 'src/utils/format';
 import {addHIDTransportGenerationListener} from 'src/shims/node-hid';
 import {StateSyncRuntime} from './state-sync-runtime';
 import {failContinuousHIDTransactionsForPath} from 'src/utils/continuous-hid-transaction';
+import {useLocation} from 'wouter';
 
 const ErrorHome = styled.div`
   background: var(--bg_gradient);
@@ -71,10 +80,6 @@ const UsbError = styled.div`
   text-align: center;
 `;
 
-const UsbErrorIcon = styled.div`
-  font-size: 2rem;
-`;
-
 const UsbErrorHeading = styled.h1`
   margin: 1rem 0 0;
 `;
@@ -82,6 +87,11 @@ const UsbErrorHeading = styled.h1`
 const UsbErrorWebHIDLink = styled.a`
   text-decoration: underline;
   color: var(--color_label-highlighted);
+  ${focusRing}
+
+  &:hover {
+    color: var(--color_accent);
+  }
 `;
 
 const timeoutRepeater =
@@ -93,6 +103,48 @@ const timeoutRepeater =
         timeoutRepeater(fn, timeout, numToRepeat - 1)();
       }
     }, timeout);
+
+type RouteErrorBoundaryProps = {
+  location: string;
+  onError: (error: unknown) => void;
+  children?: React.ReactNode;
+};
+
+type RouteErrorBoundaryState = {failed: boolean; location: string};
+
+// Without a boundary a render error unmounts the whole app, header, /errors and
+// /firmware included. The failed route stays empty until the location changes;
+// the logged error lights the header's warning link.
+class RouteErrorBoundary extends React.Component<
+  RouteErrorBoundaryProps,
+  RouteErrorBoundaryState
+> {
+  state: RouteErrorBoundaryState = {
+    failed: false,
+    location: this.props.location,
+  };
+
+  static getDerivedStateFromError(): Partial<RouteErrorBoundaryState> {
+    return {failed: true};
+  }
+
+  static getDerivedStateFromProps(
+    props: RouteErrorBoundaryProps,
+    state: RouteErrorBoundaryState,
+  ): Partial<RouteErrorBoundaryState> | null {
+    return props.location === state.location
+      ? null
+      : {failed: false, location: props.location};
+  }
+
+  componentDidCatch(error: unknown) {
+    this.props.onError(error);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 interface HomeProps {
   children?: React.ReactNode;
@@ -114,8 +166,21 @@ export const Home: React.FC<HomeProps> = (props) => {
   const selectedLayerIndex = useAppSelector(getSelectedLayerIndex);
   const selectedKeyDefinitions = useAppSelector(getSelectedKeyDefinitions);
   const disableFastRemap = useAppSelector(getDisableFastRemap);
-  const {basicKeyToByte} = useAppSelector(getBasicKeyToByte);
   const api = useAppSelector(getSelectedKeyboardAPI);
+  const selectedDevice = useAppSelector(getSelectedConnectedDevice);
+  const [location, setLocation] = useLocation();
+
+  const logRouteError = (error: unknown) =>
+    dispatch(
+      logAppError({
+        message:
+          error instanceof Error ? getMessageFromError(error) : String(error),
+        deviceInfo: selectedDevice
+          ? extractDeviceInfo(selectedDevice)
+          : {vendorId: 0, productId: 0, productName: ''},
+        title: APP_ERROR_TITLES.screen,
+      }),
+    );
 
   const updateDevicesRepeat: () => void = timeoutRepeater(
     () => {
@@ -169,7 +234,7 @@ export const Home: React.FC<HomeProps> = (props) => {
 
     startMonitoring();
     const removeGenerationListener = addHIDTransportGenerationListener(
-      ({path, generation}) => {
+      ({path, generation, poisoned}) => {
         failContinuousHIDTransactionsForPath(
           path,
           generation,
@@ -179,6 +244,7 @@ export const Home: React.FC<HomeProps> = (props) => {
           invalidateDeviceConnection({
             devicePath: path,
             connectionGeneration: generation,
+            locked: poisoned,
           }),
         );
       },
@@ -223,18 +289,18 @@ export const Home: React.FC<HomeProps> = (props) => {
   return !hasHIDSupport && !OVERRIDE_HID_CHECK ? (
     <ErrorHome ref={homeElem} tabIndex={0}>
       <UsbError>
-        <UsbErrorIcon>❌</UsbErrorIcon>
         <UsbErrorHeading>{t('USB Detection Error')}</UsbErrorHeading>
         <p>
-          Looks like there was a problem getting USB detection working. Right
-          now, we only support{' '}
-          <UsbErrorWebHIDLink
-            href="https://caniuse.com/?search=webhid"
-            target="_blank"
-          >
-            browsers that have WebHID enabled
-          </UsbErrorWebHIDLink>
-          , so make sure yours is compatible before trying again.
+          <Trans
+            i18nKey="Keyboards can't be configured in <0>this browser</0>."
+            components={[
+              <UsbErrorWebHIDLink
+                href="https://caniuse.com/?search=webhid"
+                target="_blank"
+                rel="noreferrer"
+              />,
+            ]}
+          />
         </p>
       </UsbError>
     </ErrorHome>
@@ -267,6 +333,17 @@ export const Home: React.FC<HomeProps> = (props) => {
               dismissUnresolvedDefinitionDevice(unresolvedDefinitionDevice),
             );
           }}
+          secondaryLabel="Upload"
+          onSecondary={() => {
+            // The Design tab is hidden by default; its warning would only ask
+            // again what this click already answered.
+            dispatch(setShowDesignTab(true));
+            dispatch(
+              dismissUnresolvedDefinitionDevice(unresolvedDefinitionDevice),
+            );
+            hideDesignWarningThisSession();
+            setLocation('/design');
+          }}
         >
           {t(
             "VIA could not find a {{definitionVersion}} definition for {{deviceName}}.\nVID: {{vid}} | PID: {{pid}}\n\nThis means that:\n- this keyboard is not officially supported through the remote definition database\n- the definition file of the keyboard has not been sideloaded through the Design tab\n\nPlease contact your keyboard's manufacturer or vendor to add it to the database, or upload the JSON definition provided by your keyboard's manufacturer or vendor in the Design tab.",
@@ -282,7 +359,9 @@ export const Home: React.FC<HomeProps> = (props) => {
         </MessageDialog>
       )}
       <StateSyncRuntime />
-      {props.children}
+      <RouteErrorBoundary location={location} onError={logRouteError}>
+        {props.children}
+      </RouteErrorBoundary>
     </>
   );
 };

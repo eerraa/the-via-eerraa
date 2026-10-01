@@ -4,17 +4,17 @@ import {
   composeLayerTap,
   composeModTap,
   composeModifiers,
-  filterKeycodeMenus,
   formatKeycodeHex,
   formatKeycodeLabel,
   getComposeBaseKeycodes,
-  isComposerCategory,
+  getComposeKeycodeDisabledReason,
   parseKeycodeInput,
-  resolveComposeBaseCode,
   selectKeycodeFromMenuCode,
 } from '../src/utils/keycode-picker';
 import {menusWithTapDanceKeycodes} from '../src/utils/keycode-menus';
 import {getKeycodes, type IKeycodeMenu} from '../src/utils/key';
+import v13BasicKeyToByte from '../src/utils/key-to-byte/v13';
+import legacyBasicKeyToByte from '../src/utils/key-to-byte/default';
 
 const basicKeyToByte: Record<string, number> = {
   KC_NO: 0x0000,
@@ -22,6 +22,10 @@ const basicKeyToByte: Record<string, number> = {
   KC_B: 0x0005,
   KC_SPC: 0x002c,
   KC_LSFT: 0x00e1,
+  KC_F13: 0x0068,
+  KC_MPLY: 0x00ae,
+  KC_VOLU: 0x00a9,
+  EXTENDED_KEY: 0x0104,
   _QK_MODS: 0x0100,
   _QK_MODS_MAX: 0x1fff,
   _QK_MOD_TAP: 0x2000,
@@ -61,7 +65,15 @@ const menus: IKeycodeMenu[] = [
   {
     id: 'special',
     label: 'Special',
-    keycodes: [{name: 'Any', code: 'text'}],
+    keycodes: [
+      {name: 'Any', code: 'text'},
+      {name: 'F13', code: 'KC_F13'},
+      {name: 'Play', code: 'KC_MPLY'},
+      {name: 'Volume Up', code: 'KC_VOLU'},
+      {name: 'Shift', code: 'KC_LSFT'},
+      {name: 'A again', code: 'KC_A'},
+      {name: 'Extended', code: 'EXTENDED_KEY'},
+    ],
   },
 ];
 
@@ -92,49 +104,123 @@ describe('keycode picker codec', () => {
     expect(parseKeycodeInput('not-a-keycode', basicKeyToByte)).toBeNull();
   });
 
-  test('search filters categories without dropping unmatched-empty noise', () => {
-    const filtered = filterKeycodeMenus(menus, 'a key');
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].keycodes.map((keycode) => keycode.code)).toEqual([
-      'KC_A',
-    ]);
-    expect(filterKeycodeMenus(menus, 'nope')).toEqual([]);
-  });
-
-  test('composer is only attached to the Layers category', () => {
-    expect(isComposerCategory('layers')).toBe(true);
-    expect(isComposerCategory('basic')).toBe(false);
-    expect(isComposerCategory('special')).toBe(false);
-    expect(isComposerCategory(undefined)).toBe(false);
-  });
-
-  test('compose base is resolved only from explicit input, not a side effect', () => {
-    expect(
-      resolveComposeBaseCode('', menus, basicKeyToByte, byteToKey),
-    ).toBeNull();
-    expect(resolveComposeBaseCode('A', menus, basicKeyToByte, byteToKey)).toBe(
-      'KC_A',
-    );
-    expect(
-      resolveComposeBaseCode('kc_b', menus, basicKeyToByte, byteToKey),
-    ).toBe('KC_B');
-    expect(
-      resolveComposeBaseCode('nope', menus, basicKeyToByte, byteToKey),
-    ).toBeNull();
-    expect(
-      resolveComposeBaseCode('MO(1)', menus, basicKeyToByte, byteToKey),
-    ).toBeNull();
-    expect(
-      resolveComposeBaseCode('0x1234', menus, basicKeyToByte, byteToKey),
-    ).toBeNull();
-  });
-
-  test('grid base picking exposes only explicit Basic tap keycodes', () => {
+  test('grid base picking allows basic values from every enabled category', () => {
     expect(
       getComposeBaseKeycodes(menus, basicKeyToByte).map(
         (keycode) => keycode.code,
       ),
-    ).toEqual(['KC_A', 'KC_B']);
+    ).toEqual(['KC_A', 'KC_B', 'KC_F13', 'KC_MPLY', 'KC_VOLU', 'KC_LSFT']);
+    expect(getComposeBaseKeycodes(menus.slice(1), basicKeyToByte)).toHaveLength(5);
+  });
+
+  test('Media, F13 and every modifier usage are valid LT/MT/MOD operands', () => {
+    for (const code of [
+      'KC_MPLY',
+      'KC_VOLU',
+      'KC_F13',
+      'KC_LCTL',
+      'KC_LSFT',
+      'KC_LALT',
+      'KC_LGUI',
+      'KC_RCTL',
+      'KC_RSFT',
+      'KC_RALT',
+      'KC_RGUI',
+    ]) {
+      const value = v13BasicKeyToByte[code as keyof typeof v13BasicKeyToByte];
+      expect(getComposeKeycodeDisabledReason(value, v13BasicKeyToByte)).toBeNull();
+      expect(composeLayerTap(2, code, v13BasicKeyToByte)).toBe(0x4200 | value);
+      expect(composeModTap('MOD_LCTL', code, v13BasicKeyToByte)).toBe(0x2100 | value);
+      expect(composeModifiers(['LCTL'], code, v13BasicKeyToByte)).toBe(0x0100 | value);
+    }
+  });
+
+  test('named and raw 16-bit operands cannot corrupt or truncate combined keys', () => {
+    for (const code of [
+      'EXTENDED_KEY',
+      '0x0104',
+      '0xFFFF',
+      'LCTL(KC_A)',
+      'MT(MOD_LCTL,KC_A)',
+      'LT(1,KC_A)',
+      'MACRO(0)',
+      'CUSTOM(0)',
+    ]) {
+      expect(composeLayerTap(1, code, basicKeyToByte)).toBeNull();
+      expect(composeModTap('MOD_LCTL', code, basicKeyToByte)).toBeNull();
+      expect(composeModifiers(['LCTL'], code, basicKeyToByte)).toBeNull();
+    }
+    for (const input of [
+      'LT(1,EXTENDED_KEY)',
+      'MT(MOD_LCTL,EXTENDED_KEY)',
+      'LCTL(EXTENDED_KEY)',
+      'LT(1,LCTL(KC_A))',
+      'MT(MOD_LCTL,LT(1,KC_A))',
+      'LCTL(MACRO(0))',
+      'LCTL(no-such-key)',
+      'LT(1,KC_A,KC_B)',
+      'MT(MOD_LCTL,KC_A,KC_B)',
+      'LT(16,KC_A)',
+      'LT(1.5,KC_A)',
+      'LCTL(KC_A',
+      'LCTL(KC_A))',
+      'LCTL(KC_A)suffix',
+    ]) {
+      expect(parseKeycodeInput(input, basicKeyToByte)).toBeNull();
+    }
+    expect(getComposeKeycodeDisabledReason(0x0104, basicKeyToByte)).toBe(
+      'requires-basic-keycode',
+    );
+    for (const value of [null, -1, 0x10000, NaN, Infinity, 1.5]) {
+      expect(getComposeKeycodeDisabledReason(value, basicKeyToByte)).toBe(
+        'invalid-keycode',
+      );
+    }
+  });
+
+  test('raw basic operands work, while reserved values stay readable without being composed', () => {
+    expect(composeLayerTap(1, '0x00AE', basicKeyToByte)).toBe(0x41ae);
+    expect(composeModTap('MOD_LCTL', '0x00AE', basicKeyToByte)).toBe(0x21ae);
+    expect(composeModifiers(['LCTL', 'LSFT'], '0x00AE', basicKeyToByte)).toBe(0x03ae);
+    expect(parseKeycodeInput('0x00FF', basicKeyToByte)).toBe(0x00ff);
+    expect(getComposeKeycodeDisabledReason(0x00ff, basicKeyToByte)).toBe(
+      'unavailable-keycode',
+    );
+    expect(composeModifiers(['LCTL'], '0x00FF', basicKeyToByte)).toBeNull();
+    expect(parseKeycodeInput('0xABCD', basicKeyToByte)).toBe(0xabcd);
+  });
+
+  test('legacy and modern numeric expressions retain exact ordinals instead of clamping or wrapping', () => {
+    const ranges = {
+      TO: '_QK_TO',
+      MO: '_QK_MOMENTARY',
+      DF: '_QK_DEF_LAYER',
+      TG: '_QK_TOGGLE_LAYER',
+      OSL: '_QK_ONE_SHOT_LAYER',
+      TT: '_QK_LAYER_TAP_TOGGLE',
+      MACRO: '_QK_MACRO',
+      CUSTOM: '_QK_KB',
+      TD: '_QK_KB',
+    };
+    for (const dictionary of [legacyBasicKeyToByte, v13BasicKeyToByte]) {
+      const dict: Record<string, number> = dictionary;
+      for (const [macro, range] of Object.entries(ranges)) {
+        const max = dict[`${range}_MAX`] - dict[range];
+        expect(parseKeycodeInput(`${macro}(0)`, dict)).toBe(dict[range]);
+        expect(parseKeycodeInput(`${macro}(${max})`, dict)).toBe(dict[`${range}_MAX`]);
+        for (const parameter of ['foo', '-1', '1.5', '0junk', String(max + 1), '256', '99999999999999999999']) {
+          expect(parseKeycodeInput(`${macro}(${parameter})`, dict)).toBeNull();
+          expect(selectKeycodeFromMenuCode(`${macro}(${parameter})`, dict)).toBeNull();
+        }
+        expect(parseKeycodeInput(`${macro}(0)junk`, dict)).toBeNull();
+      }
+      const shift = Math.log2(dict._QK_LAYER_MOD_MASK + 1);
+      expect(parseKeycodeInput('LM(15,MOD_LCTL)', dict)).toBe(dict._QK_LAYER_MOD | (15 << shift) | 1);
+      for (const parameter of ['16', '-1', 'foo', '1.5', '0junk']) {
+        expect(parseKeycodeInput(`LM(${parameter},MOD_LCTL)`, dict)).toBeNull();
+      }
+      expect(parseKeycodeInput('LCTL(LSFT(KC_A))', dict)).toBe(0x0304);
+    }
   });
 });
 
@@ -151,7 +237,7 @@ describe('tapdance keycode category', () => {
     );
   });
 
-  test('places TAPDANCE from tapdanceKeycodes and leaves Custom untouched', () => {
+  test('places the Tap Dance tab from tapdanceKeycodes and leaves Custom untouched', () => {
     const split = menusWithTapDanceKeycodes(
       [
         {
@@ -175,7 +261,7 @@ describe('tapdance keycode category', () => {
       'tapdance',
       'custom',
     ]);
-    expect(split[1].label).toBe('TAPDANCE');
+    expect(split[1].label).toBe('Tap Dance');
     expect(
       split[1].keycodes.map((keycode: {code: string}) => keycode.code),
     ).toEqual(['TD(0)', 'TD(1)']);
@@ -184,7 +270,7 @@ describe('tapdance keycode category', () => {
     ).toEqual(['USER1']);
   });
 
-  test('omits TAPDANCE when tapdanceKeycodes is empty and keeps Custom', () => {
+  test('omits the Tap Dance tab when tapdanceKeycodes is empty and keeps Custom', () => {
     const menus = [
       {
         id: 'custom',

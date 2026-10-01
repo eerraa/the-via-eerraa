@@ -1,18 +1,28 @@
 import {describe, expect, test} from 'bun:test';
+import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {
   attachTapDanceKeycodes,
   customKeycodeWireIndex,
+  getTapDanceControlMenu,
   hasCustomKeycodeTab,
   isTapDanceKeycodeName,
   splitTapDanceKeycodesFromRaw,
 } from '../src/utils/era-definition';
 import {mergeDefinitionLookup} from '../src/utils/definition-priority';
-import {findEraFeatureHelp} from '../src/utils/era-feature-help';
+import {
+  eraControlHelpEntries,
+  findEraControlHelp,
+  findEraFeatureHelp,
+} from '../src/utils/era-feature-help';
 
-type DefinitionEntry = {
+type UsbIdentity = {vendorId: string; productId: string};
+
+type DefinitionEntry = UsbIdentity & {
   id: string;
   path: string;
+  identities?: UsbIdentity[];
+  legacy?: UsbIdentity & {path: string};
   pair?: string;
   stateSync: boolean;
   usbDiagnostics?: boolean;
@@ -201,20 +211,6 @@ const expectedUsbDiagnosticsDefinitionIds = [
   'sculpturei-h7s',
 ].sort();
 
-const expectedRgbSleepTimeoutDefinitionIds = [
-  'brick60-h7s',
-  'brick65-h7s',
-  'intigrity80-h7s',
-  'may65-h7s',
-  'sculpturei-h7s',
-  'tomak-tkl-left',
-  'tomak-tkl-right',
-  'tomak79h-left',
-  'tomak79h-right',
-  'tomak79s-left',
-  'tomak79s-right',
-].sort();
-
 const expectedRgbSleepToggleDefinitionIds = [
   '7b75',
   'brick60-h7s',
@@ -241,6 +237,26 @@ const expectedRgbSleepToggleDefinitionIds = [
   'tomak79h-right',
   'tomak79s-left',
   'tomak79s-right',
+].sort();
+
+// Every RGB board but the ATmega brick65 sets the RGB idle timeout in exact seconds.
+const expectedRgbSleepTimeoutDefinitionIds =
+  expectedRgbSleepToggleDefinitionIds.filter((id) => id !== 'brick65');
+
+// QMK boards whose backlight has its own sleep switch and timeout (SYSTEM 9/13, 9/15).
+const expectedBacklightSleepDefinitionIds = [
+  '7b75',
+  'classicd-a1',
+  'classicd-a1-ug',
+  'classicd-core',
+  'classicd-coreless',
+  'divine',
+  'era65',
+  'et-tkl',
+  'klein-hs',
+  'klein-sd',
+  'n8x',
+  'newone-a1',
 ].sort();
 
 describe('era definition layout options', () => {
@@ -309,6 +325,70 @@ describe('era definition layout options', () => {
           expect(layouts.optionKeys[group][choice].length).toBeGreaterThan(0);
         }
       });
+    }
+  });
+
+  // LAYOUTS shows these names as written: no locale key translates them.
+  test('layout names spell each word one way and name widths their choice draws', async () => {
+    const {keyboardDefinitionV3ToVIADefinitionV3, isKeyboardDefinitionV3} =
+      await import('@the-via/reader');
+    const spellings = new Map<string, Set<string>>();
+    for (const {id, path} of manifest.definitions) {
+      const {definitionRaw} = splitTapDanceKeycodesFromRaw(readJSON(path));
+      if (!isKeyboardDefinitionV3(definitionRaw)) {
+        throw new Error(`${id}: invalid VIA V3 definition`);
+      }
+      const {layouts} = keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+      (layouts.labels ?? []).forEach((label, group) => {
+        const names = Array.isArray(label) ? label : [label];
+        for (const word of names.flatMap((name) => name.split(' '))) {
+          const seen = spellings.get(word.toLowerCase()) ?? new Set<string>();
+          spellings.set(word.toLowerCase(), seen.add(word));
+        }
+        // A switch names its "on" choice; a dropdown names choice n at n + 1.
+        const choices: [string, number][] = Array.isArray(label)
+          ? label.slice(1).map((name, choice) => [name, choice])
+          : [[label, 1]];
+        for (const [name, choice] of choices) {
+          const width = /^(\d+(?:\.\d+)?)U\b/.exec(name)?.[1];
+          if (width !== undefined) {
+            const drawn = layouts.optionKeys[group][choice].some(
+              ({w}) => w === Number(width),
+            );
+            expect({id, name, drawn}).toEqual({id, name, drawn: true});
+          }
+        }
+      });
+    }
+    expect(
+      [...spellings.values()]
+        .filter((seen) => seen.size > 1)
+        .map((seen) => [...seen]),
+    ).toEqual([]);
+  });
+
+  // The app loads a layout saved under a board's legacy identity onto its current
+  // one, so both definitions must put the same keys and keycodes in the same places.
+  test('a legacy definition lays out the same keys as the current one', () => {
+    const signature = (path: string) => {
+      const raw = readJSON(path) as {
+        matrix: unknown;
+        tapdanceKeycodes?: {name: string}[];
+        customKeycodes?: {name: string}[];
+      };
+      return {
+        matrix: raw.matrix,
+        tapdance: (raw.tapdanceKeycodes ?? []).map(({name}) => name),
+        custom: (raw.customKeycodes ?? []).map(({name}) => name),
+      };
+    };
+    for (const {id, path, legacy} of manifest.definitions) {
+      if (legacy) {
+        expect({id, ...signature(legacy.path)}).toEqual({
+          id,
+          ...signature(path),
+        });
+      }
     }
   });
 
@@ -494,6 +574,73 @@ describe('era definition tapdanceKeycodes', () => {
     ]);
   });
 
+  test('keeps each TD entry controls and rejects malformed ones', () => {
+    const controls = [
+      {label: 'On Tap', type: 'keycode', content: ['id_qmk_tapdance_1_tap', 0, 32]},
+      {
+        label: 'Term (ms)',
+        type: 'range',
+        content: ['id_qmk_tapdance_1_term_exact', 0, 72],
+        options: [1, 65535],
+      },
+    ];
+    const {tapdanceKeycodes} = splitTapDanceKeycodesFromRaw({
+      tapdanceKeycodes: [{name: 'TD0', title: 'Tap Dance 0', controls}],
+    });
+    expect(tapdanceKeycodes?.[0].controls).toEqual(controls as any);
+    expect(getTapDanceControlMenu({tapdanceKeycodes})).toEqual({
+      label: 'TAPDANCE',
+      content: [{label: 'TD0', content: controls}],
+    } as any);
+    for (const bad of [
+      {label: 'On Tap', type: 'toggle', content: ['id_qmk_tapdance_1_tap', 0, 32]},
+      {label: 'On Tap', type: 'keycode', content: ['id_qmk_tapdance_1_tap', 0]},
+      {label: 'Term', type: 'range', content: ['id_qmk_tapdance_1_term_exact', 0, 72]},
+    ]) {
+      expect(() =>
+        splitTapDanceKeycodesFromRaw({
+          tapdanceKeycodes: [{name: 'TD0', title: 'Tap Dance 0', controls: [bad]}],
+        }),
+      ).toThrow();
+    }
+  });
+
+  // Custom JSON edits Tap Dance from KEYMAP, so its settings sit on the TD keycodes
+  // instead of in a TAPDANCE menu. The stock JSON in the firmware repository keeps
+  // the menu for official VIA; only the custom side moved.
+  test('custom definitions carry Tap Dance settings on their TD keycodes, not in a menu', () => {
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const menus = (definition.menus ?? []) as {label?: string}[];
+      expect({id: entry.id, menu: menus.some((menu) => menu?.label === 'TAPDANCE')}).toEqual({
+        id: entry.id,
+        menu: false,
+      });
+      const keycodes = (definition.tapdanceKeycodes ?? []) as {
+        name: string;
+        controls?: {content: [string, number, number]}[];
+      }[];
+      if (!entry.exactMsFamily) {
+        expect({id: entry.id, count: keycodes.length}).toEqual({id: entry.id, count: 0});
+        continue;
+      }
+      keycodes.forEach((keycode, slot) => {
+        expect(keycode.name).toBe(`TD${slot}`);
+        expect({
+          id: entry.id,
+          name: keycode.name,
+          roles: (keycode.controls ?? []).map(({content}) =>
+            content[0].replace(`id_qmk_tapdance_${slot + 1}_`, ''),
+          ),
+        }).toEqual({
+          id: entry.id,
+          name: keycode.name,
+          roles: ['tap', 'hold', 'dtap', 'thold', 'term_exact'],
+        });
+      });
+    }
+  });
+
   test('recognizes only TD0-TD7 names as tap dance labels', () => {
     expect(isTapDanceKeycodeName('TD0')).toBe(true);
     expect(isTapDanceKeycodeName('TD7')).toBe(true);
@@ -592,6 +739,95 @@ describe('canonical ERA definition inventory', () => {
       expect(entry.firmwareSource).toBeUndefined();
       expect(entry.firmwareChecks).toBeUndefined();
     }
+  });
+
+  // ADR 0004 §1-2: current firmware reports a maker identity; older firmware keeps
+  // reporting the shared 0x4552 one and is served the definition it shipped with,
+  // because the current one reads commands that firmware does not answer.
+  const parseUsbId = (value: string) => Number.parseInt(value.slice(2), 16);
+  const isMakerIdentity = ({vendorId}: UsbIdentity) =>
+    parseUsbId(vendorId) >= 0x4500 && parseUsbId(vendorId) <= 0x453f;
+
+  test('serves every ERA board under a maker identity and its legacy identity', () => {
+    const served = new Set<number>();
+    for (const entry of manifest.definitions) {
+      const identities = [entry, ...(entry.identities ?? [])];
+      if (entry.id === 'brick65') {
+        // Not an ERA board: its own identity, no maker identity, no legacy one.
+        expect(entry.vendorId).toBe('0x5943');
+        expect(entry.identities).toBeUndefined();
+        expect(entry.legacy).toBeUndefined();
+      } else {
+        expect({id: entry.id, maker: identities.every(isMakerIdentity)}).toEqual({
+          id: entry.id,
+          maker: true,
+        });
+        expect(entry.legacy).toMatchObject({vendorId: '0x4552'});
+        expect(entry.legacy!.path).toBe(
+          entry.path.replace('era-definitions/custom/v3/', 'era-definitions/legacy/v3/'),
+        );
+        const legacy = readJSON(entry.legacy!.path);
+        expect({vendorId: legacy.vendorId, productId: legacy.productId}).toEqual({
+          vendorId: entry.legacy!.vendorId,
+          productId: entry.legacy!.productId,
+        });
+      }
+      const custom = readJSON(entry.path);
+      expect({vendorId: custom.vendorId, productId: custom.productId}).toEqual({
+        vendorId: entry.vendorId,
+        productId: entry.productId,
+      });
+      for (const identity of [...identities, ...(entry.legacy ? [entry.legacy] : [])]) {
+        const vpid = parseUsbId(identity.vendorId) * 0x10000 + parseUsbId(identity.productId);
+        expect({id: entry.id, duplicate: served.has(vpid)}).toEqual({
+          id: entry.id,
+          duplicate: false,
+        });
+        served.add(vpid);
+      }
+    }
+  });
+
+  test('serves each shared N-series board under all three makers from one JSON', () => {
+    for (const id of ['n8x', 'n86', 'n87']) {
+      const entry = manifest.definitions.find((definition) => definition.id === id)!;
+      expect(
+        [entry, ...(entry.identities ?? [])].map(({vendorId}) => vendorId).sort(),
+      ).toEqual(['0x4501', '0x4502', '0x4504']);
+    }
+    expect(
+      manifest.definitions.filter(({identities}) => identities).map(({id}) => id).sort(),
+    ).toEqual(['n86', 'n87', 'n8x']);
+  });
+
+  // The legacy tree is what older firmware was released against. It is frozen:
+  // current work belongs in the canonical definition, so any edit here is a mistake.
+  test('keeps the legacy definitions exactly as they shipped', () => {
+    const canonicalize = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(canonicalize)
+        : value && typeof value === 'object'
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [
+                  key,
+                  canonicalize((value as Record<string, unknown>)[key]),
+                ]),
+            )
+          : value;
+    const paths = manifest.definitions
+      .flatMap(({legacy}) => (legacy ? [legacy.path] : []))
+      .sort();
+    expect(paths).toHaveLength(32);
+    const digest = createHash('sha256');
+    for (const legacyPath of paths) {
+      digest.update(legacyPath);
+      digest.update(JSON.stringify(canonicalize(readJSON(legacyPath))));
+    }
+    expect(digest.digest('hex')).toBe(
+      '085458c07fe93a71a4f68652f1b47e23108f3be01e8060ec983b4d155ef87d65',
+    );
   });
 
   for (const entry of qmkEntries) {
@@ -836,7 +1072,7 @@ describe('canonical ERA definition inventory', () => {
     expect([...new Set(era65.map(({channel}) => channel))]).toEqual([13]);
   });
 
-  test('gives every RGB-capable definition the master toggle and only TOMAK/H7S the exact-second timeout', () => {
+  test('gives every RGB-capable definition the master toggle and, but for brick65, the exact-second timeout', () => {
     const actualToggle: string[] = [];
     const actualTimeout: string[] = [];
     for (const entry of manifest.definitions) {
@@ -879,7 +1115,6 @@ describe('canonical ERA definition inventory', () => {
           options: [1, 65535],
         });
         expect(toggles[0]).toMatchObject({channel: 9, id: 12});
-        expect(serialized).toContain('id_qmk_rgb_matrix_');
       } else {
         expect(controls).toHaveLength(0);
         expect(toggles[0]).toMatchObject({channel: 9, id: 12});
@@ -889,7 +1124,60 @@ describe('canonical ERA definition inventory', () => {
     expect(actualTimeout.sort()).toEqual(expectedRgbSleepTimeoutDefinitionIds);
   });
 
-  test('hides fixed SOCD and KKUK mode rows and keeps shared control order', () => {
+  // The backlight sleeps on its own switch and timeout, beside RGB's on the same
+  // SLEEP page, in the same two client forms: official JSON keeps the minute preset
+  // (9/14), the custom JSON edits the same stored value in exact seconds (9/15).
+  test('gives each backlight board its own sleep switch and exact-second timeout', () => {
+    const actual: string[] = [];
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const controls = collectCommandControls(definition).filter(({name}) =>
+        name.startsWith('id_qmk_backlight_sleep_'),
+      );
+      if (controls.length === 0) {
+        continue;
+      }
+      actual.push(entry.id);
+      expect({id: entry.id, controls}).toEqual({
+        id: entry.id,
+        controls: [
+          expect.objectContaining({
+            name: 'id_qmk_backlight_sleep_enable',
+            channel: 9,
+            id: 13,
+            label: 'Backlight Sleep',
+            type: 'toggle',
+          }),
+          expect.objectContaining({
+            name: 'id_qmk_backlight_sleep_timeout_exact',
+            channel: 9,
+            id: 15,
+            label: 'Backlight Sleep Timeout (s)',
+            type: 'range',
+            options: [1, 65535],
+            showIf: '{id_qmk_backlight_sleep_enable} == 1',
+          }),
+        ],
+      });
+      expect(submenuLabels(definition, 'SYSTEM')).toContain('SLEEP');
+      expect(
+        submenuControlLabels(definition, 'SYSTEM', 'SLEEP').slice(-2),
+      ).toEqual(['Backlight Sleep', 'Backlight Sleep Timeout (s)']);
+    }
+    expect(actual.sort()).toEqual(expectedBacklightSleepDefinitionIds);
+  });
+
+  // Both firmware families choose the SOCD resolution per pair (value 4 of each
+  // pair's channel, 1..5), so the custom JSON offers the same Mode row as the
+  // official one. KKUK still has a single behaviour, so its mode stays hidden.
+  test('offers the SOCD mode per pair, hides the KKUK mode and keeps shared control order', () => {
+    const modeOptions = (first: string, second: string) => [
+      ['Last Input', 1],
+      ['Neutral', 2],
+      ['First Input', 3],
+      [`${first} Priority`, 4],
+      [`${second} Priority`, 5],
+    ];
     for (const entry of manifest.definitions) {
       const definition = readJSON(entry.path);
       const serialized = JSON.stringify(definition);
@@ -897,13 +1185,39 @@ describe('canonical ERA definition inventory', () => {
         continue;
       }
       expect(serialized).not.toContain('id_qmk_kkuk_mode');
-      expect(serialized).not.toContain('id_qmk_socd_lr_mode');
-      expect(serialized).not.toContain('id_qmk_socd_ud_mode');
+      const h7s = entry.exactMsFamily === 'h7s';
+      const controls = collectCommandControls(definition);
+      for (const [pair, channel, first, second] of [
+        ['lr', 10, 'Left', 'Right'],
+        ['ud', 11, 'Up', 'Down'],
+      ] as const) {
+        const mode = h7s ? `id_qmk_kill_switch_mode_${pair}` : `id_qmk_socd_${pair}_mode`;
+        const enable = h7s ? `id_qmk_kill_switch_enable_${pair}` : `id_qmk_socd_${pair}_enable`;
+        expect({id: entry.id, mode: controls.filter(({name}) => name === mode)}).toEqual({
+          id: entry.id,
+          mode: [
+            expect.objectContaining({
+              channel,
+              id: 4,
+              type: 'dropdown',
+              options: modeOptions(first, second),
+              showIf: `{${enable}} == 1`,
+            }),
+          ],
+        });
+        // Every choice is explained where it is picked.
+        const help = findEraControlHelp(mode, `${pair === 'lr' ? 'Left/Right' : 'Up/Down'} Mode`);
+        expect(help?.choices?.map(({name}) => name)).toEqual(
+          modeOptions(first, second).map(([label]) => label),
+        );
+      }
       expect(submenuControlLabels(definition, 'FEATURE', 'SOCD')).toEqual([
         'Left/Right Enable',
+        'Left/Right Mode',
         'Left Key',
         'Right Key',
         'Up/Down Enable',
+        'Up/Down Mode',
         'Up Key',
         'Down Key',
       ]);
@@ -928,12 +1242,55 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
+  // Both firmware families ship official JSON that hides these rows while the
+  // setting that overrides them is active. The H7S and TOMAK79H custom JSON once
+  // kept showing them, so the same keyboard looked different in each client.
+  test('shares the official JSON visibility rules for overridden rows', () => {
+    const rules = {
+      id_qmk_tapping_permissive_hold:
+        '{id_qmk_tapping_hold_on_other_key_press} == 0',
+      id_qmk_rgb_matrix_brightness: '{id_qmk_rgb_matrix_effect} != 0',
+    } as const;
+    for (const entry of manifest.definitions) {
+      const controls = collectCommandControls(readJSON(entry.path));
+      for (const [name, showIf] of Object.entries(rules)) {
+        for (const control of controls.filter((c) => c.name === name)) {
+          expect({id: entry.id, showIf: control.showIf}).toEqual({
+            id: entry.id,
+            showIf,
+          });
+        }
+      }
+    }
+  });
+
+  test('gives every H7S definition the lighting keycode tab', () => {
+    for (const entry of manifest.definitions.filter(
+      ({exactMsFamily}) => exactMsFamily === 'h7s',
+    )) {
+      expect({
+        id: entry.id,
+        keycodes: readJSON(entry.path).keycodes,
+      }).toEqual({id: entry.id, keycodes: ['qmk_lighting']});
+    }
+  });
+
   // The SOCD menu shipped without help for twenty-five definitions because the RP2040
   // firmware calls it `id_qmk_socd_*` while H7S calls it `id_qmk_kill_switch_*`, and
   // only the second prefix was registered. Nothing failed, because no test asked "does
   // every ERA submenu actually resolve to help?". This one asks, and any submenu that
-  // legitimately has none has to be named here rather than passing silently.
-  const SUBMENUS_WITHOUT_HELP: string[] = [];
+  // legitimately has none has to be named here rather than passing silently. These
+  // have none because their rows already say everything a line above them would.
+  const SUBMENUS_WITHOUT_HELP: string[] = [
+    'Backlight',
+    'Badge',
+    'Indicators',
+    'Per-Key RGB',
+    'RGB LEDs',
+    'RGB Row',
+    'Underglow',
+    'VERSION',
+  ];
 
   test('every ERA submenu resolves to feature help, or is listed as not having any', () => {
     const uncovered = new Map<string, string[]>();
@@ -975,6 +1332,55 @@ describe('canonical ERA definition inventory', () => {
     const rp2040 = findEraFeatureHelp(['id_qmk_socd_lr_enable']);
     expect(h7s).not.toBeNull();
     expect(rp2040).toEqual(h7s!);
+  });
+
+  // Help that lists named choices is held to the dropdowns it explains: every option a
+  // definition offers is described, in the dropdown's order, and nothing else is; the
+  // marked default is one of them. A firmware that renames or adds a choice fails here
+  // instead of leaving the help describing a different menu. One list can serve two
+  // spellings of a command (a lock indicator's RGB Effect or Off), so a dropdown shows
+  // the part it offers, and every choice has to be offered by some dropdown.
+  test('help choices match the options of every dropdown they explain', () => {
+    const checked = new Set<string>();
+    const offered = new Map<unknown, Set<string>>();
+    for (const entry of manifest.definitions) {
+      for (const control of collectCommandControls(readJSON(entry.path))) {
+        if (control.type !== 'dropdown' || !Array.isArray(control.options)) {
+          continue;
+        }
+        const options = (control.options as ([string, number] | string)[]).map(
+          (option) => (typeof option === 'string' ? option : option[0]),
+        );
+        const listed = findEraControlHelp(control.name, control.label);
+        const help = findEraControlHelp(control.name, control.label, options);
+        if (!listed?.choices) {
+          continue;
+        }
+        expect({
+          id: entry.id,
+          command: control.name,
+          names: help?.choices?.map(({name}) => name),
+        }).toEqual({id: entry.id, command: control.name, names: options});
+        options.forEach((option) =>
+          offered.set(listed, (offered.get(listed) ?? new Set()).add(option)),
+        );
+        checked.add(control.name);
+      }
+    }
+    for (const {command, help} of eraControlHelpEntries()) {
+      if (help.defaultChoice) {
+        expect({command, names: help.choices?.map(({name}) => name) ?? []})
+          .toMatchObject({command, names: expect.arrayContaining([help.defaultChoice])});
+      }
+      for (const {name} of help.choices ?? []) {
+        expect({command, name, offered: offered.get(help)?.has(name)}).toEqual({
+          command,
+          name,
+          offered: true,
+        });
+      }
+    }
+    expect(checked.size).toBeGreaterThanOrEqual(5);
   });
 
   test('both firmware families use the same RGB sleep help', () => {
@@ -1043,7 +1449,7 @@ describe('canonical ERA definition inventory', () => {
       expect(byName.get(`id_qmk_custom_riley_ind${slot}_mode`)).toMatchObject({
         channel: 0,
         id: base,
-        label: `IND${slot} Mode`,
+        label: `Indicator ${slot}`,
         type: 'dropdown',
         options: [
           ['RGB Effect', 0],
@@ -1057,17 +1463,51 @@ describe('canonical ERA definition inventory', () => {
       ).toMatchObject({
         channel: 0,
         id: base + 1,
-        label: `IND${slot} Indicator Brightness`,
+        label: `Indicator ${slot} Brightness`,
         type: 'range',
         options: [0, 255],
       });
       expect(byName.get(`id_qmk_custom_riley_ind${slot}_color`)).toMatchObject({
         channel: 0,
         id: base + 2,
-        label: `IND${slot} Indicator Color`,
+        label: `Indicator ${slot} Color`,
         type: 'color',
       });
     }
+  });
+
+  // H7S once listed Pulse first and numbered On before Off (43 On / 44 Off). Both
+  // firmware families now share one numbering, and every list reads in value order.
+  test('numbers the RGBLight Pulse effects alike on both firmware families', () => {
+    const pulse = [
+      ['Pulse Off Press', 43],
+      ['Pulse On Press', 44],
+      ['Pulse Off Press (Hold)', 45],
+      ['Pulse On Press (Hold)', 46],
+    ];
+    const withPulse: string[] = [];
+    for (const entry of manifest.definitions) {
+      const effect = collectCommandControls(readJSON(entry.path)).find(
+        ({name}) => name === 'id_qmk_rgblight_effect',
+      );
+      const options = (effect?.options ?? []) as [string, number][];
+      if (!options.some(([label]) => label.startsWith('Pulse'))) {
+        continue;
+      }
+      withPulse.push(entry.id);
+      const values = options.map(([, value]) => value);
+      expect({id: entry.id, ordered: values}).toEqual({
+        id: entry.id,
+        ordered: [...values].sort((a, b) => a - b),
+      });
+      expect({
+        id: entry.id,
+        pulse: options.filter(([label]) => label.startsWith('Pulse')),
+      }).toEqual({id: entry.id, pulse});
+    }
+    expect(withPulse).toEqual(
+      expect.arrayContaining(expectedUsbDiagnosticsDefinitionIds),
+    );
   });
 
   test('uses the six common Backlight modes without retired Blink labels', () => {
@@ -1109,7 +1549,10 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
-  test('keeps all six TOMAK effect menus on the firmware RGB Matrix wire ids', () => {
+  // N86, N87 and KLEIN_SD once used VIA's built-in RGB Matrix menu, whose list lacks
+  // Flower Blooming, the Starlight effects and Riverflow, so every name from 23 on
+  // was shifted and some effects could not be chosen. Every explicit list is this one.
+  test('keeps every RGB Matrix effect menu on the firmware wire ids', () => {
     // This is the supported firmware wire order, not a comparison against a
     // sibling JSON: two halves can share the same mistaken labels and ids.
     const labels = [
@@ -1129,17 +1572,137 @@ describe('canonical ERA definition inventory', () => {
       'Starlight Dual Hue.', 'Riverflow',
     ];
     const expected = labels.map((label, id) => [label, id]);
-    const tomak = manifest.definitions.filter(({id}) => id.startsWith('tomak'));
-    expect(tomak).toHaveLength(6);
-    for (const entry of tomak) {
-      const effect = collectCommandControls(readJSON(entry.path)).find(
+    const withEffect: string[] = [];
+    for (const entry of manifest.definitions) {
+      const definition = readJSON(entry.path);
+      const effect = collectCommandControls(definition).find(
         ({name}) => name === 'id_qmk_rgb_matrix_effect',
       );
+      if (!effect) {
+        continue;
+      }
+      withEffect.push(entry.id);
       expect({definition: entry.id, effect}).toEqual({
         definition: entry.id,
         effect: expect.objectContaining({channel: 3, id: 2, options: expected}),
       });
     }
+    expect(withEffect.sort()).toEqual(
+      [
+        'chickpad',
+        'fave65s',
+        'klein-sd',
+        'n86',
+        'n87',
+        'tomak-tkl-left',
+        'tomak-tkl-right',
+        'tomak79h-left',
+        'tomak79h-right',
+        'tomak79s-left',
+        'tomak79s-right',
+      ].sort(),
+    );
+    // Only the ATmega brick65 keeps VIA's built-in menu.
+    for (const entry of manifest.definitions) {
+      const builtIn = ((readJSON(entry.path).menus ?? []) as unknown[]).filter(
+        (menu) => typeof menu === 'string',
+      );
+      expect({id: entry.id, builtIn}).toEqual({
+        id: entry.id,
+        builtIn: entry.id === 'brick65' ? ['qmk_rgb_matrix'] : [],
+      });
+    }
+  });
+
+  // Lighting submenus are named after where the LEDs sit, never after the engine
+  // driving them, and lock indicators live in one Indicators submenu under Lighting.
+  test('names Lighting submenus by LED location and keeps indicators under Lighting', () => {
+    const locations = new Set([
+      'Per-Key RGB',
+      'Underglow',
+      'Backlight',
+      'Badge',
+      'RGB Row',
+      'RGB LEDs',
+      'Indicators',
+    ]);
+    for (const entry of manifest.definitions) {
+      if (entry.id === 'brick65') {
+        continue;
+      }
+      const definition = readJSON(entry.path);
+      const menus = ((definition.menus ?? []) as {label?: string}[]).map(
+        ({label}) => label,
+      );
+      expect({id: entry.id, menus: menus.filter((label) => label !== 'Lighting')}).toEqual({
+        id: entry.id,
+        menus: menus.filter((label) => label === 'FEATURE' || label === 'SYSTEM'),
+      });
+      for (const label of submenuLabels(definition, 'Lighting')) {
+        expect({id: entry.id, label, known: locations.has(label)}).toEqual({
+          id: entry.id,
+          label,
+          known: true,
+        });
+      }
+    }
+  });
+
+  // Value 0 of a lock-indicator dropdown says what the LED does when it shows no lock:
+  // an LED the lighting effect also drives goes back to the effect, a dedicated one is off.
+  test('names each lock-indicator dropdown Indicator and its value 0 after the LED', () => {
+    const indicatorControls = [
+      'id_qmk_custom_ind_selec',
+      'id_qmk_custom_ind_1_select',
+      'id_qmk_custom_ind_2_select',
+      'id_qmk_custom_riley_ind1_mode',
+      'id_qmk_custom_riley_ind2_mode',
+      'id_qmk_custom_riley_ind3_mode',
+      'id_custom_indicator_toggle',
+    ];
+    const effectShared = new Set([
+      'brick60-h7s',
+      'fave65s',
+      'intigrity80-h7s',
+      'n86',
+      'n87',
+      'riley',
+      'tomak-tkl-left',
+      'tomak-tkl-right',
+      'tomak79h-left',
+      'tomak79h-right',
+      'tomak79s-left',
+      'tomak79s-right',
+    ]);
+    const seen = new Set<string>();
+    for (const entry of manifest.definitions) {
+      const dropdowns = collectCommandControls(readJSON(entry.path)).filter(
+        ({name}) => indicatorControls.includes(name),
+      );
+      if (dropdowns.length === 0) {
+        continue;
+      }
+      seen.add(entry.id);
+      dropdowns.forEach((dropdown) => {
+        const slot = dropdowns.length === 1 ? '' : ` ${dropdowns.indexOf(dropdown) + 1}`;
+        expect({id: entry.id, label: dropdown.label, zero: (dropdown.options as unknown[][])[0]}).toEqual({
+          id: entry.id,
+          label: `Indicator${slot}`,
+          zero: [effectShared.has(entry.id) ? 'RGB Effect' : 'Off', 0],
+        });
+      });
+    }
+    expect([...seen].sort()).toEqual(
+      [
+        ...effectShared,
+        'brick65-h7s',
+        'brick65s',
+        'may65-h7s',
+        'newone-odessey60h',
+        'newone-odessey60s',
+        'sculpturei-h7s',
+      ].sort(),
+    );
   });
 
   // TOMAK79H shipped for the whole life of this repo without MOUSE, NKRO or LINK in
@@ -1276,6 +1839,7 @@ describe('canonical ERA definition inventory', () => {
     id_qmk_rgb_sleep_enable: [
       ...expectedRgbSleepToggleDefinitionIds,
     ],
+    id_qmk_backlight_sleep: [...expectedBacklightSleepDefinitionIds],
   };
 
   test('each feature reaches exactly the definitions that are meant to have it', () => {

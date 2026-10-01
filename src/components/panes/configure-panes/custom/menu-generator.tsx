@@ -4,22 +4,31 @@ import {
   faHeadphones,
   faLightbulb,
   faMicrochip,
+  faSliders,
 } from '@fortawesome/free-solid-svg-icons';
-import React, {useState} from 'react';
+import React, {useEffect, useMemo} from 'react';
 import styled from 'styled-components';
-import {
-  OverflowCell,
-  SpanOverflowCell,
-  SubmenuOverflowCell,
-  SubmenuRow,
-} from '../../grid';
+import {SpanOverflowCell} from '../../grid';
 import {CenterPane} from '../../pane';
-import {title, component} from '../../../icons/lightbulb';
-import {VIACustomItem} from './custom-control';
 import {
-  DeferredApplyButton,
-  DeferredApplyProvider,
-  isDeferredApplyCommand,
+  SubmenuTab,
+  SubmenuTabBar,
+  TabbedBody,
+  TabbedCell,
+} from '../../submenu-tabs';
+import {title, component} from '../../../icons/lightbulb';
+import {DirtyDot} from '../../../inputs/dirty-dot';
+import {deferredRowFor, VIACustomItem} from './custom-control';
+import {
+  ApplyNote,
+  collectDeferredItems,
+  DeferredApplyButtons,
+  getSelectedMenuDrafts,
+  isDraftDirty,
+  useDeferredApply,
+  withDraftValues,
+  type DeferredRow,
+  type MenuDraft,
 } from './deferred-apply';
 import {evalExpr} from '@the-via/pelpi';
 import type {
@@ -31,10 +40,14 @@ import type {
 } from '@the-via/reader';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
+import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
+import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
 import {
+  awaitCustomMenuLabels,
   getSelectedCustomMenuData,
   getSelectedCustomMenuAvailability,
   getCustomRangeControlsForSelectedDefinition,
+  refreshCustomMenuValue,
   completeCustomMenuRangeValueContinuous,
   completeCustomMenuValueContinuous,
   updateCustomMenuValue,
@@ -48,6 +61,8 @@ import {
   isUsbPollingModeCommand,
 } from 'src/utils/custom-menu';
 import {getEraFirmwareVersionSource} from 'src/utils/era-firmware-version';
+import {useIsEraDefinition} from 'src/utils/use-is-era-definition';
+import {useSubmenuTab} from 'src/utils/use-configure-place';
 import {UsbDiagnosticsSection} from './usb-diagnostics-section';
 import {FeatureHelp} from './feature-help';
 import {FirmwareVersion} from './firmware-version';
@@ -57,6 +72,8 @@ type Category = {
   label: string;
   Menu: React.FC<any>;
   isHidden?: boolean;
+  /** A row it shows holds a change that is not written yet. */
+  dirty?: boolean;
 };
 
 const CustomPane = styled(CenterPane)`
@@ -106,7 +123,7 @@ function categoryGenerator(props: any, t: (key: string) => string): Category[] {
   // Check if the entire menu has a showIf condition
   if (
     'showIf' in props.viaMenu &&
-    !evalExpr(props.viaMenu.showIf as string, props.selectedCustomMenuData)
+    !evalExpr(props.viaMenu.showIf as string, props.showIfMenuData)
   ) {
     return [];
   }
@@ -127,7 +144,7 @@ function itemGenerator(
 
   if (
     'showIf' in elem &&
-    !evalExpr(elem.showIf as string, props.selectedCustomMenuData)
+    !evalExpr(elem.showIf as string, props.showIfMenuData)
   ) {
     return [];
   }
@@ -140,18 +157,52 @@ function itemGenerator(
   }
 }
 
+const itemCommand = (item: any): string | undefined =>
+  isCustomMenuCommandContent(item.content) ? item.content[0] : undefined;
+
+// Of the items a submenu shows, the rows written only on Apply, in order.
+const deferredRowsOf = (
+  items: any[],
+  deferredRows: Map<string, DeferredRow>,
+): DeferredRow[] =>
+  items.flatMap((item) => {
+    const command = itemCommand(item);
+    const row = command && deferredRows.get(command);
+    return row ? [row] : [];
+  });
+
 const MenuComponent = React.memo((props: any) => {
-  const items = props.elem.content.flatMap((elem: any) =>
-    itemGenerator(elem, props),
+  const {t} = useTranslation();
+  const items = props.elem.content
+    .flatMap((elem: any) => itemGenerator(elem, props))
+    .filter((item: any) => !props.hiddenCommands.has(itemCommand(item)));
+  const drafts: Record<string, MenuDraft> = props.menuDrafts;
+  const rows = deferredRowsOf(items, props.deferredRows);
+  const deferredApply = useDeferredApply(
+    rows,
+    collectDeferredItems(props.elem).flatMap(
+      (item) => props.deferredRows.get(item.content[0]) ?? [],
+    ),
+    drafts,
+    {
+      updateValue: props.updateCustomMenuValue,
+      updateRangeValue: props.updateCustomMenuRangeValue,
+      awaitLabels: props.awaitCustomMenuLabels,
+    },
   );
-  const deferred = items.some(
-    (item: any) =>
-      isCustomMenuCommandContent(item.content) &&
-      isDeferredApplyCommand(item.content[0]),
-  );
-  // Every ERA feature menu gets one line saying what it is for, with the rest behind
-  // a disclosure. Keyed off the firmware's own command ids, so an ordinary VIA
-  // keyboard whose menu happens to share a label never picks up this text.
+  // The keyboard changes the value it runs and the one it keeps without a CONFIG
+  // revision, as when the link falls back to a slower speed, so a page showing such
+  // a value reads both as it opens.
+  const labelCommands = rows.flatMap(({held}) => held?.labels ?? []).join(' ');
+  useEffect(() => {
+    labelCommands
+      .split(' ')
+      .filter(Boolean)
+      .forEach((command) => props.refreshCustomMenuValue(command));
+  }, [labelCommands]);
+  // An ERA feature menu whose rows cannot say what it is for gets one line saying so,
+  // with the rest behind a disclosure. Only for the app's own ERA definition: VIA's
+  // shared lighting menus use some of the same command ids.
   const commandNames = items
     .filter((item: any) => isCustomMenuCommandContent(item.content))
     .map((item: any) => item.content[0]);
@@ -166,7 +217,7 @@ const MenuComponent = React.memo((props: any) => {
       isUsbPollingModeCommand(item.content[0]),
   );
   return (
-    <DeferredApplyProvider deferred={deferred}>
+    <>
       <FeatureHelp commandNames={commandNames} />
       {firmwareVersionSource ? (
         <FirmwareVersion
@@ -174,32 +225,65 @@ const MenuComponent = React.memo((props: any) => {
           menuData={props.selectedCustomMenuData}
         />
       ) : (
-        items.map((itemProps: any) => (
-          <VIACustomItem
-            {...itemProps}
-            updateValue={props.updateCustomMenuValue}
-            updateRangeValue={props.updateCustomMenuRangeValue}
-            updateContinuousValue={props.updateCustomMenuValueContinuous}
-            completeContinuousValue={props.completeCustomMenuValueContinuous}
-            updateContinuousRangeValue={
-              props.updateCustomMenuRangeValueContinuous
-            }
-            completeContinuousRangeValue={
-              props.completeCustomMenuRangeValueContinuous
-            }
-            rangeControls={props.rangeControls}
-            menuData={props.selectedCustomMenuData}
-            value={
-              isCustomMenuCommandContent(itemProps.content)
-                ? props.selectedCustomMenuData[itemProps.content[0]]
-                : undefined
-            }
-          />
-        ))
+        items.map((itemProps: any) => {
+          const command = itemCommand(itemProps);
+          const row: DeferredRow | undefined =
+            command && props.deferredRows.get(command);
+          return (
+            <VIACustomItem
+              {...itemProps}
+              updateValue={deferredApply.write}
+              updateContinuousValue={props.updateCustomMenuValueContinuous}
+              completeContinuousValue={props.completeCustomMenuValueContinuous}
+              updateContinuousRangeValue={
+                props.updateCustomMenuRangeValueContinuous
+              }
+              completeContinuousRangeValue={
+                props.completeCustomMenuRangeValueContinuous
+              }
+              rangeControls={props.rangeControls}
+              menuData={props.selectedCustomMenuData}
+              value={
+                command ? props.selectedCustomMenuData[command] : undefined
+              }
+              deferred={
+                row && {
+                  row,
+                  draft: drafts[row.command] ?? row.saved,
+                  dirty: isDraftDirty(row, drafts[row.command]),
+                  onDraft: (draft: MenuDraft) => deferredApply.edit(row, draft),
+                  onApply: deferredApply.canApply
+                    ? deferredApply.apply
+                    : undefined,
+                }
+              }
+              error={
+                command !== undefined &&
+                command === deferredApply.failedCommand
+                  ? t(
+                      'The keyboard did not accept a change. Settings after it were not sent.',
+                    )
+                  : null
+              }
+            />
+          );
+        })
       )}
-      <DeferredApplyButton />
+      {!firmwareVersionSource && rows.length > 0 ? (
+        <DeferredApplyButtons
+          canCancel={deferredApply.canCancel}
+          canApply={deferredApply.canApply}
+          onCancel={deferredApply.cancel}
+          onApply={deferredApply.apply}
+          status={deferredApply.applied ? t('Applied') : undefined}
+        >
+          {deferredApply.notApplied ? (
+            <ApplyNote role="alert">{t('Failed')}</ApplyNote>
+          ) : null}
+        </DeferredApplyButtons>
+      ) : null}
       {hasPollingModeControl && <UsbDiagnosticsSection />}
-    </DeferredApplyProvider>
+    </>
   );
 });
 
@@ -219,11 +303,17 @@ function submenuGenerator(
 
   const isHidden =
     'showIf' in elem &&
-    !evalExpr(elem.showIf as string, props.selectedCustomMenuData);
+    !evalExpr(elem.showIf as string, props.showIfMenuData);
 
   if ('label' in elem) {
     return {
       label: elem.label,
+      dirty:
+        !isHidden &&
+        deferredRowsOf(
+          elem.content.flatMap((child) => itemGenerator(child as any, props)),
+          props.deferredRows,
+        ).some((row) => isDraftDirty(row, props.menuDrafts[row.command])),
       Menu: isHidden
         ? () => (
             <div
@@ -259,14 +349,63 @@ export const Pane: React.FC<Props> = (props: any) => {
   const rangeControls = useAppSelector(
     getCustomRangeControlsForSelectedDefinition,
   );
+  const vendorProductId = useAppSelector(
+    (state) => getSelectedConnectedDevice(state)?.vendorProductId,
+  );
+  const menuDrafts = useAppSelector(getSelectedMenuDrafts);
+  const eraDefinition = useIsEraDefinition();
+  const deferredRows = useMemo(() => {
+    const rows = new Map<string, DeferredRow>();
+    if (!selectedCustomMenuData) {
+      return rows;
+    }
+    const exactMsFamily =
+      vendorProductId === undefined ? null : getExactMsFamily(vendorProductId);
+    collectDeferredItems(props.viaMenu).forEach((item) => {
+      // Official and uploaded definitions keep a held value's own switch.
+      if (item.held && !eraDefinition) {
+        return;
+      }
+      const row = deferredRowFor(item, selectedCustomMenuData, exactMsFamily);
+      if (row) {
+        rows.set(row.command, row);
+      }
+    });
+    return rows;
+  }, [props.viaMenu, selectedCustomMenuData, vendorProductId, eraDefinition]);
+  // Apply sends a held value's switch and the value reads as its labels, so none of
+  // them gets a row.
+  const hiddenCommands = useMemo(
+    () =>
+      new Set(
+        [...deferredRows.values()].flatMap(({held}) =>
+          held ? [held.action.command, ...held.labels] : [],
+        ),
+      ),
+    [deferredRows],
+  );
+  const showIfMenuData = useMemo(
+    () =>
+      selectedCustomMenuData &&
+      withDraftValues(selectedCustomMenuData, deferredRows, menuDrafts),
+    [selectedCustomMenuData, deferredRows, menuDrafts],
+  );
 
   const childProps = {
     ...props,
     selectedDefinition,
     selectedCustomMenuData,
+    showIfMenuData,
+    deferredRows,
+    hiddenCommands,
+    menuDrafts,
     rangeControls,
     updateCustomMenuValue: (command: string, ...rest: number[]) =>
       dispatch(updateCustomMenuValue(command, ...rest)),
+    awaitCustomMenuLabels: (commands: string[], text: string) =>
+      dispatch(awaitCustomMenuLabels(commands, text)),
+    refreshCustomMenuValue: (command: string) =>
+      dispatch(refreshCustomMenuValue(command)),
     updateCustomMenuRangeValue: (command: string, value: number) =>
       dispatch(updateCustomMenuRangeValue(command, value)),
     updateCustomMenuValueContinuous: (command: string, ...rest: number[]) =>
@@ -283,11 +422,13 @@ export const Pane: React.FC<Props> = (props: any) => {
 
   const menus = categoryGenerator(childProps, t);
 
-  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<
-    string | null
-  >(null);
-  const selectedCategory =
-    menus.find(({label}) => label === selectedCategoryLabel) ?? menus[0];
+  const [selectedCategoryLabel, openSubmenu] = useSubmenuTab(
+    props.viaMenu.label,
+    menus.map(({label}) => label),
+  );
+  const selectedCategory = menus.find(
+    ({label}) => label === selectedCategoryLabel,
+  );
 
   if (!selectedDefinition) {
     return null;
@@ -307,7 +448,7 @@ export const Pane: React.FC<Props> = (props: any) => {
     );
   }
 
-  if (!selectedCustomMenuData) {
+  if (menuAvailability === 'failed' || !selectedCustomMenuData) {
     return (
       <MenuStatus
         message={t(
@@ -333,34 +474,35 @@ export const Pane: React.FC<Props> = (props: any) => {
   }
 
   return (
-    <>
-      <SubmenuOverflowCell>
-        <MenuContainer>
-          {menus.map((menu) => (
-            <SubmenuRow
-              $selected={selectedCategory?.label === menu.label}
-              onClick={() =>
-                !menu.isHidden && setSelectedCategoryLabel(menu.label)
-              }
+    <TabbedCell>
+      <SubmenuTabBar
+        label={eraDefinition ? props.viaMenu.label : t(props.viaMenu.label)}
+      >
+        {menus.map((menu) => {
+          const selected = selectedCategory?.label === menu.label;
+          return (
+            <SubmenuTab
               key={menu.label}
-              style={{
-                opacity: menu.isHidden ? 0.5 : 1,
-                cursor: menu.isHidden ? 'not-allowed' : 'pointer',
-              }}
+              type="button"
+              $selected={selected}
+              aria-pressed={selected}
+              disabled={menu.isHidden}
+              onClick={() => openSubmenu(menu.label)}
             >
-              {t(menu.label)}
-            </SubmenuRow>
-          ))}
-        </MenuContainer>
-      </SubmenuOverflowCell>
-      <OverflowCell>
+              {eraDefinition ? menu.label : t(menu.label)}
+              {menu.dirty ? <DirtyDot aria-hidden="true" /> : null}
+            </SubmenuTab>
+          );
+        })}
+      </SubmenuTabBar>
+      <TabbedBody>
         <CustomPane>
           <Container>
             {selectedCategory ? selectedCategory.Menu(childProps) : null}
           </Container>
         </CustomPane>
-      </OverflowCell>
-    </>
+      </TabbedBody>
+    </TabbedCell>
   );
 };
 
@@ -450,11 +592,45 @@ const getIconFromLabel = (menu: VIAMenu) => {
   ).icon;
 };
 
+const menuCommands = (node: unknown): string[] => {
+  if (isCustomMenuCommandContent(node)) {
+    return [node[0]];
+  }
+  if (Array.isArray(node)) {
+    return node.flatMap(menuCommands);
+  }
+  if (node && typeof node === 'object' && 'content' in node) {
+    return menuCommands(node.content);
+  }
+  return [];
+};
+
+const getEraMenuIcon = (menu: VIAMenu) => {
+  const commands = menuCommands(menu);
+  if (commands.some((command) =>
+    /^id_qmk_(ver_|system_|usb_)/.test(command),
+  )) {
+    return faMicrochip;
+  }
+  if (commands.some((command) =>
+    /^id_qmk_(socd_|kill_switch_|debounce_|tapping_|mousekey_|kkuk_)/.test(command),
+  )) {
+    return faSliders;
+  }
+  return getIconFromLabel(menu);
+};
+
 export const makeCustomMenu = (menu: VIAMenu, idx: number) => {
   return {
     Title: menu.label,
-    // Allow icon to be configurable
-    Icon: () => <FontAwesomeIcon icon={getIconFromLabel(menu)} />,
+    Icon: () => {
+      const eraDefinition = useIsEraDefinition();
+      return (
+        <FontAwesomeIcon
+          icon={eraDefinition ? getEraMenuIcon(menu) : getIconFromLabel(menu)}
+        />
+      );
+    },
     Pane: (props: any) => (
       <Pane {...props} key={`${menu.label}-${idx}`} viaMenu={menu} />
     ),

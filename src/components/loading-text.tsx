@@ -9,17 +9,20 @@ const LoadingText = styled.div`
 enum LoadingLabel {
   Searching = 'Searching for devices...',
   Loading = 'Loading...',
+  Reconnect = 'Reconnect the keyboard',
 }
 
 type Props = {
   isSearching: boolean;
+  needsReconnect?: boolean;
 };
 
 export default function (props: Props) {
   const {t} = useTranslation();
-  return (
-    <LoadingText data-tid="loading-message">
-      {t(props.isSearching ? LoadingLabel.Searching : LoadingLabel.Loading)}
-    </LoadingText>
-  );
+  const label = props.needsReconnect
+    ? LoadingLabel.Reconnect
+    : props.isSearching
+      ? LoadingLabel.Searching
+      : LoadingLabel.Loading;
+  return <LoadingText data-tid="loading-message">{t(label)}</LoadingText>;
 }

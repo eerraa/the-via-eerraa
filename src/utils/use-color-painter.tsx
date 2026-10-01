@@ -38,15 +38,14 @@ export const useColorPainter = (
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const dispatch = useAppDispatch();
   const api = useAppSelector(getSelectedKeyboardAPI);
-  const customMenuData = useAppSelector(getSelectedCustomMenuData) || {
-    __perKeyRGB: [],
-  };
+  const customMenuData = useAppSelector(getSelectedCustomMenuData);
   const menuAvailability = useAppSelector(
     getSelectedCustomMenuAvailability,
   );
   const [keyColors, setKeyColors] = useState<number[][]>([]);
 
-  const perKeyRGB = (customMenuData as {__perKeyRGB?: number[][]}).__perKeyRGB;
+  const perKeyRGB = (customMenuData as {__perKeyRGB?: number[][]} | undefined)
+    ?.__perKeyRGB;
 
   useEffect(() => {
     setKeyColors(keyColorsFromPerKeyRGB(perKeyRGB, keys) as any);

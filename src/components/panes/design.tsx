@@ -45,6 +45,7 @@ import {unloadCustomDefinitionWithRefresh} from 'src/store/stateSyncThunks';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getCustomDefinitions,
+  getHasBundledDefinition,
   loadCustomDefinitions,
   storeCustomDefinitions,
 } from 'src/store/definitionsSlice';
@@ -63,15 +64,17 @@ import {formatNumberAsHex} from 'src/utils/format';
 import {
   getDesignDefinitionVersion,
   updateDesignDefinitionVersion,
-  setShowDesignTab,
-  setShowDesignTabConfirmationNotice,
 } from 'src/store/settingsSlice';
 import {useTranslation} from 'react-i18next';
-import {useLocation} from 'wouter';
 
-let designWarningSeen = Number(localStorage.getItem('designWarningSeen') || 0);
-let hideDesignWarning =
-  sessionStorage.getItem('hideDesignWarning') || designWarningSeen > 4;
+// Read when the tab opens, not when the app loads: the missing-definition
+// dialog skips the warning for a user who just chose to upload.
+const isDesignWarningHidden = () =>
+  !!sessionStorage.getItem('hideDesignWarning') ||
+  Number(localStorage.getItem('designWarningSeen') || 0) > 4;
+
+export const hideDesignWarningThisSession = () =>
+  sessionStorage.setItem('hideDesignWarning', '1');
 
 const DesignErrorMessage = styled(ErrorMessage)`
   margin: 0;
@@ -82,6 +85,17 @@ const DesignWarningMessage = styled(ErrorMessage)`
   margin: 0;
   color: gold;
   font-style: italic;
+`;
+
+// A bundled definition wins the lookup, so this upload is kept but not used.
+const DraftName = styled(SubLabel)<{$unused: boolean}>`
+  opacity: ${(props) => (props.$unused ? 0.6 : 1)};
+`;
+
+const BundledNote = styled.span`
+  color: var(--color_label);
+  font-size: 18px;
+  margin-right: 12px;
 `;
 
 const Container = styled.div`
@@ -338,8 +352,11 @@ function onDrop(
 export const DesignTab: FC = () => {
   const {t} = useTranslation();
   const dispatch = useAppDispatch();
-  const [, setLocation] = useLocation();
+  const [showWarning, setShowWarning] = useState(
+    () => !isDesignWarningHidden(),
+  );
   const localDefinitions = Object.values(useAppSelector(getCustomDefinitions));
+  const hasBundledDefinition = useAppSelector(getHasBundledDefinition);
   const definitionVersion = useAppSelector(getDesignDefinitionVersion);
   const selectedDefinitionIndex = useAppSelector(getSelectedDefinitionIndex);
   const showMatrix = useAppSelector(getShowMatrix);
@@ -376,17 +393,12 @@ export const DesignTab: FC = () => {
       }}
     >
       <MessageDialog
-        isOpen={!hideDesignWarning}
+        isOpen={showWarning}
         onConfirm={() => {
-          sessionStorage.setItem('hideDesignWarning', '1');
-          hideDesignWarning = '1';
-          designWarningSeen = designWarningSeen + 1;
-          localStorage.setItem('designWarningSeen', `${designWarningSeen}`);
-        }}
-        onCancel={() => {
-          dispatch(setShowDesignTab(false));
-          dispatch(setShowDesignTabConfirmationNotice(true));
-          setLocation('/settings');
+          hideDesignWarningThisSession();
+          const seen = Number(localStorage.getItem('designWarningSeen') || 0);
+          localStorage.setItem('designWarningSeen', `${seen + 1}`);
+          setShowWarning(false);
         }}
       >
         {t(
@@ -416,7 +428,7 @@ export const DesignTab: FC = () => {
       <Grid style={{overflow: 'hidden'}}>
         <MenuCell style={{pointerEvents: 'all'}}>
           <MenuContainer>
-            <Row $selected={true}>
+            <Row $selected={true} $static>
               <IconContainer>
                 <FontAwesomeIcon icon={faBook} />
                 <MenuTooltip>{t('Add Definition')}</MenuTooltip>
@@ -518,14 +530,19 @@ export const DesignTab: FC = () => {
               </Detail>
             </ControlRow>
             {versionDefinitions.map((definition) => {
+              const unused = hasBundledDefinition(
+                definition[definitionVersion].vendorProductId,
+                definitionVersion,
+              );
               return (
                 <IndentedControlRow
                   key={`${definitionVersion}-${definition[definitionVersion].vendorProductId}`}
                 >
-                  <SubLabel>
+                  <DraftName $unused={unused}>
                     {resolveDefinitionName(definition[definitionVersion].name)}
-                  </SubLabel>
+                  </DraftName>
                   <Detail>
+                    {unused && <BundledNote>{t('Built-in used')}</BundledNote>}
                     {formatNumberAsHex(
                       definition[definitionVersion].vendorProductId,
                       8,

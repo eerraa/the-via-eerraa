@@ -9,6 +9,7 @@ import {useKeycodeRecorder} from 'src/utils/use-keycode-recorder';
 import styled from 'styled-components';
 import {
   convertCharacterTaps,
+  expressionToSequence,
   foldKeydownKeyupKeys,
   convertToCharacterStreams,
   mergeConsecutiveWaits,
@@ -132,23 +133,64 @@ const cleanKeycodeSequence = (sequence: RawKeycodeSequence) => {
   return pipeline(sequence, mergeConsecutiveWaits);
 };
 
+// Holding Escape is how a browser leaves fullscreen while the keyboard is locked, so
+// a recording that fullscreen ended closes with that press. It is not part of the
+// macro: the last Escape, whatever came after it and the wait before it are dropped.
+const withoutFullscreenExit = (
+  sequence: RawKeycodeSequence,
+): RawKeycodeSequence => {
+  const isWait = (index: number) =>
+    sequence[index][0] === RawKeycodeSequenceAction.Delay;
+  const isEscape = (index: number, action: RawKeycodeSequenceAction) =>
+    sequence[index][0] === action && sequence[index][1] === 'KC_ESC';
+  let end = sequence.length;
+  while (
+    end > 0 &&
+    (isWait(end - 1) || isEscape(end - 1, RawKeycodeSequenceAction.Up))
+  ) {
+    end--;
+  }
+  if (end === 0 || !isEscape(end - 1, RawKeycodeSequenceAction.Down)) {
+    return sequence;
+  }
+  end--;
+  while (end > 0 && isWait(end - 1)) {
+    end--;
+  }
+  return sequence.slice(0, end);
+};
+
 export const MacroRecorder: React.FC<{
+  macroIndex: number;
+  /** The macro as the keyboard holds it. */
   selectedMacro?: OptimizedKeycodeSequence;
-  undoMacro(): void;
-  saveMacro(macro?: string): void;
-  setUnsavedMacro: (a: any) => void;
+  /** The slot's edit that is not written yet, shown in place of the macro. */
+  draft?: string;
+  /** Keeps an edit as the draft of the slot it belongs to. */
+  editMacro(expression: string, macroIndex: number): void;
+  isModified: boolean;
+  /**
+   * Whether its keys and waits can be changed one by one. A change writes the whole
+   * macro out again as the recorder reads it, which can turn a script the keyboard
+   * refuses into a different one it takes, so that one is fixed in the script.
+   */
+  canEditItems: boolean;
+  onRecordingChange(isRecording: boolean): void;
   isDelaySupported: boolean;
 }> = ({
+  macroIndex,
   selectedMacro,
-  setUnsavedMacro,
-  saveMacro,
-  undoMacro,
+  draft,
+  editMacro,
+  isModified,
+  canEditItems,
+  onRecordingChange,
   isDelaySupported,
 }) => {
   const {t} = useTranslation();
-  const [showOriginalMacro, setShowOriginalMacro] = useState(true);
-  const [isRecording, setIsRecording] = useState(false);
-  const [useRecordingSettings, setUseRecordingSettings] = useState(false);
+  // The slot a recording goes to, even once another is shown.
+  const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
+  const isRecording = recordingIndex !== null;
   const [isFullscreen, setIsFullscreen] = useState(
     !!document.fullscreenElement,
   );
@@ -158,107 +200,143 @@ export const MacroRecorder: React.FC<{
   const dispatch = useDispatch();
   const [keycodeSequence, setKeycodeSequence] = useKeycodeRecorder(
     isRecording,
-    recordDelaysEnabled,
+    recordDelaysEnabled && isDelaySupported,
   );
   const macroSequenceRef = useRef<HTMLDivElement>(null);
-  const recordingToggleChange = useCallback(
-    async (isRecording: boolean) => {
-      setIsRecording(isRecording);
-      if (isRecording) {
-        await navigator.keyboard.lock();
-        setKeycodeSequence([]);
-        setShowOriginalMacro(false);
-        setUseRecordingSettings(true);
-      } else {
-        navigator.keyboard.unlock();
-        if (smartOptimizeEnabled) {
-          setKeycodeSequence(optimizeKeycodeSequence(keycodeSequence));
-        } else {
-        }
-        setUseRecordingSettings(false);
-      }
-    },
-    [keycodeSequence, setIsRecording],
+  const mounted = useRef(true);
+  const recording = useRef(isRecording);
+  recording.current = isRecording;
+  const shownIndex = useRef(macroIndex);
+  shownIndex.current = macroIndex;
+
+  const recordedSequence = useMemo(
+    () =>
+      smartOptimizeEnabled
+        ? optimizeKeycodeSequence(keycodeSequence)
+        : keycodeSequence,
+    [keycodeSequence, smartOptimizeEnabled],
   );
-  const deleteMacro = useCallback(() => {
-    saveMacro('');
-    setShowOriginalMacro(true);
-    setUseRecordingSettings(false);
-  }, [setKeycodeSequence, saveMacro]);
 
-  const undoChanges = useCallback(() => {
-    undoMacro();
-    setKeycodeSequence([]);
-    setShowOriginalMacro(true);
-    setUseRecordingSettings(false);
-  }, [undoMacro]);
+  const displayedSequence: OptimizedKeycodeSequence = useMemo(
+    () =>
+      recordingIndex === macroIndex
+        ? recordedSequence
+        : draft !== undefined
+        ? expressionToSequence(draft)
+        : selectedMacro ?? [],
+    [draft, macroIndex, recordedSequence, recordingIndex, selectedMacro],
+  );
 
-  // When we switch to another macro, reset
+  // A recording is its slot's draft as it comes in, so however the recorder is left
+  // what was recorded stays.
   useEffect(() => {
-    setShowOriginalMacro(true);
-    setUseRecordingSettings(false);
-    setKeycodeSequence([]);
-  }, [selectedMacro]);
-
-  const getSliceableSequence = () => {
-    let sliceableSequence = showOriginalMacro
-      ? ((selectedMacro ?? []) as RawKeycodeSequence)
-      : keycodeSequence;
-    return [...sliceableSequence];
-  };
-
-  const displayedSequence = useMemo(() => {
-    let partialSequence;
-    let sliceSequence = getSliceableSequence();
-    if (
-      !(showOriginalMacro || !useRecordingSettings || !smartOptimizeEnabled)
-    ) {
-      partialSequence = optimizeKeycodeSequence(sliceSequence);
-    } else {
-      partialSequence = sliceSequence;
+    if (recordingIndex !== null) {
+      editMacro(sequenceToExpression(recordedSequence), recordingIndex);
     }
-    return partialSequence;
-  }, [
-    keycodeSequence,
-    showOriginalMacro,
-    smartOptimizeEnabled,
-    useRecordingSettings,
-    selectedMacro,
-  ]);
+  }, [editMacro, recordedSequence, recordingIndex]);
 
   useEffect(() => {
-    if (displayedSequence) {
-      setUnsavedMacro(sequenceToExpression(displayedSequence));
-    }
-  }, [displayedSequence]);
+    onRecordingChange(isRecording);
+  }, [isRecording]);
 
-  const switchToEditMode = useCallback(() => {
-    if (showOriginalMacro) {
-      setShowOriginalMacro(false);
+  const startRecording = useCallback(async () => {
+    const index = macroIndex;
+    // The keyboard is only locked in fullscreen, so one press asks for both and
+    // records only once it has them.
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+      await navigator.keyboard.lock();
+    } catch {
+      return;
     }
-  }, [showOriginalMacro]);
+    if (!mounted.current || shownIndex.current !== index) {
+      navigator.keyboard.unlock();
+      return;
+    }
+    setKeycodeSequence([]);
+    setIsFullscreen(!!document.fullscreenElement);
+    setRecordingIndex(index);
+  }, [macroIndex, setKeycodeSequence]);
+
+  const stopRecording = useCallback(
+    (exitedFullscreen = false) => {
+      if (recordingIndex === null) {
+        return;
+      }
+      navigator.keyboard.unlock();
+      const recorded = exitedFullscreen
+        ? withoutFullscreenExit(keycodeSequence)
+        : keycodeSequence;
+      editMacro(
+        sequenceToExpression(
+          smartOptimizeEnabled ? optimizeKeycodeSequence(recorded) : recorded,
+        ),
+        recordingIndex,
+      );
+      setKeycodeSequence([]);
+      setRecordingIndex(null);
+    },
+    [
+      editMacro,
+      keycodeSequence,
+      recordingIndex,
+      setKeycodeSequence,
+      smartOptimizeEnabled,
+    ],
+  );
+
+  // However fullscreen ends, the recording ends with it: the keyboard is no longer
+  // locked, and the keys it would take are meant for the page. Choosing another
+  // slot ends it too, and it stays with the slot it was recorded in.
+  useEffect(() => {
+    if (recordingIndex === null) {
+      return;
+    }
+    if (!isFullscreen) {
+      stopRecording(true);
+    } else if (recordingIndex !== macroIndex) {
+      stopRecording();
+    }
+  }, [isFullscreen, macroIndex, recordingIndex, stopRecording]);
+
+  const clearMacro = useCallback(
+    () => editMacro('', macroIndex),
+    [editMacro, macroIndex],
+  );
+
+  const editSequence = useCallback(
+    (sequence: OptimizedKeycodeSequence) =>
+      editMacro(
+        sequenceToExpression(
+          cleanKeycodeSequence(sequence as RawKeycodeSequence),
+        ),
+        macroIndex,
+      ),
+    [editMacro, macroIndex],
+  );
 
   const deleteSequenceItem = useCallback(
     (id: number) => {
-      const newSequence = getSliceableSequence();
+      const newSequence = [...displayedSequence];
       newSequence.splice(id, 1);
-      setKeycodeSequence(cleanKeycodeSequence(newSequence));
-      switchToEditMode();
+      editSequence(newSequence);
     },
-    [displayedSequence, selectedMacro, keycodeSequence, showOriginalMacro],
+    [displayedSequence, editSequence],
   );
 
   const editSequenceItem = useCallback(
     (id: number, val: number) => {
-      const newSequence = getSliceableSequence();
+      const newSequence = [...displayedSequence];
       newSequence.splice(id, 1, [RawKeycodeSequenceAction.Delay, val]);
-      setKeycodeSequence(cleanKeycodeSequence(newSequence));
-      switchToEditMode();
+      editSequence(newSequence);
     },
-    [displayedSequence, selectedMacro, keycodeSequence, showOriginalMacro],
+    [displayedSequence, editSequence],
   );
 
   const sequence = useMemo(() => {
+    const itemsLocked = isRecording || !canEditItems;
     return componentJoin(
       displayedSequence.map(([action, actionArg], id) => {
         const Label = getSequenceItemComponent(action);
@@ -267,7 +345,7 @@ export const MacroRecorder: React.FC<{
             key={`${id}-${action}`}
             index={id}
             deleteItem={deleteSequenceItem}
-            disabled={isRecording}
+            disabled={itemsLocked}
           >
             {RawKeycodeSequenceAction.Delay !== action ? (
               <Label>
@@ -286,15 +364,16 @@ export const MacroRecorder: React.FC<{
                     )
                   : Array.isArray(actionArg)
                   ? actionArg
-                      .map((k) => getSequenceLabel(KeycodeMap[k]) ?? k)
+                      .map((k) => getSequenceLabel(KeycodeMap[k]) || k)
                       .join(' + ')
-                  : getSequenceLabel(KeycodeMap[actionArg])}
+                  : getSequenceLabel(KeycodeMap[actionArg]) || actionArg}
               </Label>
             ) : (
               <WaitInput
                 index={id}
                 value={Number(actionArg)}
                 updateValue={editSequenceItem}
+                disabled={itemsLocked}
               />
             )}
           </Deletable>
@@ -302,9 +381,16 @@ export const MacroRecorder: React.FC<{
       }),
       <SequenceLabelSeparator />,
     );
-  }, [displayedSequence]);
+  }, [
+    displayedSequence,
+    deleteSequenceItem,
+    editSequenceItem,
+    isRecording,
+    canEditItems,
+  ]);
 
   useEffect(() => {
+    mounted.current = true;
     const onFullScreenChanged: EventListener = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
@@ -313,7 +399,11 @@ export const MacroRecorder: React.FC<{
       onFullScreenChanged,
     );
     return () => {
-      recordingToggleChange(false);
+      mounted.current = false;
+      if (recording.current) {
+        navigator.keyboard.unlock();
+        onRecordingChange(false);
+      }
       document.documentElement.removeEventListener(
         'fullscreenchange',
         onFullScreenChanged,
@@ -325,17 +415,14 @@ export const MacroRecorder: React.FC<{
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen();
     } else if (document.exitFullscreen) {
-      recordingToggleChange(false);
+      stopRecording();
       document.exitFullscreen();
     }
-  }, [recordingToggleChange]);
+  }, [stopRecording]);
 
   return (
     <>
-      <MacroSequenceContainer
-        ref={macroSequenceRef}
-        $isModified={!showOriginalMacro}
-      >
+      <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified}>
         {sequence.length ? (
           sequence
         ) : (
@@ -349,17 +436,17 @@ export const MacroRecorder: React.FC<{
           width: '100%',
           display: 'flex',
           justifyContent: 'center',
-          transform: 'translate(-0px, -21px)',
+          marginTop: -21,
         }}
       >
         <MacroEditControls
           isFullscreen={isFullscreen}
-          isEmpty={!selectedMacro || !selectedMacro.length}
+          isEmpty={!displayedSequence.length}
           optimizeRecording={smartOptimizeEnabled}
           recordDelays={recordDelaysEnabled}
           isRecording={isRecording}
           addText={() => {}}
-          deleteMacro={deleteMacro}
+          clearMacro={clearMacro}
           toggleOptimizeRecording={() => {
             dispatch(
               setMacroEditorSettings({
@@ -375,10 +462,9 @@ export const MacroRecorder: React.FC<{
             );
           }}
           toggleFullscreen={toggleFullscreen}
-          undoChanges={undoChanges}
-          saveChanges={() => saveMacro()}
-          hasUnsavedChanges={!showOriginalMacro}
-          recordingToggleChange={recordingToggleChange}
+          recordingToggleChange={(start) =>
+            start ? startRecording() : stopRecording()
+          }
           isDelaySupported={isDelaySupported}
         />
       </div>

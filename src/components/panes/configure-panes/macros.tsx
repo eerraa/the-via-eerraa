@@ -1,21 +1,37 @@
-import {useState, useMemo, FC, useCallback, useEffect} from 'react';
+import {useMemo, FC, useCallback, useEffect} from 'react';
 import styled from 'styled-components';
-import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../grid';
 import {CenterPane} from '../pane';
+import {
+  SubmenuTab,
+  SubmenuTabBar,
+  TabbedBody,
+  TabbedCell,
+} from '../submenu-tabs';
 import {title, component} from '../../icons/adjust';
-import {MacroDetailPane} from './submenus/macros/macro-detail';
+import {
+  getSelectedMacroDrafts,
+  isMacroDraftPending,
+  MacroDetailPane,
+} from './submenus/macros/macro-detail';
+import {DirtyDot} from '../../inputs/dirty-dot';
 import {useAppDispatch, useAppSelector} from '../../../store/hooks';
-import {getSelectedConnectedDevice} from '../../../store/devicesSlice';
+import {
+  getSelectedConnectedDevice,
+  getSelectedKeyboardAPI,
+} from '../../../store/devicesSlice';
 import {
   getExpressions,
   getIsMacrosReady,
   getMacroCount,
   saveMacros,
 } from '../../../store/macrosSlice';
+import {getSelectedKeycodesVersion} from '../../../store/firmwareSlice';
 import {getSelectedStateSyncCapability} from '../../../store/stateSyncSlice';
-import {refreshMacroDomain} from '../../../store/stateSyncThunks';
+import {ensureMacroContents} from '../../../store/stateSyncThunks';
+import {getMacroAPI} from '../../../utils/macro-api';
 import {ConfigureStatusMessage} from './status-message';
 import {useTranslation} from 'react-i18next';
+import {useSubmenuTab} from '../../../utils/use-configure-place';
 
 const MacroPane = styled(CenterPane)`
   height: 100%;
@@ -30,10 +46,6 @@ const Container = styled.div`
   padding-top: 0;
 `;
 
-const MenuContainer = styled.div`
-  padding: 15px 10px 20px 10px;
-`;
-
 export const Pane: FC = () => {
   const {t} = useTranslation();
   const dispatch = useAppDispatch();
@@ -41,40 +53,50 @@ export const Pane: FC = () => {
   const macrosReady = useAppSelector(getIsMacrosReady);
   const macroExpressions = useAppSelector(getExpressions);
   const macroCount = useAppSelector(getMacroCount);
+  const macroDrafts = useAppSelector(getSelectedMacroDrafts);
   const stateSyncCapability = useAppSelector(getSelectedStateSyncCapability);
+  const api = useAppSelector(getSelectedKeyboardAPI);
+  const keycodesVersion = useAppSelector(getSelectedKeycodesVersion);
+  const protocol = selectedDevice?.protocol;
 
-  const [selectedMacro, setSelectedMacro] = useState(0);
+  const macroLabels = useMemo(
+    () => Array.from({length: macroCount}, (_, idx) => `M${idx}`),
+    [macroCount],
+  );
+  const [selectedLabel, openSubmenu] = useSubmenuTab(title, macroLabels);
+  const selectedMacro = Math.max(
+    macroLabels.findIndex((label) => label === selectedLabel),
+    0,
+  );
 
+  const macroApi = useMemo(
+    () =>
+      api && protocol !== undefined
+        ? getMacroAPI(protocol, keycodesVersion, api)
+        : undefined,
+    [api, keycodesVersion, protocol],
+  );
+
+  // Asked again when State Sync capability settles, which can follow the first render.
   useEffect(() => {
-    if (
-      selectedDevice &&
-      stateSyncCapability === 'capable' &&
-      !macrosReady
-    ) {
-      void dispatch(refreshMacroDomain(selectedDevice));
+    if (selectedDevice && !macrosReady) {
+      void dispatch(ensureMacroContents(selectedDevice));
     }
   }, [dispatch, macrosReady, selectedDevice, stateSyncCapability]);
 
   const saveMacro = useCallback(
-    async (macro: string) => {
+    async (macroIndex: number, macro: string) => {
       if (!selectedDevice || !macrosReady) {
-        return;
+        throw new Error('Macros are not loaded');
       }
 
       const newMacros = macroExpressions.map((oldMacro, i) =>
-        i === selectedMacro ? macro : oldMacro,
+        i === macroIndex ? macro : oldMacro,
       );
 
-      return dispatch(saveMacros(selectedDevice, newMacros));
+      await dispatch(saveMacros(selectedDevice, newMacros));
     },
-    [
-      macroExpressions,
-      saveMacros,
-      dispatch,
-      selectedDevice,
-      selectedMacro,
-      macrosReady,
-    ],
+    [macroExpressions, saveMacros, dispatch, selectedDevice, macrosReady],
   );
 
   const macroMenus = useMemo(
@@ -83,27 +105,43 @@ export const Pane: FC = () => {
         .fill(0)
         .map((_, idx) => idx)
         .map((idx) => (
-          <SubmenuRow
-            $selected={selectedMacro === idx}
-            onClick={() => setSelectedMacro(idx)}
+          <SubmenuTab
             key={idx}
-            style={{borderWidth: 0, textAlign: 'center'}}
+            type="button"
+            $selected={selectedMacro === idx}
+            aria-pressed={selectedMacro === idx}
+            onClick={() => openSubmenu(macroLabels[idx])}
           >
-            {`M${idx}`}
-          </SubmenuRow>
+            {macroLabels[idx]}
+            {macrosReady &&
+            isMacroDraftPending(
+              macroApi,
+              macroDrafts[idx],
+              macroExpressions[idx] || '',
+            ) ? (
+              <DirtyDot aria-hidden="true" />
+            ) : null}
+          </SubmenuTab>
         )),
-    [selectedMacro, macroCount],
+    [
+      selectedMacro,
+      macroCount,
+      macroLabels,
+      openSubmenu,
+      macrosReady,
+      macroApi,
+      macroDrafts,
+      macroExpressions,
+    ],
   );
 
   if (!selectedDevice) {
     return null;
   }
   return (
-    <>
-      <SubmenuOverflowCell>
-        <MenuContainer>{macroMenus}</MenuContainer>
-      </SubmenuOverflowCell>
-      <OverflowCell>
+    <TabbedCell>
+      <SubmenuTabBar label={t('Macros')}>{macroMenus}</SubmenuTabBar>
+      <TabbedBody>
         <MacroPane>
           <Container>
             {macrosReady ? (
@@ -111,7 +149,7 @@ export const Pane: FC = () => {
                 macroExpressions={macroExpressions}
                 selectedMacro={selectedMacro}
                 saveMacros={saveMacro}
-                protocol={selectedDevice.protocol}
+                macroApi={macroApi}
               />
             ) : (
               <ConfigureStatusMessage role="status">
@@ -120,8 +158,8 @@ export const Pane: FC = () => {
             )}
           </Container>
         </MacroPane>
-      </OverflowCell>
-    </>
+      </TabbedBody>
+    </TabbedCell>
   );
 };
 

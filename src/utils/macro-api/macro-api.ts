@@ -1,74 +1,11 @@
-import {isAutocompleteKeycode} from '../autocomplete-keycodes';
 import type {KeyboardAPI} from '../keyboard-api';
 import {
   IMacroAPI,
-  ValidationResult,
   KeyAction,
   MacroTerminator,
+  findMacroExpressionProblem,
 } from './macro-api.common';
 import {RawKeycodeSequence, RawKeycodeSequenceAction} from './types';
-
-// TODO: Move to IMacroAPI
-export function validateMacroExpression(expression: string): ValidationResult {
-  let unclosedBlockRegex, keycodeBlockRegex;
-
-  // Eval the macro regexes to prevent script errors in browsers that don't
-  // have support for the negative lookbehind feature.
-  // See: https://caniuse.com/js-regexp-lookbehind
-  try {
-    unclosedBlockRegex = eval('/(?<!\\\\){(?![^{]*})/');
-    keycodeBlockRegex = eval('/(?<!\\\\){(.*?)}/g');
-  } catch (e) {
-    // TODO: Display a message to the user
-    console.error('Lookbehind is not supported in this browser.');
-    return {
-      isValid: false,
-      errorMessage: 'Lookbehind is not supported in this browser.',
-    };
-  }
-
-  // Check for unclosed action blocks
-  if (expression.match(unclosedBlockRegex)) {
-    return {
-      isValid: false,
-      errorMessage:
-        "Looks like a keycode block - {} - is unclosed! Are you missing an '}'?",
-    };
-  }
-
-  // Validate each block of keyactions
-  let groups: RegExpExecArray | null = null;
-  while ((groups = keycodeBlockRegex.exec(expression))) {
-    const csv = groups[1].replace(/\s+/g, ''); // Remove spaces
-    // Empty action blocks {} can't be persisted
-    if (!csv.length) {
-      return {
-        isValid: false,
-        errorMessage:
-          "Sorry, I can't handle empty {}. Fill them up with keycodes or use \\{} to tell the macro to literally type {}",
-      };
-    }
-
-    const invalidKeycodes = csv
-      .split(',')
-      .filter(
-        (keycode) => keycode.trim().length && !isAutocompleteKeycode(keycode),
-      );
-    if (invalidKeycodes.length) {
-      return {
-        isValid: false,
-        errorMessage: `Whoops! Invalid keycodes detected inside {}: ${invalidKeycodes.join(
-          ', ',
-        )}`,
-      };
-    }
-  }
-
-  return {
-    isValid: true,
-    errorMessage: undefined,
-  };
-}
 
 export class MacroAPI implements IMacroAPI {
   constructor(
@@ -81,15 +18,22 @@ export class MacroAPI implements IMacroAPI {
     const bytes = await this.keyboardApi.getMacroBytes();
     const macroCount = await this.keyboardApi.getMacroCount();
 
-    let macroId = 0;
-    let i = 0;
-    const sequences: RawKeycodeSequence[] = [];
-    let currentSequence: RawKeycodeSequence = [];
-
     // If macroCount is 0, macros are disabled
     if (macroCount === 0) {
       throw Error('Macros are disabled');
     }
+
+    return this.macroBytesToRawKeycodeSequences(bytes, macroCount);
+  }
+
+  macroBytesToRawKeycodeSequences(
+    bytes: number[],
+    macroCount: number,
+  ): RawKeycodeSequence[] {
+    let macroId = 0;
+    let i = 0;
+    const sequences: RawKeycodeSequence[] = [];
+    let currentSequence: RawKeycodeSequence = [];
 
     while (i < bytes.length && macroId < macroCount) {
       let byte = bytes[i];
@@ -144,6 +88,14 @@ export class MacroAPI implements IMacroAPI {
     }
 
     return sequences;
+  }
+
+  // Before protocol 11 a macro has no waits: a {100} is not a key it knows.
+  findExpressionProblem(expression: string) {
+    return findMacroExpressionProblem(expression, {
+      delays: false,
+      keycodeToByte: (keycode) => this.basicKeyToByte[keycode],
+    });
   }
 
   rawKeycodeSequencesToMacroBytes(sequences: RawKeycodeSequence[]): number[] {

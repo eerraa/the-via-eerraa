@@ -10,6 +10,7 @@ import {
   usbDiagnosticsPollingModeLabel,
   usbDiagnosticsSpeedLabel,
 } from './era-usb-diagnostics';
+import {formatEraFirmwareVersion} from './era-firmware-version';
 
 export const USB_DIAGNOSTICS_HISTORY_KEY = 'era.usbDiagnostics.history.v1';
 export const USB_DIAGNOSTICS_HISTORY_SCHEMA_VERSION = 1;
@@ -335,7 +336,7 @@ export const buildUsbDiagnosticReport = (run: UsbDiagnosticsRun) => {
   return [
     'ERA USB Diagnostics',
     `Device: ${run.productName} (${run.vendorProductId})`,
-    `Firmware: ${run.firmwareVersion}`,
+    `Firmware: ${formatEraFirmwareVersion(run.firmwareVersion)}`,
     `Protocol: ${run.protocolVersion}`,
     `Mode: ${usbDiagnosticsPollingModeLabel(run.pollingMode)}`,
     `USB speed: ${usbDiagnosticsSpeedLabel(run.speed)}`,

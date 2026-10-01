@@ -167,16 +167,20 @@ const TestControls = () => {
         </Detail>
       </ControlRow>
       <MacroRecorder
+        macroIndex={0}
         selectedMacro={[[RawKeycodeSequenceAction.Delay, 4]]}
-        setUnsavedMacro={(_) => _}
-        undoMacro={() => null}
-        saveMacro={() => null}
+        editMacro={() => undefined}
+        isModified={false}
+        canEditItems={true}
+        onRecordingChange={() => undefined}
         isDelaySupported={true}
       />
       <MacroRecorder
-        setUnsavedMacro={(_) => _}
-        undoMacro={() => null}
-        saveMacro={() => null}
+        macroIndex={1}
+        editMacro={() => undefined}
+        isModified={false}
+        canEditItems={true}
+        onRecordingChange={() => undefined}
         isDelaySupported={true}
       />
     </ControlGroup>

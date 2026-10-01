@@ -1,8 +1,6 @@
-import React, {FC, useContext} from 'react';
-import fullKeyboardDefinition from '../../utils/test-keyboard-definition.json';
+import React, {FC, useContext, useId} from 'react';
 import {Pane} from './pane';
 import styled from 'styled-components';
-import {PROTOCOL_GAMMA} from '../../utils/keyboard-api';
 import {
   ControlRow,
   Label,
@@ -17,18 +15,12 @@ import {AccentSlider} from '../inputs/accent-slider';
 import {AccentButton} from '../inputs/accent-button';
 import {useDispatch} from 'react-redux';
 import {useAppSelector} from 'src/store/hooks';
-import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
 import {
-  getSelectedDefinition,
-  getSelectedKeyDefinitions,
-} from 'src/store/definitionsSlice';
-import {
-  getIsTestMatrixEnabled,
-  setTestMatrixEnabled,
   getTestKeyboardSoundsSettings,
   setTestKeyboardSoundsSettings,
 } from 'src/store/settingsSlice';
 import {MenuContainer} from './configure-panes/custom/menu-generator';
+import {HelpRow, HelpText} from './configure-panes/custom/feature-help';
 import {MenuTooltip} from '../inputs/tooltip';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faCircleQuestion} from '@fortawesome/free-solid-svg-icons';
@@ -52,37 +44,30 @@ const TestPane = styled(Pane)`
   flex-direction: column;
 `;
 
-export const TestContext = React.createContext([
-  {clearTestKeys: () => {}},
-  (...a: any[]) => {},
-] as const);
+export const initialTestContext = {
+  clearTestKeys: () => {},
+  testMatrix: false,
+  matrixAvailable: false,
+  matrixReadFailed: false,
+};
+
+export const TestContext = React.createContext<
+  readonly [
+    typeof initialTestContext,
+    React.Dispatch<React.SetStateAction<typeof initialTestContext>>,
+  ]
+>([initialTestContext, () => {}]);
 
 export const Test: FC = () => {
   const {t} = useTranslation();
+  const matrixLabelId = useId();
   const dispatch = useDispatch();
-  const selectedDevice = useAppSelector(getSelectedConnectedDevice);
-  const selectedDefinition = useAppSelector(getSelectedDefinition);
-  const keyDefinitions = useAppSelector(getSelectedKeyDefinitions);
-  const isTestMatrixEnabled = useAppSelector(getIsTestMatrixEnabled);
   const testKeyboardSoundsSettings = useAppSelector(
     getTestKeyboardSoundsSettings,
   );
 
-  const [testContextObj] = useContext(TestContext);
+  const [testContextObj, setTestContextObj] = useContext(TestContext);
   const {progress} = useProgress();
-
-  const hasTestMatrixDevice =
-    selectedDevice && selectedDefinition && keyDefinitions;
-  const canUseMatrixState =
-    hasTestMatrixDevice && PROTOCOL_GAMMA <= selectedDevice.protocol;
-
-  const testDefinition = isTestMatrixEnabled
-    ? selectedDefinition
-    : fullKeyboardDefinition;
-
-  if (!testDefinition || typeof testDefinition === 'string') {
-    return null;
-  }
 
   const waveformOptions = [
     {
@@ -129,7 +114,7 @@ export const Test: FC = () => {
       <Grid>
         <MenuCell style={{pointerEvents: 'all'}}>
           <MenuContainer>
-            <Row $selected={true}>
+            <Row $selected={true} $static>
               <IconContainer>
                 <FontAwesomeIcon icon={faCircleQuestion} />
                 <MenuTooltip>{t('Check Key')}</MenuTooltip>
@@ -138,29 +123,57 @@ export const Test: FC = () => {
           </MenuContainer>
         </MenuCell>
         <SpanOverflowCell>
-          <Container>
+          {/* Keys typed into these controls reach them (use-global-keys.ts). */}
+          <Container data-key-test-settings>
             <ControlRow>
-              <Label>{t('Reset Keyboard')}</Label>
+              <Label id={matrixLabelId}>{t('Matrix test')}</Label>
               <Detail>
-                <AccentButton onClick={testContextObj.clearTestKeys}>
-                  {t('Reset')}
+                <AccentSlider
+                  labelledBy={matrixLabelId}
+                  isChecked={testContextObj.testMatrix}
+                  disabled={!testContextObj.matrixAvailable}
+                  onChange={(testMatrix) => {
+                    if (!testMatrix || testContextObj.matrixAvailable) {
+                      setTestContextObj((prev) => ({
+                        ...prev,
+                        testMatrix,
+                        matrixReadFailed: false,
+                      }));
+                    }
+                  }}
+                />
+              </Detail>
+            </ControlRow>
+            {testContextObj.testMatrix && (
+              <HelpRow>
+                <HelpText>
+                  {t(
+                    'Matrix testing requires firmware permission. If keys do not respond, use General key test.',
+                  )}
+                </HelpText>
+              </HelpRow>
+            )}
+            {testContextObj.matrixReadFailed && (
+              <HelpRow role="status">
+                <HelpText>
+                  {t(
+                    'The matrix could not be read. General key test is active.',
+                  )}
+                </HelpText>
+              </HelpRow>
+            )}
+            <ControlRow>
+              <Label>{t('Pressed keys')}</Label>
+              <Detail>
+                {/* A click leaves no focus here, so Space and Enter stay keys to test. */}
+                <AccentButton
+                  onMouseDown={(evt: React.MouseEvent) => evt.preventDefault()}
+                  onClick={testContextObj.clearTestKeys}
+                >
+                  {t('Clear')}
                 </AccentButton>
               </Detail>
             </ControlRow>
-            {canUseMatrixState && selectedDefinition ? (
-              <ControlRow>
-                <Label>{t('Test Matrix')}</Label>
-                <Detail>
-                  <AccentSlider
-                    isChecked={isTestMatrixEnabled}
-                    onChange={(val) => {
-                      dispatch(setTestMatrixEnabled(val));
-                      testContextObj.clearTestKeys();
-                    }}
-                  />
-                </Detail>
-              </ControlRow>
-            ) : null}
             <ControlRow>
               <Label>{t('Key Sounds')}</Label>
               <Detail>
@@ -176,76 +189,80 @@ export const Test: FC = () => {
                 />
               </Detail>
             </ControlRow>
-            <ControlRow>
-              <Label>{t('Volume')}</Label>
-              <Detail>
-                <AccentRange
-                  max={100}
-                  min={0}
-                  defaultValue={testKeyboardSoundsSettings.volume}
-                  onChange={(value: number) => {
-                    dispatch(
-                      setTestKeyboardSoundsSettings({
-                        volume: value,
-                      }),
-                    );
-                  }}
-                />
-              </Detail>
-            </ControlRow>
-            <ControlRow>
-              <Label>{t('Transpose')}</Label>
-              <Detail>
-                <AccentRange
-                  max={24}
-                  min={-24}
-                  defaultValue={testKeyboardSoundsSettings.transpose}
-                  onChange={(value: number) => {
-                    dispatch(
-                      setTestKeyboardSoundsSettings({
-                        transpose: value,
-                      }),
-                    );
-                  }}
-                />
-              </Detail>
-            </ControlRow>
-            <ControlRow>
-              <Label>{t('Waveform')}</Label>
-              <Detail>
-                <AccentSelect
-                  isSearchable={false}
-                  value={waveformDefaultValue}
-                  options={waveformOptions}
-                  onChange={(option: any) => {
-                    option &&
-                      dispatch(
-                        setTestKeyboardSoundsSettings({
-                          waveform: option.value,
-                        }),
-                      );
-                  }}
-                />
-              </Detail>
-            </ControlRow>
-            <ControlRow>
-              <Label>{t('Mode')}</Label>
-              <Detail>
-                <AccentSelect
-                  isSearchable={false}
-                  defaultValue={modeDefaultValue}
-                  options={modeOptions}
-                  onChange={(option: any) => {
-                    option &&
-                      dispatch(
-                        setTestKeyboardSoundsSettings({
-                          mode: option.value,
-                        }),
-                      );
-                  }}
-                />
-              </Detail>
-            </ControlRow>
+            {testKeyboardSoundsSettings.isEnabled ? (
+              <>
+                <ControlRow>
+                  <Label>{t('Volume')}</Label>
+                  <Detail>
+                    <AccentRange
+                      max={100}
+                      min={0}
+                      value={testKeyboardSoundsSettings.volume}
+                      onChange={(value: number) => {
+                        dispatch(
+                          setTestKeyboardSoundsSettings({
+                            volume: value,
+                          }),
+                        );
+                      }}
+                    />
+                  </Detail>
+                </ControlRow>
+                <ControlRow>
+                  <Label>{t('Transpose')}</Label>
+                  <Detail>
+                    <AccentRange
+                      max={24}
+                      min={-24}
+                      value={testKeyboardSoundsSettings.transpose}
+                      onChange={(value: number) => {
+                        dispatch(
+                          setTestKeyboardSoundsSettings({
+                            transpose: value,
+                          }),
+                        );
+                      }}
+                    />
+                  </Detail>
+                </ControlRow>
+                <ControlRow>
+                  <Label>{t('Waveform')}</Label>
+                  <Detail>
+                    <AccentSelect
+                      isSearchable={false}
+                      value={waveformDefaultValue}
+                      options={waveformOptions}
+                      onChange={(option: any) => {
+                        option &&
+                          dispatch(
+                            setTestKeyboardSoundsSettings({
+                              waveform: option.value,
+                            }),
+                          );
+                      }}
+                    />
+                  </Detail>
+                </ControlRow>
+                <ControlRow>
+                  <Label>{t('Note layout')}</Label>
+                  <Detail>
+                    <AccentSelect
+                      isSearchable={false}
+                      defaultValue={modeDefaultValue}
+                      options={modeOptions}
+                      onChange={(option: any) => {
+                        option &&
+                          dispatch(
+                            setTestKeyboardSoundsSettings({
+                              mode: option.value,
+                            }),
+                          );
+                      }}
+                    />
+                  </Detail>
+                </ControlRow>
+              </>
+            ) : null}
           </Container>
         </SpanOverflowCell>
       </Grid>

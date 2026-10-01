@@ -1,28 +1,56 @@
 import {VIADefinitionV2, VIADefinitionV3} from '@the-via/reader';
-import {useDispatch} from 'react-redux';
 import {KeyboardAPI, KeyboardValue} from './keyboard-api';
 import {useEffect, useRef, useState} from 'react';
-import {setTestMatrixEnabled} from 'src/store/settingsSlice';
 import {ConnectedDevice, TestKeyState} from 'src/types/types';
+import {reachesSettingsControl} from './use-global-keys';
 
 const invertTestKeyState = (s: TestKeyState) =>
   s === TestKeyState.KeyDown ? TestKeyState.KeyUp : TestKeyState.KeyDown;
+
+/** The switch matrix as the keyboard reports it, one bit per switch. */
+export const readSwitchMatrix = async (
+  api: KeyboardAPI,
+  protocol: number,
+  {rows, cols}: {rows: number; cols: number},
+) => {
+  const bytesPerRow = Math.ceil(cols / 8);
+  const rowsPerQuery = Math.floor(28 / bytesPerRow);
+  const flat: number[] = [];
+  for (let offset = 0; offset < rows; offset += rowsPerQuery) {
+    const querySize = Math.min(
+      rows * bytesPerRow - flat.length, // bytes remaining
+      bytesPerRow * rowsPerQuery, // max bytes per query
+    );
+    flat.push(
+      ...((await api.getKeyboardValue(
+        KeyboardValue.SWITCH_MATRIX_STATE,
+        protocol >= 12 ? [offset] : [],
+        querySize,
+      )) as number[]),
+    );
+  }
+  return flat;
+};
 
 export const useMatrixTest = (
   startTest: boolean,
   api?: KeyboardAPI,
   device?: ConnectedDevice,
   selectedDefinition?: VIADefinitionV2 | VIADefinitionV3,
+  onReadFailed?: () => void,
 ) => {
   const selectedKeyArr = useState<any>([]);
   const [, setSelectedKeys] = selectedKeyArr;
-  const dispatch = useDispatch();
-  const shouldContinueRef = useRef(startTest);
+  const readFailed = useRef(onReadFailed);
+  readFailed.current = onReadFailed;
 
   useEffect(() => {
     let flat: number[] = [];
+    // Each run reads on its own: the picture can go and come back while a read
+    // is under way, and that read then neither changes the keys nor reads on.
+    let ticking = false;
     const stopTicking = () => {
-      shouldContinueRef.current = false;
+      ticking = false;
     };
 
     const startTicking = async (
@@ -34,22 +62,14 @@ export const useMatrixTest = (
       if (startTest && api && selectedDefinition) {
         const {cols, rows} = selectedDefinition.matrix;
         const bytesPerRow = Math.ceil(cols / 8);
-        const rowsPerQuery = Math.floor(28 / bytesPerRow);
         try {
-          let newFlat: number[] = [];
-
-          for (let offset = 0; offset < rows; offset += rowsPerQuery) {
-            const querySize = Math.min(
-              rows * bytesPerRow - newFlat.length, // bytes remaining
-              bytesPerRow * rowsPerQuery, // max bytes per query
-            );
-            newFlat.push(
-              ...((await api.getKeyboardValue(
-                KeyboardValue.SWITCH_MATRIX_STATE,
-                protocol >= 12 ? [offset] : [],
-                querySize,
-              )) as number[]),
-            );
+          const newFlat = await readSwitchMatrix(
+            api,
+            protocol,
+            selectedDefinition.matrix,
+          );
+          if (!ticking) {
+            return;
           }
 
           const keysChanges = newFlat.some(
@@ -57,7 +77,7 @@ export const useMatrixTest = (
           );
           if (!keysChanges) {
             await api.timeout(20);
-            if (shouldContinueRef.current) {
+            if (ticking) {
               startTicking(api, protocol, selectedDefinition, prevFlat);
             }
             return;
@@ -90,32 +110,41 @@ export const useMatrixTest = (
             ),
           );
           await api.timeout(20);
-          if (shouldContinueRef.current) {
+          if (ticking) {
             startTicking(api, protocol, selectedDefinition, newFlat);
           }
         } catch (e) {
-          shouldContinueRef.current = false;
-          dispatch(setTestMatrixEnabled(false));
+          if (!ticking) {
+            return;
+          }
+          ticking = false;
+          readFailed.current?.();
         }
       }
     };
 
     if (startTest && api && device && selectedDefinition) {
-      shouldContinueRef.current = true;
+      ticking = true;
       startTicking(api, device.protocol, selectedDefinition, flat);
     }
 
     return () => {
       stopTicking();
     };
-  }, [startTest, selectedDefinition, api]);
+  }, [
+    startTest,
+    selectedDefinition,
+    api,
+    device?.path,
+    device?.protocol,
+  ]);
 
   const downHandler = (evt: KeyboardEvent) => {
-    evt.preventDefault();
+    if (!reachesSettingsControl(evt)) {
+      evt.preventDefault();
+    }
   };
-  const upHandler = (evt: KeyboardEvent) => {
-    evt.preventDefault();
-  };
+  const upHandler = downHandler;
 
   useEffect(() => {
     if (startTest) {

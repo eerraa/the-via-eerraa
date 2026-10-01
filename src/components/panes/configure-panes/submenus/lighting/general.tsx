@@ -134,14 +134,14 @@ export const GeneralPane: FC = () => {
                 : LightingValue.BACKLIGHT_COLOR_2;
             const valArr = lightingData[command];
             if (showCustomColors && lightingData.customColors) {
-              [color, setColor] = [
+              [color, setColor, completeColor] = [
                 lightingData.customColors[val - 1],
                 (hue: number, sat: number) =>
                   dispatch(updateCustomColorContinuous(val - 1, hue, sat)),
                 () => dispatch(completeCustomColorContinuous(val - 1)),
               ];
             } else if (valArr) {
-              [color, setColor] = [
+              [color, setColor, completeColor] = [
                 {
                   hue: valArr[0],
                   sat: valArr[1],
@@ -162,6 +162,7 @@ export const GeneralPane: FC = () => {
                 <Detail>
                   <ColorPicker
                     color={color}
+                    label={`${t('Color')} ${val}`}
                     setColor={setColor}
                     onInteractionComplete={completeColor}
                     onInteractionCancel={completeColor}

@@ -33,10 +33,39 @@ type ContinuousHIDEntry = {
   completing: boolean;
   forcedError?: Error;
   wake?: () => void;
+  idleTimer?: ReturnType<typeof setTimeout>;
   done: Promise<void>;
 };
 
 const entries = new Map<string, ContinuousHIDEntry>();
+
+// An entry holds its path's queue until its control reports the end of the
+// interaction, so a control that never does would stall every later write to
+// the keyboard. An entry left waiting this long while no pointer is pressed is
+// completed once, as its control should have done. The explicit completion
+// stays the boundary; this only keeps a lost one from locking the keyboard.
+const DEFAULT_IDLE_COMPLETION_MS = 5000;
+let idleCompletionMs = DEFAULT_IDLE_COMPLETION_MS;
+const pressedPointers = new Set<number>();
+
+if (
+  typeof window !== 'undefined' &&
+  typeof window.addEventListener === 'function'
+) {
+  const release = ({pointerId}: PointerEvent) => {
+    pressedPointers.delete(pointerId);
+  };
+  window.addEventListener(
+    'pointerdown',
+    ({pointerId}) => {
+      pressedPointers.add(pointerId);
+    },
+    true,
+  );
+  window.addEventListener('pointerup', release, true);
+  window.addEventListener('pointercancel', release, true);
+  window.addEventListener('blur', () => pressedPointers.clear());
+}
 
 const entryId = ({
   key,
@@ -49,14 +78,35 @@ const toError = (error: unknown) =>
   error instanceof Error ? error : new Error(String(error));
 
 const wakeEntry = (entry: ContinuousHIDEntry) => {
+  clearTimeout(entry.idleTimer);
+  entry.idleTimer = undefined;
   const wake = entry.wake;
   entry.wake = undefined;
   wake?.();
 };
 
+const completeWhenIdle = (entry: ContinuousHIDEntry) => {
+  entry.idleTimer = setTimeout(() => {
+    entry.idleTimer = undefined;
+    // A pressed pointer may still be dragging this control.
+    if (pressedPointers.size > 0) {
+      completeWhenIdle(entry);
+      return;
+    }
+    if (import.meta.env.DEV) {
+      console.warn(
+        `Continuous HID interaction ${entry.config.key} was never completed; completing it after ${idleCompletionMs} ms idle`,
+      );
+    }
+    entry.completing = true;
+    wakeEntry(entry);
+  }, idleCompletionMs);
+};
+
 const waitForEntryWork = (entry: ContinuousHIDEntry) =>
   new Promise<void>((resolve) => {
     entry.wake = resolve;
+    completeWhenIdle(entry);
   });
 
 const runEntry = async (entry: ContinuousHIDEntry) => {
@@ -100,6 +150,10 @@ const runEntry = async (entry: ContinuousHIDEntry) => {
     result = {status: 'failed', error: failure};
     entry.pending.splice(0).forEach((update) => update.reject(failure));
   } finally {
+    // A cancelled reservation can leave its loop waiting; the idle completion
+    // must not wake it into a SAVE.
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = undefined;
     try {
       await entry.config.onSettled?.(result);
     } catch (error) {
@@ -256,4 +310,10 @@ export const resetContinuousHIDTransactionsForTesting = () => {
     wakeEntry(entry);
   });
   entries.clear();
+  pressedPointers.clear();
+  idleCompletionMs = DEFAULT_IDLE_COMPLETION_MS;
+};
+
+export const setContinuousIdleCompletionMsForTesting = (ms: number) => {
+  idleCompletionMs = ms;
 };

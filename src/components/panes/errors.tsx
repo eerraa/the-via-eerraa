@@ -23,7 +23,9 @@ import {
 } from '../inputs/tooltip';
 import {MenuContainer} from './configure-panes/custom/menu-generator';
 import {
+  ControlRow,
   Grid,
+  Label,
   MenuCell,
   Row,
   IconContainer,
@@ -33,16 +35,30 @@ import {
 import {Pane} from './pane';
 import { useTranslation } from 'react-i18next';
 
-const Container = styled.div`
+const ErrorList = styled.div`
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  align-items: center;
+  padding: 0 12px;
   user-select: text;
-  border-top: 1px solid var(--color_accent);
-  &:last-of-type {
-    border-bottom: 1px solid var(--color_accent);
-  }
 `;
+
+const ErrorRow = styled(ControlRow)`
+  align-items: center;
+  gap: 16px;
+`;
+
+const ErrorDetail = styled.span`
+  display: flex;
+  gap: 16px;
+  color: var(--color_label);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+`;
+
+// The logged time carries milliseconds for the file; the screen needs seconds.
+const toSeconds = (timestamp: string) => timestamp.replace(/\.\d+$/, '');
 
 const printId = (id: number) => formatNumberAsHex(id, 4);
 
@@ -81,6 +97,7 @@ const ErrorListContainer: React.FC<
 };
 
 const AppErrors: React.FC<{}> = ({}) => {
+  const {t} = useTranslation();
   const errors = useAppSelector(getAppErrors);
   const dispatch = useDispatch();
   return (
@@ -89,27 +106,19 @@ const AppErrors: React.FC<{}> = ({}) => {
       save={() => saveAppErrors(errors)}
       hasErrors={!!errors.length}
     >
-      {errors.map(
-        ({
-          timestamp,
-          deviceInfo: {productId, productName, vendorId},
-          message: error,
-        }) => (
-          <Container key={timestamp}>
-            {timestamp}
-            <ul>
-              {error?.split('\n').map((line) => (
-                <li>{line}</li>
-              ))}
-            </ul>
-            <ul>
-              <li>Device: {productName}</li>
-              <li>Vid: {printId(vendorId)}</li>
-              <li>Pid: {printId(productId)}</li>
-            </ul>
-          </Container>
-        ),
-      )}
+      {/* A name in the user's words, the keyboard and the time. Everything
+          else is for whoever reads the downloaded file. */}
+      <ErrorList>
+        {errors.map(({id, timestamp, deviceInfo: {productName}, title}) => (
+          <ErrorRow key={id}>
+            <Label>{t(title)}</Label>
+            <ErrorDetail>
+              {productName && <span>{productName}</span>}
+              <span>{toSeconds(timestamp)}</span>
+            </ErrorDetail>
+          </ErrorRow>
+        ))}
+      </ErrorList>
     </ErrorListContainer>
   );
 };
@@ -136,15 +145,26 @@ async function saveErrors<T>(
   }
 }
 
-const saveAppErrors = async (errors: AppError[]) =>
+export const saveAppErrors = async (errors: AppError[]) =>
   saveErrors(
     errors,
-    ['timestamp', 'productName', 'vendorId', 'productId', 'message'],
+    [
+      'timestamp',
+      'productName',
+      'vendorId',
+      'productId',
+      'protocol',
+      'message',
+    ],
     'VIA-app-errors',
-    ({timestamp, deviceInfo: {productName, vendorId, productId}, message}) =>
+    ({
+      timestamp,
+      deviceInfo: {productName, vendorId, productId, protocol},
+      message,
+    }) =>
       `${timestamp}, ${productName}, ${printId(vendorId)}, ${printId(
         productId,
-      )}, "${message}"`,
+      )}, ${protocol ?? ''}, "${message}"`,
   );
 
 const IconButtonGroupContainer = styled.div`
@@ -166,7 +186,8 @@ const ErrorPanes: [ErrorPaneMenu, React.FC, IconProp, string][] = [
 ];
 
 export const Errors = () => {
-  const [selectedPane, setSelectedPane] = useState(ErrorPaneMenu.KeyboardAPI);
+  const {t} = useTranslation();
+  const [selectedPane, setSelectedPane] = useState(ErrorPaneMenu.App);
   const PaneComponent = (ErrorPanes.find(([id]) => selectedPane === id) ||
     ErrorPanes[0])[1];
   return (
@@ -177,6 +198,7 @@ export const Errors = () => {
             {ErrorPanes.map(([id, _, Icon, menuName]) => (
               <Row
                 $selected={selectedPane === id}
+                $static={ErrorPanes.length === 1}
                 onClick={() => {
                   setSelectedPane(id);
                 }}
@@ -184,7 +206,7 @@ export const Errors = () => {
               >
                 <IconContainer>
                   <FontAwesomeIcon icon={Icon} />
-                  <MenuTooltip>{menuName}</MenuTooltip>
+                  <MenuTooltip>{t(menuName)}</MenuTooltip>
                 </IconContainer>
               </Row>
             ))}
@@ -199,22 +221,26 @@ export const Errors = () => {
 };
 
 export const ErrorLink = () => {
+  const {t} = useTranslation();
   const appErrors = useAppSelector(getAppErrors);
   const [location] = useLocation();
   const isSelectedRoute = location === '/errors';
   if (appErrors.length) {
+    const label = t('{{count}} errors', {count: appErrors.length});
     return (
       <Link to="/errors">
-        <CategoryIconContainer $selected={isSelectedRoute}>
+        <CategoryIconContainer
+          as="a"
+          $selected={isSelectedRoute}
+          aria-label={label}
+          aria-current={isSelectedRoute ? 'page' : undefined}
+        >
           <FontAwesomeIcon
             size={'xl'}
             icon={ErrorsPaneConfig.icon}
             color={isSelectedRoute ? 'inherit' : 'gold'}
           />
-          <CategoryMenuTooltip>
-            {appErrors.length} error
-            {appErrors.length > 1 ? 's' : ''}
-          </CategoryMenuTooltip>
+          <CategoryMenuTooltip>{label}</CategoryMenuTooltip>
         </CategoryIconContainer>
       </Link>
     );

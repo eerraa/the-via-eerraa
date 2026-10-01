@@ -43,8 +43,8 @@ const defaultStoreData = {
       tapEnterAtEOMEnabled: false,
     },
     testKeyboardSoundsSettings: {
-      isEnabled: true,
-      volume: 100,
+      isEnabled: false,
+      volume: 50,
       waveform: 'sine' as const,
       mode: TestKeyboardSoundsMode.WickiHayden,
       transpose: 0,
@@ -52,8 +52,39 @@ const defaultStoreData = {
   },
 };
 
+const TEST_KEYBOARD_SOUNDS_VERSION = 2;
+
+/**
+ * Key sounds used to start on at full volume, and the store saved that default
+ * along with any other setting. Saved sounds still exactly at it move to the
+ * quiet default once; sounds anyone changed stay as they are.
+ */
+export const migrateTestKeyboardSounds = (settings: Settings): Settings => {
+  if (settings.testKeyboardSoundsVersion) {
+    return settings;
+  }
+  const sounds = settings.testKeyboardSoundsSettings;
+  const untouched =
+    sounds.isEnabled === true &&
+    sounds.volume === 100 &&
+    sounds.waveform === 'sine' &&
+    sounds.mode === TestKeyboardSoundsMode.WickiHayden &&
+    sounds.transpose === 0;
+  return {
+    ...settings,
+    testKeyboardSoundsSettings: untouched
+      ? {...defaultStoreData.settings.testKeyboardSoundsSettings}
+      : sounds,
+    testKeyboardSoundsVersion: TEST_KEYBOARD_SOUNDS_VERSION,
+  };
+};
+
 function initDeviceStore() {
   deviceStore = new Store(defaultStoreData);
+  const settings = deviceStore.get('settings');
+  if (!settings.testKeyboardSoundsVersion) {
+    deviceStore.set('settings', migrateTestKeyboardSounds(settings));
+  }
 }
 
 initDeviceStore();
@@ -130,7 +161,7 @@ const cacheOfficialDefinition = <K extends keyof DefinitionVersionMap>(
   version: K,
   json: DefinitionVersionMap[K],
 ) => {
-  let definitions = deviceStore.get('definitions');
+  const definitions = deviceStore.get('definitions');
   const newDefinitions = {
     ...definitions,
     [vpid]: {
@@ -138,20 +169,7 @@ const cacheOfficialDefinition = <K extends keyof DefinitionVersionMap>(
       [version]: json,
     },
   };
-  try {
-    deviceStore.set('definitions', newDefinitions);
-  } catch (err) {
-    localStorage.clear();
-    initDeviceStore();
-    definitions = deviceStore.get('definitions');
-    deviceStore.set('definitions', {
-      ...definitions,
-      [vpid]: {
-        ...definitions[vpid],
-        [version]: json,
-      },
-    });
-  }
+  deviceStore.set('definitions', newDefinitions);
 };
 
 export const fetchBundledDefinition = async <

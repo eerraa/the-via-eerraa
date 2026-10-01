@@ -3,6 +3,7 @@ import {AccentButton} from './accent-button';
 type Props = {
   onLoad: (files: File[]) => void;
   multiple?: boolean;
+  disabled?: boolean;
   inputRef?: React.MutableRefObject<HTMLInputElement | undefined>;
   children: string;
 };
@@ -14,7 +15,10 @@ export function AccentUploadButton(props: Props) {
     (input.current as any).value = null;
   }
   return (
-    <AccentButton onClick={() => input.current && input.current.click()}>
+    <AccentButton
+      disabled={props.disabled}
+      onClick={() => input.current && input.current.click()}
+    >
       {props.children}
       <input
         ref={input as any}

@@ -5,7 +5,7 @@ import {Home} from './components/Home';
 import {createGlobalStyle} from 'styled-components';
 import {CanvasRouter as CanvasRouter3D} from './components/three-fiber/canvas-router';
 import {CanvasRouter as CanvasRouter2D} from './components/two-string/canvas-router';
-import {TestContext} from './components/panes/test';
+import {initialTestContext, TestContext} from './components/panes/test';
 import {useMemo, useState} from 'react';
 import {OVERRIDE_HID_CHECK} from './utils/override';
 import {useAppSelector} from './store/hooks';
@@ -43,7 +43,7 @@ export default () => {
   );
 
   const CanvasRouter = renderMode === '2D' ? CanvasRouter2D : CanvasRouter3D;
-  const testContextState = useState({clearTestKeys: () => {}});
+  const testContextState = useState(initialTestContext);
   return (
     <>
         <TestContext.Provider value={testContextState}>

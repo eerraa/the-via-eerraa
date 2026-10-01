@@ -1,14 +1,13 @@
 import {advancedStringToKeycode, anyKeycodeToString} from './advanced-keys';
 import type {IKeycode, IKeycodeMenu} from './key';
 import {getByteForCode, keycodeInMaster} from './key';
+import {getComposeKeycodeDisabledReason} from './keycode-eligibility';
+export {getComposeKeycodeDisabledReason} from './keycode-eligibility';
 
 const KC_NO_ALIASES = new Set(['KC_NO', 'KC_TRNS', 'KC_TRANSPARENT']);
 
 const isExplicitClearInput = (input: string) =>
   KC_NO_ALIASES.has(input.toUpperCase()) || input.toUpperCase() === 'NO';
-
-const isComposeBaseValue = (value: number) =>
-  Number.isInteger(value) && value >= 0 && value <= 0xff;
 
 export function formatKeycodeHex(value: number): string {
   const clamped = value & 0xffff;
@@ -27,76 +26,17 @@ export function formatKeycodeLabel(
   return formatKeycodeHex(value);
 }
 
-export const COMPOSER_CATEGORY_ID = 'layers';
-
-export const isComposerCategory = (categoryId: string | undefined) =>
-  categoryId === COMPOSER_CATEGORY_ID;
-
-export function resolveComposeBaseCode(
-  input: string,
-  menus: IKeycodeMenu[],
-  basicKeyToByte: Record<string, number>,
-  byteToKey: Record<number, string>,
-): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const needle = trimmed.toLowerCase();
-  for (const menu of menus) {
-    if (menu.id !== 'basic') {
-      continue;
-    }
-    for (const keycode of menu.keycodes) {
-      if (!keycode.code || keycode.code === 'text') {
-        continue;
-      }
-      if (
-        keycode.code.toLowerCase() === needle ||
-        keycode.name.toLowerCase() === needle ||
-        keycode.shortName?.toLowerCase() === needle
-      ) {
-        const parsed = basicKeyToByte[keycode.code];
-        return parsed !== undefined && isComposeBaseValue(parsed)
-          ? keycode.code
-          : null;
-      }
-    }
-  }
-  // A compose base is a tap key, never another wrapper such as MO(), MT(), or
-  // LT(). Menu-name matches above still allow descriptive Basic-key labels.
-  if (/[()]/.test(trimmed)) {
-    return null;
-  }
-  const parsed = parseKeycodeInput(trimmed, basicKeyToByte);
-  if (parsed === null || !isComposeBaseValue(parsed)) {
-    return null;
-  }
-  const kcNo = basicKeyToByte.KC_NO ?? 0;
-  if (parsed === kcNo) {
-    if (!isExplicitClearInput(needle)) {
-      return null;
-    }
-  }
-  return byteToKey[parsed] ?? formatKeycodeHex(parsed);
-}
-
 export function getComposeBaseKeycodes(
   menus: IKeycodeMenu[],
   basicKeyToByte: Record<string, number>,
 ): IKeycode[] {
-  const basicMenu = menus.find((menu) => menu.id === 'basic');
-  if (!basicMenu) {
-    return [];
-  }
-
   const seen = new Set<string>();
-  return basicMenu.keycodes.filter((keycode) => {
+  return menus.flatMap((menu) => menu.keycodes).filter((keycode) => {
     if (!keycode.code || keycode.code === 'text' || seen.has(keycode.code)) {
       return false;
     }
     const parsed = parseKeycodeInput(keycode.code, basicKeyToByte);
-    if (parsed === null || !isComposeBaseValue(parsed)) {
+    if (getComposeKeycodeDisabledReason(parsed, basicKeyToByte) !== null) {
       return false;
     }
     seen.add(keycode.code);
@@ -126,6 +66,20 @@ export function parseKeycodeInput(
     return Number.parseInt(trimmed, 16) & 0xffff;
   }
   const normalized = trimmed.toUpperCase();
+  if (/[()]/.test(normalized)) {
+    // The legacy menu decoder searches inside expressions and clamps ordinals.
+    // A failed expression must not re-enter it and become a different keycode.
+    const tapDance = normalized.match(/^TD\((\d+)\)$/);
+    if (!tapDance) {
+      return null;
+    }
+    const index = Number(tapDance[1]);
+    const base = basicKeyToByte._QK_KB;
+    const max = basicKeyToByte._QK_KB_MAX;
+    return Number.isSafeInteger(index) && index >= 0 && base + index <= max
+      ? base + index
+      : null;
+  }
   const fromBasic = basicKeyToByte[normalized];
   if (fromBasic !== undefined) {
     return fromBasic & 0xffff;
@@ -153,11 +107,7 @@ export function selectKeycodeFromMenuCode(
   ) {
     return null;
   }
-  try {
-    return getByteForCode(code, basicKeyToByte) & 0xffff;
-  } catch {
-    return parseKeycodeInput(code, basicKeyToByte);
-  }
+  return parseKeycodeInput(code, basicKeyToByte);
 }
 
 export function clearKeycodeValue(
@@ -183,29 +133,19 @@ export function keycodeMatchesQuery(keycode: IKeycode, query: string): boolean {
   return haystack.includes(needle);
 }
 
-export function filterKeycodeMenus(
-  menus: IKeycodeMenu[],
-  query: string,
-): IKeycodeMenu[] {
-  const needle = query.trim();
-  if (!needle) {
-    return menus;
-  }
-  return menus
-    .map((menu) => ({
-      ...menu,
-      keycodes: menu.keycodes.filter((keycode) =>
-        keycodeMatchesQuery(keycode, needle),
-      ),
-    }))
-    .filter((menu) => menu.keycodes.length > 0);
-}
-
 export function composeModTap(
   modsExpr: string,
   tapCode: string,
   basicKeyToByte: Record<string, number>,
 ): number | null {
+  if (
+    getComposeKeycodeDisabledReason(
+      parseKeycodeInput(tapCode, basicKeyToByte),
+      basicKeyToByte,
+    )
+  ) {
+    return null;
+  }
   return parseKeycodeInput(`MT(${modsExpr},${tapCode})`, basicKeyToByte);
 }
 
@@ -217,6 +157,14 @@ export function composeLayerTap(
   if (!Number.isInteger(layer) || layer < 0 || layer > 15) {
     return null;
   }
+  if (
+    getComposeKeycodeDisabledReason(
+      parseKeycodeInput(tapCode, basicKeyToByte),
+      basicKeyToByte,
+    )
+  ) {
+    return null;
+  }
   return parseKeycodeInput(`LT(${layer},${tapCode})`, basicKeyToByte);
 }
 
@@ -226,6 +174,14 @@ export function composeModifiers(
   basicKeyToByte: Record<string, number>,
 ): number | null {
   if (modifierMacros.length === 0) {
+    return null;
+  }
+  if (
+    getComposeKeycodeDisabledReason(
+      parseKeycodeInput(tapCode, basicKeyToByte),
+      basicKeyToByte,
+    )
+  ) {
     return null;
   }
   const expression = modifierMacros.reduceRight(

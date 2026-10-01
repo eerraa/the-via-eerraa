@@ -1,6 +1,12 @@
 import type {VIADefinitionV2, VIADefinitionV3} from '@the-via/reader';
 import {VIAKey} from '@the-via/reader';
-import {useCallback, useContext, useEffect, useMemo} from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+} from 'react';
 import {TestKeyboardSounds} from 'src/components/void/test-keyboard-sounds';
 import {
   getSelectedDefinition,
@@ -12,23 +18,36 @@ import {
 } from 'src/store/devicesSlice';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedKeymap, setLayer} from 'src/store/keymapSlice';
-import {
-  getIsTestMatrixEnabled,
-  getTestKeyboardSoundsSettings,
-  setTestMatrixEnabled,
-} from 'src/store/settingsSlice';
+import {getTestKeyboardSoundsSettings} from 'src/store/settingsSlice';
 import {DisplayMode, NDimension} from 'src/types/keyboard-rendering';
 import {TestKeyState} from 'src/types/types';
-import {matrixKeycodes} from 'src/utils/key-event';
+import {getTestKeyboardKeys, matrixKeycodes} from 'src/utils/key-event';
 import {getKeyboardRowPartitions} from 'src/utils/keyboard-rendering';
 import {useGlobalKeys} from 'src/utils/use-global-keys';
 import {useMatrixTest} from 'src/utils/use-matrix-test';
+import {PROTOCOL_GAMMA} from 'src/utils/keyboard-api';
+import styled, {keyframes} from 'styled-components';
 import {useLocation} from 'wouter';
 import fullKeyboardDefinition from '../../../utils/test-keyboard-definition.json';
 import {TestContext} from '../../panes/test';
 import {getKeyboardCanvas} from './configure';
 const EMPTY_ARR = [] as any[];
 const EMPTY_KEYMAP: number[] = [];
+
+const fadeOut = keyframes`
+  from { opacity: 1; }
+  to { opacity: 0; }
+`;
+
+// A key the picture has no place for, named for a moment in its corner.
+const UnplacedKeyName = styled.div`
+  color: var(--color_label);
+  font-size: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: ${fadeOut} 1.5s ease-in forwards;
+`;
+
 export const Test = (props: {dimensions?: DOMRect; nDimension: NDimension}) => {
   const dispatch = useAppDispatch();
   const [path] = useLocation();
@@ -37,7 +56,6 @@ export const Test = (props: {dimensions?: DOMRect; nDimension: NDimension}) => {
   const device = useAppSelector(getSelectedConnectedDevice);
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const keyDefinitions = useAppSelector(getSelectedKeyDefinitions);
-  const isTestMatrixEnabled = useAppSelector(getIsTestMatrixEnabled);
   const testKeyboardSoundsSettings = useAppSelector(
     getTestKeyboardSoundsSettings,
   );
@@ -45,99 +63,128 @@ export const Test = (props: {dimensions?: DOMRect; nDimension: NDimension}) => {
     (state) => getSelectedKeymap(state) || EMPTY_KEYMAP,
   );
 
-  const [globalPressedKeys, setGlobalPressedKeys] = useGlobalKeys(
-    !isTestMatrixEnabled && isShowingTest,
-  );
+  const [testContextObj, setTestContextObj] = useContext(TestContext);
+  const matrixAvailable =
+    !!api && !!device && !!selectedDefinition && device.protocol >= PROTOCOL_GAMMA;
+  const showsBoard = matrixAvailable && testContextObj.testMatrix;
+  const stopBoard = useCallback(() => {
+    setTestContextObj((prev) => ({
+      ...prev,
+      testMatrix: false,
+      matrixReadFailed: true,
+    }));
+  }, [setTestContextObj]);
+
+  useEffect(() => {
+    setTestContextObj((prev) =>
+      prev.matrixAvailable === matrixAvailable
+        ? prev
+        : {...prev, matrixAvailable, testMatrix: false, matrixReadFailed: false},
+    );
+  }, [matrixAvailable, setTestContextObj]);
+
+  // Each connected keyboard starts with the ordinary browser key test.
+  useEffect(() => {
+    setTestContextObj((prev) => ({
+      ...prev,
+      testMatrix: false,
+      matrixReadFailed: false,
+    }));
+  }, [device?.path, setTestContextObj]);
+  const globalKeys = useGlobalKeys(isShowingTest && !showsBoard);
+  const {setPressedKeys: setGlobalPressedKeys} = globalKeys;
   const [matrixPressedKeys, setMatrixPressedKeys] = useMatrixTest(
-    isTestMatrixEnabled && isShowingTest,
+    isShowingTest && showsBoard,
     api as any,
     device as any,
     selectedDefinition as any,
+    stopBoard,
   );
 
   const clearTestKeys = useCallback(() => {
-    setGlobalPressedKeys(EMPTY_ARR);
+    setGlobalPressedKeys({});
     setMatrixPressedKeys(EMPTY_ARR);
   }, [setGlobalPressedKeys, setMatrixPressedKeys]);
 
-  const testContext = useContext(TestContext);
-  //// Hack to share setting a local state to avoid causing cascade of rerender
+  // Share the clear action without replacing the selected test mode.
   useEffect(() => {
-    if (testContext[0].clearTestKeys !== clearTestKeys) {
-      testContext[1]({clearTestKeys});
-    }
-  }, [testContext, clearTestKeys]);
+    setTestContextObj((prev) =>
+      prev.clearTestKeys === clearTestKeys ? prev : {...prev, clearTestKeys},
+    );
+  }, [setTestContextObj, clearTestKeys]);
 
   useEffect(() => {
-    // Remove event listeners on cleanup
     if (path !== '/test') {
-      dispatch(setTestMatrixEnabled(false));
-      testContext[0].clearTestKeys();
+      clearTestKeys();
+      setTestContextObj((prev) => ({
+        ...prev,
+        testMatrix: false,
+        matrixReadFailed: false,
+      }));
     }
     if (path !== '/') {
       dispatch(setLayer(0));
     }
   }, [path]); // Empty array ensures that effect is only run on mount and unmount
 
-  const matrixPressedKeysMapped =
-    isTestMatrixEnabled && keyDefinitions
-      ? keyDefinitions.map(
-          ({row, col}: {row: number; col: number}) =>
-            selectedDefinition &&
-            matrixPressedKeys[
-              (row * selectedDefinition.matrix.cols +
-                col) as keyof typeof matrixPressedKeys
-            ],
-        )
-      : [];
+  // A picture starts untested, including when the screen changes pictures.
+  useEffect(() => {
+    clearTestKeys();
+  }, [showsBoard]);
 
-  const testDefinition = isTestMatrixEnabled
-    ? selectedDefinition
-    : fullKeyboardDefinition;
-  const testKeys = isTestMatrixEnabled
-    ? keyDefinitions
-    : fullKeyboardDefinition.layouts.keys;
-
-  if (!testDefinition || typeof testDefinition === 'string') {
-    return null;
-  }
-
-  const testPressedKeys = isTestMatrixEnabled
-    ? (matrixPressedKeysMapped as TestKeyState[])
-    : (globalPressedKeys as TestKeyState[]);
+  const fullKeys = useMemo(
+    () => getTestKeyboardKeys(globalKeys.layout),
+    [globalKeys.layout],
+  );
+  const testDefinition = (
+    showsBoard ? selectedDefinition : fullKeyboardDefinition
+  ) as VIADefinitionV2 | VIADefinitionV3;
+  const testKeys = (showsBoard ? keyDefinitions : fullKeys) as VIAKey[];
+  const testKeycodes = useMemo(
+    () =>
+      showsBoard
+        ? selectedMatrixKeycodes
+        : fullKeys.map(({col}) => matrixKeycodes[col]),
+    [showsBoard, selectedMatrixKeycodes, fullKeys],
+  );
+  // Pressed states by matrix position: row * cols + col.
+  const pressedByPosition = (
+    showsBoard ? matrixPressedKeys : globalKeys.pressedKeys
+  ) as TestKeyState[];
+  const cols = testDefinition.matrix.cols;
+  const testPressedKeys = useMemo(
+    () => testKeys.map(({row, col}) => pressedByPosition[row * cols + col]),
+    [testKeys, pressedByPosition, cols],
+  );
 
   const {partitionedKeys} = useMemo(
-    () => getKeyboardRowPartitions(testKeys as VIAKey[]),
+    () => getKeyboardRowPartitions(testKeys),
     [testKeys],
   );
-  const testPressedKeys2 = isTestMatrixEnabled
-    ? (matrixPressedKeys as TestKeyState[])
-    : (globalPressedKeys as TestKeyState[]);
   const partitionedPressedKeys: TestKeyState[][] = partitionedKeys.map(
-    (rowArray) => {
-      return rowArray.map(
-        ({row, col}: {row: number; col: number}) =>
-          testPressedKeys2[
-            (row * testDefinition.matrix.cols +
-              col) as keyof typeof testPressedKeys2
-          ],
-      ) as TestKeyState[];
-    },
+    (rowArray) =>
+      rowArray.map(({row, col}) => pressedByPosition[row * cols + col]),
   );
 
+  const {unplacedKey} = globalKeys;
   return (
     <>
       <TestKeyboard
-        definition={testDefinition as VIADefinitionV2}
-        keys={testKeys as VIAKey[]}
+        definition={testDefinition}
+        keys={testKeys}
         pressedKeys={testPressedKeys}
-        matrixKeycodes={
-          isTestMatrixEnabled ? selectedMatrixKeycodes : matrixKeycodes
-        }
+        matrixKeycodes={testKeycodes}
         containerDimensions={props.dimensions}
         nDimension={props.nDimension}
+        cornerNote={
+          unplacedKey ? (
+            <UnplacedKeyName key={unplacedKey.id}>
+              {unplacedKey.name}
+            </UnplacedKeyName>
+          ) : undefined
+        }
       />
-      {partitionedPressedKeys && testKeyboardSoundsSettings.isEnabled && (
+      {testKeyboardSoundsSettings.isEnabled && (
         <TestKeyboardSounds pressedKeys={partitionedPressedKeys} />
       )}
     </>
@@ -152,6 +199,7 @@ const TestKeyboard = (props: {
   keys: (VIAKey & {ei?: number})[];
   definition: VIADefinitionV2 | VIADefinitionV3;
   nDimension: NDimension;
+  cornerNote?: ReactNode;
 }) => {
   const {
     selectable,
@@ -161,6 +209,7 @@ const TestKeyboard = (props: {
     pressedKeys,
     definition,
     nDimension,
+    cornerNote,
   } = props;
   if (!containerDimensions) {
     return null;
@@ -176,6 +225,7 @@ const TestKeyboard = (props: {
       pressedKeys={pressedKeys}
       containerDimensions={containerDimensions}
       mode={DisplayMode.Test}
+      cornerNote={cornerNote}
     />
   );
 };

@@ -1,8 +1,7 @@
-import {FC, useEffect, useMemo, useState} from 'react';
+import {FC, useEffect, useMemo} from 'react';
 import {title, component} from '../../icons/keyboard';
 import * as EncoderPane from './encoder';
-import styled from 'styled-components';
-import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../grid';
+import {SpanOverflowCell} from '../grid';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getBasicKeyToByte,
@@ -11,21 +10,20 @@ import {
 } from 'src/store/definitionsSlice';
 import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
 import {
+  getNumberOfLayers,
   getSelectedKey,
   getSelectedKeymap,
+  getSelectedLayerIndex,
   updateKey as updateKeyAction,
   updateSelectedKey,
 } from 'src/store/keymapSlice';
-import {getMacroCount} from 'src/store/macrosSlice';
+import {getPaletteMacroCount} from 'src/store/macrosSlice';
 import {getDisableFastRemap} from 'src/store/settingsSlice';
 import {getNextKey} from 'src/utils/keyboard-rendering';
 import {useTranslation} from 'react-i18next';
-import {KeycodePicker} from '../../inputs/keycode-picker';
 import {buildEnabledKeycodeMenus} from 'src/utils/keycode-menus';
-
-const MenuContainer = styled.div`
-  padding: 15px 20px 20px 10px;
-`;
+import {KeycodePalette} from '../../inputs/keycode-palette/keycode-palette';
+import {useTapDanceBinding} from '../../inputs/keycode-palette/use-tap-dance';
 
 export const Pane: FC = () => {
   const selectedKey = useAppSelector(getSelectedKey);
@@ -47,15 +45,17 @@ export const Pane: FC = () => {
 export const KeycodePane: FC = () => {
   const {t} = useTranslation();
   const dispatch = useAppDispatch();
-  const macros = useAppSelector((state: any) => state.macros);
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const matrixKeycodes = useAppSelector(getSelectedKeymap);
   const selectedKey = useAppSelector(getSelectedKey);
+  const selectedLayer = useAppSelector(getSelectedLayerIndex);
+  const numberOfLayers = useAppSelector(getNumberOfLayers);
   const disableFastRemap = useAppSelector(getDisableFastRemap);
   const selectedKeyDefinitions = useAppSelector(getSelectedKeyDefinitions);
   const {basicKeyToByte, byteToKey} = useAppSelector(getBasicKeyToByte);
-  const macroCount = useAppSelector(getMacroCount);
+  const macroCount = useAppSelector(getPaletteMacroCount);
+  const tapDance = useTapDanceBinding(selectedDefinition as any);
 
   const menus = useMemo(() => {
     if (!selectedDefinition) {
@@ -69,54 +69,47 @@ export const KeycodePane: FC = () => {
     });
   }, [selectedDefinition, basicKeyToByte, selectedDevice, macroCount]);
 
-  const [selectedCategory, setSelectedCategory] = useState(menus[0]?.id ?? '');
-
   if (!selectedDefinition || !selectedDevice || !matrixKeycodes) {
     return null;
   }
 
-  const updateKey = (value: number) => {
+  const updateKey = (value: number, options?: {stay?: boolean}) => {
     if (selectedKey !== null) {
       dispatch(updateKeyAction(selectedKey, value));
+      if (options?.stay) {
+        return;
+      }
       dispatch(
         updateSelectedKey(
           disableFastRemap || !selectedKeyDefinitions
             ? null
             : getNextKey(selectedKey, selectedKeyDefinitions),
+          selectedKeyDefinitions,
         ),
       );
     }
   };
 
   return (
-    <>
-      <SubmenuOverflowCell>
-        <MenuContainer>
-          {menus.map(({id, label}) => (
-            <SubmenuRow
-              $selected={id === selectedCategory}
-              onClick={() => setSelectedCategory(id)}
-              key={id}
-            >
-              {t(label)}
-            </SubmenuRow>
-          ))}
-        </MenuContainer>
-      </SubmenuOverflowCell>
-      <OverflowCell>
-        <KeycodePicker
-          menus={menus}
-          basicKeyToByte={basicKeyToByte}
-          byteToKey={byteToKey}
-          value={selectedKey !== null ? matrixKeycodes[selectedKey] : undefined}
-          macrosSupported={macros.isFeatureSupported}
-          onSelect={updateKey}
-          renderCategoryNav={false}
-          selectedCategoryId={selectedCategory}
-          onSelectCategory={setSelectedCategory}
-        />
-      </OverflowCell>
-    </>
+    <SpanOverflowCell>
+      <KeycodePalette
+        menus={menus}
+        basicKeyToByte={basicKeyToByte}
+        byteToKey={byteToKey}
+        target={
+          selectedKey === null
+            ? null
+            : {
+                name: t('Selected key'),
+                sub: t('Layer {{layer}}', {layer: selectedLayer}),
+                value: matrixKeycodes[selectedKey] ?? null,
+              }
+        }
+        onAssign={updateKey}
+        layerCount={numberOfLayers}
+        tapDance={tapDance}
+      />
+    </SpanOverflowCell>
   );
 };
 

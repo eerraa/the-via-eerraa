@@ -1,4 +1,5 @@
-import {KeyboardAPI} from '../utils/keyboard-api';
+import {KeyboardAPI, shiftFrom16Bit} from '../utils/keyboard-api';
+import type {TapDanceWrite} from '../utils/keycode-palette';
 import type {ConnectedDevice} from '../types/types';
 import type {AppThunk} from './index';
 import {
@@ -6,7 +7,11 @@ import {
   isSelectedDeviceOperationCurrent,
 } from './devicesSlice';
 import {replaceEncoderMap, saveRawKeymapToDevice} from './keymapSlice';
-import {saveMacros} from './macrosSlice';
+import {replaceMacros} from './macrosSlice';
+import {
+  getSelectedCustomMenuData,
+  updateSelectedCustomMenuData,
+} from './menusSlice';
 import {
   invalidateStateSyncDomain,
   type StateSyncEncoderMap,
@@ -15,10 +20,17 @@ import {beginForegroundMutation, type StateSyncDomain} from './stateSyncSlice';
 
 export type FullLayoutImport = {
   keymap: number[][];
+  /** Every macro slot: they replace the keyboard's macros without reading them. */
   macros?: string[];
   encoders?: StateSyncEncoderMap;
+  /** Custom Values a layout file carries (Tap Dance), saved once per channel. */
+  customValues?: TapDanceWrite[];
 };
 
+/**
+ * Writes a whole layout as one transaction: one path reservation, one foreground
+ * mutation over every domain it touches, and one reconciliation if any part fails.
+ */
 export const importLayoutToDevice =
   (
     connectedDevice: ConnectedDevice,
@@ -38,10 +50,27 @@ export const importLayoutToDevice =
     ) {
       throw new Error('Layout import does not belong to the current device');
     }
+    const customValues = layout.customValues ?? [];
     const domains: StateSyncDomain[] = ['keymap'];
     if (layout.macros !== undefined) {
       domains.push('macro');
     }
+    if (customValues.length > 0) {
+      domains.push('config');
+    }
+    const assertCurrent = (reservedApi: KeyboardAPI) => {
+      if (
+        !reservedApi.isConnectionGenerationCurrent(connectionGeneration) ||
+        !isSelectedDeviceOperationCurrent(
+          getState(),
+          connectedDevice.path,
+          connectionGeneration,
+          selectionGeneration,
+        )
+      ) {
+        throw new Error('Layout import context changed before completion');
+      }
+    };
     dispatch(
       beginForegroundMutation({
         path: connectedDevice.path,
@@ -58,7 +87,7 @@ export const importLayoutToDevice =
         async (reservedApi) => {
           if (layout.macros !== undefined) {
             await dispatch(
-              saveMacros(connectedDevice, layout.macros, {
+              replaceMacros(connectedDevice, layout.macros, {
                 api: reservedApi,
                 mutationEpochAlreadyAdvanced: true,
                 reconcileOnFailure: false,
@@ -96,25 +125,48 @@ export const importLayoutToDevice =
                 );
               }
             }
-            if (
-              !reservedApi.isConnectionGenerationCurrent(
-                connectionGeneration,
-              ) ||
-              !isSelectedDeviceOperationCurrent(
-                getState(),
-                connectedDevice.path,
-                connectionGeneration,
-                selectionGeneration,
-              )
-            ) {
-              throw new Error(
-                'Layout import context changed before completion',
-              );
-            }
+            assertCurrent(reservedApi);
             dispatch(
               replaceEncoderMap({
                 devicePath: connectedDevice.path,
                 encoders: layout.encoders,
+              }),
+            );
+          }
+
+          if (customValues.length > 0) {
+            for (const {channel, id, value} of customValues) {
+              await reservedApi.setCustomMenuValue(
+                channel,
+                id,
+                ...shiftFrom16Bit(value),
+              );
+            }
+            for (const channel of new Set(
+              customValues.map((write) => write.channel),
+            )) {
+              await reservedApi.commitCustomMenu(channel);
+            }
+            assertCurrent(reservedApi);
+            dispatch(
+              updateSelectedCustomMenuData({
+                devicePath: connectedDevice.path,
+                menuData: {
+                  ...getSelectedCustomMenuData(getState()),
+                  ...Object.fromEntries(
+                    customValues.map(({name, value}) => [
+                      name,
+                      shiftFrom16Bit(value),
+                    ]),
+                  ),
+                },
+              }),
+            );
+            dispatch(
+              invalidateStateSyncDomain({
+                devicePath: connectedDevice.path,
+                connectionGeneration,
+                domain: 'config',
               }),
             );
           }

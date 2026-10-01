@@ -79,7 +79,7 @@ const customStyles = {
         borderColor: 'var(--color_accent)',
       },
       color: 'var(--color_accent)',
-      borderColor: '1px solid var(--color_accent)',
+      borderColor: 'var(--color_accent)',
       background: 'var(--bg_menu)',
       overflow: 'hidden',
       width: state.selectProps.width || 250,

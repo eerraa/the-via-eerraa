@@ -26,8 +26,30 @@ const showDebugPane = MODE === 'development' || DEBUG_PROD === 'true' || DEV;
 
 const GlobalContainer = styled(Container)`
   background: var(--bg_outside-accent);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: minmax(0, 1fr);
   column-gap: 20px;
 `;
+
+// The two outer tracks balance when space permits. The right track's intrinsic
+// width moves this group left on narrow windows, including its error warning.
+const PaneIcons = styled.div`
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  column-gap: 20px;
+`;
+
+/**
+ * Without WebHID there is nothing to configure, but firmware downloads still
+ * work, so the header keeps only language selection and the firmware entry.
+ */
+export const DownloadOnlyGlobalMenu = () => (
+  <GlobalContainer>
+    <ExternalLinks />
+  </GlobalContainer>
+);
 
 export const UnconnectedGlobalMenu = () => {
   const {t, i18n} = useTranslation();
@@ -42,9 +64,15 @@ export const UnconnectedGlobalMenu = () => {
         if (pane.key === 'design' && !showDesignTab) return null;
         if (pane.key === 'console' && !showConsoleTab) return null;
         if (pane.key === 'debug' && !showDebugPane) return null;
+        const selected = pane.path === location;
         return (
           <Link key={pane.key} to={pane.path}>
-            <CategoryIconContainer $selected={pane.path === location}>
+            <CategoryIconContainer
+              as="a"
+              $selected={selected}
+              aria-label={t(pane.title)}
+              aria-current={selected ? 'page' : undefined}
+            >
               <FontAwesomeIcon size={'xl'} icon={pane.icon} />
               <CategoryMenuTooltip>{t(pane.title)}</CategoryMenuTooltip>
             </CategoryIconContainer>
@@ -52,13 +80,15 @@ export const UnconnectedGlobalMenu = () => {
         );
       },
     );
-  }, [location, showConsoleTab, showDesignTab]);
+  }, [location, showConsoleTab, showDesignTab, t]);
 
   return (
     <React.Fragment>
       <GlobalContainer>
-        <ErrorLink />
-        {Panes}
+        <PaneIcons>
+          <ErrorLink />
+          {Panes}
+        </PaneIcons>
         <ExternalLinks />
       </GlobalContainer>
     </React.Fragment>

@@ -2,7 +2,6 @@ import {describe, expect, test} from 'bun:test';
 import {
   canApplyMillisecondDraft,
   commitMillisecondDraft,
-  parseFailureMessage,
   parseMillisecondDraft,
   EXACT_TAPPING_TERM_BOUNDS,
   revertMillisecondDraft,
@@ -11,7 +10,6 @@ import {
 import {FakeMillisecondDevice} from './fixtures/millisecond-fake';
 import {
   canApplyIntegerDraft,
-  commitIntegerDraft,
   parseIntegerDraft,
 } from '../src/utils/integer-field';
 import {
@@ -98,12 +96,11 @@ describe('parseMillisecondDraft', () => {
       ok: false,
       reason: 'out_of_range',
     });
-    expect(parseFailureMessage('out_of_range')).toBe('Out of range');
   });
 });
 
 describe('exact integer duration field', () => {
-  test('accepts the exact-second uint16 range and rejects zero or overflow', async () => {
+  test('accepts the exact-second uint16 range and rejects zero or overflow', () => {
     expect(parseIntegerDraft('1', 1, 65535)).toEqual({ok: true, value: 1});
     expect(parseIntegerDraft('65535', 1, 65535)).toEqual({
       ok: true,
@@ -118,29 +115,9 @@ describe('exact integer duration field', () => {
       reason: 'out_of_range',
     });
 
-    const writes: number[] = [];
-    const adapter = {
-      min: 1,
-      max: 65535,
-      async write(value: number) {
-        writes.push(value);
-        return value;
-      },
-    };
-    expect(canApplyIntegerDraft('137', 3600, adapter, false)).toBe(true);
-    const result = await commitIntegerDraft(
-      '137',
-      {
-        authoritativeValue: 3600,
-        draft: '137',
-        inFlight: false,
-        error: null,
-      },
-      adapter,
-    );
-    expect(result.wrote).toBe(true);
-    expect(result.next.authoritativeValue).toBe(137);
-    expect(writes).toEqual([137]);
+    const bounds = {min: 1, max: 65535};
+    expect(canApplyIntegerDraft('137', 3600, bounds)).toBe(true);
+    expect(canApplyIntegerDraft('0137', 137, bounds)).toBe(false);
   });
 });
 
@@ -197,7 +174,7 @@ describe('commitMillisecondDraft', () => {
       authoritativeMs: 200,
       draft: '137',
       inFlight: false,
-      error: 'Enter an integer',
+      error: 'empty',
     });
     expect(reverted.draft).toBe('200');
     expect(reverted.error).toBeNull();

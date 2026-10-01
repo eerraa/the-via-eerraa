@@ -1,5 +1,3 @@
-import {faSpinner, faUnlock} from '@fortawesome/free-solid-svg-icons';
-import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {a, config, useSpring} from '@react-spring/three';
 import {
   Html,
@@ -18,7 +16,6 @@ import {
   getCustomDefinitions,
   getSelectedDefinition,
 } from 'src/store/definitionsSlice';
-import {reloadConnectedDevices} from 'src/store/devicesThunks';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getConfigureKeyboardIsSelectable,
@@ -30,15 +27,22 @@ import {
   getSelectedTheme,
 } from 'src/store/settingsSlice';
 import {OVERRIDE_HID_CHECK} from 'src/utils/override';
+import {isFirmwarePath} from 'src/utils/firmware-route';
+import {
+  keyboardAreaHeight,
+  KeyboardAreaContext,
+  KeyboardAreaStyle,
+  useKeyboardAreaHeight,
+} from 'src/utils/keyboard-area';
 import {useSize} from 'src/utils/use-size';
 import {Object3D, SpotLight as ThreeSpotLight} from 'three';
 import {useLocation} from 'wouter';
-import {AccentButtonLarge} from '../inputs/accent-button';
 import {ConfigureKeyboard} from '../n-links/keyboard/configure';
 import {Design} from '../n-links/keyboard/design';
 import {Test} from '../n-links/keyboard/test';
 import {Camera} from './camera';
 import {LoaderCubey} from './loader-cubey';
+import {LoaderStatus, useLoaderStatus} from './loader-status';
 import {UpdateUVMaps} from './update-uv-maps';
 
 useGLTF.preload(cubeySrc, true, true);
@@ -110,9 +114,11 @@ export const NonSuspenseCanvasRouter = () => {
     }
   }, [dispatch]);
   const showAuthorizeButton = 'hid' in navigator || OVERRIDE_HID_CHECK;
+  const loaderStatus = useLoaderStatus();
   const hideCanvasScene =
     !showAuthorizeButton ||
     ['/settings', '/errors', '/console'].includes(path) ||
+    isFirmwarePath(path) ||
     hideDesignScene ||
     hideConfigureScene;
   const configureKeyboardIsSelectable = useAppSelector(
@@ -120,19 +126,24 @@ export const NonSuspenseCanvasRouter = () => {
   );
 
   const hideTerrainBG = showLoader;
+  const keyboardAreaPx = useKeyboardAreaHeight(dimensions?.width);
   return (
     <>
+      <KeyboardAreaStyle $height={keyboardAreaPx} $scrollPage={!hideCanvasScene} />
       <div
         style={{
-          height: 500,
+          height: keyboardAreaHeight,
+          flex: 'none',
           width: '100%',
           top: 0,
           transform: hideCanvasScene
             ? !hideTerrainBG
-              ? 'translateY(-500px)'
+              ? `translateY(calc(-1 * ${keyboardAreaHeight}))`
               : !dimensions
               ? ''
-              : `translateY(${-300 + dimensions!.height / 2}px)`
+              : `translateY(calc(${
+                  dimensions!.height / 2 - 50
+                }px - ${keyboardAreaHeight} / 2))`
             : '',
           position: hideCanvasScene && !hideTerrainBG ? 'absolute' : 'relative',
           overflow: 'visible',
@@ -155,46 +166,25 @@ export const NonSuspenseCanvasRouter = () => {
             theme={theme}
             visible={hideTerrainBG && !selectedDefinition}
           />
+          {/* Html's box has no width, so text in it would wrap at every word. */}
           <Html
             center
+            style={{width: 'max-content'}}
             position={[
               0,
               hideTerrainBG ? (!selectedDefinition ? -1 : 0) : 10,
               -19,
             ]}
           >
-            {showAuthorizeButton ? (
-              !selectedDefinition ? (
-                <AccentButtonLarge
-                  onClick={() => dispatch(reloadConnectedDevices())}
-                  style={{width: 'max-content'}}
-                >
-                  Authorize device
-                  <FontAwesomeIcon
-                    style={{marginLeft: '10px'}}
-                    icon={faUnlock}
-                  />
-                </AccentButtonLarge>
-              ) : (
-                <>
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      color: 'var(--color_accent)',
-                      fontSize: 60,
-                    }}
-                  >
-                    <FontAwesomeIcon spinPulse icon={faSpinner} />
-                  </div>
-                </>
-              )
-            ) : null}
+            {showAuthorizeButton ? <LoaderStatus {...loaderStatus} /> : null}
           </Html>
-          <KeyboardGroup
-            containerRef={containerRef}
-            configureKeyboardIsSelectable={configureKeyboardIsSelectable}
-            loadProgress={loadProgress}
-          />
+          <KeyboardAreaContext.Provider value={true}>
+            <KeyboardGroup
+              containerRef={containerRef}
+              configureKeyboardIsSelectable={configureKeyboardIsSelectable}
+              loadProgress={loadProgress}
+            />
+          </KeyboardAreaContext.Provider>
         </Canvas>
       </div>
     </>

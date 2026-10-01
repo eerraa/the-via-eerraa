@@ -2,8 +2,7 @@ import {createSelector, createSlice, PayloadAction} from '@reduxjs/toolkit';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
 import {getMacroAPI, isDelaySupported} from 'src/utils/macro-api';
 import {
-  expressionToSequence,
-  optimizedSequenceToRawSequence,
+  expressionToRawSequence,
   rawSequenceToOptimizedSequence,
   sequenceToExpression,
 } from 'src/utils/macro-api/macro-api.common';
@@ -292,11 +291,17 @@ export type SaveMacrosOptions = {
   reconcileOnFailure?: boolean;
 };
 
-export const saveMacros =
+// What a write needs read first. An edit rebuilds the whole set from the macros on
+// screen, so it needs their contents; a replacement brings every macro itself and
+// needs only the slot count, which a State Sync keyboard reads at connect.
+type MacroWriteNeeds = 'contents' | 'count';
+
+const writeMacroSet =
   (
     connectedDevice: ConnectedDevice,
     macros: string[],
-    options: SaveMacrosOptions = {},
+    options: SaveMacrosOptions,
+    needs: MacroWriteNeeds,
   ): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const state = getState();
@@ -311,15 +316,12 @@ export const saveMacros =
       macroState.ownerPath === connectedDevice.path &&
       macroState.ownerConnectionGeneration === connectionGeneration &&
       macroState.ownerSelectionGeneration === selectionGeneration &&
-      macroState.status === 'ready';
+      (macroState.status === 'ready' ||
+        (needs === 'count' && macroState.status === 'metadata'));
     if (!isCurrentOwner) {
       throw new Error('Macro state does not belong to the current device');
     }
-    const sequences = macros.map((expression) => {
-      const optimizedSequence = expressionToSequence(expression);
-      const rawSequence = optimizedSequenceToRawSequence(optimizedSequence);
-      return rawSequence;
-    });
+    const sequences = macros.map(expressionToRawSequence);
 
     if (!options.mutationEpochAlreadyAdvanced) {
       dispatch(
@@ -344,7 +346,15 @@ export const saveMacros =
       ) {
         throw new Error('Macro write context changed before completion');
       }
-      dispatch(saveMacrosSuccess({ast: sequences}));
+      // Kept as the keyboard reads it back, the form the editor compares a draft to.
+      dispatch(
+        saveMacrosSuccess({
+          ast: macroApi.macroBytesToRawKeycodeSequences(
+            macroApi.rawKeycodeSequencesToMacroBytes(sequences),
+            sequences.length,
+          ),
+        }),
+      );
       dispatch(
         invalidateStateSyncDomain({
           devicePath: connectedDevice.path,
@@ -370,6 +380,24 @@ export const saveMacros =
       throw error;
     }
   };
+
+/** Writes a set rebuilt from the macros on screen, so they must have been read. */
+export const saveMacros = (
+  connectedDevice: ConnectedDevice,
+  macros: string[],
+  options: SaveMacrosOptions = {},
+) => writeMacroSet(connectedDevice, macros, options, 'contents');
+
+/**
+ * Replaces every macro, as loading a layout file does. The keyboard's current
+ * macros are not needed, so a keyboard that has read only its macro count does
+ * not pull the whole buffer first.
+ */
+export const replaceMacros = (
+  connectedDevice: ConnectedDevice,
+  macros: string[],
+  options: SaveMacrosOptions = {},
+) => writeMacroSet(connectedDevice, macros, options, 'count');
 
 export const loadMacroMetadata =
   (connectedDevice: ConnectedDevice): AppThunk<Promise<void>> =>
@@ -503,6 +531,34 @@ export const getMacroBufferSize = (state: RootState) =>
   getIsMacrosReady(state) ? state.macros.macroBufferSize : 0;
 export const getMacroCount = (state: RootState) =>
   getIsMacroStateCurrent(state) ? state.macros.macroCount : 0;
+
+/**
+ * The keyboard's macro slot count: null when it has no macros, undefined while
+ * that is not known yet. Enough for a write that replaces every macro.
+ */
+export const getKnownMacroCount = (
+  state: RootState,
+): number | null | undefined => {
+  if (
+    !getIsMacroStateCurrent(state) ||
+    (state.macros.status !== 'ready' && state.macros.status !== 'metadata')
+  ) {
+    return undefined;
+  }
+  return state.macros.isFeatureSupported ? state.macros.macroCount : null;
+};
+
+/**
+ * The macro slots the keycode palette offers: null once this connection has
+ * settled on none (VIA before protocol 8, a count of zero, or a keyboard that
+ * answered the macro read without usable macros, such as one that does not
+ * handle the command). A read that fails in transport ends the connection
+ * before anything is recorded, so it never reads as none.
+ */
+export const getPaletteMacroCount = (state: RootState): number | null => {
+  const known = getKnownMacroCount(state);
+  return known === null || known === 0 ? null : getMacroCount(state);
+};
 
 export const getExpressions = createSelector(getAST, (sequences) =>
   sequences.map((sequence) => {

@@ -160,6 +160,9 @@ export const advancedStringToKeycode = (
   const upperString = inputString.toUpperCase();
   const parts = upperString.split(/\(|\)/).map((part) => part.trim());
   if (Object.keys(topLevelMacroToValue).includes(parts[0])) {
+    if (parts.length !== 3 || parts[2] !== '') {
+      return 0;
+    }
     return parseTopLevelMacro(parts, basicKeyToByte);
   } else if (Object.keys(modifierKeyToValue).includes(parts[0])) {
     return parseModifierCode(parts, basicKeyToByte);
@@ -285,11 +288,15 @@ const parseTopLevelMacro = (
   inputParts: string[],
   basicKeyToByte: Record<string, number>,
 ): number => {
-  const topLevelKey = inputParts[0];
+  const topLevelKey = inputParts[0] as keyof typeof topLevelMacroToValue;
   const parameter = inputParts[1] ?? '';
   let [param1, param2] = ['', ''];
   let layer = 0;
   let mods = 0;
+  const base = basicKeyToByte[topLevelMacroToValue[topLevelKey]];
+  if (!Number.isInteger(base)) {
+    return 0;
+  }
   switch (topLevelKey) {
     case 'MO':
     case 'DF':
@@ -297,11 +304,14 @@ const parseTopLevelMacro = (
     case 'OSL':
     case 'TT':
     case 'TO':
-      layer = Number.parseInt(parameter);
-      if (layer < 0) {
+      layer = parseOrdinal(parameter);
+      if (
+        layer < 0 ||
+        layer > basicKeyToByte[`${topLevelMacroToValue[topLevelKey]}_MAX`] - base
+      ) {
         return 0;
       }
-      return basicKeyToByte[topLevelMacroToValue[topLevelKey]] | (layer & 0xff);
+      return base + layer;
     case 'OSM': //#define OSM(mod) (QK_ONE_SHOT_MOD | ((mod)&0xFF))
       mods = parseMods(parameter);
       if (mods === 0) {
@@ -309,12 +319,15 @@ const parseTopLevelMacro = (
       }
       return basicKeyToByte[topLevelMacroToValue[topLevelKey]] | (mods & 0xff);
     case 'LM': //#define LM(layer, mod) (QK_LAYER_MOD | (((layer)&0xF) << 4) | ((mod)&0xF))
+      if (parameter.split(',').length !== 2) {
+        return 0;
+      }
       [param1, param2] = parameter.split(',').map((s) => s.trim());
       let mask = basicKeyToByte._QK_LAYER_MOD_MASK;
       let shift = Math.log2(mask + 1);
-      layer = Number.parseInt(param1);
+      layer = parseOrdinal(param1);
       mods = parseMods(param2);
-      if (layer < 0 || mods === 0) {
+      if (layer < 0 || layer > 15 || mods === 0) {
         return 0;
       }
       return (
@@ -323,29 +336,37 @@ const parseTopLevelMacro = (
         (mods & mask)
       );
     case 'LT': //#define LT(layer, kc) (QK_LAYER_TAP | (((layer)&0xF) << 8) | ((kc)&0xFF))
+      if (parameter.split(',').length !== 2) {
+        return 0;
+      }
       [param1, param2] = parameter.split(',').map((s) => s.trim());
-      layer = Number.parseInt(param1);
-      if (layer < 0 || !basicKeyToByte.hasOwnProperty(param2)) {
+      layer = parseOrdinal(param1);
+      const layerTapKey = parseBasicOperand(param2, basicKeyToByte);
+      if (layer < 0 || layer > 15 || layerTapKey === null) {
         return 0;
       }
       return (
         basicKeyToByte[topLevelMacroToValue[topLevelKey]] |
         ((layer & 0xf) << 8) |
-        basicKeyToByte[param2]
+        layerTapKey
       );
     case 'MT': // #define MT(mod, kc) (QK_MOD_TAP | (((mod)&0x1F) << 8) | ((kc)&0xFF))
+      if (parameter.split(',').length !== 2) {
+        return 0;
+      }
       [param1, param2] = parameter.split(',').map((s) => s.trim());
       mods = parseMods(param1);
-      if (mods === 0 || !basicKeyToByte.hasOwnProperty(param2)) {
+      const modTapKey = parseBasicOperand(param2, basicKeyToByte);
+      if (mods === 0 || modTapKey === null) {
         return 0;
       }
       return (
         basicKeyToByte[topLevelMacroToValue[topLevelKey]] |
         ((mods & 0x1f) << 8) |
-        (basicKeyToByte[param2] & 0xff)
+        modTapKey
       );
     case 'CUSTOM': {
-      const n = Number.parseInt(parameter);
+      const n = parseOrdinal(parameter);
       const nMax = basicKeyToByte._QK_KB_MAX - basicKeyToByte._QK_KB;
       if (n >= 0 && n <= nMax) {
         return basicKeyToByte[topLevelMacroToValue[topLevelKey]] + n;
@@ -353,7 +374,7 @@ const parseTopLevelMacro = (
       return 0;
     }
     case 'MACRO': {
-      const n = Number.parseInt(parameter);
+      const n = parseOrdinal(parameter);
       const nMax = basicKeyToByte._QK_MACRO_MAX - basicKeyToByte._QK_MACRO;
       if (n >= 0 && n <= nMax) {
         return basicKeyToByte[topLevelMacroToValue[topLevelKey]] + n;
@@ -380,13 +401,25 @@ const parseMods = (input: string = ''): number => {
 
 const parseModifierCode = (
   inputParts: string[],
-  basicKeyToByte: any,
+  basicKeyToByte: Record<string, number>,
 ): number => {
+  // The number of trailing closes must match the modifier nesting, and there
+  // can be no suffix after the last close.
+  const operandIndex = inputParts.findIndex((part, index) =>
+    index > 0 && !modifierKeyToValue.hasOwnProperty(part),
+  );
+  if (
+    operandIndex < 1 ||
+    inputParts.length !== operandIndex * 2 + 1 ||
+    inputParts.slice(operandIndex + 1).some((part) => part !== '')
+  ) {
+    return 0;
+  }
   const realParts = inputParts.filter((nonce) => nonce.length !== 0);
   const bytes = realParts.map((part, idx) => {
     if (idx === realParts.length - 1) {
       /* this must be a KC code */
-      return basicKeyToByte.hasOwnProperty(part) ? basicKeyToByte[part] : null;
+      return parseBasicOperand(part, basicKeyToByte);
     } else {
       /* This must be a top level modifier */
       return modifierKeyToValue.hasOwnProperty(part)
@@ -394,10 +427,33 @@ const parseModifierCode = (
         : null;
     }
   });
-  if (bytes.find((e) => e === null)) {
+  if (bytes.some((byte) => byte === null)) {
     return 0;
   }
-  return bytes.reduce((acc, byte) => acc | byte, 0);
+  return (bytes as number[]).reduce((acc, byte) => acc | byte, 0);
+};
+
+const parseOrdinal = (input: string): number => {
+  const value = /^\d+$/.test(input) ? Number(input) : -1;
+  return Number.isSafeInteger(value) ? value : -1;
+};
+
+/** Packed LT, MT and modifier keycodes have one byte for their basic operand. */
+const parseBasicOperand = (
+  input: string,
+  basicKeyToByte: Record<string, number>,
+): number | null => {
+  const value = /^0x[0-9a-f]{1,4}$/i.test(input)
+    ? Number.parseInt(input, 16)
+    : basicKeyToByte[input];
+  return Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 0xff &&
+    Object.entries(basicKeyToByte).some(
+      ([code, byte]) => !code.startsWith('_') && byte === value,
+    )
+    ? value
+    : null;
 };
 
 export const anyKeycodeToString = (

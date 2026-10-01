@@ -1,5 +1,6 @@
 import {ThreeEvent} from '@react-three/fiber';
 import {VIADefinitionV2, VIADefinitionV3, VIAKey} from '@the-via/reader';
+import type {ReactNode} from 'react';
 import {TestKeyState} from 'src/types/types';
 import {BufferGeometry} from 'three';
 
@@ -44,6 +45,8 @@ export type KeyboardCanvasProps<T> = Omit<
 > & {
   shouldHide?: boolean;
   containerDimensions: DOMRect;
+  /** Shown just below the picture's bottom right corner. */
+  cornerNote?: ReactNode;
 };
 
 export type KeyGroupProps<T> = {

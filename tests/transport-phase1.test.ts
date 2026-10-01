@@ -1,5 +1,27 @@
 import {afterEach, beforeEach, describe, expect, test} from 'bun:test';
+import path from 'node:path';
 import {configureStore} from '@reduxjs/toolkit';
+import {LightingValue} from '@the-via/reader';
+import i18n from 'i18next';
+import {
+  createElement as h,
+  type ComponentType,
+  type ReactElement,
+  type ReactNode,
+  useSyncExternalStore,
+} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {getI18n, I18nextProvider, setI18n} from 'react-i18next';
+import {Provider, useSelector} from 'react-redux';
+import {
+  act,
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from 'react-test-renderer';
+import {Route, Router} from 'wouter';
+import staticLocationHook from 'wouter/static-location';
+import {ServerStyleSheet} from 'styled-components';
 import {
   addHIDTransportGenerationListener,
   configureHIDTransport,
@@ -7,18 +29,23 @@ import {
   getHIDTransportDebugState,
   HID,
   isHIDTransportLifecycleCancellationError,
+  HIDTransportInvalidReportError,
   HIDTransportTimeoutError,
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
 } from '../src/shims/node-hid';
 import {usbDetect} from '../src/shims/usb-detection';
-import {KeyboardAPI} from '../src/utils/keyboard-api';
+import {KeyboardAPI, UnhandledCommandError} from '../src/utils/keyboard-api';
 import {store as appStore} from '../src/store';
 import errorsReducer, {
   clearAppErrors,
   getAppErrors,
 } from '../src/store/errorsSlice';
-import {reloadConnectedDevices} from '../src/store/devicesThunks';
+import {
+  reloadConnectedDevices,
+  selectConnectedDevice,
+  selectConnectedDeviceByPath,
+} from '../src/store/devicesThunks';
 import {
   getUISyncCommandIds,
   parseUISyncRequest,
@@ -37,13 +64,31 @@ import keymapReducer, {
   loadKeymapFromDevice,
 } from '../src/store/keymapSlice';
 import definitionsReducer, {
+  getBasicKeyToByte,
   updateDefinitions,
 } from '../src/store/definitionsSlice';
 import menusReducer, {
   getCustomCommandsForDefinition,
+  getV3MenuComponents,
+  getV3Menus,
   syncCustomMenuValuesFromRequest,
 } from '../src/store/menusSlice';
-import firmwareReducer from '../src/store/firmwareSlice';
+import firmwareReducer, {
+  updateKeycodesVersion,
+} from '../src/store/firmwareSlice';
+import settingsReducer from '../src/store/settingsSlice';
+import macrosReducer from '../src/store/macrosSlice';
+import lightingReducer from '../src/store/lightingSlice';
+import designReducer from '../src/store/designSlice';
+import definitionNameReducer from '../src/store/definitionNameSlice';
+import stateSyncReducer from '../src/store/stateSyncSlice';
+import {setEraAdvancedMetadataForTesting} from '../src/utils/era-advanced-metadata';
+import {
+  decodeKeycodesVersion,
+  KeycodesVersionProtocolError,
+  UnsupportedKeycodesVersionError,
+} from '../src/utils/keycodes-version';
+import koTranslation from '../src/locales/ko.json';
 import type {ConnectedDevice} from '../src/types/types';
 
 type InputListener = (event: {data: DataView}) => void;
@@ -133,12 +178,15 @@ const waitUntil = async (predicate: () => boolean, timeoutMs = 250) => {
 
 const asHIDDevice = (device: FakeHIDDevice) => device as unknown as HIDDevice;
 
-const installFakeNavigatorHID = (getDevices: () => HIDDevice[]) => {
+const installFakeNavigatorHID = (
+  getDevices: () => HIDDevice[],
+  requestDevice: () => Promise<HIDDevice[]> = async () => getDevices(),
+) => {
   const originalDescriptor = Object.getOwnPropertyDescriptor(navigator, 'hid');
   const listeners = new Map<string, Set<(event: {device: HIDDevice}) => void>>();
   const hid = {
     getDevices: async () => getDevices(),
-    requestDevice: async () => getDevices(),
+    requestDevice,
     addEventListener: (
       type: string,
       listener: (event: {device: HIDDevice}) => void,
@@ -529,11 +577,87 @@ describe('per-device WebHID transport', () => {
       true,
     );
     expect(await request).toBeInstanceOf(HIDTransportTimeoutError);
+    expect(getHIDTransportDebugState('bad-response')?.poisoned).toBe(true);
 
     const errors = getAppErrors(appStore.getState());
     expect(errors).toHaveLength(1);
     expect(errors[0].message.length).toBeGreaterThan(0);
   });
+
+  test('an unhandled reply fails only its own request, at once, and keeps the connection', async () => {
+    const {device, hid} = await connectFake('unhandled');
+    const generation = hid.getConnectionGeneration();
+    device.onSend = (data) => {
+      if (data[0] === 0x08) {
+        // id_unhandled: the request comes back with its first byte set to 0xFF.
+        device.emit(Uint8Array.from([0xff, ...data.slice(1)]));
+      } else if (data[0] === 0x01) {
+        device.emit(payload(0x01, 0x00, 0x0c));
+      }
+    };
+    const api = new KeyboardAPI('unhandled');
+
+    await expect(api.getCustomMenuValue([0x05, 0x02])).rejects.toBeInstanceOf(
+      UnhandledCommandError,
+    );
+    expect(getHIDTransportDebugState('unhandled')).toMatchObject({
+      generation,
+      poisoned: false,
+      disconnected: false,
+      hasPendingResponse: false,
+      diagnosticCount: 0,
+    });
+    expect(await api.getProtocolVersion()).toBe(12);
+
+    // One entry: the reply with its bytes, not a second one for the same failure.
+    const errors = getAppErrors(appStore.getState());
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Command Name: CUSTOM_MENU_GET_VALUE');
+    expect(errors[0].message).toContain('Response: 255 5 2 0');
+  });
+
+  test('a 0xFF report that does not echo the pending request is not its reply', async () => {
+    const {device} = await connectFake('stray-unhandled');
+    const api = new KeyboardAPI('stray-unhandled');
+    const version = api.getProtocolVersion();
+    await waitUntil(() => device.sentReports.length === 1);
+
+    // A late unhandled State Sync answer also starts with 0xFF.
+    device.emit(payload(0xff, 0x06, 0x01, 0x00, 0x00, 0x01));
+    expect(getHIDTransportDebugState('stray-unhandled')).toMatchObject({
+      hasPendingResponse: true,
+      diagnosticCount: 1,
+    });
+    device.emit(payload(0x01, 0x00, 0x0c));
+    expect(await version).toBe(12);
+  });
+
+  test.each([300, -1, 1.5])(
+    'a report value that is not a byte (%s) is refused before anything is sent',
+    async (value) => {
+      const path = `not-a-byte-${value}`;
+      const {device, hid} = await connectFake(path);
+      const generation = hid.getConnectionGeneration();
+      device.onSend = (data) => device.emit(data);
+      const api = new KeyboardAPI(path);
+
+      await expect(
+        api.setBacklightValue(LightingValue.BACKLIGHT_BRIGHTNESS, value),
+      ).rejects.toBeInstanceOf(HIDTransportInvalidReportError);
+      expect(device.sentReports).toHaveLength(0);
+      expect(getHIDTransportDebugState(path)).toMatchObject({
+        generation,
+        poisoned: false,
+        hasPendingResponse: false,
+        commandQueueDepth: 0,
+      });
+
+      await api.setBacklightValue(LightingValue.BACKLIGHT_BRIGHTNESS, 255);
+      expect(Array.from(device.sentReports[0].data.slice(0, 3))).toEqual([
+        0x07, 0x09, 0xff,
+      ]);
+    },
+  );
 
   test('a write failure while the WebHID device is still connected remains user-visible', async () => {
     const fake = new FakeHIDDevice();
@@ -1092,6 +1216,26 @@ describe('exact macro buffer transactions', () => {
     expect(device.sentReports.map(({data}) => data[0])).toEqual([0x0d]);
   });
 
+  // The transport would refuse such a value only in the payload, after RESET had
+  // already erased every macro on the keyboard.
+  test('refuses a payload value outside 0-255 before RESET, so the macros stay', async () => {
+    const {device} = await connectFake('macro-not-a-byte');
+    const harness = attachMacroHarness(device, {
+      size: 4,
+      logicalBytes: [65, 0, 0, 0],
+    });
+    const api = new KeyboardAPI('macro-not-a-byte');
+
+    // 0xd55c is a Korean syllable typed into a script.
+    for (const value of [0xd55c, 256, -1, 1.5, undefined]) {
+      await expect(api.setMacroBytes([72, value as number, 0])).rejects.toThrow(
+        'not 0-255',
+      );
+    }
+    expect(device.sentReports).toEqual([]);
+    expect(harness.logicalBytes).toEqual([65, 0, 0, 0]);
+  });
+
   test('reads exactly B logical bytes, trims HID padding, and sizes the final request', async () => {
     const {device} = await connectFake('macro-read-exact');
     const payloadBytes = Array.from({length: 29}, (_, index) => index + 1);
@@ -1332,11 +1476,12 @@ describe('explicit device and cache generation ownership', () => {
     );
     const selectionGeneration = getSelectionGeneration(cacheStore.getState() as any);
     const removeGenerationListener = addHIDTransportGenerationListener(
-      ({path, generation}) =>
+      ({path, generation, poisoned}) =>
         dispatch(
           invalidateDeviceConnection({
             devicePath: path,
             connectionGeneration: generation,
+            locked: poisoned,
           }),
         ),
     );
@@ -1434,6 +1579,28 @@ describe('explicit device and cache generation ownership', () => {
     expect(fakeA.sentReports.map(({data}) => data[0])).toEqual([
       0x01, 0x11, 0x01, 0x12,
     ]);
+  });
+
+  // Tap Dance settings moved from a TAPDANCE menu onto the TD keycodes in custom
+  // JSON. They must still be fetched, written and resynchronised as Custom Values.
+  test('Tap Dance settings on TD keycodes are still collected as Custom Value commands', async () => {
+    const definition = await Bun.file(
+      'public/definitions/era/v3/1163042818.json',
+    ).json();
+    const commands = getCustomCommandsForDefinition(definition);
+    const tapDance = Object.keys(commands).filter((name) =>
+      name.startsWith('id_qmk_tapdance_'),
+    );
+    expect(tapDance).toHaveLength(40);
+    expect(commands.id_qmk_tapdance_1_tap).toEqual([0, 32]);
+    expect(commands.id_qmk_tapdance_8_term_exact).toEqual([0, 79]);
+    // They are edited from KEYMAP, so Configure lists every other menu but not them.
+    const menus = getV3Menus.resultFunc(definition);
+    const titles = getV3MenuComponents
+      .resultFunc(menus)
+      .map((menu: any) => menu.Title);
+    expect(titles).toEqual(definition.menus.map((menu: any) => menu.label));
+    expect(titles).not.toContain('TAPDANCE');
   });
 
   test('0x16 refresh uses the reporting device definition/API even after selection switches', async () => {
@@ -1540,10 +1707,1630 @@ describe('explicit device and cache generation ownership', () => {
       invalidateDeviceConnection({
         devicePath: deviceB.path,
         connectionGeneration: 3,
+        locked: false,
       }),
     );
     expect(state.readyDevicePath).toBeNull();
     expect(state.selectedConnectionNeedsReload).toBe(true);
     expect(state.selectionGeneration).toBe(currentSelectionGeneration + 1);
+  });
+});
+
+// Current QMK boards report VIA protocol 13 and a QMK keycodes version that the
+// app must read before it can name any key.
+const P13_VENDOR_ID = 0x1234;
+const P13_PRODUCT_ID = 0x5678;
+const p13VendorProductId = P13_VENDOR_ID * 65536 + P13_PRODUCT_ID;
+const p13Definition = {
+  name: 'Protocol 13 board',
+  vendorProductId: p13VendorProductId,
+  firmwareVersion: 0,
+  menus: [],
+  keycodes: [],
+  matrix: {rows: 1, cols: 1},
+  layouts: {
+    width: 1,
+    height: 1,
+    optionKeys: {},
+    keys: [
+      {
+        row: 0,
+        col: 0,
+        x: 0,
+        y: 0,
+        r: 0,
+        rx: 0,
+        ry: 0,
+        d: false,
+        h: 1,
+        w: 1,
+        color: 'alpha',
+      },
+    ],
+  },
+};
+const UNSUPPORTED_VERSION_TITLE = 'Unsupported keyboard firmware version';
+
+const makeAppTestStore = () => {
+  const testStore = configureStore({
+    reducer: {
+      settings: settingsReducer,
+      macros: macrosReducer,
+      devices: devicesReducer,
+      keymap: keymapReducer,
+      definitions: definitionsReducer,
+      lighting: lightingReducer,
+      menus: menusReducer,
+      design: designReducer,
+      errors: errorsReducer,
+      firmware: firmwareReducer,
+      definitionName: definitionNameReducer,
+      stateSync: stateSyncReducer,
+    },
+  });
+  testStore.dispatch(
+    updateSupportedIds({[p13VendorProductId]: {v2: true, v3: true}}),
+  );
+  testStore.dispatch(
+    updateDefinitions({[p13VendorProductId]: {v3: p13Definition}} as any),
+  );
+  return testStore;
+};
+
+/** A stock QMK board; anything it has no data for is echoed back as zeros. */
+const makeProtocol13Board = (boardPath: string, versionBytes: number[]) => {
+  const fake = new FakeHIDDevice();
+  fake.vendorId = P13_VENDOR_ID;
+  fake.productId = P13_PRODUCT_ID;
+  fake.productName = boardPath;
+  (fake as unknown as {__path: string}).__path = boardPath;
+  const heldVersionReplies: Uint8Array[] = [];
+  let holdingVersion = false;
+  fake.onSend = (data) => {
+    if (data[0] === 0x02 && data[1] === 0x06) {
+      const reply = payload(0x02, 0x06, ...versionBytes);
+      if (holdingVersion) {
+        heldVersionReplies.push(reply);
+      } else {
+        fake.emit(reply);
+      }
+      return;
+    }
+    if (data[0] === 0x01) {
+      fake.emit(payload(0x01, 0x00, 0x0d));
+    } else if (data[0] === 0x11) {
+      fake.emit(payload(0x11, 0x01));
+    } else {
+      fake.emit(payload(...Array.from(data)));
+    }
+  };
+  const connectedDevice: ConnectedDevice = {
+    path: boardPath,
+    vendorId: P13_VENDOR_ID,
+    productId: P13_PRODUCT_ID,
+    productName: boardPath,
+    protocol: 13,
+    hasResolvedDefinition: true,
+    requiredDefinitionVersion: 'v3',
+    vendorProductId: p13VendorProductId,
+  };
+  return {
+    fake,
+    connectedDevice,
+    path: boardPath,
+    holdVersion: () => {
+      holdingVersion = true;
+    },
+    releaseVersion: () => {
+      holdingVersion = false;
+      heldVersionReplies.splice(0).forEach((reply) => fake.emit(reply));
+    },
+    heldVersionReplies: () => heldVersionReplies.length,
+    commands: () => fake.sentReports.map(({data}) => data[0]),
+  };
+};
+
+const stubGlobals = (values: Record<string, unknown>) => {
+  const originals = Object.keys(values).map(
+    (name) =>
+      [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+  );
+  for (const [name, value] of Object.entries(values)) {
+    Object.defineProperty(globalThis, name, {configurable: true, value});
+  }
+  return () => {
+    for (const [name, original] of originals) {
+      if (original) {
+        Object.defineProperty(globalThis, name, original);
+      } else {
+        Reflect.deleteProperty(globalThis, name);
+      }
+    }
+  };
+};
+
+type AppShell = {
+  Home: ComponentType<{hasHIDSupport: boolean; children?: ReactNode}>;
+  UnconnectedGlobalMenu: ComponentType;
+  FirmwarePane: ComponentType;
+  panes: {key: string; path: string; component: ComponentType<any>}[];
+  translations: typeof i18n;
+};
+
+let appShell: Promise<AppShell> | undefined;
+// The header imports every pane. `assets/` is a Vite alias, and override.ts
+// reads location when it loads.
+const loadAppShell = () =>
+  (appShell ??= (async () => {
+    Bun.plugin({
+      name: 'vite-assets-alias',
+      setup(build) {
+        build.onResolve({filter: /^assets\//}, ({path: specifier}) => ({
+          path: path.join(import.meta.dir, '../src', specifier),
+        }));
+      },
+    });
+    const restore = stubGlobals({
+      location: {href: 'http://localhost/'},
+    });
+    try {
+      const {Home} = await import('../src/components/Home');
+      const {UnconnectedGlobalMenu} =
+        await import('../src/components/menus/global');
+      const {FirmwarePane} = await import('../src/components/panes/firmware');
+      const {default: panes} = await import('../src/utils/pane-config');
+      const translations = i18n.createInstance();
+      await translations.init({
+        lng: 'ko',
+        resources: {ko: {translation: koTranslation}},
+      });
+      return {
+        Home,
+        UnconnectedGlobalMenu,
+        FirmwarePane,
+        panes,
+        translations,
+      } as AppShell;
+    } finally {
+      restore();
+    }
+  })());
+
+/** The header and Home with the given routes, as Routes.tsx composes them. */
+const appShellElement = (
+  shell: AppShell,
+  testStore: ReturnType<typeof makeAppTestStore>,
+  hook: () => [string, (to: string) => void],
+  routes: ReactNode,
+) =>
+  h(
+    Provider,
+    {store: testStore} as any,
+    h(
+      I18nextProvider,
+      {i18n: shell.translations} as any,
+      h(
+        Router,
+        {hook} as any,
+        h(shell.UnconnectedGlobalMenu),
+        h(shell.Home, {hasHIDSupport: true}, routes),
+      ),
+    ),
+  );
+
+const appRoutes = (shell: AppShell, location: string) => [
+  ...shell.panes
+    .filter((pane) => pane.key !== 'console')
+    .map((pane) =>
+      h(Route, {key: pane.key, path: pane.path, component: pane.component}),
+    ),
+  location.startsWith('/firmware')
+    ? h(shell.FirmwarePane, {key: 'firmware'})
+    : null,
+];
+
+const renderAppShell = (
+  shell: AppShell,
+  testStore: ReturnType<typeof makeAppTestStore>,
+  location: string,
+) =>
+  renderToStaticMarkup(
+    appShellElement(
+      shell,
+      testStore,
+      staticLocationHook(location) as any,
+      appRoutes(shell, location),
+    ),
+  );
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+describe('QMK VIA protocol 13 keycodes version', () => {
+  beforeEach(() => {
+    setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+  });
+
+  afterEach(() => {
+    setEraAdvancedMetadataForTesting(null);
+  });
+
+  test('QMK keycode versions 0.0.8 and 0.0.9 are supported, other versions are not', () => {
+    expect(decodeKeycodesVersion([0, 0, 0, 0x08])).toBe(0x08);
+    expect(decodeKeycodesVersion([0, 0, 0, 0x09])).toBe(0x09);
+    for (const bytes of [
+      [0, 0, 0, 0x07],
+      [0, 0, 0, 0x10],
+      [0, 0, 0x01, 0x00],
+    ]) {
+      expect(() => decodeKeycodesVersion(bytes)).toThrow(
+        UnsupportedKeycodesVersionError,
+      );
+    }
+    for (const bytes of [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0x0a],
+      [0, 0, 0x09],
+    ]) {
+      expect(() => decodeKeycodesVersion(bytes)).toThrow(
+        KeycodesVersionProtocolError,
+      );
+    }
+  });
+
+  test('key names wait for the keycodes version instead of throwing', () => {
+    const testStore = makeAppTestStore();
+    const {connectedDevice} = makeProtocol13Board(
+      'p13-key-names',
+      [0, 0, 0, 9],
+    );
+    testStore.dispatch(
+      updateConnectedDevices({[connectedDevice.path]: connectedDevice}),
+    );
+    testStore.dispatch(
+      selectDevice({device: connectedDevice, connectionGeneration: 1}),
+    );
+    expect(getBasicKeyToByte(testStore.getState() as any)).toEqual({
+      basicKeyToByte: {},
+      byteToKey: {},
+    });
+
+    testStore.dispatch(
+      updateKeycodesVersion({devicePath: connectedDevice.path, version: 9}),
+    );
+    expect(
+      getBasicKeyToByte(testStore.getState() as any).basicKeyToByte.KC_A,
+    ).toBe(0x04);
+  });
+
+  test('a board is selected only after its keycodes version is read', async () => {
+    const board = makeProtocol13Board('p13-supported', [0, 0, 0, 0x09]);
+    const navigatorHID = installFakeNavigatorHID(() => [
+      asHIDDevice(board.fake),
+    ]);
+    const testStore = makeAppTestStore();
+    let versionWhenSelected: number | null | undefined;
+    const unsubscribe = testStore.subscribe(() => {
+      const state = testStore.getState();
+      if (
+        versionWhenSelected === undefined &&
+        state.devices.selectedDevicePath === board.path
+      ) {
+        versionWhenSelected =
+          state.firmware.keycodesVersionMap[board.path] ?? null;
+      }
+    });
+    try {
+      await testStore.dispatch(reloadConnectedDevices() as any);
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === board.path,
+        2000,
+      );
+
+      expect(versionWhenSelected).toBe(0x09);
+      expect(testStore.getState().errors.appErrors).toEqual([]);
+      expect(getAppErrors(appStore.getState())).toEqual([]);
+    } finally {
+      unsubscribe();
+      navigatorHID.restore();
+    }
+  });
+
+  test('an unsupported or malformed version never selects the board and is reported once', async () => {
+    for (const [boardPath, versionBytes] of [
+      ['p13-unsupported', [0, 0, 0, 0x10]],
+      ['p13-malformed', [0, 0, 0, 0x0a]],
+    ] as const) {
+      const board = makeProtocol13Board(boardPath, [...versionBytes]);
+      const navigatorHID = installFakeNavigatorHID(() => [
+        asHIDDevice(board.fake),
+      ]);
+      const testStore = makeAppTestStore();
+      try {
+        // A USB change reloads the device list twice.
+        await testStore.dispatch(reloadConnectedDevices() as any);
+        await waitUntil(() => testStore.getState().errors.appErrors.length > 0);
+        await testStore.dispatch(reloadConnectedDevices() as any);
+        await settle();
+
+        const state = testStore.getState();
+        expect(state.devices.selectedDevicePath).toBeNull();
+        expect(state.errors.appErrors).toHaveLength(1);
+        expect(state.errors.appErrors[0].title).toBe(UNSUPPORTED_VERSION_TITLE);
+        expect(state.errors.appErrors[0].message).toContain('KEYCODES_VERSION');
+        // Protocol, keycodes version, protocol: no keymap or macro is read.
+        expect(board.commands()).toEqual([0x01, 0x02, 0x01]);
+      } finally {
+        navigatorHID.restore();
+      }
+    }
+  });
+
+  test('an unsupported board neither replaces nor blocks a working one', async () => {
+    const unsupported = makeProtocol13Board('p13-blocker', [0, 0, 0, 0x10]);
+    const malformed = makeProtocol13Board('p13-garbled', [0, 0, 0, 0x0a]);
+    const working = makeProtocol13Board('p13-working', [0, 0, 0, 0x08]);
+    const navigatorHID = installFakeNavigatorHID(() => [
+      asHIDDevice(unsupported.fake),
+      asHIDDevice(malformed.fake),
+      asHIDDevice(working.fake),
+    ]);
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    try {
+      // The app scans once when it opens. The rejected boards are listed
+      // first, so they are tried first, once each.
+      await dispatch(reloadConnectedDevices());
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === working.path,
+        2000,
+      );
+      expect(testStore.getState().errors.appErrors).toHaveLength(2);
+      expect(unsupported.commands()).toEqual([0x01, 0x02]);
+      expect(malformed.commands()).toEqual([0x01, 0x02]);
+
+      // Picking it from the device list leaves the working board in place.
+      await dispatch(selectConnectedDeviceByPath(unsupported.path));
+      await settle();
+      const state = testStore.getState();
+      expect(state.devices.selectedDevicePath).toBe(working.path);
+      expect(state.devices.readyDevicePath).toBe(working.path);
+    } finally {
+      navigatorHID.restore();
+    }
+  });
+
+  test('an unsupported board is reported each time it is picked from the device list', async () => {
+    const working = makeProtocol13Board('p13-kept', [0, 0, 0, 0x09]);
+    const unsupported = makeProtocol13Board('p13-picked', [0, 0, 0, 0x10]);
+    const navigatorHID = installFakeNavigatorHID(() => [
+      asHIDDevice(working.fake),
+      asHIDDevice(unsupported.fake),
+    ]);
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    try {
+      await dispatch(reloadConnectedDevices());
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === working.path,
+        2000,
+      );
+
+      // /errors is cleared before each pick.
+      for (const pick of [1, 2]) {
+        testStore.dispatch(clearAppErrors());
+        const sent = unsupported.commands().length;
+        await dispatch(selectConnectedDeviceByPath(unsupported.path));
+        await waitUntil(() =>
+          unsupported.commands().slice(sent).includes(0x02),
+        );
+        await settle();
+        const state = testStore.getState();
+        expect({
+          pick,
+          errors: state.errors.appErrors.map(({title}) => title),
+        }).toEqual({pick, errors: [UNSUPPORTED_VERSION_TITLE]});
+        expect(state.devices.readyDevicePath).toBe(working.path);
+      }
+    } finally {
+      navigatorHID.restore();
+    }
+  });
+
+  test('an older selection still reading its version cannot take over from a newer one', async () => {
+    const older = makeProtocol13Board('p13-older', [0, 0, 0, 0x09]);
+    const newer = makeProtocol13Board('p13-newer', [0, 0, 0, 0x09]);
+    await connectFake(older.path, older.fake);
+    await connectFake(newer.path, newer.fake);
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    dispatch(
+      updateConnectedDevices({
+        [older.path]: older.connectedDevice,
+        [newer.path]: newer.connectedDevice,
+      }),
+    );
+    const selections: string[] = [];
+    const unsubscribe = testStore.subscribe(() => {
+      const selected = testStore.getState().devices.selectedDevicePath;
+      if (selected && selections[selections.length - 1] !== selected) {
+        selections.push(selected);
+      }
+    });
+    older.holdVersion();
+    newer.holdVersion();
+    try {
+      const olderSelection = dispatch(
+        selectConnectedDevice(older.connectedDevice),
+      );
+      const newerSelection = dispatch(
+        selectConnectedDevice(newer.connectedDevice),
+      );
+      await waitUntil(
+        () =>
+          older.heldVersionReplies() === 1 && newer.heldVersionReplies() === 1,
+      );
+
+      older.releaseVersion();
+      await olderSelection;
+      expect(testStore.getState().devices.selectedDevicePath).toBeNull();
+
+      newer.releaseVersion();
+      await newerSelection;
+      expect(testStore.getState().devices.readyDevicePath).toBe(newer.path);
+      expect(selections).toEqual([newer.path]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('a board that locks while its keycodes version is read asks for a reconnect', async () => {
+    const shell = await loadAppShell();
+    const locking = makeProtocol13Board('p13-locking', [0, 0, 0, 0x09]);
+    const navigatorHID = installFakeNavigatorHID(() => [
+      asHIDDevice(locking.fake),
+    ]);
+    const testStore = makeAppTestStore();
+    try {
+      // It answers the protocol probe but never the keycodes version, so the
+      // read times out and locks the connection before it is selected.
+      locking.holdVersion();
+      await testStore.dispatch(reloadConnectedDevices() as any);
+      await waitUntil(
+        () => testStore.getState().devices.selectedConnectionLocked,
+        2000,
+      );
+      expect(testStore.getState().devices.selectedDevicePath).toBe(
+        locking.path,
+      );
+      const configure = renderAppShell(shell, testStore, '/');
+      expect(configure).toContain('키보드를 재연결하세요');
+      expect(configure).not.toContain('기기 검색 중...');
+    } finally {
+      navigatorHID.restore();
+    }
+
+    // Unplugged during that read instead, it is neither selected nor locked.
+    const unplugged = makeProtocol13Board('p13-unplugged', [0, 0, 0, 0x09]);
+    await connectFake(unplugged.path, unplugged.fake);
+    const unpluggedStore = makeAppTestStore();
+    unpluggedStore.dispatch(
+      updateConnectedDevices({[unplugged.path]: unplugged.connectedDevice}),
+    );
+    unplugged.holdVersion();
+    const selection = unpluggedStore.dispatch(
+      selectConnectedDevice(unplugged.connectedDevice) as any,
+    );
+    await waitUntil(() => unplugged.heldVersionReplies() === 1);
+    disconnectHIDDeviceForTesting(unplugged.path);
+    await selection;
+    expect(unpluggedStore.getState().devices).toMatchObject({
+      selectedDevicePath: null,
+      selectedConnectionLocked: false,
+    });
+  });
+
+  test('plugged in with the app open, a board that locks while its keycodes version is read asks for a reconnect', async () => {
+    const shell = await loadAppShell();
+    const locking = makeProtocol13Board('p13-locking-rescan', [0, 0, 0, 0x09]);
+    const navigatorHID = installFakeNavigatorHID(() => [
+      asHIDDevice(locking.fake),
+    ]);
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    try {
+      // Home scans twice after a keyboard is plugged in. The first scan starts
+      // reading the keycodes version, and the second starts before that read
+      // times out, while nothing is selected yet.
+      locking.holdVersion();
+      await dispatch(reloadConnectedDevices());
+      await waitUntil(() => locking.heldVersionReplies() === 1);
+      expect(testStore.getState().devices.selectedDevicePath).toBeNull();
+      await dispatch(reloadConnectedDevices());
+      await settle();
+      expect(testStore.getState().devices).toMatchObject({
+        selectedDevicePath: locking.path,
+        selectedConnectionLocked: true,
+      });
+      const configure = renderAppShell(shell, testStore, '/');
+      expect(configure).toContain('키보드를 재연결하세요');
+      expect(configure).not.toContain('기기 인증');
+    } finally {
+      navigatorHID.restore();
+    }
+  });
+
+  test('the header, CONFIGURE, /firmware and /errors render around a protocol-13 board', async () => {
+    const shell = await loadAppShell();
+
+    // Selected before its version is known: this used to blank the whole app.
+    const pending = makeProtocol13Board('p13-shell-pending', [0, 0, 0, 0x09]);
+    await connectFake(pending.path, pending.fake);
+    const pendingStore = makeAppTestStore();
+    pendingStore.dispatch(
+      updateConnectedDevices({[pending.path]: pending.connectedDevice}),
+    );
+    pendingStore.dispatch(
+      selectDevice({device: pending.connectedDevice, connectionGeneration: 1}),
+    );
+    for (const location of ['/', '/firmware', '/errors']) {
+      const html = renderAppShell(shell, pendingStore, location);
+      expect({location, header: html.includes('href="/settings"')}).toEqual({
+        location,
+        header: true,
+      });
+    }
+    expect(renderAppShell(shell, pendingStore, '/')).toContain('로딩 중...');
+    expect(renderAppShell(shell, pendingStore, '/firmware')).toContain(
+      'data-firmware-page="true"',
+    );
+
+    // An unsupported version is one short entry in /errors and nothing else.
+    const unsupported = makeProtocol13Board(
+      'p13-shell-unsupported',
+      [0, 0, 0, 0x10],
+    );
+    const navigatorHID = installFakeNavigatorHID(() => [
+      asHIDDevice(unsupported.fake),
+    ]);
+    const unsupportedStore = makeAppTestStore();
+    try {
+      await unsupportedStore.dispatch(reloadConnectedDevices() as any);
+      await waitUntil(
+        () => unsupportedStore.getState().errors.appErrors.length > 0,
+      );
+    } finally {
+      navigatorHID.restore();
+    }
+    const errorsPage = renderAppShell(shell, unsupportedStore, '/errors');
+    expect(errorsPage).toContain('href="/errors"');
+    expect(errorsPage).toContain('지원하지 않는 키보드 펌웨어 버전');
+    expect(errorsPage).not.toContain('KEYCODES_VERSION');
+    const configure = renderAppShell(shell, unsupportedStore, '/');
+    expect(configure).not.toContain('로딩 중...');
+    expect(renderAppShell(shell, unsupportedStore, '/firmware')).toContain(
+      'data-firmware-page="true"',
+    );
+  });
+
+  // The keyboard reaches every screen from the header: its icons are links named by
+  // their screen, the current one marked, and the language button says what it is
+  // and whether its list is open. The closed list is hidden, not only faded, so its
+  // buttons are out of the Tab order and Enter cannot change the language unseen.
+  test('the header reaches every screen and the language list from the keyboard', async () => {
+    const shell = await loadAppShell();
+    const sheet = new ServerStyleSheet();
+    let html = '';
+    let css = '';
+    try {
+      html = renderToStaticMarkup(
+        sheet.collectStyles(
+          appShellElement(
+            shell,
+            makeAppTestStore(),
+            staticLocationHook('/settings') as any,
+            [],
+          ),
+        ),
+      );
+      css = sheet.getStyleTags();
+    } finally {
+      sheet.seal();
+    }
+    const tag = (pattern: RegExp) => pattern.exec(html)?.[0] ?? '';
+    const settings = tag(/<a [^>]*href="\/settings"[^>]*>/);
+    const configure = tag(/<a [^>]*href="\/"[^>]*>/);
+    expect(settings).toContain('aria-label="설정"');
+    expect(settings).toContain('aria-current="page"');
+    expect(configure).toContain('aria-label="구성"');
+    expect(configure).not.toContain('aria-current');
+
+    const language = tag(/<button [^>]*aria-expanded="[^"]*"[^>]*>/);
+    expect(language).toContain('type="button"');
+    expect(language).toContain('aria-label="언어"');
+    expect(language).toContain('aria-expanded="false"');
+    const listId = /aria-controls="([^"]+)"/.exec(language)?.[1] ?? '';
+    const list = html.slice(html.indexOf(`<ul id="${listId}"`));
+    expect(list).toMatch(/^<ul [^>]*>(<button[^>]*>[^<]*<\/button>){6}<\/ul>/);
+    const hidden = (/class="([^"]+)"/.exec(list)?.[1] ?? '')
+      .split(' ')
+      .some((name) =>
+        new RegExp(`\\.${name}\\{[^}]*visibility:hidden`).test(css),
+      );
+    expect(hidden).toBe(true);
+  });
+
+  test('a route that fails to render leaves the header and /errors working', async () => {
+    const shell = await loadAppShell();
+    const navigatorHID = installFakeNavigatorHID(() => []);
+    const restoreDocument = stubGlobals({
+      document: {
+        hidden: false,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        getElementById: () => null,
+      },
+    });
+    const originalConsoleError = console.error;
+    const testStore = makeAppTestStore();
+    let location = '/';
+    const locationListeners = new Set<() => void>();
+    const navigate = (to: string) => {
+      location = to;
+      locationListeners.forEach((listener) => listener());
+    };
+    const useTestLocation = (): [string, (to: string) => void] => [
+      useSyncExternalStore(
+        (listener) => {
+          locationListeners.add(listener);
+          return () => locationListeners.delete(listener);
+        },
+        () => location,
+      ),
+      navigate,
+    ];
+    const Broken = () => {
+      throw new Error('route failed to render');
+    };
+    // The real /errors pane opens its tooltips in a DOM portal, which the test
+    // renderer lacks; the server render above covers that pane.
+    const ErrorLines = () =>
+      h(
+        'ul',
+        null,
+        useSelector(getAppErrors).map((appError, index) =>
+          h('li', {key: index}, appError.message.split('\n')[0]),
+        ),
+      );
+    let renderer: ReactTestRenderer | undefined;
+    // React reports every error a boundary catches.
+    console.error = () => undefined;
+    try {
+      await act(async () => {
+        renderer = create(
+          appShellElement(shell, testStore, useTestLocation, [
+            h(Route, {key: 'broken', path: '/', component: Broken}),
+            h(Route, {key: 'errors', path: '/errors', component: ErrorLines}),
+          ]),
+        );
+      });
+      // Home's device scan finds no keyboard and settles.
+      await waitUntil(
+        () => testStore.getState().devices.selectionGeneration > 0,
+        2000,
+      );
+
+      const appErrors = testStore.getState().errors.appErrors;
+      expect(appErrors).toHaveLength(1);
+      expect(appErrors[0].message).toContain('route failed to render');
+      const tree = JSON.stringify(renderer!.toJSON());
+      expect(tree).toContain('"href":"/settings"');
+      expect(tree).toContain('"href":"/errors"');
+
+      await act(async () => navigate('/errors'));
+      expect(JSON.stringify(renderer!.toJSON())).toContain(
+        'Error: route failed to render',
+      );
+    } finally {
+      act(() => renderer?.unmount());
+      console.error = originalConsoleError;
+      usbDetect.stopMonitoring();
+      restoreDocument();
+      navigatorHID.restore();
+    }
+  });
+});
+
+/**
+ * WebHID as a browser behaves: the device chooser opens only while a click is
+ * being handled, and a scan lists only the keyboards the browser allows.
+ */
+const installChooserBrowser = () => {
+  const plugged = new Set<HIDDevice>();
+  const allowed = new Set<HIDDevice>();
+  let clicking = false;
+  let offered: HIDDevice | undefined;
+  let chooserOpened = 0;
+  let scans = 0;
+  const navigatorHID = installFakeNavigatorHID(
+    () => {
+      scans += 1;
+      return [...plugged].filter((device) => allowed.has(device));
+    },
+    async () => {
+      chooserOpened += 1;
+      if (!clicking) {
+        throw new DOMException(
+          'Must be handling a user gesture to show a permission request.',
+          'SecurityError',
+        );
+      }
+      if (!offered) {
+        return [];
+      }
+      allowed.add(offered);
+      return [offered];
+    },
+  );
+  return {
+    restore: navigatorHID.restore,
+    chooserOpened: () => chooserOpened,
+    scans: () => scans,
+    /** Only a keyboard the browser allows is announced. */
+    plugIn: (device: HIDDevice, remembered = false) => {
+      plugged.add(device);
+      if (remembered) {
+        allowed.add(device);
+        navigatorHID.emit('connect', device);
+      }
+    },
+    unplug: (device: HIDDevice) => {
+      plugged.delete(device);
+      if (allowed.has(device)) {
+        navigatorHID.emit('disconnect', device);
+      }
+    },
+    /** The click's user activation lasts until its work has settled. */
+    click: async (
+      handler: () => unknown,
+      settled: () => boolean,
+      offer?: HIDDevice,
+    ) => {
+      offered = offer;
+      clicking = true;
+      try {
+        await handler();
+        await waitUntil(settled, 2000);
+      } finally {
+        clicking = false;
+        offered = undefined;
+      }
+    },
+  };
+};
+
+const textOf = (node: ReactTestInstance): string =>
+  node.children
+    .map((child) => (typeof child === 'string' ? child : textOf(child)))
+    .join('');
+
+const findButton = (
+  renderer: ReactTestRenderer,
+  matches: (text: string) => boolean,
+) =>
+  renderer.root.find((node) => node.type === 'button' && matches(textOf(node)));
+
+const withStore = (
+  shell: AppShell,
+  testStore: ReturnType<typeof makeAppTestStore>,
+  component: ComponentType,
+) =>
+  h(
+    Provider,
+    {store: testStore} as any,
+    h(I18nextProvider, {i18n: shell.translations} as any, h(component)),
+  );
+
+describe('device chooser and reconnect', () => {
+  beforeEach(() => {
+    setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+  });
+
+  afterEach(() => {
+    setEraAdvancedMetadataForTesting(null);
+  });
+
+  test('a scan never asks for the chooser, and a refused chooser keeps the allowed keyboards', async () => {
+    const browser = installChooserBrowser();
+    try {
+      expect(await HID.devices()).toEqual([]);
+      expect(browser.chooserOpened()).toBe(0);
+
+      const fake = new FakeHIDDevice();
+      (fake as unknown as {__path: string}).__path = 'chooser-refused';
+      browser.plugIn(asHIDDevice(fake), true);
+      // Outside a click the browser refuses the chooser.
+      const devices = await HID.devices(true);
+      expect(browser.chooserOpened()).toBe(1);
+      expect(devices.map(({path}) => path)).toEqual(['chooser-refused']);
+    } finally {
+      browser.restore();
+    }
+  });
+
+  test('a keyboard that restarts is found and loaded again without a click', async () => {
+    const browser = installChooserBrowser();
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    try {
+      const before = makeProtocol13Board('restart-before', [0, 0, 0, 0x09]);
+      browser.plugIn(asHIDDevice(before.fake), true);
+      await dispatch(reloadConnectedDevices());
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === before.path,
+        2000,
+      );
+
+      // USB polling Apply, a reset or flashing restarts the keyboard.
+      browser.unplug(asHIDDevice(before.fake));
+      await dispatch(reloadConnectedDevices());
+      expect(testStore.getState().devices.selectedDevicePath).toBeNull();
+
+      // It comes back as a new WebHID device that the browser still allows.
+      const after = makeProtocol13Board('restart-after', [0, 0, 0, 0x09]);
+      browser.plugIn(asHIDDevice(after.fake), true);
+      await dispatch(reloadConnectedDevices());
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === after.path,
+        2000,
+      );
+      expect(browser.chooserOpened()).toBe(0);
+    } finally {
+      browser.restore();
+    }
+  });
+
+  test('Authorize device, the keyboard list and Authorize New open the chooser only for their own click, once', async () => {
+    const shell = await loadAppShell();
+    const {Badge} =
+      await import('../src/components/panes/configure-panes/badge');
+    const ConfigurePane = shell.panes.find(
+      (pane) => pane.key === 'default',
+    )!.component;
+    const browser = installChooserBrowser();
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    let loader: ReactTestRenderer | undefined;
+    let badge: ReactTestRenderer | undefined;
+    try {
+      // A first visit: the browser allows no keyboard yet.
+      const first = makeProtocol13Board('chooser-first', [0, 0, 0, 0x09]);
+      browser.plugIn(asHIDDevice(first.fake));
+      await dispatch(reloadConnectedDevices());
+      expect(browser.chooserOpened()).toBe(0);
+
+      await act(async () => {
+        loader = create(withStore(shell, testStore, ConfigurePane));
+      });
+      // Held so that CONFIGURE still shows its loader when the click settles.
+      first.holdVersion();
+      await act(async () => {
+        await browser.click(
+          () =>
+            findButton(loader!, (text) => text === '기기 인증').props.onClick(),
+          () => first.heldVersionReplies() === 1,
+          asHIDDevice(first.fake),
+        );
+      });
+      act(() => loader!.unmount());
+      loader = undefined;
+      first.releaseVersion();
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === first.path,
+        2000,
+      );
+      expect(browser.chooserOpened()).toBe(1);
+
+      await act(async () => {
+        badge = create(withStore(shell, testStore, Badge));
+      });
+      const selectionGeneration =
+        testStore.getState().devices.selectionGeneration;
+      await act(async () => {
+        await browser.click(
+          () =>
+            findButton(
+              badge!,
+              (text) => !text.includes('새 키보드 인증'),
+            ).props.onClick(),
+          () =>
+            testStore.getState().devices.selectionGeneration >
+              selectionGeneration &&
+            testStore.getState().devices.readyDevicePath === first.path,
+        );
+      });
+      expect(browser.chooserOpened()).toBe(1);
+
+      const second = makeProtocol13Board('chooser-second', [0, 0, 0, 0x09]);
+      browser.plugIn(asHIDDevice(second.fake));
+      await act(async () => {
+        await browser.click(
+          () =>
+            findButton(badge!, (text) =>
+              text.includes('새 키보드 인증'),
+            ).props.onClick(),
+          () => testStore.getState().devices.readyDevicePath === second.path,
+          asHIDDevice(second.fake),
+        );
+      });
+      expect(browser.chooserOpened()).toBe(2);
+    } finally {
+      act(() => {
+        loader?.unmount();
+        badge?.unmount();
+      });
+      browser.restore();
+    }
+  });
+
+  test('a locked connection asks for a reconnect, and plugging the keyboard back in loads it again', async () => {
+    const shell = await loadAppShell();
+    const browser = installChooserBrowser();
+    const restoreDocument = stubGlobals({
+      document: {
+        hidden: false,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        getElementById: () => null,
+      },
+    });
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = create(
+          appShellElement(shell, testStore, staticLocationHook('/') as any, []),
+        );
+      });
+      // Home's first scan finds nothing. It also loaded the built-in keyboard
+      // lists, which do not have the test board.
+      await waitUntil(
+        () => testStore.getState().devices.selectionGeneration > 0,
+        2000,
+      );
+      dispatch(
+        updateSupportedIds({[p13VendorProductId]: {v2: true, v3: true}}),
+      );
+      dispatch(
+        updateDefinitions({[p13VendorProductId]: {v3: p13Definition}} as any),
+      );
+
+      const board = makeProtocol13Board('locked-before', [0, 0, 0, 0x09]);
+      const scans = browser.scans();
+      browser.plugIn(asHIDDevice(board.fake), true);
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === board.path,
+        3000,
+      );
+      // Home scans twice after a USB change; let the second scan finish first.
+      await waitUntil(() => browser.scans() >= scans + 2, 3000);
+      await settle();
+
+      board.fake.onSend = () => undefined;
+      await expect(
+        new KeyboardAPI(board.path).getProtocolVersion(),
+      ).rejects.toBeInstanceOf(HIDTransportTimeoutError);
+      expect(testStore.getState().devices.selectedConnectionLocked).toBe(true);
+      const locked = renderAppShell(shell, testStore, '/');
+      expect(locked).toContain('키보드를 재연결하세요');
+      expect(locked).not.toContain('로딩 중...');
+      expect(locked).not.toContain('기기 인증');
+
+      browser.unplug(asHIDDevice(board.fake));
+      expect(testStore.getState().devices.selectedConnectionLocked).toBe(false);
+      await waitUntil(
+        () => testStore.getState().devices.selectedDevicePath === null,
+        3000,
+      );
+
+      const back = makeProtocol13Board('locked-after', [0, 0, 0, 0x09]);
+      browser.plugIn(asHIDDevice(back.fake), true);
+      await waitUntil(
+        () => testStore.getState().devices.readyDevicePath === back.path,
+        3000,
+      );
+      expect(testStore.getState().devices.selectedConnectionLocked).toBe(false);
+      expect(getLoadProgress(testStore.getState() as any)).toBe(1);
+      expect(browser.chooserOpened()).toBe(0);
+    } finally {
+      act(() => renderer?.unmount());
+      usbDetect.stopMonitoring();
+      restoreDocument();
+      browser.restore();
+    }
+  });
+
+  test('a locked keyboard keeps asking for a reconnect when another keyboard is unplugged', async () => {
+    const shell = await loadAppShell();
+    const browser = installChooserBrowser();
+    const restoreDocument = stubGlobals({
+      document: {
+        hidden: false,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        getElementById: () => null,
+      },
+    });
+    const testStore = makeAppTestStore();
+    const dispatch = testStore.dispatch as any;
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = create(
+          appShellElement(shell, testStore, staticLocationHook('/') as any, []),
+        );
+      });
+      await waitUntil(
+        () => testStore.getState().devices.selectionGeneration > 0,
+        2000,
+      );
+      dispatch(
+        updateSupportedIds({[p13VendorProductId]: {v2: true, v3: true}}),
+      );
+      dispatch(
+        updateDefinitions({[p13VendorProductId]: {v3: p13Definition}} as any),
+      );
+
+      const selected = makeProtocol13Board('kept-selected', [0, 0, 0, 0x09]);
+      const other = makeProtocol13Board('kept-other', [0, 0, 0, 0x09]);
+      const scans = browser.scans();
+      browser.plugIn(asHIDDevice(selected.fake), true);
+      browser.plugIn(asHIDDevice(other.fake), true);
+      await waitUntil(
+        () =>
+          testStore.getState().devices.readyDevicePath === selected.path &&
+          browser.scans() >= scans + 4,
+        3000,
+      );
+      await settle();
+
+      selected.fake.onSend = () => undefined;
+      await expect(
+        new KeyboardAPI(selected.path).getProtocolVersion(),
+      ).rejects.toBeInstanceOf(HIDTransportTimeoutError);
+
+      // Home scans again, and the locked keyboard fails that scan's probe.
+      const scansBeforeUnplug = browser.scans();
+      browser.unplug(asHIDDevice(other.fake));
+      await waitUntil(() => browser.scans() >= scansBeforeUnplug + 2, 3000);
+      await settle();
+      expect(testStore.getState().devices).toMatchObject({
+        selectedDevicePath: selected.path,
+        selectedConnectionLocked: true,
+      });
+      const configure = renderAppShell(shell, testStore, '/');
+      expect(configure).toContain('키보드를 재연결하세요');
+      expect(configure).not.toContain('기기 인증');
+
+      // Unplugging the locked keyboard itself still clears it.
+      browser.unplug(asHIDDevice(selected.fake));
+      await waitUntil(
+        () => testStore.getState().devices.selectedDevicePath === null,
+        3000,
+      );
+      expect(testStore.getState().devices.selectedConnectionLocked).toBe(false);
+    } finally {
+      act(() => renderer?.unmount());
+      usbDetect.stopMonitoring();
+      restoreDocument();
+      browser.restore();
+    }
+  });
+
+  test('in 3D, the loader outside the Redux Provider authorizes a keyboard, then asks for a reconnect instead of spinning', async () => {
+    const shell = await loadAppShell();
+    const {LoaderStatus, useLoaderStatus} = await import(
+      '../src/components/three-fiber/loader-status'
+    );
+    const browser = installChooserBrowser();
+    const testStore = makeAppTestStore();
+    // The canvas reads the store inside the Provider. drei's Html renders the
+    // loader in a React root of its own, with no Provider around it, and
+    // index.tsx registers i18next for every root.
+    const loader = () => {
+      let element: ReactElement | undefined;
+      const Canvas = () => {
+        element = h(LoaderStatus, useLoaderStatus());
+        return null;
+      };
+      renderToStaticMarkup(h(Provider, {store: testStore} as any, h(Canvas)));
+      return element!;
+    };
+    const status = () => renderToStaticMarkup(loader());
+    const registeredI18n = getI18n();
+    setI18n(shell.translations);
+    let overlay: ReactTestRenderer | undefined;
+    try {
+      const board = makeProtocol13Board('locked-3d', [0, 0, 0, 0x09]);
+      browser.plugIn(asHIDDevice(board.fake));
+      await act(async () => {
+        overlay = create(loader());
+      });
+      await act(async () => {
+        await browser.click(
+          () =>
+            findButton(overlay!, (text) => text === '기기 인증').props.onClick(),
+          () => testStore.getState().devices.readyDevicePath === board.path,
+          asHIDDevice(board.fake),
+        );
+      });
+      expect(browser.chooserOpened()).toBe(1);
+      expect(status()).toContain('data-icon="spinner"');
+
+      testStore.dispatch(
+        invalidateDeviceConnection({
+          devicePath: board.path,
+          connectionGeneration:
+            testStore.getState().devices.selectedConnectionGeneration! + 1,
+          locked: true,
+        }),
+      );
+      // A later scan leaves it out of the device list, and it stays selected.
+      for (const connectedDevices of [
+        {[board.path]: board.connectedDevice},
+        {},
+      ]) {
+        testStore.dispatch(updateConnectedDevices(connectedDevices));
+        const locked = status();
+        expect(locked).toContain('키보드를 재연결하세요');
+        expect(locked).not.toContain('data-icon="spinner"');
+        expect(locked).not.toContain('기기 인증');
+      }
+    } finally {
+      act(() => overlay?.unmount());
+      setI18n(registeredI18n);
+      browser.restore();
+    }
+  });
+});
+
+/** A storage that lasts one test, as sessionStorage lasts one visit. */
+const memoryStorage = () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, String(value));
+    },
+  };
+};
+
+/**
+ * The test renderer has no DOM, so each <dialog> gets a stand-in that records
+ * showModal() and close(). A dialog is known by the message it describes itself with.
+ */
+const dialogMocks = () => {
+  const dialogs = new Map<string, {open: boolean}>();
+  return {
+    createNodeMock: (element: ReactElement) => {
+      if (element.type !== 'dialog') {
+        return null;
+      }
+      const dialog = {
+        open: false,
+        showModal: () => {
+          dialog.open = true;
+        },
+        close: () => {
+          dialog.open = false;
+        },
+      };
+      dialogs.set(element.props['aria-describedby'], dialog);
+      return dialog;
+    },
+    openMessages: (renderer: ReactTestRenderer) =>
+      renderer.root
+        .findAll((node) => node.type === 'dialog')
+        .filter((node) => dialogs.get(node.props['aria-describedby'])?.open)
+        .map((node) => {
+          const id = node.props['aria-describedby'];
+          const [message] = id
+            ? node.findAll(
+                (child) => child.type === 'div' && child.props.id === id,
+              )
+            : [];
+          return message ? textOf(message) : '';
+        }),
+  };
+};
+
+const pressEscape = (dialog: ReactTestInstance) =>
+  act(async () => {
+    dialog.props.onCancel({preventDefault: () => undefined});
+  });
+
+describe('dialogs', () => {
+  beforeEach(() => {
+    setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+  });
+
+  afterEach(() => {
+    setEraAdvancedMetadataForTesting(null);
+  });
+
+  test('a keyboard with no definition reaches the upload in one click, and Escape closes the device dialogs', async () => {
+    const shell = await loadAppShell();
+    const {updateInvalidProtocolDevices, updateUnresolvedDefinitionDevices} =
+      await import('../src/store/devicesSlice');
+    const {setShowDesignTab} = await import('../src/store/settingsSlice');
+    const DesignTab = shell.panes.find(
+      (pane) => pane.key === 'design',
+    )!.component;
+    const navigatorHID = installFakeNavigatorHID(() => []);
+    const restoreSession = stubGlobals({sessionStorage: memoryStorage()});
+    let restoreDocument: (() => void) | undefined = stubGlobals({
+      document: {
+        hidden: false,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        getElementById: () => null,
+      },
+    });
+    const testStore = makeAppTestStore();
+    const dialogs = dialogMocks();
+    let location = '/';
+    const locationListeners = new Set<() => void>();
+    const useTestLocation = (): [string, (to: string) => void] => [
+      useSyncExternalStore(
+        (listener) => {
+          locationListeners.add(listener);
+          return () => locationListeners.delete(listener);
+        },
+        () => location,
+      ),
+      (to: string) => {
+        location = to;
+        locationListeners.forEach((listener) => listener());
+      },
+    ];
+    const board = (path: string, productName: string) => ({
+      path,
+      vendorId: 0x1234,
+      productId: 0x5678,
+      productName,
+      protocol: 12,
+      hasResolvedDefinition: false,
+      requiredDefinitionVersion: 'v3' as const,
+      vendorProductId: 0x12345678,
+    });
+    let app: ReactTestRenderer | undefined;
+    let design: ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        app = create(appShellElement(shell, testStore, useTestLocation, []), {
+          createNodeMock: dialogs.createNodeMock,
+        });
+      });
+      // Home's device scan finds no keyboard and settles.
+      await waitUntil(
+        () => testStore.getState().devices.selectionGeneration > 0,
+        2000,
+      );
+      expect(JSON.stringify(app!.toJSON())).not.toContain('"href":"/design"');
+
+      await act(async () => {
+        testStore.dispatch(
+          updateInvalidProtocolDevices({silent: board('silent', 'Silent Board')}),
+        );
+        testStore.dispatch(
+          updateUnresolvedDefinitionDevices({
+            mystery: board('mystery', 'Mystery Board'),
+          }),
+        );
+      });
+      expect(dialogs.openMessages(app!)).toEqual([
+        expect.stringContaining('Silent Board'),
+      ]);
+      await pressEscape(app!.root.findByType('dialog'));
+      expect(testStore.getState().devices.invalidProtocolDevicePaths).toEqual(
+        {},
+      );
+      expect(dialogs.openMessages(app!)).toEqual([
+        expect.stringContaining('Mystery Board'),
+      ]);
+      expect(
+        app!.root
+          .findByType('dialog')
+          .findAll((node) => node.type === 'button')
+          .map(textOf),
+      ).toEqual([expect.any(String), '올리기']);
+
+      await act(async () =>
+        findButton(app!, (text) => text === '올리기').props.onClick(),
+      );
+      expect({
+        location,
+        showDesignTab: testStore.getState().settings.showDesignTab,
+        unresolved: testStore.getState().devices.unresolvedDefinitionDevicePaths,
+        dialogs: dialogs.openMessages(app!),
+      }).toEqual({
+        location: '/design',
+        showDesignTab: true,
+        unresolved: {},
+        dialogs: [],
+      });
+      expect(JSON.stringify(app!.toJSON())).toContain('"href":"/design"');
+
+      // The tab it opens shows the upload without its warning.
+      act(() => app!.unmount());
+      app = undefined;
+      restoreDocument();
+      restoreDocument = undefined;
+      await act(async () => {
+        design = create(withStore(shell, testStore, DesignTab), {
+          createNodeMock: dialogs.createNodeMock,
+        });
+      });
+      expect(design!.root.findAllByType('dialog')).toHaveLength(1);
+      expect(dialogs.openMessages(design!)).toEqual([]);
+    } finally {
+      act(() => {
+        app?.unmount();
+        design?.unmount();
+      });
+      testStore.dispatch(setShowDesignTab(false));
+      usbDetect.stopMonitoring();
+      restoreDocument?.();
+      restoreSession();
+      navigatorHID.restore();
+    }
+  });
+
+  test('Escape on the Design tab warning only closes it, and SETTINGS asks nothing after', async () => {
+    const shell = await loadAppShell();
+    const {setShowDesignTab} = await import('../src/store/settingsSlice');
+    const pane = (key: string) =>
+      shell.panes.find((candidate) => candidate.key === key)!.component;
+    const DesignTab = pane('design');
+    const restoreSession = stubGlobals({sessionStorage: memoryStorage()});
+    const testStore = makeAppTestStore();
+    const dialogs = dialogMocks();
+    let location = '/design';
+    const DesignRoute = () =>
+      h(
+        Router,
+        {
+          hook: () => [
+            location,
+            (to: string) => {
+              location = to;
+            },
+          ],
+        } as any,
+        h(DesignTab),
+      );
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      testStore.dispatch(setShowDesignTab(true));
+      await act(async () => {
+        renderer = create(withStore(shell, testStore, DesignRoute), {
+          createNodeMock: dialogs.createNodeMock,
+        });
+      });
+      expect(dialogs.openMessages(renderer!)).toEqual([
+        expect.stringContaining('디자인 탭을 사용해'),
+      ]);
+
+      await pressEscape(renderer!.root.findByType('dialog'));
+      expect({
+        dialogs: dialogs.openMessages(renderer!),
+        location,
+        showDesignTab: testStore.getState().settings.showDesignTab,
+        hiddenThisSession: sessionStorage.getItem('hideDesignWarning'),
+        seen: localStorage.getItem('designWarningSeen'),
+      }).toEqual({
+        dialogs: [],
+        location: '/design',
+        showDesignTab: true,
+        hiddenThisSession: '1',
+        seen: '1',
+      });
+      expect(
+        renderToStaticMarkup(withStore(shell, testStore, pane('settings'))),
+      ).not.toContain('<dialog');
+    } finally {
+      act(() => renderer?.unmount());
+      testStore.dispatch(setShowDesignTab(false));
+      localStorage.removeItem('designWarningSeen');
+      restoreSession();
+    }
+  });
+});
+
+describe('SETTINGS, DESIGN and the app error file', () => {
+  test('SETTINGS shows the VIA protocol as a value, and without WebGL keeps every slider mode but not the keyboard view row', async () => {
+    const shell = await loadAppShell();
+    const {updateShowSliderValuesMode} =
+      await import('../src/store/settingsSlice');
+    const {webGLIsAvailable} = await import('../src/utils/test-webgl');
+    const Settings = shell.panes.find(
+      (pane) => pane.key === 'settings',
+    )!.component;
+    const testStore = makeAppTestStore();
+    const savedMode = testStore.getState().settings.ShowSliderValuesMode;
+    const markup = () =>
+      renderToStaticMarkup(withStore(shell, testStore, Settings));
+    const board = makeConnectedDevice('settings-board', p13VendorProductId);
+    try {
+      expect(webGLIsAvailable).toBe(false);
+      testStore.dispatch(updateShowSliderValuesMode('Slider & Input Field'));
+      expect(markup()).toMatch(/>VIA 프로토콜<\/label><span[^>]*>—<\/span>/);
+      expect(markup()).toContain('>슬라이더 및 입력 필드<');
+      expect(markup()).not.toContain('키보드 보기');
+
+      testStore.dispatch(updateConnectedDevices({[board.path]: board}));
+      testStore.dispatch(
+        selectDevice({device: board, connectionGeneration: 1}),
+      );
+      expect(markup()).toMatch(/>VIA 프로토콜<\/label><span[^>]*>13<\/span>/);
+    } finally {
+      testStore.dispatch(updateShowSliderValuesMode(savedMode));
+    }
+  });
+
+  test('DESIGN marks only the uploads a bundled definition of their version outranks', async () => {
+    const shell = await loadAppShell();
+    const {loadCustomDefinitions, updateEraDefinitions} =
+      await import('../src/store/definitionsSlice');
+    const Design = shell.panes.find((pane) => pane.key === 'design')!.component;
+    const draft = (name: string, vendorProductId: number) =>
+      ({...p13Definition, name, vendorProductId}) as any;
+    const eraId = 0x45520001;
+    const olderId = 0x12340002;
+    // makeAppTestStore bundles an official v3 definition for p13VendorProductId.
+    const testStore = makeAppTestStore();
+    testStore.dispatch(
+      updateEraDefinitions({[eraId]: {v3: draft('ERA', eraId)}}),
+    );
+    testStore.dispatch(
+      updateDefinitions({[olderId]: {v2: draft('Older', olderId)}}),
+    );
+    testStore.dispatch(
+      loadCustomDefinitions({
+        version: 'v3',
+        definitions: [
+          draft('Official upload', p13VendorProductId),
+          draft('ERA upload', eraId),
+          draft('Older upload', olderId),
+          draft('New upload', 0x12340003),
+        ],
+      }),
+    );
+    const restoreSession = stubGlobals({sessionStorage: memoryStorage()});
+    try {
+      const markup = renderToStaticMarkup(withStore(shell, testStore, Design));
+      // The draft list comes last, after the select that also shows a name.
+      const mark = (name: string) => {
+        const start = markup.lastIndexOf(`>${name}<`);
+        if (start < 0) {
+          return 'missing';
+        }
+        const row = markup.slice(start, markup.indexOf('</button>', start));
+        return row.includes('>내장 정의 사용<') ? 'built-in used' : 'plain';
+      };
+      expect(
+        ['Official upload', 'ERA upload', 'Older upload', 'New upload'].map(
+          (name) => [name, mark(name)],
+        ),
+      ).toEqual([
+        ['Official upload', 'built-in used'],
+        ['ERA upload', 'built-in used'],
+        ['Older upload', 'plain'],
+        ['New upload', 'plain'],
+      ]);
+    } finally {
+      restoreSession();
+    }
+  });
+
+  test('the app error file keeps the VIA protocol each error came with', async () => {
+    const {saveAppErrors} = await import('../src/components/panes/errors');
+    let written: Blob | undefined;
+    const restore = stubGlobals({
+      showSaveFilePicker: async () => ({
+        createWritable: async () => ({
+          write: async (blob: Blob) => {
+            written = blob;
+          },
+          close: async () => undefined,
+        }),
+      }),
+    });
+    const deviceInfo = {
+      vendorId: 0x1234,
+      productId: 0x5678,
+      productName: 'Board',
+    };
+    try {
+      await saveAppErrors([
+        {
+          timestamp: '10:00:00.000',
+          message: 'Failed',
+          deviceInfo: {...deviceInfo, protocol: 12},
+        },
+        {timestamp: '10:00:01.000', message: 'Lost', deviceInfo},
+      ]);
+      expect((await written?.text())?.split('\n')).toEqual([
+        'timestamp, productName, vendorId, productId, protocol, message',
+        '10:00:00.000, Board, 0x1234, 0x5678, 12, "Failed"',
+        '10:00:01.000, Board, 0x1234, 0x5678, , "Lost"',
+      ]);
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe('slider number field', () => {
+  test('a typed number outside the range writes the nearest bound', async () => {
+    const {updateShowSliderValuesMode} =
+      await import('../src/store/settingsSlice');
+    const {AccentRange} = await import('../src/components/inputs/accent-range');
+    const {webGLIsAvailable} = await import('../src/utils/test-webgl');
+    // A saved mode reaches the slider without WebGL too: the field is DOM.
+    expect(webGLIsAvailable).toBe(false);
+    const savedMode = appStore.getState().settings.ShowSliderValuesMode;
+    appStore.dispatch(updateShowSliderValuesMode('Slider & Input Field'));
+    const writes: number[] = [];
+    let value = 10;
+    const element = () =>
+      h(
+        Provider,
+        {store: appStore} as any,
+        h(AccentRange, {
+          min: 0,
+          max: 255,
+          value,
+          onChange: (next: number) => {
+            writes.push(next);
+            value = next;
+          },
+        }),
+      );
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      act(() => {
+        renderer = create(element());
+      });
+      const field = () =>
+        renderer!.root.find(
+          (node) => node.type === 'input' && node.props.type === 'number',
+        );
+      const typeValue = (text: string) =>
+        act(() => {
+          field().props.onFocus();
+          field().props.onChange({target: {value: text}});
+        });
+
+      typeValue('300');
+      act(() => field().props.onBlur());
+      act(() => renderer!.update(element()));
+      expect(writes).toEqual([255]);
+      expect(field().props.value).toBe('255');
+
+      typeValue('-5');
+      act(() =>
+        field().props.onKeyDown({
+          key: 'Enter',
+          currentTarget: {blur: () => field().props.onBlur()},
+        }),
+      );
+      act(() => renderer!.update(element()));
+      expect(writes).toEqual([255, 0]);
+      expect(field().props.value).toBe('0');
+    } finally {
+      act(() => renderer?.unmount());
+      appStore.dispatch(updateShowSliderValuesMode(savedMode));
+    }
   });
 });

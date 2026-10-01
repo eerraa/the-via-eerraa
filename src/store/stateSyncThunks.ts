@@ -2,7 +2,7 @@ import {isEraVIADefinitionV3} from '../utils/era-definition';
 import type {DefinitionVersion} from '@the-via/reader';
 import type {ConnectedDevice} from '../types/types';
 import type {HIDPathReservationOwner} from '../shims/node-hid';
-import {KeyboardAPI} from '../utils/keyboard-api';
+import {KeyboardAPI, UnhandledCommandError} from '../utils/keyboard-api';
 import {
   isStateSyncOptIn,
   loadEraAdvancedMetadata,
@@ -31,7 +31,7 @@ import {
 } from './devicesSlice';
 import type {AppThunk, RootState} from './index';
 import {readKeymapStateSyncCandidate} from './keymapSlice';
-import {readMacrosStateSyncCandidate} from './macrosSlice';
+import {getIsMacrosReady, readMacrosStateSyncCandidate} from './macrosSlice';
 import {
   readV3MenuStateSyncCandidate,
   syncCustomMenuValuesFromRequest,
@@ -50,6 +50,8 @@ import {
   getConfigureVisible,
   getDocumentHidden,
   getPathSyncState,
+  isDomainReadFailed,
+  markDomainReadFailed,
   markPathDirty,
   observePathRevisions,
   requestMacroRead,
@@ -258,7 +260,7 @@ const commitStableCandidate = (
   }
 };
 
-type RefreshResult = 'stable' | 'unstable' | 'abort';
+type RefreshResult = 'stable' | 'unstable' | 'failed' | 'abort';
 
 const refreshDomain = async (
   dispatch: (action: any) => any,
@@ -331,13 +333,42 @@ const refreshDomain = async (
             }),
           );
 
-          const candidate = await readDomainCandidate(
-            domain,
-            device,
-            getState(),
-            generation,
-            reservedApi,
-          );
+          let candidate: DomainCandidate | null;
+          try {
+            candidate = await readDomainCandidate(
+              domain,
+              device,
+              getState(),
+              generation,
+              reservedApi,
+            );
+          } catch (error) {
+            if (
+              !(error instanceof UnhandledCommandError) ||
+              !isSelectedContextCurrent(
+                getState,
+                reservedApi,
+                generation,
+                selectionGeneration,
+                definitionIdentity,
+                requireReady,
+              )
+            ) {
+              throw error;
+            }
+            dispatch(
+              markDomainReadFailed({
+                path: device.path,
+                generation,
+                domain,
+                revision: startRevision,
+                mutationEpoch,
+                selectionGeneration,
+                definitionIdentity,
+              }),
+            );
+            return 'failed';
+          }
           if (
             candidate === null ||
             !isSelectedContextCurrent(
@@ -481,8 +512,16 @@ const runCoordinatorOwner = async (
     if (!sync || sync.generation !== generation) {
       return;
     }
-    const fullDomain = domainOrder.find((candidateDomain) =>
-      owner.fullPending.has(candidateDomain),
+    // Neither a poll nor a full refresh repeats a read the firmware refused.
+    const readFailed = (candidateDomain: StateSyncDomain) =>
+      isDomainReadFailed(
+        sync[candidateDomain],
+        owner.selectionGeneration,
+        owner.definitionIdentity,
+      );
+    const fullDomain = domainOrder.find(
+      (candidateDomain) =>
+        owner.fullPending.has(candidateDomain) && !readFailed(candidateDomain),
     );
     const pollDomain = owner.processDirtyAfterPending
       ? domainOrder.find((candidateDomain) => {
@@ -499,6 +538,7 @@ const runCoordinatorOwner = async (
             !lazyMacroIsUninitialised &&
             !processedPollDomains.has(candidateDomain) &&
             !exhaustedDomains.has(candidateDomain) &&
+            !readFailed(candidateDomain) &&
             (candidate.status !== 'fresh' ||
               candidate.acceptedRevision !== candidate.observedRevision)
           );
@@ -528,7 +568,7 @@ const runCoordinatorOwner = async (
     if (result === 'abort') {
       return;
     }
-    if (result === 'unstable') {
+    if (result === 'unstable' || result === 'failed') {
       exhaustedDomains.add(domain);
     }
   }
@@ -773,6 +813,24 @@ export const refreshStateSyncDomain =
 export const refreshMacroDomain =
   (device: ConnectedDevice): AppThunk<Promise<boolean>> =>
   (dispatch) => dispatch(refreshStateSyncDomain(device, 'macro'));
+
+/**
+ * Makes sure the selected keyboard's macros have been read, for whatever needs
+ * their contents: the Macros pane, saving a layout. A State Sync keyboard reads
+ * them only when asked; any other keyboard read them at connect. Replacing every
+ * macro does not need this.
+ */
+export const ensureMacroContents =
+  (device: ConnectedDevice): AppThunk<Promise<boolean>> =>
+  async (dispatch, getState) => {
+    if (getIsMacrosReady(getState())) {
+      return true;
+    }
+    if (getPathSyncState(getState(), device.path)?.capability === 'capable') {
+      await dispatch(refreshMacroDomain(device));
+    }
+    return getIsMacrosReady(getState());
+  };
 
 export const refreshAfterDefinitionChange =
   (vendorProductId: number): AppThunk<Promise<void>> =>

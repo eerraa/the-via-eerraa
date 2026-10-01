@@ -37,15 +37,37 @@ import {useDispatch} from 'react-redux';
 import {reloadConnectedDevices} from 'src/store/devicesThunks';
 import {getV3MenuComponents} from 'src/store/menusSlice';
 import {getIsMacroFeatureSupported} from 'src/store/macrosSlice';
-import {getConnectedDevices, getSupportedIds} from 'src/store/devicesSlice';
+import {
+  getConnectedDevices,
+  getSelectedConnectionLocked,
+  getSupportedIds,
+} from 'src/store/devicesSlice';
 import {isElectron} from 'src/utils/running-context';
 import {useAppDispatch} from 'src/store/hooks';
 import {MenuTooltip} from '../inputs/tooltip';
 import {getRenderMode, getSelectedTheme} from 'src/store/settingsSlice';
+import {menuKeys, useConfigureMenu} from 'src/utils/use-configure-place';
 import {useTranslation} from 'react-i18next';
 
 const MenuContainer = styled.div`
   padding: 15px 10px 20px 10px;
+
+  /* The rail's rows are buttons so the keyboard reaches them. Their own face is
+     cleared to look as VIA's rows do, and keyboard focus looks as hover does. */
+  > button {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: none;
+    font-family: inherit;
+    font-weight: inherit;
+    text-align: inherit;
+  }
+  > button:focus-visible {
+    color: var(--color_label-highlighted);
+  }
 `;
 
 const BadgeRow = styled.div`
@@ -182,6 +204,7 @@ const Loader: React.FC<{
 
   const connectedDevices = useAppSelector(getConnectedDevices);
   const supportedIds = useAppSelector(getSupportedIds);
+  const connectionLocked = useAppSelector(getSelectedConnectionLocked);
   const noSupportedIds = !Object.values(supportedIds).length;
   const noConnectedDevices = !Object.values(connectedDevices).length;
   const [showButton, setShowButton] = useState<boolean>(false);
@@ -201,13 +224,21 @@ const Loader: React.FC<{
     <LoaderPane>
       {<ChippyLoader theme={theme} progress={loadProgress || null} />}
 
-      {(showButton || noConnectedDevices) && !noSupportedIds && !isElectron ? (
-        <AccentButtonLarge onClick={() => dispatch(reloadConnectedDevices())}>
+      {!connectionLocked &&
+      (showButton || noConnectedDevices) &&
+      !noSupportedIds &&
+      !isElectron ? (
+        <AccentButtonLarge
+          onClick={() => dispatch(reloadConnectedDevices({authorize: true}))}
+        >
           {t('Authorize device')}
           <FontAwesomeIcon style={{marginLeft: '10px'}} icon={faPlus} />
         </AccentButtonLarge>
       ) : (
-        <LoadingText isSearching={!selectedDefinition} />
+        <LoadingText
+          isSearching={!selectedDefinition}
+          needsReconnect={connectionLocked}
+        />
       )}
     </LoaderPane>
   );
@@ -251,8 +282,10 @@ const ConfigureGrid = () => {
   const {t} = useTranslation();
   const dispatch = useDispatch();
 
-  const [selectedRow, setRow] = useState(0);
   const KeyboardRows = getRowsForKeyboard();
+  const menus = menuKeys(KeyboardRows.map(({Title}) => Title));
+  const [shownMenu, openMenu] = useConfigureMenu(menus, Keycode.Title);
+  const selectedRow = menus.findIndex((menu) => menu === shownMenu);
   const SelectedPane = KeyboardRows[selectedRow]?.Pane;
   const selectedTitle = KeyboardRows[selectedRow]?.Title;
 
@@ -296,7 +329,11 @@ const ConfigureGrid = () => {
               ({Icon, Title}: {Icon: any; Title: string}, idx: number) => (
                 <Row
                   key={idx}
-                  onClick={(_) => setRow(idx)}
+                  as="button"
+                  type="button"
+                  aria-label={t(Title)}
+                  aria-pressed={selectedRow === idx}
+                  onClick={(_) => openMenu(menus[idx])}
                   $selected={selectedRow === idx}
                 >
                   <IconContainer>

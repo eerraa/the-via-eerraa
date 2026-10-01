@@ -4,6 +4,7 @@ import {logCommand} from './command-logger';
 import {initAndConnectDevice} from './usb-hid';
 import {store} from 'src/store/index';
 import {
+  APP_ERROR_TITLES,
   extractDeviceInfo,
   getMessageFromError,
   logAppError,
@@ -11,7 +12,10 @@ import {
 } from 'src/store/errorsSlice';
 import {KeyboardValue} from './keyboard-values';
 import {parseUISyncRequest, type UISyncRequest} from './ui-sync';
-import {isHIDTransportDeviceIOError} from '../shims/node-hid';
+import {
+  HIDTransportTimeoutError,
+  isHIDTransportDeviceIOError,
+} from '../shims/node-hid';
 import type {
   HIDExchangeOptions,
   HIDPathReservationOwner,
@@ -29,6 +33,9 @@ export {
 
 const COMMAND_START = 0x00; // This is really a HID Report ID
 const PER_KEY_RGB_CHANNEL_COMMAND = [0, 1];
+// QMK answers a command or Custom Value it does not implement by sending the
+// request back with the first byte set to id_unhandled.
+const ID_UNHANDLED = 0xff;
 
 enum APICommand {
   GET_PROTOCOL_VERSION = 0x01,
@@ -112,6 +119,10 @@ const eqArr = <T>(arr1: T[], arr2: T[]) => {
   return arr1.every((val, idx) => arr2[idx] === val);
 };
 
+const isUnhandledEcho = (sentBytes: number[], message: Uint8Array) =>
+  message[0] === ID_UNHANDLED &&
+  sentBytes.every((value, index) => index === 0 || message[index] === value);
+
 export const shiftTo16Bit = ([hi, lo]: [number, number]): number =>
   (hi << 8) | lo;
 
@@ -146,6 +157,13 @@ export const canConnect = (device: Device) => {
     return false;
   }
 };
+
+export class UnhandledCommandError extends Error {
+  constructor() {
+    super('Keyboard does not handle this command');
+    this.name = 'UnhandledCommandError';
+  }
+}
 
 export class KeyboardAPI {
   kbAddr: HIDAddress;
@@ -606,6 +624,16 @@ export class KeyboardAPI {
   // offset is 16bit. size is 8bit. data is ASCII characters and null (0x00) delimiters/terminator, maximum 28 bytes.
   // async setMacros(macros: Macros[]) {
   async setMacroBytes(data: number[]): Promise<void> {
+    // RESET erases every macro, so a payload the transport would refuse part-way
+    // (a value outside 0-255) is refused whole before anything is sent.
+    const invalidByte = data.findIndex(
+      (value) => !Number.isInteger(value) || value < 0 || value > 0xff,
+    );
+    if (invalidByte !== -1) {
+      throw new Error(
+        `Macro byte ${invalidByte} is ${data[invalidByte]}, not 0-255`,
+      );
+    }
     return this.withAutomaticPathReservation(async (api) => {
       const macroBufferSize = await api.getMacroBufferSize();
       if (macroBufferSize < 1) {
@@ -733,6 +761,7 @@ export class KeyboardAPI {
                   logAppError({
                     message: getMessageFromError(error),
                     deviceInfo,
+                    title: APP_ERROR_TITLES.unreadable,
                   }),
                 );
               }
@@ -740,12 +769,19 @@ export class KeyboardAPI {
         }
         throw e;
       }
-      store.dispatch(
-        logAppError({
-          message: getMessageFromError(error),
-          deviceInfo,
-        }),
-      );
+      // _hidCommand has already logged this reply together with its bytes.
+      if (!(error instanceof UnhandledCommandError)) {
+        store.dispatch(
+          logAppError({
+            message: getMessageFromError(error),
+            deviceInfo,
+            title:
+              error instanceof HIDTransportTimeoutError
+                ? APP_ERROR_TITLES.noResponse
+                : APP_ERROR_TITLES.unreadable,
+          }),
+        );
+      }
       throw e;
     }
   }
@@ -760,6 +796,10 @@ export class KeyboardAPI {
 
   isConnectionGenerationCurrent(generation: number): boolean {
     return this.getHID().isConnectionGenerationCurrent(generation);
+  }
+
+  isConnectionLocked(): boolean {
+    return this.getHID().isConnectionLocked();
   }
 
   addUISyncRequestHandler(handler: (request: UISyncRequest) => void) {
@@ -799,11 +839,18 @@ export class KeyboardAPI {
     });
 
     const requestBytes = commandBytes.slice(1);
+    const sentBytes = paddedArray.slice(1);
     const response = (await this.exchangeHID(
       paddedArray,
+      // An id_unhandled echo is the keyboard's answer to this request; waiting
+      // for another reply would time out and poison the connection.
       (message: Uint8Array) =>
         message.length === 32 &&
-        eqArr(requestBytes, Array.from(message.slice(0, requestBytes.length))),
+        (eqArr(
+          requestBytes,
+          Array.from(message.slice(0, requestBytes.length)),
+        ) ||
+          isUnhandledEcho(sentBytes, message)),
       options,
     )) as Uint8Array;
     const buffer = Array.from(response);
@@ -827,7 +874,7 @@ export class KeyboardAPI {
         }),
       );
 
-      throw new Error('Receiving incorrect response for command');
+      throw new UnhandledCommandError();
     }
     return buffer;
   }

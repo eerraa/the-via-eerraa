@@ -31,18 +31,20 @@ export function buildEnabledKeycodeMenus(args: {
   definition: VIADefinitionV3 | VIADefinitionV2;
   basicKeyToByte: Record<string, number>;
   protocol?: number;
-  macroCount?: number;
+  /** Null when the keyboard has no macros: the Macro category is left out. */
+  macroCount?: number | null;
 }): IKeycodeMenu[] {
   const {definition, basicKeyToByte, protocol = 12, macroCount = 16} = args;
-  const categories = generateKeycodeCategories(basicKeyToByte, macroCount).map(
-    (category) =>
+  const categories = generateKeycodeCategories(basicKeyToByte, macroCount ?? 0)
+    .filter(({id}) => macroCount !== null || id !== 'macro')
+    .map((category) =>
       category.id === 'qmk_lighting'
         ? {
             ...category,
             keycodes: getQMKLightingKeycodes(definition, protocol),
           }
         : category,
-  );
+    );
 
   let menus: IKeycodeMenu[];
   if (isEraVIADefinitionV3(definition)) {
@@ -69,7 +71,7 @@ export function buildEnabledKeycodeMenus(args: {
       .filter(
         maybeFilter(
           keycodes === KeycodeType.WT,
-          ({id}: IKeycodeMenu) => id !== 'lighting',
+          ({id}: IKeycodeMenu) => id !== 'wt_lighting',
         ),
       )
       .filter(
@@ -106,12 +108,16 @@ export function menusWithTapDanceKeycodes(
   if (!tapdanceKeycodes.length) {
     return menus;
   }
+  // A tab the app draws, translated like its siblings; only the stock JSON's own
+  // TAPDANCE menu keeps the definition's spelling.
   const tapdanceMenu: IKeycodeMenu = {
     id: 'tapdance',
-    label: 'TAPDANCE',
+    label: 'Tap Dance',
     width: 'label',
-    keycodes: tapdanceKeycodes.map((keycode, idx) => ({
-      ...keycode,
+    keycodes: tapdanceKeycodes.map(({name, title, shortName}, idx) => ({
+      name,
+      ...(title !== undefined && {title}),
+      ...(shortName !== undefined && {shortName}),
       code: `TD(${idx})`,
     })),
   };

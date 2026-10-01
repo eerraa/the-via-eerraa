@@ -52,6 +52,7 @@ import {
   DiagnosticsResultView,
 } from '../../diagnostics-results';
 import {Explain, ExplainRow} from '../../../inputs/explain';
+import {formatEraFirmwareVersion} from 'src/utils/era-firmware-version';
 
 // The block lines up with the ControlRow width of the menu it is embedded in so the
 // polling-mode controls and the diagnostics that describe them read as one column.
@@ -1013,7 +1014,9 @@ export const UsbDiagnosticsSection: FC = () => {
                     {t(
                       'Firmware {{firmware}} · diagnostics protocol {{protocol}} · recommended snapshot interval {{interval}} ms',
                       {
-                        firmware: capabilities.firmwareVersion,
+                        firmware: formatEraFirmwareVersion(
+                          capabilities.firmwareVersion,
+                        ),
                         protocol: capabilities.protocolVersion,
                         interval: capabilities.recommendedSnapshotMs,
                       },

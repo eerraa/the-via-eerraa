@@ -1,10 +1,11 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React from 'react';
 import styled from 'styled-components';
 import {PelpiKeycodeInput} from '../../../inputs/pelpi/keycode-input';
 import {AccentButton} from '../../../inputs/accent-button';
 import {AccentSlider} from '../../../inputs/accent-slider';
 import {AccentSelect} from '../../../inputs/accent-select';
 import {AccentRange, RangeValueDisplay} from '../../../inputs/accent-range';
+import {DirtyDot} from '../../../inputs/dirty-dot';
 import {ControlRow, Label, Detail} from '../../grid';
 import type {VIADefinitionV2, VIADefinitionV3, VIAItem} from '@the-via/reader';
 import type {LightingData} from '../../../../types/types';
@@ -14,6 +15,7 @@ import {shiftFrom16Bit, shiftTo16Bit} from 'src/utils/keyboard-api';
 import {useTranslation} from 'react-i18next';
 import {
   decodeRangeValue,
+  encodeRangeValue,
   getRangeBounds,
   type RangeControlMap,
 } from 'src/utils/range-constraints';
@@ -21,31 +23,26 @@ import {
   exactTermBoundsFromOptions,
   isExactTermCommand,
 } from 'src/utils/era-exact-ms';
-import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
-import {MillisecondInput} from '../../../inputs/millisecond-input';
+import {type ExactMsFamily} from 'src/utils/era-advanced-metadata';
 import {IntegerInput} from '../../../inputs/integer-input';
-import {type IntegerAdapter} from 'src/utils/integer-field';
+import {
+  canApplyIntegerDraft,
+  parseIntegerDraft,
+} from 'src/utils/integer-field';
 import {
   EXACT_SECOND_BOUNDS,
   isExactSecondCommand,
 } from 'src/utils/era-exact-sec';
-import {
-  shouldDeferApplyCommand,
-  useDeferredApplyMode,
-  useDeferredApplyRegistration,
-} from './deferred-apply';
-import {type MillisecondAdapter} from 'src/utils/millisecond-field';
-import {useAppDispatch, useAppSelector} from 'src/store/hooks';
-import {
-  getSelectedConnectedDevice,
-} from 'src/store/devicesSlice';
-import {
-  getSelectedCustomMenuAvailability,
-  updateCustomMenuValue,
-} from 'src/store/menusSlice';
-import {ExplainBody, useExplainDisclosure} from 'src/components/inputs/explain';
+import type {DeferredItem, DeferredRow, MenuDraft} from './deferred-apply';
+import {useExplainDisclosure} from 'src/components/inputs/explain';
 import {findEraControlHelp} from 'src/utils/era-feature-help';
-import {isCustomMenuCommandContent} from 'src/utils/custom-menu';
+import {useIsEraDefinition} from 'src/utils/use-is-era-definition';
+import {HelpBody, HelpContent} from './help-content';
+import {
+  ACTION_SWITCHES,
+  decodeCustomMenuText,
+  isCustomMenuCommandContent,
+} from 'src/utils/custom-menu';
 
 type Props = {
   lightingData: LightingData;
@@ -63,11 +60,12 @@ type ControlMeta = [
 
 type AdvancedControlProps = Props & {meta: ControlMeta};
 
-// A row that carries its own help wraps: the label and its ⓘ stay in the left column,
-// the control stays in the right one, and the folded body gets a full-width line under
-// both. Rows without help keep the original two-column row untouched.
-const HelpfulControlRow = styled(ControlRow)`
-  flex-wrap: wrap;
+// A row that carries its own help, or a write the keyboard refused, wraps: the label
+// and its ⓘ stay in the left column, the control stays in the right one, and the
+// folded body or the refusal gets a full-width line under both. Other rows keep the
+// original two-column row.
+const ItemRow = styled(ControlRow)<{$wrap: boolean}>`
+  flex-wrap: ${(props) => (props.$wrap ? 'wrap' : 'nowrap')};
 `;
 
 const LabelGroup = styled.div`
@@ -76,30 +74,80 @@ const LabelGroup = styled.div`
   gap: 8px;
 `;
 
-// The 50px line box above already leaves a gap, so the body only needs room beneath it.
-const ControlExplainBody = styled(ExplainBody)`
-  margin: 0 0 12px;
-  white-space: pre-line;
+const RowError = styled.div`
+  flex-basis: 100%;
+  padding-bottom: 10px;
+  line-height: 1.4;
+  font-size: 16px;
+  color: var(--color_error);
+  text-align: right;
 `;
 
+// A dropdown's options in its own order, with the value the dropdown sends for each.
+const dropdownChoices = (options: unknown) =>
+  (options as ([string, number] | string)[]).map((option, idx) => {
+    const [label, value] = typeof option === 'string' ? [option, idx] : option;
+    return {label, value: value || idx};
+  });
+
+// The option label a dropdown holds now, found the way the dropdown itself maps
+// values to options, so the help list can show which choice is in use. A row
+// written on Apply holds its draft.
+const currentOptionLabel = (props: any): string | null => {
+  if (
+    !('type' in props) ||
+    props.type !== 'dropdown' ||
+    !Array.isArray(props.options)
+  ) {
+    return null;
+  }
+  const selected = props.deferred
+    ? props.deferred.draft
+    : props.value && Array.from(props.value as ArrayLike<number>)[0];
+  return (
+    dropdownChoices(props.options).find(({value}) => value === selected)
+      ?.label ?? null
+  );
+};
+
+// A dropdown's option labels in its own order, so its help lists what it offers.
+const optionLabels = (props: any): string[] | undefined =>
+  'type' in props && props.type === 'dropdown' && Array.isArray(props.options)
+    ? (props.options as ([string, number] | string)[]).map((option) =>
+        typeof option === 'string' ? option : option[0],
+      )
+    : undefined;
+
 export const VIACustomItem = React.memo(
-  (props: VIACustomControlProps & {_id: string}) => {
+  (props: VIACustomControlProps & {_id: string; error?: string | null}) => {
     const {t} = useTranslation();
-    const label = t(props.label);
-    // Matched on the firmware's own command name, so this never appears on an ordinary
-    // VIA keyboard. Most controls get nothing: see the rule in `era-feature-help.ts`.
-    const help = findEraControlHelp(
-      isCustomMenuCommandContent(props.content) ? props.content[0] : null,
-      props.label,
+    const eraDefinition = useIsEraDefinition();
+    // An ERA definition's names read as the definition spells them, like its options
+    // below, so a catalog word shared with another board never translates one row.
+    const label = withoutDrawnUnit(
+      eraDefinition ? props.label : t(props.label),
+      props.deferred?.row,
     );
+    const {deferred} = props;
+    // Only for the app's own ERA definition: official and uploaded definitions can use
+    // the same command names. Most controls get nothing: see `era-feature-help.ts`.
+    const help = eraDefinition
+      ? findEraControlHelp(
+          isCustomMenuCommandContent(props.content) ? props.content[0] : null,
+          props.label,
+          optionLabels(props),
+        )
+      : null;
     const {toggle, bodyProps} = useExplainDisclosure(
       t('What this means: {{name}}', {name: label}),
     );
+    const labelId = React.useId();
     const detail = (
       <Detail>
         {'type' in props ? (
           <VIACustomControl
             {...props}
+            labelId={labelId}
             value={props.value && Array.from(props.value)}
           />
         ) : (
@@ -107,23 +155,25 @@ export const VIACustomItem = React.memo(
         )}
       </Detail>
     );
-    if (!help) {
-      return (
-        <ControlRow id={props._id}>
-          <Label>{label}</Label>
-          {detail}
-        </ControlRow>
-      );
-    }
     return (
-      <HelpfulControlRow id={props._id}>
-        <LabelGroup>
-          <Label>{label}</Label>
-          {toggle}
-        </LabelGroup>
+      <ItemRow id={props._id} $wrap={!!help || !!props.error}>
+        {help || deferred ? (
+          <LabelGroup>
+            <Label id={labelId}>{label}</Label>
+            {deferred?.dirty ? <DirtyDot aria-hidden="true" /> : null}
+            {help ? toggle : null}
+          </LabelGroup>
+        ) : (
+          <Label id={labelId}>{label}</Label>
+        )}
         {detail}
-        <ControlExplainBody {...bodyProps}>{t(help)}</ControlExplainBody>
-      </HelpfulControlRow>
+        {props.error ? <RowError role="alert">{props.error}</RowError> : null}
+        {help ? (
+          <HelpBody {...bodyProps}>
+            <HelpContent content={help} current={currentOptionLabel(props)} />
+          </HelpBody>
+        ) : null}
+      </ItemRow>
     );
   },
 );
@@ -134,7 +184,6 @@ type ControlGetSet = {
     name: string,
     ...command: number[]
   ) => void | Promise<void>;
-  updateRangeValue: (name: string, value: number) => void | Promise<void>;
   updateContinuousValue: (
     name: string,
     ...command: number[]
@@ -147,6 +196,18 @@ type ControlGetSet = {
   completeContinuousRangeValue: (name: string) => void | Promise<void>;
   rangeControls: RangeControlMap;
   menuData: Record<string, number[] | number[][]>;
+  /**
+   * A row written only on Apply edits a draft instead of the keyboard. It shows its
+   * draft, or the saved value while it holds none.
+   */
+  deferred?: {
+    row: DeferredRow;
+    draft: MenuDraft;
+    dirty: boolean;
+    onDraft: (draft: MenuDraft) => void;
+    /** The page's Apply, while it has something to write: Enter in a field. */
+    onApply?: () => void;
+  };
 };
 
 type VIACustomControlProps = VIAItem & ControlGetSet;
@@ -166,323 +227,257 @@ const getRangeValue = (value: number[], max: number) => {
   }
 };
 
-const ExactMillisecondControl = ({
-  name,
-  command,
-  value,
-  options,
-}: {
-  name: string;
-  command: number[];
-  value: number[];
-  options?: number[];
-}) => {
-  const dispatch = useAppDispatch();
-  const device = useAppSelector(getSelectedConnectedDevice);
-  const menuAvailability = useAppSelector(
-    getSelectedCustomMenuAvailability,
-  );
-  const channel = command[0];
-  const id = command[1];
-  const bounds = exactTermBoundsFromOptions(
-    options,
-    device ? getExactMsFamily(device.vendorProductId) : null,
-  );
-  const currentMs = getRangeValue(value ?? [0, 0], bounds.maxMs);
-  const writeContext = useRef({
-    name,
-    dispatch,
-    currentMs,
-    menuAvailability,
-  });
-  writeContext.current = {
-    name,
-    dispatch,
-    currentMs,
-    menuAvailability,
-  };
-  const adapter: MillisecondAdapter = useMemo(
-    () => ({
-      minMs: bounds.minMs,
-      maxMs: bounds.maxMs,
-      async write(candidateMs: number) {
-        const context = writeContext.current;
-        if (context.menuAvailability !== 'available') {
-          return context.currentMs;
-        }
-        const previousMs = context.currentMs;
-        const accepted = await context.dispatch(
-          updateCustomMenuValue(
-            context.name,
-            channel,
-            id,
-            ...shiftFrom16Bit(candidateMs),
-          ),
-        );
-        return accepted ? candidateMs : previousMs;
-      },
-    }),
-    [bounds.maxMs, bounds.minMs, channel, id],
-  );
-  return (
-    <MillisecondInput
-      adapter={adapter}
-      ariaLabel={name}
-      savedMs={currentMs}
-    />
-  );
-};
-
-const ExactSecondControl = ({
-  name,
-  command,
-  value,
-}: {
-  name: string;
-  command: number[];
-  value: number[];
-}) => {
-  const dispatch = useAppDispatch();
-  const menuAvailability = useAppSelector(getSelectedCustomMenuAvailability);
-  const channel = command[0];
-  const id = command[1];
-  const currentSeconds = getRangeValue(
-    value ?? [0, 0],
-    EXACT_SECOND_BOUNDS.max,
-  );
-  const writeContext = useRef({
-    name,
-    dispatch,
-    currentSeconds,
-    menuAvailability,
-  });
-  writeContext.current = {
-    name,
-    dispatch,
-    currentSeconds,
-    menuAvailability,
-  };
-  const adapter: IntegerAdapter = useMemo(
-    () => ({
-      min: EXACT_SECOND_BOUNDS.min,
-      max: EXACT_SECOND_BOUNDS.max,
-      async write(candidateSeconds: number) {
-        const context = writeContext.current;
-        if (context.menuAvailability !== 'available') {
-          return context.currentSeconds;
-        }
-        const previousSeconds = context.currentSeconds;
-        const accepted = await context.dispatch(
-          updateCustomMenuValue(
-            context.name,
-            channel,
-            id,
-            ...shiftFrom16Bit(candidateSeconds),
-          ),
-        );
-        return accepted ? candidateSeconds : previousSeconds;
-      },
-    }),
-    [channel, id],
-  );
-  return (
-    <IntegerInput
-      adapter={adapter}
-      ariaLabel={name}
-      savedValue={currentSeconds}
-      suffix="s"
-    />
-  );
-};
-
 const DEFAULT_TOGGLE_OPTIONS = [0, 1];
 
-const DeferredToggleControl = ({
-  id,
-  name,
-  command,
-  value,
-  options,
-  updateValue,
-}: {
-  id: string;
-  name: string;
-  command: number[];
-  value: number[];
-  options?: any;
-  updateValue: ControlGetSet['updateValue'];
-}) => {
-  const toggleOptions = (options as number[] | undefined) || DEFAULT_TOGGLE_OPTIONS;
-  const savedChecked = valueIsChecked(toggleOptions[1], value || [0]);
-  const [checked, setChecked] = useState(savedChecked);
-  const dirty = checked !== savedChecked;
-  useEffect(() => {
-    if (!dirty) {
-      setChecked(savedChecked);
-    }
-  }, [dirty, savedChecked]);
-  const latest = useRef({
-    checked,
-    name,
-    command,
-    toggleOptions,
-    updateValue,
-  });
-  latest.current = {checked, name, command, toggleOptions, updateValue};
-  const apply = useCallback(async () => {
-    const current = latest.current;
-    await current.updateValue(
-      current.name,
-      ...current.command,
-      ...boxOrArr(current.toggleOptions[+current.checked]),
+// The exact whole-number fields: milliseconds for tapping terms, seconds for
+// lighting sleep timeouts.
+const integerBounds = (
+  item: DeferredItem,
+  exactMsFamily: ExactMsFamily | null,
+) => {
+  const [command] = item.content;
+  if (isExactTermCommand(command)) {
+    const {minMs, maxMs} = exactTermBoundsFromOptions(
+      item.options,
+      exactMsFamily,
     );
-  }, []);
-  useDeferredApplyRegistration(id, dirty, apply);
-  return <AccentSlider isChecked={checked} onChange={setChecked} />;
+    return {min: minMs, max: maxMs};
+  }
+  return isExactSecondCommand(command) ? EXACT_SECOND_BOUNDS : null;
 };
+
+// The unit such a field draws after its number.
+const integerUnit = (command: string) =>
+  isExactTermCommand(command)
+    ? 'ms'
+    : isExactSecondCommand(command)
+      ? 's'
+      : null;
+
+// A row whose field draws its unit drops the same "(ms)" or "(s)" from the end of
+// its name, where a definition keeps it for official VIA, which draws none.
+const withoutDrawnUnit = (label: string, row: DeferredRow | undefined) => {
+  const unit = row?.bounds ? integerUnit(row.command) : null;
+  const drawn = unit && ` (${unit})`;
+  return drawn && label.endsWith(drawn)
+    ? label.slice(0, -drawn.length)
+    : label;
+};
+
+/**
+ * How a row written only on Apply reads its stored value and turns a draft into
+ * the value its command takes, by the kind of control the row is.
+ */
+export const deferredRowFor = (
+  item: DeferredItem,
+  menuData: Record<string, unknown>,
+  exactMsFamily: ExactMsFamily | null,
+): DeferredRow | null => {
+  const [command, ...address] = item.content;
+  const value = menuData[command] as number[] | undefined;
+  const differs = (saved: MenuDraft) => (draft: MenuDraft) => draft !== saved;
+  switch (item.type) {
+    case 'toggle': {
+      const options =
+        (item.options as (number | number[])[] | undefined) ||
+        DEFAULT_TOGGLE_OPTIONS;
+      const saved = valueIsChecked(options[1], value || [0]);
+      return {
+        command,
+        address,
+        write: 'value',
+        saved,
+        bytes: (draft) => boxOrArr(options[+draft]),
+        pending: differs(saved),
+      };
+    }
+    case 'keycode': {
+      const saved = shiftTo16Bit([value?.[0] ?? 0, value?.[1] ?? 0]);
+      return {
+        command,
+        address,
+        write: 'value',
+        saved,
+        bytes: (draft) => shiftFrom16Bit(draft as number),
+        pending: differs(saved),
+      };
+    }
+    case 'dropdown': {
+      const choices = dropdownChoices(item.options);
+      const {action, running, stored} = item.held ?? {};
+      // The option a label names, where the definition has the label.
+      const named = (label: DeferredItem | undefined) => {
+        const name =
+          label &&
+          decodeCustomMenuText(
+            menuData[label.content[0]] as number[] | undefined,
+          );
+        return choices.find((choice) => choice.label === name)?.value;
+      };
+      const inEffect = named(running);
+      const kept = named(stored);
+      // A held value reads as the one in effect, where the firmware reports it.
+      const saved = inEffect ?? value?.[0] ?? 0;
+      const row: DeferredRow = {
+        command,
+        address,
+        write: 'value',
+        saved,
+        bytes: (draft) => [draft as number],
+        // Until the keyboard reports a held value both in effect and kept, Apply
+        // can send it, even the one shown: a speed the pair fell back to is kept
+        // only that way, and a definition without the labels cannot tell.
+        pending: action
+          ? (draft) => draft !== inEffect || draft !== kept
+          : differs(saved),
+      };
+      if (action) {
+        const [actionCommand, ...actionAddress] = action.content;
+        const actionOptions =
+          (action.options as (number | number[])[] | undefined) ||
+          DEFAULT_TOGGLE_OPTIONS;
+        row.held = {
+          action: {
+            command: actionCommand,
+            address: actionAddress,
+            bytes: boxOrArr(actionOptions[1]),
+          },
+          labels: [running, stored].flatMap((label) =>
+            label ? [label.content[0]] : [],
+          ),
+          name: (draft: MenuDraft) =>
+            choices.find(({value: choice}) => choice === draft)?.label,
+        };
+      }
+      return row;
+    }
+    case 'range': {
+      const bounds = integerBounds(item, exactMsFamily);
+      if (bounds) {
+        const savedValue = getRangeValue(value ?? [0, 0], bounds.max);
+        return {
+          command,
+          address,
+          write: 'value',
+          saved: String(savedValue),
+          bounds,
+          bytes: (draft) => {
+            const parsed = parseIntegerDraft(
+              String(draft),
+              bounds.min,
+              bounds.max,
+            );
+            return parsed.ok ? shiftFrom16Bit(parsed.value) : null;
+          },
+          pending: (draft) =>
+            canApplyIntegerDraft(String(draft), savedValue, bounds),
+        };
+      }
+      const max = (item.options as number[])[1];
+      const saved = getRangeValue(value ?? [0, 0], max);
+      return {
+        command,
+        address,
+        write: 'range',
+        saved,
+        bytes: (draft) => encodeRangeValue(draft as number, max),
+        pending: differs(saved),
+      };
+    }
+  }
+  return null;
+};
+
+const DeferredToggleControl = ({
+  draft,
+  onDraft,
+  labelId,
+}: {
+  draft: boolean;
+  onDraft: (checked: boolean) => void;
+  labelId?: string;
+}) => (
+  <AccentSlider isChecked={draft} onChange={onDraft} labelledBy={labelId} />
+);
 
 const DeferredKeycodeControl = ({
-  id,
-  name,
-  command,
-  value,
-  updateValue,
+  label,
+  draft,
+  onDraft,
+  labelId,
 }: {
-  id: string;
-  name: string;
-  command: number[];
-  value: number[];
-  updateValue: ControlGetSet['updateValue'];
-}) => {
-  const savedCode = shiftTo16Bit([value?.[0] ?? 0, value?.[1] ?? 0]);
-  const [code, setCode] = useState(savedCode);
-  const dirty = code !== savedCode;
-  useEffect(() => {
-    if (!dirty) {
-      setCode(savedCode);
-    }
-  }, [dirty, savedCode]);
-  const latest = useRef({code, name, command, updateValue});
-  latest.current = {code, name, command, updateValue};
-  const apply = useCallback(async () => {
-    const current = latest.current;
-    await current.updateValue(
-      current.name,
-      ...current.command,
-      ...shiftFrom16Bit(current.code),
-    );
-  }, []);
-  useDeferredApplyRegistration(id, dirty, apply);
-  return (
-    <PelpiKeycodeInput value={code} meta={{}} setValue={setCode} />
-  );
-};
+  label: string;
+  draft: number;
+  onDraft: (code: number) => void;
+  labelId?: string;
+}) => (
+  <PelpiKeycodeInput
+    value={draft}
+    meta={{label, labelledBy: labelId}}
+    setValue={onDraft}
+  />
+);
 
 const DeferredDropdownControl = ({
-  id,
-  name,
-  command,
-  value,
   selectOptions,
-  updateValue,
+  draft,
+  onDraft,
+  labelId,
 }: {
-  id: string;
-  name: string;
-  command: number[];
-  value: number[];
   selectOptions: {value: number; label: string}[];
-  updateValue: ControlGetSet['updateValue'];
-}) => {
-  const saved = value?.[0] ?? 0;
-  const [draft, setDraft] = useState(saved);
-  const dirty = draft !== saved;
-  useEffect(() => {
-    if (!dirty) {
-      setDraft(saved);
-    }
-  }, [dirty, saved]);
-  const latest = useRef({draft, name, command, updateValue});
-  latest.current = {draft, name, command, updateValue};
-  const apply = useCallback(async () => {
-    const current = latest.current;
-    await current.updateValue(current.name, ...current.command, current.draft);
-  }, []);
-  useDeferredApplyRegistration(id, dirty, apply);
-  return (
-    <AccentSelect
-      onChange={(option: any) => option && setDraft(+option.value)}
-      options={selectOptions}
-      value={selectOptions.find((option) => draft === option.value)}
-    />
-  );
-};
+  draft: number;
+  onDraft: (value: number) => void;
+  labelId?: string;
+}) => (
+  <AccentSelect
+    aria-labelledby={labelId}
+    onChange={(option: any) => option && onDraft(+option.value)}
+    options={selectOptions}
+    value={selectOptions.find((option) => draft === option.value)}
+  />
+);
 
 const DeferredRangeControl = ({
-  id,
-  name,
   min,
   max,
-  value,
-  updateRangeValue,
+  draft,
+  onDraft,
+  labelId,
 }: {
-  id: string;
-  name: string;
   min: number;
   max: number;
-  value: number;
-  updateRangeValue: ControlGetSet['updateRangeValue'];
-}) => {
-  const [draft, setDraft] = useState(value);
-  const dirty = draft !== value;
-  useEffect(() => {
-    if (!dirty) {
-      setDraft(value);
-    }
-  }, [dirty, value]);
-  const latest = useRef({draft, name, updateRangeValue});
-  latest.current = {draft, name, updateRangeValue};
-  const apply = useCallback(async () => {
-    const current = latest.current;
-    await current.updateRangeValue(current.name, current.draft);
-  }, []);
-  useDeferredApplyRegistration(id, dirty, apply);
-  return (
-    <AccentRange
-      min={min}
-      max={max}
-      value={draft}
-      onChange={setDraft}
-    />
-  );
-};
+  draft: number;
+  onDraft: (value: number) => void;
+  labelId?: string;
+}) => (
+  <AccentRange
+    aria-labelledby={labelId}
+    min={min}
+    max={max}
+    value={draft}
+    onChange={onDraft}
+  />
+);
 
-const decodeNullTerminatedUTF8 = (value?: number[]) => {
-  if (!value || value.length === 0) {
-    return '';
-  }
-
-  const terminatorIdx = value.indexOf(0);
-  const bytes = value.slice(
-    0,
-    terminatorIdx === -1 ? undefined : terminatorIdx,
-  );
-  return new TextDecoder().decode(new Uint8Array(bytes));
-};
-
-const VIACustomControl = (props: VIACustomControlProps) => {
+const VIACustomControl = (
+  props: VIACustomControlProps & {
+    /** The id of the row label that names the control. */
+    labelId?: string;
+  },
+) => {
   const {t} = useTranslation();
-  const submenuHasDeferredApply = useDeferredApplyMode();
+  // An ERA definition's option names read as the definition spells them. The catalog
+  // carries a few of the same words for other boards ("Neutral"), and translating
+  // only those would leave one option of five in another language.
+  const eraDefinition = useIsEraDefinition();
   const {content, type, options, value} = props as any;
+  const {deferred, labelId} = props;
   const [name, ...command] = content;
-  const deferApply = shouldDeferApplyCommand(submenuHasDeferredApply, name);
-  const controlId = `${(props as {_id?: string})._id ?? name}:${type}`;
   switch (type) {
     case 'label': {
       return (
         <RangeValueDisplay>
-          {content.length === 1
-            ? t(content[0])
-            : decodeNullTerminatedUTF8(value)}
+          {content.length === 1 ? t(content[0]) : decodeCustomMenuText(value)}
         </RangeValueDisplay>
       );
     }
@@ -497,22 +492,25 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       );
     }
     case 'range': {
-      if (isExactTermCommand(name)) {
+      const unit = integerUnit(name);
+      if (unit) {
+        const bounds = deferred?.row.bounds;
+        if (!deferred || !bounds) {
+          return null;
+        }
         return (
-          <ExactMillisecondControl
-            name={name}
-            command={command}
-            value={props.value}
-            options={options}
-          />
-        );
-      }
-      if (isExactSecondCommand(name)) {
-        return (
-          <ExactSecondControl
-            name={name}
-            command={command}
-            value={props.value}
+          <IntegerInput
+            draft={String(deferred.draft)}
+            savedValue={Number(deferred.row.saved)}
+            min={bounds.min}
+            max={bounds.max}
+            onDraftChange={deferred.onDraft}
+            onEnter={deferred.onApply}
+            ariaLabel={withoutDrawnUnit(
+              eraDefinition ? props.label : t(props.label),
+              deferred.row,
+            )}
+            suffix={unit}
           />
         );
       }
@@ -531,21 +529,21 @@ const VIACustomControl = (props: VIACustomControlProps) => {
         logicalValues,
         true,
       );
-      const rangeValue = getRangeValue(props.value, options[1]);
-      if (deferApply) {
+      if (deferred) {
         return (
           <DeferredRangeControl
-            id={controlId}
-            name={name}
             min={bounds.min}
             max={bounds.max}
-            value={rangeValue}
-            updateRangeValue={props.updateRangeValue}
+            draft={deferred.draft as number}
+            onDraft={deferred.onDraft}
+            labelId={labelId}
           />
         );
       }
+      const rangeValue = getRangeValue(props.value, options[1]);
       return (
         <AccentRange
+          aria-labelledby={labelId}
           min={bounds.min}
           max={bounds.max}
           value={rangeValue}
@@ -562,21 +560,21 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       );
     }
     case 'keycode': {
-      if (deferApply) {
+      const label = eraDefinition ? props.label : t(props.label);
+      if (deferred) {
         return (
           <DeferredKeycodeControl
-            id={controlId}
-            name={name}
-            command={command}
-            value={props.value}
-            updateValue={props.updateValue}
+            label={label}
+            draft={deferred.draft as number}
+            onDraft={deferred.onDraft}
+            labelId={labelId}
           />
         );
       }
       return (
         <PelpiKeycodeInput
           value={shiftTo16Bit([props.value[0], props.value[1]])}
-          meta={{}}
+          meta={{label, labelledBy: labelId}}
           setValue={(val: number) =>
             props.updateValue(name, ...command, ...shiftFrom16Bit(val))
           }
@@ -585,20 +583,32 @@ const VIACustomControl = (props: VIACustomControlProps) => {
     }
     case 'toggle': {
       const toggleOptions: any[] = options || DEFAULT_TOGGLE_OPTIONS;
-      if (deferApply) {
+      const action = eraDefinition ? ACTION_SWITCHES.get(name) : undefined;
+      if (action) {
+        return (
+          <AccentButton
+            type="button"
+            title={t(action.title)}
+            onClick={() =>
+              props.updateValue(name, ...command, ...boxOrArr(toggleOptions[1]))
+            }
+          >
+            {t(action.label)}
+          </AccentButton>
+        );
+      }
+      if (deferred) {
         return (
           <DeferredToggleControl
-            id={controlId}
-            name={name}
-            command={command}
-            value={props.value}
-            options={toggleOptions}
-            updateValue={props.updateValue}
+            draft={deferred.draft as boolean}
+            onDraft={deferred.onDraft}
+            labelId={labelId}
           />
         );
       }
       return (
         <AccentSlider
+          labelledBy={labelId}
           isChecked={valueIsChecked(toggleOptions[1], props.value)}
           onChange={(val) =>
             props.updateValue(
@@ -617,24 +627,23 @@ const VIACustomControl = (props: VIACustomControlProps) => {
             typeof option === 'string' ? [option, idx] : option;
           return {
             value: optionValue || idx,
-            label: t(label),
+            label: eraDefinition ? label : t(label),
           };
         },
       );
-      if (deferApply) {
+      if (deferred) {
         return (
           <DeferredDropdownControl
-            id={controlId}
-            name={name}
-            command={command}
-            value={value}
             selectOptions={selectOptions}
-            updateValue={props.updateValue}
+            draft={deferred.draft as number}
+            onDraft={deferred.onDraft}
+            labelId={labelId}
           />
         );
       }
       return (
         <AccentSelect
+          aria-labelledby={labelId}
           /*width={250}*/
           onChange={(option: any) =>
             option && props.updateValue(name, ...command, +option.value)
@@ -648,6 +657,7 @@ const VIACustomControl = (props: VIACustomControlProps) => {
       return (
         <ArrayColorPicker
           color={props.value as [number, number]}
+          label={eraDefinition ? props.label : t(props.label)}
           setColor={(hue, sat) =>
             props.updateContinuousValue(name, ...command, hue, sat)
           }

@@ -7,15 +7,22 @@ import {
   RawKeycodeSequenceItem,
 } from './types';
 
-export type ValidationResult = {
-  isValid: boolean;
-  errorMessage?: string;
-};
+/** Why a macro draft cannot be written as it is. */
+export type MacroExpressionProblem =
+  | {type: 'untypeable'}
+  | {type: 'unclosed'}
+  | {type: 'empty'}
+  | {type: 'unknown-keys'; keys: string[]};
 
 export interface IMacroAPI {
   readRawKeycodeSequences(): Promise<RawKeycodeSequence[]>;
   writeRawKeycodeSequences(sequences: RawKeycodeSequence[]): void;
   rawKeycodeSequencesToMacroBytes(sequences: RawKeycodeSequence[]): number[];
+  macroBytesToRawKeycodeSequences(
+    bytes: number[],
+    macroCount: number,
+  ): RawKeycodeSequence[];
+  findExpressionProblem(expression: string): MacroExpressionProblem | undefined;
 }
 
 // Corresponds to 'magic codes' in qmk sendstring
@@ -29,6 +36,10 @@ export enum KeyAction {
 export const KeyActionPrefix = 1; // \x01
 export const DelayTerminator = 124; // '|';
 export const MacroTerminator = 0;
+
+// Firmware that reads a wait into a fixed buffer (the H7S build) takes at most four
+// digits and abandons the rest of the macro at a fifth.
+export const MAX_MACRO_DELAY_MS = 9999;
 
 // split "{KC_A}bcd{KC_E}" into "{KC_A}","bcd","{KC_E}",
 // handles escaped braces e.g. "\{"
@@ -441,4 +452,148 @@ export function expressionToSequence(str: string): OptimizedKeycodeSequence {
   });
 
   return result;
+}
+
+// Each wait costs seven bytes, so this many already overflow the largest buffer a
+// 16-bit size can describe: a longer wait stops here and is refused as too large
+// instead of being expanded without end.
+const MAX_SPLIT_DELAYS = Math.ceil(0xffff / 7) + 1;
+
+/** Writes a wait longer than the firmware reads as several waits in a row. */
+export function splitLongDelays(
+  sequence: RawKeycodeSequence,
+): RawKeycodeSequence {
+  return sequence.flatMap((item): RawKeycodeSequence => {
+    if (item[0] !== RawKeycodeSequenceAction.Delay) {
+      return [item];
+    }
+    const delays: RawKeycodeSequence = [];
+    let remaining = Number(item[1]);
+    while (remaining > MAX_MACRO_DELAY_MS && delays.length < MAX_SPLIT_DELAYS) {
+      delays.push([RawKeycodeSequenceAction.Delay, MAX_MACRO_DELAY_MS]);
+      remaining -= MAX_MACRO_DELAY_MS;
+    }
+    if (delays.length < MAX_SPLIT_DELAYS) {
+      delays.push([RawKeycodeSequenceAction.Delay, remaining]);
+    }
+    return delays;
+  });
+}
+
+/** The raw sequence an expression is written as. Every macro save goes through it. */
+export const expressionToRawSequence = (
+  expression: string,
+): RawKeycodeSequence =>
+  splitLongDelays(
+    optimizedSequenceToRawSequence(expressionToSequence(expression)),
+  );
+
+// send_string types a character through a 128-entry ASCII table, so anything above
+// reads past it, and control bytes collide with the macro's own markers.
+export const isTypeableMacroCharacter = (character: string) =>
+  character === '\n' ||
+  character === '\t' ||
+  (character >= ' ' && character <= '~');
+
+// The blocks expressionToSequence() cuts out: an unescaped "{" up to the first "}"
+// on its line. A block is unclosed when another "{", or the end, comes first.
+const scanKeycodeBlocks = (expression: string) => {
+  const blocks: string[] = [];
+  for (let index = 0; index < expression.length; index++) {
+    if (expression[index] !== '{' || expression[index - 1] === '\\') {
+      continue;
+    }
+    const close = expression.indexOf('}', index + 1);
+    const reopen = expression.indexOf('{', index + 1);
+    if (close === -1 || (reopen !== -1 && reopen < close)) {
+      return {blocks, unclosed: true};
+    }
+    const block = expression.slice(index + 1, close);
+    if (!block.includes('\n')) {
+      blocks.push(block);
+      index = close;
+    }
+  }
+  return {blocks, unclosed: false};
+};
+
+/**
+ * What stops the keyboard from playing an expression as written, the same check for
+ * a typed script and a recording. A wait of any length is fine: it is split when
+ * written.
+ */
+export function findMacroExpressionProblem(
+  expression: string,
+  {
+    delays,
+    keycodeToByte,
+  }: {delays: boolean; keycodeToByte: (keycode: string) => number | undefined},
+): MacroExpressionProblem | undefined {
+  for (const character of expression) {
+    if (!isTypeableMacroCharacter(character)) {
+      return {type: 'untypeable'};
+    }
+  }
+  const {blocks, unclosed} = scanKeycodeBlocks(expression);
+  if (unclosed) {
+    return {type: 'unclosed'};
+  }
+  if (blocks.some((block) => !block.trim().length)) {
+    return {type: 'empty'};
+  }
+  const unknown = new Set<string>();
+  const checkKeycode = (keycode: string) => {
+    const byte = keycodeToByte(keycode);
+    // A macro holds a key as one byte, and a zero byte would end the macro there.
+    // The autocomplete list is not the test: the keyboard reads 0x9C back as KC_CLR,
+    // a name it leaves out. The table's _QK_ entries are ranges and masks, not keys.
+    if (keycode.startsWith('_') || !byte || byte > 0xff) {
+      unknown.add(keycode);
+    }
+  };
+  expressionToSequence(expression).forEach(([action, argument]) => {
+    if (action === GroupedKeycodeSequenceAction.Chord) {
+      (argument as string[]).forEach(checkKeycode);
+    } else if (action === RawKeycodeSequenceAction.Delay) {
+      if (!delays) {
+        unknown.add(String(argument));
+      }
+    } else if (action !== RawKeycodeSequenceAction.CharacterStream) {
+      checkKeycode(argument as string);
+    }
+  });
+  return unknown.size ? {type: 'unknown-keys', keys: [...unknown]} : undefined;
+}
+
+export type MacroDraft = {
+  problem?: MacroExpressionProblem;
+  /** Buffer bytes the macro takes, its end marker included. */
+  byteCount: number;
+  /** The expression the keyboard will hold, in the form the editor reads back. */
+  stored: string;
+};
+
+export const countMacroBytes = (macroApi: IMacroAPI, expression: string) =>
+  macroApi.rawKeycodeSequencesToMacroBytes([
+    expressionToRawSequence(expression),
+  ]).length;
+
+export function checkMacroDraft(
+  macroApi: IMacroAPI,
+  expression: string,
+): MacroDraft {
+  const problem = macroApi.findExpressionProblem(expression);
+  const bytes = macroApi.rawKeycodeSequencesToMacroBytes([
+    expressionToRawSequence(expression),
+  ]);
+  // Only a draft a keyboard could hold is read back: the bytes of an invalid one are
+  // not a macro the reader knows, and one larger than any buffer only costs time.
+  if (problem || bytes.length > 0xffff) {
+    return {problem, byteCount: bytes.length, stored: expression};
+  }
+  const [stored = []] = macroApi.macroBytesToRawKeycodeSequences(bytes, 1);
+  return {
+    byteCount: bytes.length,
+    stored: sequenceToExpression(rawSequenceToOptimizedSequence(stored)),
+  };
 }

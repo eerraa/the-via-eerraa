@@ -1,4 +1,4 @@
-import {useMemo} from 'react';
+import {useId, useMemo} from 'react';
 import {useDispatch} from 'react-redux';
 import {useAppSelector} from 'src/store/hooks';
 import {
@@ -8,6 +8,7 @@ import {
 } from 'src/store/keymapSlice';
 import styled from 'styled-components';
 import {useTranslation} from 'react-i18next';
+import {focusRing} from '../../inputs/accent-button';
 
 const Container = styled.div`
   position: absolute;
@@ -40,6 +41,7 @@ const LayerButton = styled.button<{$selected?: boolean}>`
     color: ${(props) =>
       props.$selected ? 'auto' : 'var(--color_label-highlighted)'};
   }
+  ${focusRing}
 `;
 
 export const LayerControl = () => {
@@ -47,6 +49,7 @@ export const LayerControl = () => {
   const dispatch = useDispatch();
   const numberOfLayers = useAppSelector(getNumberOfLayers);
   const selectedLayerIndex = useAppSelector(getSelectedLayerIndex);
+  const labelId = useId();
 
   const Layers = useMemo(
     () =>
@@ -56,7 +59,9 @@ export const LayerControl = () => {
         .map((layerLabel) => (
           <LayerButton
             key={layerLabel}
+            type="button"
             $selected={layerLabel === selectedLayerIndex}
+            aria-pressed={layerLabel === selectedLayerIndex}
             onClick={() => dispatch(setLayer(layerLabel))}
           >
             {layerLabel}
@@ -66,8 +71,8 @@ export const LayerControl = () => {
   );
 
   return (
-    <Container>
-      <Label>{t('Layer')}</Label>
+    <Container role="group" aria-labelledby={labelId}>
+      <Label id={labelId}>{t('Layer')}</Label>
       {Layers}
     </Container>
   );

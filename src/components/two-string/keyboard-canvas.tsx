@@ -4,6 +4,7 @@ import {
   calculateKeyboardFrameDimensions,
   CSSVarObject,
 } from 'src/utils/keyboard-rendering';
+import {useReportKeyboardFrame} from 'src/utils/keyboard-area';
 import styled from 'styled-components';
 import {
   KeyboardCanvasProps,
@@ -15,11 +16,12 @@ import {MatrixLines} from './matrix-lines';
 export const KeyboardCanvas: React.FC<KeyboardCanvasProps<React.MouseEvent>> = (
   props,
 ) => {
-  const {containerDimensions, shouldHide, ...otherProps} = props;
+  const {containerDimensions, shouldHide, cornerNote, ...otherProps} = props;
   const {width, height} = useMemo(
     () => calculateKeyboardFrameDimensions(otherProps.keys),
     [otherProps.keys],
   );
+  useReportKeyboardFrame(otherProps.mode, width, height);
   const containerHeight = containerDimensions.height;
   const minPadding = 35;
   const ratio =
@@ -48,11 +50,24 @@ export const KeyboardCanvas: React.FC<KeyboardCanvasProps<React.MouseEvent>> = (
       }}
     >
       <KeyboardCanvasContent {...otherProps} width={width} height={height} />
+      {cornerNote ? (
+        // At its own size, however small the picture is drawn.
+        <CornerNote style={{transform: `scale(${1 / ratio})`}}>
+          {cornerNote}
+        </CornerNote>
+      ) : null}
     </div>
   );
 };
 const KeyboardGroup = styled.div`
   position: relative;
+`;
+const CornerNote = styled.div`
+  position: absolute;
+  top: 100%;
+  right: 0;
+  padding-top: 8px;
+  transform-origin: top right;
 `;
 
 const KeyboardCanvasContent: React.FC<

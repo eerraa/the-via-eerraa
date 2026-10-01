@@ -270,7 +270,9 @@ export const IconButtonTooltip: React.FC<any> = (props) => {
 export const MenuTooltip: React.FC<any> = (props) => {
   const anchorRef = useRef<HTMLSpanElement>(null);
 
-  const [visible, setVisible] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const visible = hovered || focused;
   const [position, setPosition] = useState({
     top: 0,
     left: 0,
@@ -300,11 +302,27 @@ export const MenuTooltip: React.FC<any> = (props) => {
 
     const handleMouseEnter = () => {
       updatePosition();
-      setVisible(true);
+      setHovered(true);
     };
 
     const handleMouseLeave = () => {
-      setVisible(false);
+      setHovered(false);
+    };
+
+    // Keyboard focus on the item shows it as hover does; the focus a click
+    // leaves behind does not, or it would stay after the pointer has gone.
+    const focusTarget =
+      menuItem.closest<HTMLElement>('button, a[href]') ?? menuItem;
+
+    const handleFocusIn = () => {
+      if (focusTarget.matches(':focus-visible')) {
+        updatePosition();
+        setFocused(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setFocused(false);
     };
 
     const handleScroll = () => {
@@ -313,6 +331,8 @@ export const MenuTooltip: React.FC<any> = (props) => {
 
     menuItem.addEventListener('mouseenter', handleMouseEnter);
     menuItem.addEventListener('mouseleave', handleMouseLeave);
+    focusTarget.addEventListener('focusin', handleFocusIn);
+    focusTarget.addEventListener('focusout', handleFocusOut);
 
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', handleScroll, true);
@@ -320,6 +340,8 @@ export const MenuTooltip: React.FC<any> = (props) => {
     return () => {
       menuItem.removeEventListener('mouseenter', handleMouseEnter);
       menuItem.removeEventListener('mouseleave', handleMouseLeave);
+      focusTarget.removeEventListener('focusin', handleFocusIn);
+      focusTarget.removeEventListener('focusout', handleFocusOut);
 
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', handleScroll, true);
