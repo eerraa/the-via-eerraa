@@ -839,5 +839,6 @@
   "Tap Dance action support is not verified for this keyboard.": "No se ha verificado la compatibilidad de este teclado con las acciones de Tap Dance.",
   "Choose a tap key": "Elige una tecla de toque",
   "Keyboard maker": "Fabricante del teclado",
-  "Keyboard": "Teclado"
+  "Keyboard": "Teclado",
+  "Find firmware": "Busca el firmware."
 }

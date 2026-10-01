@@ -839,5 +839,6 @@
   "Tap Dance action support is not verified for this keyboard.": "尚未验证此键盘是否支持 Tap Dance 动作。",
   "Choose a tap key": "选择点按键",
   "Keyboard maker": "键盘制造商",
-  "Keyboard": "键盘"
+  "Keyboard": "键盘",
+  "Find firmware": "请查找所需的固件。"
 }

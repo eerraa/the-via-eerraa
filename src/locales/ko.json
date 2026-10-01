@@ -839,5 +839,6 @@
   "Tap Dance action support is not verified for this keyboard.": "이 키보드의 탭댄스 동작 지원을 확인하지 못했습니다.",
   "Choose a tap key": "탭 키 선택",
   "Keyboard maker": "키보드 메이커",
-  "Keyboard": "키보드"
+  "Keyboard": "키보드",
+  "Find firmware": "펌웨어를 찾아보세요."
 }

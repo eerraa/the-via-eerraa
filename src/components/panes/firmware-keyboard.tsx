@@ -1,9 +1,9 @@
 import {KeyColorType, type VIADefinitionV3, type VIAKey} from '@the-via/reader';
-import {type FC, useEffect, useMemo, useRef, useState} from 'react';
+import {type FC, type ReactNode, useEffect, useMemo, useRef, useState} from 'react';
 import styled from 'styled-components';
 import {useAppSelector} from 'src/store/hooks';
 import {getSelectedTheme} from 'src/store/settingsSlice';
-import {getDarkenedColor} from 'src/utils/color-math';
+import {getColorByte, getDarkenedColor} from 'src/utils/color-math';
 import {DisplayMode} from 'src/types/keyboard-rendering';
 import {
   getBoardDefinitions,
@@ -19,10 +19,23 @@ import {KeyboardCanvas} from '../two-string/keyboard-canvas';
 // without legends. It needs no device and no WebHID. Each half of a split pair
 // already describes the whole board, so the left half's definition is drawn.
 
-const Stage = styled.div<{$height: number}>`
+// Copy sits over the centre of the same gradient as the keyboard. Choose its
+// foreground from that background, rather than the light/dark panel theme.
+const stageTextColor = (color: string) => {
+  const channels = getColorByte(getDarkenedColor(color)).map((byte) => {
+    const value = byte / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance =
+    channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  return luminance > 0.179 ? '#000' : '#fff';
+};
+
+const Stage = styled.div<{$height: number; $color: string}>`
   position: relative;
   flex: none;
   height: ${(props) => props.$height}px;
+  color: ${(props) => stageTextColor(props.$color)};
   overflow: hidden;
 `;
 
@@ -34,6 +47,27 @@ const Background = styled.div<{$color: string}>`
       props.$color,
     )} 50%, rgba(150,150,150,1) 90%)`};
 `;
+
+/** One keyboard area across catalogue choices, board lists and board details. */
+export const FirmwareStage: FC<{
+  children: ReactNode;
+  boardId?: string;
+}> = ({children, boardId}) => {
+  const theme = useAppSelector(getSelectedTheme);
+  const areaHeight = useKeyboardAreaHeight(undefined);
+  const accent = theme[KeyColorType.Accent].c;
+  return (
+    <Stage
+      data-firmware-stage="true"
+      data-firmware-keyboard={boardId}
+      $height={areaHeight}
+      $color={accent}
+    >
+      <Background $color={accent} />
+      {children}
+    </Stage>
+  );
+};
 
 // Centre the board in the same full stage as Configure and key testing.
 const Board = styled.div`
@@ -93,18 +127,15 @@ export const FirmwareKeyboard: FC<{
   data: FirmwareData;
   boardId: string;
 }> = ({data, boardId}) => {
-  const theme = useAppSelector(getSelectedTheme);
   const board = useRef<HTMLDivElement>(null);
   const size = useSize(board);
-  const areaHeight = useKeyboardAreaHeight(size?.width);
   const definition = useBoardDefinition(data, boardId);
   const keys = useMemo(
     () => (definition ? boardKeys(definition) : []),
     [definition],
   );
   return (
-    <Stage data-firmware-keyboard={boardId} $height={areaHeight}>
-      <Background $color={theme[KeyColorType.Accent].c} />
+    <FirmwareStage boardId={boardId}>
       <Board ref={board}>
         {definition && size && (
           <KeyboardCanvas
@@ -118,6 +149,6 @@ export const FirmwareKeyboard: FC<{
           />
         )}
       </Board>
-    </Stage>
+    </FirmwareStage>
   );
 };

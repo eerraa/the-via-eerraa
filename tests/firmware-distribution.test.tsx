@@ -816,11 +816,22 @@ describe('firmware page', () => {
     expect(html).not.toContain('data-firmware-back-to-list=');
     expect(html).not.toMatch(/>\s*Keyboard maker\s*</);
     expect(html).not.toMatch(/>\s*All keyboards\s*</);
-    expect(html).toContain('aria-label="Keyboard maker"');
+    expect(html).toMatch(/<nav [^>]*aria-label="Keyboard maker"[^>]*>/);
+  };
+  const sharedStage = (html: string) => {
+    expect(html.match(/data-firmware-stage="true"/g)).toHaveLength(1);
+    const stage = html.indexOf('data-firmware-stage="true"');
+    expect(html.indexOf('data-firmware-maker-navigation=')).toBeGreaterThan(stage);
+  };
+  const selectionPlaceholder = (html: string) => {
+    sharedStage(html);
+    expect(html.match(/data-firmware-placeholder="true"/g)).toHaveLength(1);
+    expect(html).toContain('Find firmware');
+    expect(html).not.toContain('data-firmware-keyboard=');
   };
   const makerChooser = (html: string) => {
     expect(html).toContain('data-firmware-view="makers"');
-    expect(openingTag(html, 'data-firmware-maker-navigation="chooser"')).toMatch(/^<nav /);
+    expect(html).toContain('data-firmware-maker-navigation="chooser"');
     expect(makerOrder(html)).toEqual(makerIds);
     for (const id of makerIds) {
       const link = openingTag(html, `data-firmware-maker="${id}"`);
@@ -828,7 +839,7 @@ describe('firmware page', () => {
       expect(link).toContain(`href="/firmware/${id}"`);
       expect(link).not.toContain('aria-current=');
     }
-    expect(html).not.toContain('data-firmware-keyboard=');
+    selectionPlaceholder(html);
     expect(html).not.toContain('data-firmware-board=');
     expect(html).not.toContain(' download=');
     noSelectors(html);
@@ -862,7 +873,7 @@ describe('firmware page', () => {
     expect(makerOrder(html)).toEqual(makerIds);
     expect(html).toContain('Not published');
     expect(html).toContain('href="/firmware/classicd/classicd-a1"');
-    expect(html).not.toContain('data-firmware-keyboard=');
+    selectionPlaceholder(html);
     noSelectors(html);
   });
 
@@ -871,6 +882,7 @@ describe('firmware page', () => {
     expect(html).toContain('data-firmware-view="list"');
     expect(openingTag(html, 'data-firmware-maker="classicd"')).toContain('aria-current="page"');
     expect(html).toContain('href="/firmware/classicd/classicd-a1"');
+    selectionPlaceholder(html);
     noSelectors(html);
   });
 
@@ -959,6 +971,9 @@ describe('firmware page', () => {
     const html = renderPage(published(), '/firmware/classicd/classicd-a1');
     expect(html).toContain('data-firmware-view="board"');
     expect(html).toContain('data-firmware-keyboard="classicd-a1"');
+    sharedStage(html);
+    expect(html).not.toContain('data-firmware-placeholder=');
+    expect(html).not.toContain('Find firmware');
     expect(html).toContain('data-firmware-board-name=');
     expect(html).toContain('>CLASSIC.D A1<');
     expect(html).toContain('Latest firmware');
@@ -968,7 +983,7 @@ describe('firmware page', () => {
     expect(html).toContain('a'.repeat(64));
     expect(html).toContain('How to flash');
     expect(html).toContain('RPI-RP2');
-    const stage = html.indexOf('data-firmware-keyboard="classicd-a1"');
+    const stage = html.indexOf('data-firmware-stage="true"');
     const navigation = html.indexOf('data-firmware-maker-navigation=');
     const file = html.indexOf('data-firmware-file=');
     expect(navigation).toBeGreaterThan(stage);

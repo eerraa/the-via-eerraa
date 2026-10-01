@@ -102,7 +102,13 @@ board and version. The control lives in `src/components/menus/external-links.tsx
 
 The page speaks the grammar of the rest of the app
 (`src/components/panes/firmware.tsx`). It has no maker or keyboard badges above
-the drawing. Catalogue entry shows every maker as a plain text link in a
+the drawing. Maker choices, board lists and board details keep the same keyboard
+area above the content, with the same position, shared height and theme
+background (`src/components/panes/firmware-keyboard.tsx`). The choice and list
+pages show a short firmware-selection message there instead of a keyboard;
+only a board page loads a bundled keyboard definition and draws it. Keeping
+the area across these steps prevents the navigation and rows from moving when
+a board is opened. Catalogue entry shows every maker as a plain text link in a
 horizontal row centred within the same content column as the setting rows,
 without selecting the first maker on the user's behalf. The row wraps naturally
 as space narrows; each wrapped line stays centred and each choice keeps its

@@ -839,5 +839,6 @@
   "Tap Dance action support is not verified for this keyboard.": "このキーボードのタップダンス動作への対応を確認できません。",
   "Choose a tap key": "タップキーを選択",
   "Keyboard maker": "キーボードメーカー",
-  "Keyboard": "キーボード"
+  "Keyboard": "キーボード",
+  "Find firmware": "ファームウェアを探してみましょう。"
 }

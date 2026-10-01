@@ -39,8 +39,8 @@ import {
   PrimaryAccentLink,
 } from '../firmware-link';
 import {AccentButton, focusRing} from '../inputs/accent-button';
-import {Announcement, TabRow} from '../inputs/keycode-palette/palette-parts';
-import {FirmwareKeyboard} from './firmware-keyboard';
+import {Announcement} from '../inputs/keycode-palette/palette-parts';
+import {FirmwareKeyboard, FirmwareStage} from './firmware-keyboard';
 import {
   ControlRow,
   Detail,
@@ -101,7 +101,7 @@ const Panel = styled.div`
   display: flex;
 `;
 
-// Keep the common keyboard height in short windows; let the whole board page
+// Keep the common keyboard height in short windows; let the whole firmware page
 // scroll rather than squeezing its download controls into a zero-height panel.
 const BoardPane = styled(Pane)`
   @media (max-height: 650px) {
@@ -145,11 +145,48 @@ const MakerChoice = styled(SubmenuTabLink)`
   overflow-wrap: anywhere;
 `;
 
-const MakerChoices = styled(TabRow)`
-  width: 100%;
-  max-width: 960px;
+const Prompt = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  box-sizing: border-box;
+  text-align: center;
+
+  &::before {
+    content: '';
+    width: 40px;
+    height: 1px;
+    margin-bottom: 12px;
+    background: currentColor;
+    opacity: 0.3;
+  }
 `;
+
+const PromptTitle = styled.h1`
+  margin: 0;
+  max-width: 720px;
+  font-size: clamp(20px, 2.2vw, 32px);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+`;
+
+const FirmwarePlaceholder: FC = () => {
+  const {t} = useTranslation();
+  return (
+    <FirmwareStage>
+      <Prompt data-firmware-placeholder="true">
+        <PromptTitle>{t('Find firmware')}</PromptTitle>
+      </Prompt>
+    </FirmwareStage>
+  );
+};
 
 const MakerNavigation: FC<{
   makers: FirmwareMaker[];
@@ -158,7 +195,9 @@ const MakerNavigation: FC<{
 }> = ({makers, maker, boardId}) => {
   const {t} = useTranslation();
   return (
-    <MakerTabs data-firmware-maker-navigation="true">
+    <MakerTabs
+      data-firmware-maker-navigation={!maker && !boardId ? 'chooser' : 'true'}
+    >
       <SubmenuTabBar links label={t('Keyboard maker')}>
         {makers.map((candidate) => {
           const keepBoard = !!(boardId && getMakerBoard(candidate, boardId));
@@ -178,7 +217,7 @@ const MakerNavigation: FC<{
                 selected && !boardId
                   ? stayOnFirmwarePage
                   : followFirmwareLink(to, {
-                      replace: true,
+                      replace: !!maker || !!boardId,
                       onNavigate: () => {
                         if (!selected && keepBoard && boardId) {
                           rememberMaker(boardId, candidate.id);
@@ -530,42 +569,18 @@ const useConnected = () => {
 };
 
 const MakersView: FC<{makers: FirmwareMaker[]}> = ({makers}) => {
-  const {t} = useTranslation();
   return (
-    <Pane data-firmware-page="true" data-firmware-view="makers">
+    <BoardPane data-firmware-page="true" data-firmware-view="makers">
+      <FirmwarePlaceholder />
       <Panel>
         <FirmwareGrid>
           <FirmwareRail />
           <TabbedCell>
-            <TabbedBody>
-              <Column>
-                <MakerChoices
-                  as="nav"
-                  $height={56}
-                  aria-label={t('Keyboard maker')}
-                  data-firmware-maker-navigation="chooser"
-                >
-                  {makers.map((maker) => {
-                    const to = getFirmwarePath(maker.id);
-                    return (
-                      <MakerChoice
-                        key={maker.id}
-                        href={to}
-                        onClick={followFirmwareLink(to)}
-                        $selected={false}
-                        data-firmware-maker={maker.id}
-                      >
-                        {maker.name}
-                      </MakerChoice>
-                    );
-                  })}
-                </MakerChoices>
-              </Column>
-            </TabbedBody>
+            <MakerNavigation makers={makers} maker={null} />
           </TabbedCell>
         </FirmwareGrid>
       </Panel>
-    </Pane>
+    </BoardPane>
   );
 };
 
@@ -577,7 +592,8 @@ const ListView: FC<{
   const {t} = useTranslation();
   const connected = useConnected();
   return (
-    <Pane data-firmware-page="true" data-firmware-view="list">
+    <BoardPane data-firmware-page="true" data-firmware-view="list">
+      <FirmwarePlaceholder />
       <Panel>
         <FirmwareGrid>
           <FirmwareRail />
@@ -633,7 +649,7 @@ const ListView: FC<{
           </TabbedCell>
         </FirmwareGrid>
       </Panel>
-    </Pane>
+    </BoardPane>
   );
 };
 
