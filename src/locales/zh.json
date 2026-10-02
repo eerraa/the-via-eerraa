@@ -872,5 +872,6 @@
   "A longer decision time allows slower consecutive presses and takes longer to confirm Hold.": "延长判定时间可放慢连续按键的速度，但确认长按也会更晚。",
   "Waits for the decision before sending the selected action.": "判定动作后再发送所选按键。",
   "The first press sends the base key immediately; only the second press waits.": "第一次按下立即发送基本键，只有第二次按下需要等待判定。",
-  "A separate Hold action requires After decision.": "单独指定长按动作需要选择“判定后”。"
+  "A separate Hold action requires After decision.": "单独指定长按动作需要选择“判定后”。",
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "颜色越接近白色，颜色变化越不明显。请在 Color 中选择饱和度更高的颜色。"
 }

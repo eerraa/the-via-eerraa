@@ -872,5 +872,6 @@
   "A longer decision time allows slower consecutive presses and takes longer to confirm Hold.": "Eine längere Erkennungszeit erlaubt langsamere aufeinanderfolgende Tastendrücke und bestätigt Halten später.",
   "Waits for the decision before sending the selected action.": "Sendet die gewählte Aktion erst nach der Erkennung.",
   "The first press sends the base key immediately; only the second press waits.": "Das erste Drücken sendet sofort die Basistaste; nur das zweite wartet auf die Erkennung.",
-  "A separate Hold action requires After decision.": "Eine separate Halteaktion erfordert „Nach Erkennung“."
+  "A separate Hold action requires After decision.": "Eine separate Halteaktion erfordert „Nach Erkennung“.",
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "Bei fast weißen Farben sind Farbwechsel schwer erkennbar. Wähle unter Color eine stärker gesättigte Farbe."
 }

@@ -872,5 +872,6 @@
   "A longer decision time allows slower consecutive presses and takes longer to confirm Hold.": "Un tiempo de decisión mayor permite pulsaciones consecutivas más lentas y tarda más en confirmar la pulsación larga.",
   "Waits for the decision before sending the selected action.": "Espera a decidir antes de enviar la acción seleccionada.",
   "The first press sends the base key immediately; only the second press waits.": "La primera pulsación envía la tecla base inmediatamente; solo la segunda espera.",
-  "A separate Hold action requires After decision.": "Una acción de pulsación larga separada requiere «Tras decidir»."
+  "A separate Hold action requires After decision.": "Una acción de pulsación larga separada requiere «Tras decidir».",
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "Con colores casi blancos, los cambios de color son poco visibles. Elige un color más saturado en Color."
 }

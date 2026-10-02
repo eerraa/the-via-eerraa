@@ -19,6 +19,12 @@ import {THEMES} from '../src/utils/themes';
 import type {DomainReadFailure} from '../src/store/stateSyncSlice';
 import {contrast, paint, themedPages} from './theme-colors';
 import enCatalog from '../src/locales/en.json';
+import {lowSaturationRgbEffectColor} from '../src/utils/rgb-white-effects';
+import {get256HSV} from '../src/utils/color-math';
+import {keyboardDefinitionV3ToVIADefinitionV3} from '@the-via/reader';
+import n87Definition from '../era-definitions/custom/v3/n87/N87-VIA.json';
+import h7sRgbDefinition from '../era-definitions/custom/v3/brick65-h7s/BRICK65-H7S-VIA.json';
+import qmkRgbDefinition from '../era-definitions/custom/v3/7b75/7B75-VIA.json';
 
 const loadPane = async () => {
   const originalWarn = console.warn;
@@ -1883,5 +1889,156 @@ describe('ERA configure rail icons', () => {
     expect(renderIcon(false, 'RGB display', ['id_qmk_socd_mode'])).toContain('data-icon="lightbulb"');
     expect(renderIcon(false, 'FEATURE', ['id_qmk_socd_mode'])).toContain('data-icon="microchip"');
     expect(renderIcon(true, 'Audio', ['vendor_volume'])).toContain('data-icon="headphones"');
+  });
+});
+
+describe('low-saturation RGB effect guidance', () => {
+  const notice =
+    "Near-white colors make color changes hard to see. Choose a more saturated color in Color.";
+  const lightingPage = (definition: any) => {
+    const menu = definition.menus.find((menu: any) => menu.label === 'Lighting');
+    const submenu = menu.content.find((sub: any) => sub.content.some((item: any) =>
+      ['id_qmk_rgblight_effect', 'id_qmk_rgb_matrix_effect'].includes(item.content?.[0]),
+    ));
+    return {...menu, content: [{...submenu, _id: '-rgb', content: submenu.content.map((item: any, i: number) => ({...item, _id: `-rgb-${i}`}))}]};
+  };
+  const effectItem = (page: any) =>
+    page.content[0].content.find((item: any) => item.type === 'dropdown');
+  const valuesFor = (page: any, mode: number, saturation = 0) =>
+    Object.fromEntries(page.content[0].content.map((item: any) => [
+      item.content[0],
+      item.type === 'color' ? [37, saturation]
+        : item.type === 'dropdown' ? [mode] : [128],
+    ]));
+
+  const renderLighting = (page: any, data: object, era = true) => {
+    const definition = keyboardDefinitionV3ToVIADefinitionV3({
+      name: 'RGB guidance test', vendorId: '0x1234', productId: '0x5678',
+      matrix: {rows: 1, cols: 1}, layouts: {keymap: [['0,0']]},
+      menus: [JSON.parse(JSON.stringify(page, (key, value) => key === '_id' ? undefined : value))], keycodes: ['qmk_lighting'],
+    } as any);
+    return render(makeStore({era, definition, menuData: data}), page);
+  };
+
+  test('classifies every shipped RGBLight effect, including H7S press effects', () => {
+    for (const definition of [h7sRgbDefinition, qmkRgbDefinition]) {
+      const page = lightingPage(definition);
+      const item = effectItem(page);
+      const affected = item.options.flatMap((option: string | [string, number], index: number) => {
+        const mode = typeof option === 'string' ? index : option[1];
+        return lowSaturationRgbEffectColor(item, valuesFor(page, mode)) ? [mode] : [];
+      });
+      expect(affected).toEqual([
+        6, 7, 8, 9, 10, 11, 12, 13, 14,
+        24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+      ]);
+    }
+  });
+
+  test('separates hue/saturation patterns from brightness and random-color matrix effects', () => {
+    const page = lightingPage(n87Definition);
+    const item = effectItem(page);
+    const affected = item.options.filter(([, mode]: [string, number]) =>
+      lowSaturationRgbEffectColor(item, valuesFor(page, mode)),
+    ).map(([, mode]: [string, number]) => mode);
+    expect(affected).toEqual([
+      2, 3, 4, 6, 8, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+      24, 26, 27, 28, 35,
+    ]);
+  });
+
+  test('uses option values and names rather than assuming a matrix mode numbering', () => {
+    const page = lightingPage(n87Definition);
+    const item = effectItem(page);
+    const data = valuesFor(page, 24);
+    expect(lowSaturationRgbEffectColor(item, data)).toBe('id_qmk_rgb_matrix_color');
+    expect(lowSaturationRgbEffectColor({...item, options: [['Jellybean Raindrops', 24]]}, data)).toBeNull();
+    expect(lowSaturationRgbEffectColor({...item, options: [['Cycle All', 99]]}, valuesFor(page, 99)))
+      .toBe('id_qmk_rgb_matrix_color');
+    expect(lowSaturationRgbEffectColor({...item, options: ['All Off', 'Cycle All']}, valuesFor(page, 1)))
+      .toBe('id_qmk_rgb_matrix_color');
+    expect(lowSaturationRgbEffectColor({...item, options: [['Unknown', 24]]}, data)).toBeNull();
+    expect(lowSaturationRgbEffectColor({...item, content: ['id_qmk_rgb_matrix_effect', 7, 2]}, data)).toBeNull();
+  });
+
+  test('does not guess low saturation from missing, malformed or saturated values', () => {
+    const page = lightingPage(n87Definition);
+    const item = effectItem(page);
+    for (const color of [undefined, [], [0], [NaN, 0], [-1, 0], [256, 0], [0, -1], [0, NaN], [0, '3'], [0, 1.5], [0, 13], [0, 255], [0, 256], [[0], [0]]]) {
+      expect(lowSaturationRgbEffectColor(item, {...valuesFor(page, 12), id_qmk_rgb_matrix_color: color})).toBeNull();
+    }
+    for (const effect of [undefined, [], [-1], [256], [NaN], [0], [255]]) {
+      expect(lowSaturationRgbEffectColor(item, {...valuesFor(page, 12), id_qmk_rgb_matrix_effect: effect})).toBeNull();
+    }
+  });
+
+  test('shows a persistent inline notice and restores hidden Color only when needed', () => {
+    for (const [definition, mode] of [[qmkRgbDefinition, 6], [n87Definition, 24], [h7sRgbDefinition, 9]] as const) {
+      const page = lightingPage(definition);
+      const html = renderLighting(page, valuesFor(page, mode));
+      expect(html).toContain(notice.replaceAll("'", '&#x27;'));
+      expect(html).toContain('role="status"');
+      expect(html).toContain('Color, #ffffff');
+      expect(html.indexOf(notice.replaceAll("'", '&#x27;'))).toBeGreaterThan(html.indexOf('Effect'));
+      const colored = renderLighting(page, valuesFor(page, mode, 255));
+      expect(colored).not.toContain('Near-white colors');
+      expect(colored).toContain('aria-label="Color, #');
+      const breathing = renderLighting(page, valuesFor(page, 5));
+      expect(breathing).not.toContain('Near-white colors');
+    }
+  });
+
+  test('keeps ordinary/uploaded definitions and other lighting channels unchanged', () => {
+    const page = lightingPage(qmkRgbDefinition);
+    const data = valuesFor(page, 6);
+    const stock = renderLighting(page, data, false);
+    expect(stock).not.toContain('Near-white colors');
+    expect(stock).not.toContain('Color, #ffffff');
+    const matrixPage = lightingPage(n87Definition);
+    const mixedData = {...data, ...valuesFor(matrixPage, 12, 255)};
+    expect(renderLighting(matrixPage, mixedData))
+      .not.toContain('Near-white colors');
+  });
+
+  test('applies the 5% boundary only to affected effects, at every hue', () => {
+    for (const definition of [h7sRgbDefinition, qmkRgbDefinition, n87Definition]) {
+      const page = lightingPage(definition);
+      const item = effectItem(page);
+      const colorCommand = page.content[0].content.find((row: any) => row.type === 'color').content[0];
+      for (const [index, option] of item.options.entries()) {
+        const mode = typeof option === 'string' ? index : option[1];
+        const whiteResult = lowSaturationRgbEffectColor(item, valuesFor(page, mode));
+        for (const hue of [0, 85, 170, 255]) {
+          for (const saturation of [0, 1, 3, 12, 13, 128, 255]) {
+            const data = {...valuesFor(page, mode), [colorCommand]: [hue, saturation]};
+            expect(lowSaturationRgbEffectColor(item, data))
+              .toBe(saturation <= 12 ? whiteResult : null);
+          }
+        }
+      }
+    }
+  });
+
+  test('shows near-white guidance for fefffc and clears it above the threshold', () => {
+    const [hue, saturation] = get256HSV('#fefffc');
+    expect(saturation).toBe(3);
+    for (const [definition, mode] of [[qmkRgbDefinition, 6], [n87Definition, 24], [h7sRgbDefinition, 9]] as const) {
+      const page = lightingPage(definition);
+      const colorCommand = page.content[0].content.find((row: any) => row.type === 'color').content[0];
+      const data = {...valuesFor(page, mode), [colorCommand]: [hue, saturation]};
+      expect(renderLighting(page, data)).toContain(notice);
+      expect(renderLighting(page, valuesFor(page, mode, 12))).toContain(notice);
+      expect(renderLighting(page, valuesFor(page, mode, 13))).not.toContain(notice);
+      expect(renderLighting(page, valuesFor(page, 5, 3))).not.toContain(notice);
+    }
+  });
+
+  test('does not reveal an unavailable color control', () => {
+    const page = lightingPage(qmkRgbDefinition);
+    const data = valuesFor(page, 6);
+    delete data.id_qmk_rgblight_color;
+    const html = renderLighting(page, data);
+    expect(html).not.toContain('Near-white colors');
+    expect(html).not.toContain('aria-label="Color, #');
   });
 });

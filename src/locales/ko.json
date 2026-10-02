@@ -872,5 +872,6 @@
   "A longer decision time allows slower consecutive presses and takes longer to confirm Hold.": "길게 설정하면 연속 입력의 여유가 늘고, 홀드 판정은 늦어집니다.",
   "Waits for the decision before sending the selected action.": "동작을 판정한 뒤 입력합니다.",
   "The first press sends the base key immediately; only the second press waits.": "첫 누름은 즉시 입력하고, 두 번째 누름만 판정을 기다립니다.",
-  "A separate Hold action requires After decision.": "홀드를 따로 지정하려면 ‘판정 후’를 사용합니다."
+  "A separate Hold action requires After decision.": "홀드를 따로 지정하려면 ‘판정 후’를 사용합니다.",
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "흰색에 가까울수록 색상 변화가 잘 보이지 않습니다. Color에서 더 진한 색을 선택하세요."
 }

@@ -175,7 +175,31 @@ rather than guessed from a definition or static app string. The wire/display
 grammar and current command identities are source-owned and routed by
 `docs/MAP.md`.
 
-## 8. Verification routing
+## 8. Low-saturation RGB effect guidance
+
+For an ERA definition, a known RGBLight or RGB Matrix effect whose main color
+pattern fades near white carries a persistent notice at low saturation under its
+effect selector. The notice says the pattern is hard to see, not that the effect
+has stopped. The advisory threshold lives in `src/utils/rgb-white-effects.ts`;
+it is not a firmware limit or a measured visibility boundary.
+
+The notice follows the current menu state, including immediate local edits and
+subsequent firmware reconciliation, and also applies on opening the page. It needs
+no extra HID query and disappears when the condition no longer applies. It does not
+change the color automatically. Brightness/position animations that remain visible
+in white and effects that generate their own saturation do not need this notice;
+a missing or unknown value is not evidence of low saturation.
+
+Some definitions hide Color for effects that ignore hue but still use saturation.
+For these effects, the same definition's Color control remains accessible through
+its existing Custom Value path, even after saturation changes, so the picker does
+not disappear during a drag. This is an app presentation aid and requires
+no firmware or definition extension. Ordinary and uploaded definitions retain their
+existing presentation. Effect classification lives in `src/utils/rgb-white-effects.ts`;
+option names are matched within the known command family because numeric RGB Matrix
+mode assignments can vary by firmware build.
+
+## 9. Verification routing
 
 `AGENTS.md` routes this UI contract to the focused locale, custom-menu, diagnostics,
 and definition tests. `docs/MAP.md` separates requirement owners from the current

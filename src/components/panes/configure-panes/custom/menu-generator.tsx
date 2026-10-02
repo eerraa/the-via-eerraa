@@ -67,6 +67,7 @@ import {UsbDiagnosticsSection} from './usb-diagnostics-section';
 import {FeatureHelp} from './feature-help';
 import {FirmwareVersion} from './firmware-version';
 import {ConfigureStatusMessage} from '../status-message';
+import {rgbEffectColor, lowSaturationRgbEffectColor} from 'src/utils/rgb-white-effects';
 
 type Category = {
   label: string;
@@ -144,6 +145,11 @@ function itemGenerator(
 
   if (
     'showIf' in elem &&
+    !(
+      'type' in elem &&
+      elem.type === 'color' &&
+      props.rgbEffectColors?.has(itemCommand(elem))
+    ) &&
     !evalExpr(elem.showIf as string, props.showIfMenuData)
   ) {
     return [];
@@ -173,8 +179,22 @@ const deferredRowsOf = (
 
 const MenuComponent = React.memo((props: any) => {
   const {t} = useTranslation();
-  const items = props.elem.content
+  const eraDefinition = useIsEraDefinition();
+  const visibleItems = props.elem.content
     .flatMap((elem: any) => itemGenerator(elem, props))
+    .filter((item: any) => !props.hiddenCommands.has(itemCommand(item)));
+  const rgbEffectColors = new Set<string>(
+    eraDefinition
+      ? visibleItems.flatMap((item: any) =>
+          rgbEffectColor(item, props.selectedCustomMenuData) ?? [],
+        )
+      : [],
+  );
+  // Some definitions hide Color for rainbow effects although they still use its
+  // saturation. Keep Color reachable for these effects even after the warning
+  // clears, so changing saturation does not unmount a picker during a drag.
+  const items = props.elem.content
+    .flatMap((elem: any) => itemGenerator(elem, {...props, rgbEffectColors}))
     .filter((item: any) => !props.hiddenCommands.has(itemCommand(item)));
   const drafts: Record<string, MenuDraft> = props.menuDrafts;
   const rows = deferredRowsOf(items, props.deferredRows);
@@ -232,6 +252,10 @@ const MenuComponent = React.memo((props: any) => {
           return (
             <VIACustomItem
               {...itemProps}
+              lowSaturationRgbWarning={
+                eraDefinition &&
+                !!lowSaturationRgbEffectColor(itemProps, props.selectedCustomMenuData)
+              }
               updateValue={deferredApply.write}
               updateContinuousValue={props.updateCustomMenuValueContinuous}
               completeContinuousValue={props.completeCustomMenuValueContinuous}

@@ -872,5 +872,6 @@
   "A longer decision time allows slower consecutive presses and takes longer to confirm Hold.": "A longer decision time allows slower consecutive presses and takes longer to confirm Hold.",
   "Waits for the decision before sending the selected action.": "Waits for the decision before sending the selected action.",
   "The first press sends the base key immediately; only the second press waits.": "The first press sends the base key immediately; only the second press waits.",
-  "A separate Hold action requires After decision.": "A separate Hold action requires After decision."
+  "A separate Hold action requires After decision.": "A separate Hold action requires After decision.",
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "Near-white colors make color changes hard to see. Choose a more saturated color in Color."
 }

@@ -119,7 +119,11 @@ const optionLabels = (props: any): string[] | undefined =>
     : undefined;
 
 export const VIACustomItem = React.memo(
-  (props: VIACustomControlProps & {_id: string; error?: string | null}) => {
+  (props: VIACustomControlProps & {
+    _id: string;
+    error?: string | null;
+    lowSaturationRgbWarning?: boolean;
+  }) => {
     const {t} = useTranslation();
     const eraDefinition = useIsEraDefinition();
     // An ERA definition's names read as the definition spells them, like its options
@@ -156,7 +160,10 @@ export const VIACustomItem = React.memo(
       </Detail>
     );
     return (
-      <ItemRow id={props._id} $wrap={!!help || !!props.error}>
+      <ItemRow
+        id={props._id}
+        $wrap={!!help || !!props.error || !!props.lowSaturationRgbWarning}
+      >
         {help || deferred ? (
           <LabelGroup>
             <Label id={labelId}>{label}</Label>
@@ -168,6 +175,13 @@ export const VIACustomItem = React.memo(
         )}
         {detail}
         {props.error ? <RowError role="alert">{props.error}</RowError> : null}
+        {props.lowSaturationRgbWarning ? (
+          <HelpBody role="status">
+            {t(
+              'Near-white colors make color changes hard to see. Choose a more saturated color in Color.',
+            )}
+          </HelpBody>
+        ) : null}
         {help ? (
           <HelpBody {...bodyProps}>
             <HelpContent content={help} current={currentOptionLabel(props)} />
