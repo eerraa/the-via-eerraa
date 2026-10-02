@@ -54,7 +54,6 @@ const ALLOWED_ABSENT: Record<string, string> = {
 
 const docFiles = [
   'AGENTS.md',
-  'CLAUDE.md',
   ...readdirSync(path.join(repoRoot, 'docs'))
     .filter((name) => name.endsWith('.md'))
     .map((name) => `docs/${name}`),
@@ -185,7 +184,7 @@ describe('docs only name commands and files that exist', () => {
   });
 
   test('the active entry chain is part of the document input', () => {
-    for (const doc of ['AGENTS.md', 'CLAUDE.md', 'docs/MAP.md']) {
+    for (const doc of ['AGENTS.md', 'docs/MAP.md']) {
       expect(docFiles).toContain(doc);
     }
   });
