@@ -97,7 +97,9 @@ describe('Independent Tap Dance timing', () => {
     data[slot.holdOnOther!.name] = [1, 0xd3];
     expect(readTapDanceDraft(slot, data, bounds)).toMatchObject({term: '2000', holdTerm: '180', holdOnOther: 1});
     for (const field of [slot.mode!, slot.holdTerm!, slot.holdOnOther!]) {
-      expect(readTapDanceDraft(slot, {...data, [field.name]: [0, 0, 0]}, bounds)?.holdTerm).toBeUndefined();
+      const read = readTapDanceDraft(slot, {...data, [field.name]: [0, 0, 0]}, bounds);
+      if (field === slot.mode) expect(read?.holdTerm).toBeUndefined();
+      else expect(read).toBeNull();
     }
     const writes = planTapDanceWrites(slot, {...current, holdTerm: '65535', holdOnOther: 1}, current, bounds)!;
     expect(writes.map(({id}) => id)).toEqual([57, 65]);

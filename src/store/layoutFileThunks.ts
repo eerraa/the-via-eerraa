@@ -16,7 +16,16 @@ import {
   type TapDanceTarget,
   type ViaSaveFile,
 } from '../utils/layout-import';
-import {getBasicKeyToByte, getDefinitionForDevice} from './definitionsSlice';
+import {
+  getBasicKeyToByte,
+  getDefinitionForDevice,
+  getDefinitionSyncIdentity,
+} from './definitionsSlice';
+import {
+  getSelectedConnectedDevice,
+  getSelectionGeneration,
+  isSelectedDeviceOperationCurrent,
+} from './devicesSlice';
 import {getSelectedDefinitionName} from './definitionNameSlice';
 import {getSelectedRawLayers} from './keymapSlice';
 import {
@@ -46,6 +55,28 @@ export type LayoutFileImportError =
   | 'write-failed';
 
 export type LayoutFileImportResult = {ok: true} | {error: LayoutFileImportError};
+
+// Selected-state selectors must never be combined with a different keyboard's
+// identity or HID reads. Pin both selection and connection across every await.
+const layoutOperation = (state: RootState, device: ConnectedDevice) => {
+  const selected = getSelectedConnectedDevice(state);
+  if (
+    selected?.path !== device.path ||
+    selected.vendorProductId !== device.vendorProductId
+  ) {
+    return () => false;
+  }
+  const api = new KeyboardAPI(device.path);
+  const generation = api.getConnectionGeneration();
+  const selection = getSelectionGeneration(state);
+  const definition = getDefinitionSyncIdentity(state, device);
+  return (next: RootState) =>
+    getSelectedConnectedDevice(next)?.vendorProductId === device.vendorProductId &&
+    api.isConnectionGenerationCurrent(generation) &&
+    isSelectedDeviceOperationCurrent(next, device.path, generation, selection) &&
+    definition !== null &&
+    getDefinitionSyncIdentity(next, device) === definition;
+};
 
 const tapDanceTarget = (
   state: RootState,
@@ -129,7 +160,10 @@ export const canExportLayoutFile =
   (device: ConnectedDevice): AppThunk<boolean> =>
   (_dispatch, getState) => {
     const state = getState();
-    if (!getDefinitionForDevice(state, device)) {
+    if (
+      !layoutOperation(state, device)(state) ||
+      !getDefinitionForDevice(state, device)
+    ) {
       return false;
     }
     // Only a State Sync keyboard reads its macros when a save asks for them.
@@ -160,10 +194,13 @@ export const canExportLayoutFile =
 export const exportLayoutFile =
   (device: ConnectedDevice): AppThunk<Promise<LayoutExportResult>> =>
   async (dispatch, getState) => {
-    if (!(await dispatch(ensureMacroContents(device)))) {
+    const isCurrent = layoutOperation(getState(), device);
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
+    if (!(await dispatch(ensureMacroContents(device))) || !isCurrent(getState())) {
       return {error: 'keyboard-not-ready'};
     }
     await dispatch(settleTapDance(device));
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
     const state = getState();
     const definition = getDefinitionForDevice(state, device);
     if (!definition) {
@@ -182,6 +219,7 @@ export const exportLayoutFile =
       rawLayers.length,
       toCode,
     );
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
     return {
       file: {
         name: getSelectedDefinitionName(state),
@@ -207,12 +245,16 @@ export const importLayoutFile =
     file: ViaSaveFile,
   ): AppThunk<Promise<LayoutFileImportResult>> =>
   async (dispatch, getState) => {
+    const isCurrent = layoutOperation(getState(), device);
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
     // A file from this board's older firmware carries the identity that firmware
     // reported; the metadata that ties the two together is read before comparing.
     await loadEraAdvancedMetadata();
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
     if (file.tapDance !== undefined) {
       await dispatch(settleTapDance(device));
     }
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
     const state = getState();
     const definition = getDefinitionForDevice(state, device);
     if (!definition) {

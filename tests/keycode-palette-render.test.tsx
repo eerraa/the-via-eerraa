@@ -959,6 +959,58 @@ describe('editing a Tap Dance', () => {
     };
   };
 
+  test('a refused automatic SAVE remains retryable after the editor is reopened', async () => {
+    const {keyboard, store} = await connect();
+    let root = show(store);
+    openTd0(root);
+    typeTerm(root, '180');
+    keyboard.refuse = ([command]) => command === SAVE;
+    await clickApply(root);
+    expect(alerts(root)).toEqual([REFUSED]);
+    expect(store.getState().menus.customMenuDataMap[PATH][TD0.term!.name]).toEqual([0, 180]);
+    expect(apply(root).props.disabled).toBe(false);
+    root = show(store);
+    openTd0(root);
+    expect(apply(root).props.disabled).toBe(false);
+    typeTerm(root, '190');
+    typeTerm(root, '180');
+    expect(apply(root).props.disabled).toBe(false);
+    keyboard.refuse = () => false;
+    await clickApply(root);
+    expect(writes(keyboard)).toEqual([
+      [SET, TD0.term!.channel, TD0.term!.id, 0, 180], [SAVE, TD0.term!.channel],
+      [SET, TD0.term!.channel, TD0.term!.id, 0, 180], [SAVE, TD0.term!.channel],
+    ]);
+    expect(store.getState().drafts[PATH]).toBeUndefined();
+  });
+
+  test('an invalid independent hold time disables Save and sends nothing', async () => {
+    const {keyboard, store} = await connect();
+    const advancedDefinition = {...definition, tapdanceKeycodes: JSON.parse(
+      require('node:fs').readFileSync('era-definitions/custom/v3/brick60-h7s/BRICK60-H7S-VIA.json', 'utf8'),
+    ).tapdanceKeycodes};
+    const [slot] = getTapDanceSlots(advancedDefinition);
+    store.dispatch(updateEraDefinitions({[VPID]: {v3: advancedDefinition}} as any));
+    store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {
+      ...store.getState().menus.customMenuDataMap[PATH],
+      [slot.mode!.name]: [1, 0xd2, 0xd3],
+      [slot.holdTerm!.name]: [0, 180, 0xd3],
+      [slot.holdOnOther!.name]: [0, 0xd3],
+    }}));
+    const root = show(store, 4, advancedDefinition);
+    openTd0(root);
+    const holdTerm = () => root.find((node) => node.type === 'input' && node.props['aria-label'] === 'Hold decision');
+    for (const value of ['65536', '-1', '1.5', '']) {
+      act(() => holdTerm().props.onChange({target: {value}}));
+      act(() => holdTerm().props.onBlur());
+      expect(holdTerm().props['aria-invalid']).toBe(true);
+      expect(apply(root).props.disabled).toBe(true);
+    }
+    act(() => holdTerm().props.onChange({target: {value: '65535'}}));
+    expect(apply(root).props.disabled).toBe(false);
+    expect(writes(keyboard)).toEqual([]);
+  });
+
   test('added actions and input timing stay drafts, survive refused mode writes, and round-trip', async () => {
     const {keyboard, store} = await connect();
     const modeDefinition = structuredClone(definition);
@@ -1106,6 +1158,35 @@ describe('editing a Tap Dance', () => {
     expect(textOf(row(root, 'TD0'))).toContain('A·Left Ctrl·B·—');
     expect(textOf(row(root, 'TD0'))).toContain('Saved');
     expect(hasDot(row(root, 'TD0'))).toBe(false);
+  });
+
+  test('a refused SAVE after switching keyboards stays retryable on the original keyboard', async () => {
+    const {keyboard, store} = await connect();
+    const deviceA = store.getState().devices.connectedDevicePaths[PATH];
+    const pathB = `${PATH}-save-failure`;
+    const keyboardB = new Keyboard();
+    registerHIDDeviceForTesting(pathB, keyboardB as unknown as HIDDevice);
+    await new HID.HID(pathB).openPromise;
+    const deviceB = {...deviceA, path: pathB};
+    store.dispatch(updateConnectedDevices({[PATH]: deviceA, [pathB]: deviceB}));
+    let root = show(store);
+    openTd0(root);
+    typeTerm(root, '180');
+    keyboard.refuse = ([command]) => command === SAVE;
+    const answer = await applyHeld(keyboard, root, keyboard.refuse);
+    act(() => store.dispatch(selectDevice({device: deviceB,
+      connectionGeneration: new KeyboardAPI(pathB).getConnectionGeneration()})));
+    await answer();
+    expect(writes(keyboardB)).toEqual([]);
+    act(() => store.dispatch(selectDevice({device: deviceA,
+      connectionGeneration: new KeyboardAPI(PATH).getConnectionGeneration()})));
+    root = show(store);
+    openTd0(root);
+    expect(apply(root).props.disabled).toBe(false);
+    keyboard.refuse = () => false;
+    await clickApply(root);
+    expect(store.getState().drafts[PATH]).toBeUndefined();
+    expect(writes(keyboardB)).toEqual([]);
   });
 
   for (const heldCommand of [SET, SAVE]) {

@@ -478,7 +478,9 @@ export const KeycodePalette = ({
     const {minMs, maxMs} = tapDance.termBounds(item);
     return {
       draft,
-      dirty: new Set(Object.keys(changes) as TapDanceField[]),
+      dirty: new Set(
+        Object.keys(changes).filter((field) => field !== 'retry') as TapDanceField[],
+      ),
       saved: current,
       // A term left as the keyboard reports it holds nothing up, as in a menu.
       termValid:
@@ -614,6 +616,7 @@ export const KeycodePalette = ({
       slotCurrent,
       termBounds,
       tapDance.getDisabledReason,
+      tapDance.changes(slot).retry,
     );
     if (!writes || !tapDance.canWrite || editor.applying) {
       return;
@@ -1121,6 +1124,14 @@ export const KeycodePalette = ({
           canApply:
             slotShown.dirty.size > 0 &&
             termValid &&
+            planTapDanceWrites(
+              slot,
+              slotShown.draft,
+              slotShown.saved,
+              termBounds,
+              tapDance?.getDisabledReason,
+              tapDance?.changes(slot).retry,
+            ) !== null &&
             !draftDisabledReason &&
             !!tapDance?.canWrite &&
             !editor.applying,

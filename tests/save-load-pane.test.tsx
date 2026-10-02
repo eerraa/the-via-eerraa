@@ -1,11 +1,12 @@
 import {configureStore} from '@reduxjs/toolkit';
-import {afterAll, afterEach, describe, expect, test} from 'bun:test';
+import {afterAll, afterEach, beforeEach, describe, expect, test} from 'bun:test';
 import i18n from 'i18next';
 import {Provider} from 'react-redux';
 import {I18nextProvider} from 'react-i18next';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {act, create, type ReactTestInstance} from 'react-test-renderer';
 import {
+  HID,
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
 } from '../src/shims/node-hid';
@@ -21,6 +22,7 @@ const loadPane = async () => {
   }
 };
 const {Pane} = await loadPane();
+const {KeyboardAPI} = await import('../src/utils/keyboard-api');
 
 const translations = i18n.createInstance();
 await translations.init({lng: 'en', resources: {en: {translation: {}}}});
@@ -48,8 +50,9 @@ const definition = {
 const makeStore = (
   macroStatus: 'metadata' | 'ready',
   capability: 'capable' | 'none' = 'capable',
-) =>
-  configureStore({
+) => {
+  const generation = new KeyboardAPI(device.path).getConnectionGeneration();
+  return configureStore({
     reducer: () =>
       ({
         definitions: {
@@ -62,7 +65,7 @@ const makeStore = (
         definitionName: {selectedOptionMap: {}},
         devices: {
           selectedDevicePath: device.path,
-          selectedConnectionGeneration: 0,
+          selectedConnectionGeneration: generation,
           selectedConnectionNeedsReload: false,
           selectionGeneration: 1,
           readyDevicePath: device.path,
@@ -81,7 +84,7 @@ const makeStore = (
           isFeatureSupported: true,
           status: macroStatus,
           ownerPath: device.path,
-          ownerConnectionGeneration: 0,
+          ownerConnectionGeneration: generation,
           ownerSelectionGeneration: 1,
         },
         menus: {customMenuDataMap: {}, commonMenusMap: {}, showKeyPainter: false},
@@ -92,19 +95,23 @@ const makeStore = (
         },
       }) as any,
   });
+};
 
-registerHIDDeviceForTesting(device.path, {
+beforeEach(async () => {
+  registerHIDDeviceForTesting(device.path, {
   vendorId: device.vendorId,
   productId: device.productId,
   productName: device.productName,
   opened: false,
   collections: [],
-  open: async () => undefined,
+  async open() { this.opened = true; },
   close: async () => undefined,
   addEventListener: () => undefined,
   removeEventListener: () => undefined,
   sendReport: async () => undefined,
 } as unknown as HIDDevice);
+  await new HID.HID(device.path).openPromise;
+});
 
 afterAll(() => resetHIDTransportForTesting());
 

@@ -456,9 +456,8 @@ export const updateCustomMenuValue =
           }),
         );
       }
-      // A value the keyboard took but did not save is lost on its next power
-      // cycle, so the write did not succeed. The re-read below still shows what
-      // the keyboard holds now.
+      // SET alone does not confirm persistence. If automatic SAVE fails, report
+      // the operation as unsuccessful; GET below still shows the running value.
       return false;
     } finally {
       invalidateConfig();
@@ -999,9 +998,20 @@ const readCustomMenuValues = async (
   }
   for (const id of advanced) {
     const mode = data[modeOf(id)];
-    data[id] = mode?.[1] === 0xd2 && [0, 1, 2].includes(mode[0] as number) && mode[2] === 0xd3
-      ? (await api.getCustomMenuValue(commands[id])).slice(1)
-      : [0, 0, 0];
+    if (mode?.[1] !== 0xd2 || ![0, 1, 2].includes(mode[0] as number) || mode[2] !== 0xd3) {
+      data[id] = [0, 0, 0];
+      continue;
+    }
+    const value = (await api.getCustomMenuValue(commands[id])).slice(1);
+    const valid = id.endsWith('_hold_term')
+      ? value[2] === 0xd3
+      : value[1] === 0xd3 && [0, 1].includes(value[0] as number);
+    // Once advertised, these values are required. Do not accept a CONFIG
+    // snapshot that would silently drop independent timing from a backup.
+    if (!valid) {
+      throw new Error(`Invalid Tap Dance timing response: ${id}`);
+    }
+    data[id] = value;
   }
   return data;
 };

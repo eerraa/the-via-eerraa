@@ -62,6 +62,10 @@ export const readTapDanceDraft = (
   const other = slot.holdOnOther ? bytes(slot.holdOnOther.name) : null;
   const timing = mode !== undefined && response?.[2] === 0xd3 &&
     hold?.[2] === 0xd3 && other?.[1] === 0xd3 && [0, 1].includes(other[0]);
+  // An advertised field that could not be read is incomplete, not unsupported.
+  if (mode !== undefined && response?.[2] === 0xd3 && !timing) {
+    return null;
+  }
   return {actions, term, ...(mode !== undefined ? {mode} : {}), ...(timing ? {
     holdTerm: String(shiftTo16Bit([hold![0], hold![1]])), holdOnOther: other![0],
   } : {})};

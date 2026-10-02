@@ -2,6 +2,7 @@ import {useCallback, useMemo} from 'react';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import type {AppThunk} from 'src/store/index';
 import {
+  getConnectedDevices,
   getSelectedConnectedDevice,
   getSelectedConnectionGeneration,
   getSelectionGeneration,
@@ -174,11 +175,50 @@ const settleWrite =
     }
     const rest = {...changes};
     delete rest[field];
+    const retry = rest.retry?.filter((item) => item !== field);
+    if (retry?.length) rest.retry = retry;
+    else delete rest.retry;
     dispatch(
       Object.keys(rest).length > 0
         ? setDraft({devicePath, key, value: rest})
         : discardDrafts({devicePath, keys: [key]}),
     );
+  };
+
+// GET confirms the running value, not persistence. Keep unsuccessful operations
+// retryable without rolling back a value the firmware may already be using.
+const retainFailedWrite =
+  (devicePath: string, slot: TapDanceSlot, write: TapDanceWrite): AppThunk =>
+  (dispatch, getState) => {
+    const key = draftKey('tapDance', slot.index);
+    const changes = getState().drafts[devicePath]?.[key] as
+      | TapDanceChanges
+      | undefined;
+    const field = tapDanceFieldOf(slot, write.name);
+    if (!changes || !field || changes[field] === undefined) return;
+    const state = getState();
+    const device = getConnectedDevices(state)[devicePath];
+    if (!device) return;
+    const current = readTapDanceDraft(
+      slot,
+      state.menus.customMenuDataMap[devicePath],
+      tapDanceTermBounds(slot, device.vendorProductId),
+    );
+    if (
+      current &&
+      write.value !== Number(
+        field === 'term' || field === 'mode' || field === 'holdTerm' || field === 'holdOnOther'
+          ? current[field] : current.actions[field],
+      )
+    ) return;
+    dispatch(setDraft({
+      devicePath,
+      key,
+      value: {
+        ...changes,
+        retry: [...new Set([...(changes.retry ?? []), field])],
+      },
+    }));
   };
 
 // What the edit left as it was is judged by the store at that moment, not by the
@@ -326,7 +366,7 @@ export const useTapDanceBinding = (
       // action fields are judged; untouched firmware values remain as reported.
       const changed = writes.filter((item) => {
         const field = tapDanceFieldOf(slot, item.name);
-        return !field || item.value !== Number(
+        return !field || changes(slot).retry?.includes(field) || item.value !== Number(
           field === 'term' || field === 'mode' || field === 'holdTerm' || field === 'holdOnOther' ? current[field] : current.actions[field],
         );
       });
@@ -372,6 +412,7 @@ export const useTapDanceBinding = (
           ),
         ).finally(() => answered?.());
         if (!accepted) {
+          dispatch(retainFailedWrite(devicePath, slot, item));
           return false;
         }
         if (devicePath) {
@@ -390,6 +431,7 @@ export const useTapDanceBinding = (
       getDisabledReason,
       read,
       termBounds,
+      changes,
     ],
   );
 

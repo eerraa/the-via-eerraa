@@ -1,4 +1,5 @@
 import {afterEach, beforeEach, describe, expect, test} from 'bun:test';
+import {readFileSync} from 'node:fs';
 import {configureStore} from '@reduxjs/toolkit';
 import i18n from 'i18next';
 import {createElement as h} from 'react';
@@ -1700,6 +1701,90 @@ describe('layout files on an ordinary VIA keyboard', () => {
   });
 });
 
+describe('layout file operation ownership', () => {
+  for (const operation of ['export', 'import'] as const) {
+    test(`${operation} stops when selection changes while preparing the file`, async () => {
+      const {store, connected, firmware, generation} = await prepareSelectedStateSyncDevice(`layout-prepare-${operation}`);
+      const dispatch = store.dispatch as any;
+      setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+      await dispatch(loadMacros(connected));
+      const sent = firmware.device.sentReports.length;
+      const result = dispatch(operation === 'export' ? exportLayoutFile(connected) : importLayoutFile(connected, {
+        name: 'A', vendorProductId: connected.vendorProductId, layers: [['KC_A']],
+      }));
+      dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+      expect(await result).toEqual({error: 'keyboard-not-ready'});
+      expect(firmware.device.sentReports).toHaveLength(sent);
+    });
+  }
+
+  test('replacing a connection at the same path aborts the old backup', async () => {
+    const {store, connected} = await prepareSelectedStateSyncDevice('layout-reconnect');
+    const dispatch = store.dispatch as any;
+    setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+    await dispatch(loadMacros(connected));
+    const result = dispatch(exportLayoutFile(connected));
+    const replacement = new FakeHIDDevice();
+    registerHIDDeviceForTesting(connected.path, asHIDDevice(replacement));
+    await new HID.HID(connected.path).openPromise;
+    expect(await result).toEqual({error: 'keyboard-not-ready'});
+    expect(replacement.sentReports).toHaveLength(0);
+  });
+
+  test('an old file-dialog device cannot export or import the newly selected keyboard', async () => {
+    const {store, connected: first} = await prepareSelectedStateSyncDevice('layout-owner-a');
+    const dispatch = store.dispatch as any;
+    setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+    await dispatch(loadMacros(first));
+    expect(dispatch(canExportLayoutFile(first))).toBe(true);
+    const {device} = await connectFake('layout-owner-b');
+    const firmware = new FakeStateSyncFirmware(device);
+    firmware.macroText = 'B';
+    device.onSend = firmware.onSend;
+    const second = makeConnectedDevice('layout-owner-b', ORDINARY_VPID);
+    dispatch(updateDefinitions({[second.vendorProductId]: {v3: {
+      ...makeV3Definition(), name: 'Keyboard B', vendorProductId: second.vendorProductId,
+    }}}));
+    dispatch(updateConnectedDevices({[first.path]: first, [second.path]: second}));
+    const generation = new KeyboardAPI(second.path).getConnectionGeneration();
+    dispatch(selectDevice({device: second, connectionGeneration: generation}));
+    dispatch(saveKeymapSuccess({devicePath: second.path, connectionGeneration: generation,
+      layers: [{keymap: [5], isLoaded: true}]}));
+    await dispatch(loadMacros(second));
+    const sent = device.sentReports.length;
+    expect(dispatch(canExportLayoutFile(first))).toBe(false);
+    expect(await dispatch(exportLayoutFile(first))).toEqual({error: 'keyboard-not-ready'});
+    expect(await dispatch(importLayoutFile(first, {
+      name: 'A', vendorProductId: first.vendorProductId, layers: [['KC_A']],
+    }))).toEqual({error: 'keyboard-not-ready'});
+    expect(device.sentReports).toHaveLength(sent);
+  });
+
+  for (const change of ['selection', 'definition'] as const) {
+    test(`a ${change} change during encoder reads aborts the backup`, async () => {
+      const {store, connected, firmware, generation} = await prepareSelectedStateSyncDevice(`layout-mid-read-${change}`);
+      const dispatch = store.dispatch as any;
+      setEraAdvancedMetadataForTesting({schemaVersion: 2, definitions: []});
+      await dispatch(loadMacros(connected));
+      let changed = false;
+      firmware.device.onSend = (data) => {
+        if (data[0] === 0x14 && !changed) {
+          changed = true;
+          if (change === 'selection') {
+            // Even returning to the same path must invalidate the old operation.
+            dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+          } else {
+            installEraDefinition(store, makeV3Definition(false, {shape: 'changed'}));
+          }
+        }
+        firmware.onSend(data);
+      };
+      expect(await dispatch(exportLayoutFile(connected))).toEqual({error: 'keyboard-not-ready'});
+      expect(changed).toBe(true);
+    });
+  }
+});
+
 // An ERA board with one Tap Dance slot. Its settings share the fake firmware's one
 // Custom Value, which is all the reads and writes below need.
 const TAP_DANCE_ROLES = ['tap', 'hold', 'dtap', 'thold'] as const;
@@ -1768,6 +1853,93 @@ describe('layout files and Tap Dance values', () => {
     prepared.markReady();
     return prepared;
   };
+
+  const prepareAdvancedTiming = async (family: 'h7s' | 'qmk', suffix = '') => {
+    const prepared = await prepareCapable(`layout-timing-${family}-${suffix}`);
+    const source = family === 'h7s'
+      ? 'brick60-h7s/BRICK60-H7S-VIA.json'
+      : 'tomak/TOMAK-TKL-L-VIA.json';
+    const {tapdanceKeycodes} = JSON.parse(readFileSync(
+      `era-definitions/custom/v3/${source}`, 'utf8',
+    ));
+    installEraDefinition(prepared.store, {...makeV3Definition(true), tapdanceKeycodes} as any);
+    const channel = family === 'h7s' ? 16 : 0;
+    const termBase = family === 'h7s' ? 41 : 72;
+    const modeBase = family === 'h7s' ? 49 : 80;
+    const holdBase = family === 'h7s' ? 57 : 88;
+    const otherBase = family === 'h7s' ? 65 : 96;
+    const values = new Map<number, number[]>();
+    for (let index = 0; index < 8; index++) {
+      for (let role = 0; role < 4; role++) {
+        values.set(index * 5 + role + (family === 'h7s' ? 1 : 32), [0, role === 0 ? 4 + index : 1]);
+      }
+      values.set(termBase + index, [0, 137 + index]);
+      values.set(modeBase + index, [2, 0xd2, 0xd3]);
+      values.set(holdBase + index, [1, 81 + index, 0xd3]);
+      values.set(otherBase + index, [1, 0xd3]);
+    }
+    const writes: number[][] = [];
+    prepared.device.onSend = (data) => {
+      if (data[1] === channel && data[0] === 0x08 && values.has(data[2])) {
+        prepared.device.emit(payload(0x08, channel, data[2], ...values.get(data[2])!));
+        return;
+      }
+      if (data[1] === channel && data[0] === 0x07 && values.has(data[2])) {
+        const previous = values.get(data[2])!;
+        const value = Array.from(data.slice(3, 3 + previous.length));
+        if (data[2] >= modeBase && data[2] < modeBase + 8) value[2] = 0xd3;
+        values.set(data[2], value);
+        writes.push([data[2], ...value]);
+        prepared.firmware.revisions.config++;
+        prepared.device.emit(data);
+        return;
+      }
+      prepared.firmware.onSend(data);
+    };
+    return {...prepared, values, writes, channel, termBase, modeBase, holdBase, otherBase};
+  };
+
+  test.each(['h7s', 'qmk'] as const)('%s layout JSON round-trips macros and all eight independent Tap Dance timings', async (family) => {
+    const {dispatch, connected, firmware, values, writes, channel, termBase, modeBase, holdBase, otherBase} =
+      await prepareAdvancedTiming(family);
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved).toHaveProperty('file.macros', ['A']);
+    expect(saved.file.tapDance).toHaveLength(8);
+    for (let index = 0; index < 8; index++) {
+      expect(saved.file.tapDance[index]).toMatchObject({
+        term: 137 + index, holdTerm: 337 + index, holdOnOther: 1, mode: 2,
+        hold: 'KC_TRNS', dtap: 'KC_TRNS', thold: 'KC_TRNS',
+      });
+      values.set(termBase + index, [0, 200]);
+      values.set(modeBase + index, [0, 0xd2, 0xd3]);
+      values.set(holdBase + index, [0, 0, 0xd3]);
+      values.set(otherBase + index, [0, 0xd3]);
+    }
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+    const file = JSON.parse(JSON.stringify(saved.file));
+    expect(await dispatch(importLayoutFile(connected, file))).toEqual({ok: true});
+    for (let index = 0; index < 8; index++) {
+      expect(writes).toContainEqual([termBase + index, 0, 137 + index]);
+      expect(writes).toContainEqual([holdBase + index, 1, 81 + index, 0xd3]);
+      expect(writes).toContainEqual([otherBase + index, 1, 0xd3]);
+      expect(writes).toContainEqual([modeBase + index, 2, 0xd2, 0xd3]);
+    }
+    expect(firmware.customEvents).toEqual([`save:${channel}`]);
+    expect(await dispatch(exportLayoutFile(connected))).toEqual({file});
+  });
+
+  test.each(['hold-marker', 'other-marker', 'other-value'])(
+    'refuses a backup when advertised advanced timing has an invalid %s', async (fault) => {
+      const {dispatch, store, connected, values, holdBase, otherBase} =
+        await prepareAdvancedTiming('h7s', fault);
+      if (fault === 'hold-marker') values.set(holdBase, [1, 81, 0]);
+      if (fault === 'other-marker') values.set(otherBase, [1, 0]);
+      if (fault === 'other-value') values.set(otherBase, [2, 0xd3]);
+      expect(await dispatch(exportLayoutFile(connected))).toEqual({error: 'keyboard-not-ready'});
+      expect(getCustomMenuAvailabilityForDevice(store.getState() as any, connected)).not.toBe('available');
+    },
+  );
 
   test('a save waits for Tap Dance values still being read, instead of refusing', async () => {
     const {firmware, store, dispatch, connected} = await prepareCapable(

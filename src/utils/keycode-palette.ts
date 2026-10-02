@@ -1166,8 +1166,9 @@ export const isValidTermDraft = (term: string, min: number, max: number) => {
 
 /**
  * What Save has to send: every action or term that differs from the keyboard's
- * value, in slot order. Returns null when the term draft is not a whole number
- * inside the firmware range, so an invalid draft never writes anything.
+ * value, or whose automatic save needs retrying, in slot order. Returns null when
+ * a term draft is not a whole number inside the firmware range, so an invalid
+ * draft never writes anything.
  */
 export const planTapDanceWrites = (
   slot: TapDanceSlot,
@@ -1175,11 +1176,12 @@ export const planTapDanceWrites = (
   current: TapDanceDraft,
   termBounds: {minMs: number; maxMs: number},
   getDisabledReason?: (value: number | null) => KeycodeDisabledReason | null,
+  retry: readonly TapDanceField[] = [],
 ): TapDanceWrite[] | null => {
   const writes: TapDanceWrite[] = [];
   if (draft.mode === 2 && draft.actions.hold !== 1) return null;
   for (const role of TAP_DANCE_ACTION_ROLES) {
-    if (draft.actions[role] !== current.actions[role]) {
+    if (draft.actions[role] !== current.actions[role] || retry.includes(role)) {
       const value = draft.actions[role];
       if (
         !Number.isInteger(value) ||
@@ -1193,14 +1195,14 @@ export const planTapDanceWrites = (
       writes.push({name, channel, id, value});
     }
   }
-  if (slot.term && draft.term !== current.term) {
+  if (slot.term && (draft.term !== current.term || retry.includes('term'))) {
     if (!isValidTermDraft(draft.term, termBounds.minMs, termBounds.maxMs)) {
       return null;
     }
     const {name, channel, id} = slot.term;
     writes.push({name, channel, id, value: Number(draft.term)});
   }
-  if (draft.mode !== undefined && draft.mode !== current.mode) {
+  if (draft.mode !== undefined && (draft.mode !== current.mode || retry.includes('mode'))) {
     if (!slot.mode || current.mode === undefined || ![0, 1, 2].includes(draft.mode)) return null;
     const {name, channel, id} = slot.mode;
     const modeWrite = {name, channel, id, value: draft.mode};
@@ -1208,12 +1210,12 @@ export const planTapDanceWrites = (
     if (current.mode === 2) writes.unshift(modeWrite);
     else writes.push(modeWrite);
   }
-  if (draft.holdTerm !== undefined && draft.holdTerm !== current.holdTerm) {
+  if (draft.holdTerm !== undefined && (draft.holdTerm !== current.holdTerm || retry.includes('holdTerm'))) {
     if (!slot.holdTerm || current.holdTerm === undefined || !isValidTermDraft(draft.holdTerm, 0, 65535)) return null;
     const {name, channel, id} = slot.holdTerm;
     writes.push({name, channel, id, value: Number(draft.holdTerm)});
   }
-  if (draft.holdOnOther !== undefined && draft.holdOnOther !== current.holdOnOther) {
+  if (draft.holdOnOther !== undefined && (draft.holdOnOther !== current.holdOnOther || retry.includes('holdOnOther'))) {
     if (!slot.holdOnOther || current.holdOnOther === undefined || ![0, 1].includes(draft.holdOnOther)) return null;
     const {name, channel, id} = slot.holdOnOther;
     writes.push({name, channel, id, value: draft.holdOnOther});
@@ -1236,6 +1238,8 @@ export type TapDanceChanges = Partial<Record<TapDanceActionRole, number>> & {
   mode?: number;
   holdTerm?: string;
   holdOnOther?: number;
+  /** A failed SET + SAVE must be retried even when GET reports the same RAM value. */
+  retry?: TapDanceField[];
 };
 
 /** A slot's values with its unapplied changes in place. */
@@ -1257,7 +1261,7 @@ export const withTapDanceChanges = (
   } : {}),
 });
 
-/** The changes that still differ from what the keyboard holds. */
+/** Changes not yet confirmed by SET + SAVE; GET alone only confirms RAM. */
 export const pendingTapDanceChanges = (
   changes: TapDanceChanges,
   current: TapDanceDraft,
@@ -1275,6 +1279,12 @@ export const pendingTapDanceChanges = (
   if (changes.mode !== undefined && changes.mode !== current.mode) pending.mode = changes.mode;
   if (changes.holdTerm !== undefined && changes.holdTerm !== current.holdTerm) pending.holdTerm = changes.holdTerm;
   if (changes.holdOnOther !== undefined && changes.holdOnOther !== current.holdOnOther) pending.holdOnOther = changes.holdOnOther;
+  for (const field of changes.retry ?? []) {
+    if (changes[field] !== undefined) {
+      Object.assign(pending, {[field]: changes[field]});
+      (pending.retry ??= []).push(field);
+    }
+  }
   return pending;
 };
 
@@ -1316,6 +1326,12 @@ export const editedTapDanceChanges = (
       next.holdTerm === sending.holdTerm || next.holdTerm !== current.holdTerm)) edited.holdTerm = next.holdTerm;
   if (next.holdOnOther !== undefined && (next.holdOnOther === previous.holdOnOther ||
       next.holdOnOther === sending.holdOnOther || next.holdOnOther !== current.holdOnOther)) edited.holdOnOther = next.holdOnOther;
+  for (const field of previous.retry ?? []) {
+    if (next[field] !== undefined) {
+      Object.assign(edited, {[field]: next[field]});
+      (edited.retry ??= []).push(field);
+    }
+  }
   return edited;
 };
 
