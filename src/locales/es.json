@@ -873,5 +873,13 @@
   "Waits for the decision before sending the selected action.": "Espera a decidir antes de enviar la acción seleccionada.",
   "The first press sends the base key immediately; only the second press waits.": "La primera pulsación envía la tecla base inmediatamente; solo la segunda espera.",
   "A separate Hold action requires After decision.": "Una acción de pulsación larga separada requiere «Tras decidir».",
-  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "Con colores casi blancos, los cambios de color son poco visibles. Elige un color más saturado en Color."
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "Con colores casi blancos, los cambios de color son poco visibles. Elige un color más saturado en Color.",
+  "Not supported by this firmware": "No compatible con este firmware",
+  "Read timed out": "Se agotó el tiempo de lectura",
+  "Invalid response": "Respuesta no válida",
+  "Read failed": "Error de lectura",
+  "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "Intervalo del endpoint IN del teclado en la última lectura correcta; no mide el sondeo del host ni la latencia de entrada.",
+  "Result for this unit only; it does not confirm all saved settings on the other half.": "Resultado solo de esta unidad; no confirma todos los ajustes guardados en la otra mitad.",
+  "Refresh": "Actualizar",
+  "Disconnected": "Desconectado"
 }

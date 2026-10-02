@@ -73,11 +73,12 @@ maintenance surface without a current requirement.
 
 Do not restore automatic H7S polling downgrade/benchmark behavior or a synthetic
 USB stability score. [ADR 0002](adr/0002-h7s-usb-diagnostics.md) keeps polling
-mode user-owned and diagnostics observation-only.
+mode user-owned and replaces retired diagnostics with a scoped polling observation.
 
 Do not restore a top-level diagnostics destination. [ADR 0003](adr/0003-era-menu-help-ui.md)
-keeps diagnostics inline with the USB polling control because placement is part
-of the supported-user boundary.
+keeps the current interval observation inline with the USB polling control.
+The diagnostics session UI, parser and history helpers remain retired code;
+their tests preserve historical decoding, not product reachability.
 
 Do not classify the official/custom VIA dual paths, legacy-compatible term
 commands, the `/diagnostics` in-app redirect, the Satisfaction75 V2 Rotary

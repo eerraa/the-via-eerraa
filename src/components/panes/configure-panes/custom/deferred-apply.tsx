@@ -12,6 +12,7 @@ import {isExactSecondCommand} from 'src/utils/era-exact-sec';
 import {HELD_VALUES, isCustomMenuCommandContent} from 'src/utils/custom-menu';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import type {AppThunk} from 'src/store/index';
+import {menuObservationScope} from 'src/store/menuObservationThunks';
 import {
   getSelectedDevicePath,
   getSelectionGeneration,
@@ -54,7 +55,7 @@ export type DeferredItem = {
    * and the labels it reports the value in effect and the value kept with, where
    * the definition has them.
    */
-  held?: {action: DeferredItem; running?: DeferredItem; stored?: DeferredItem};
+  held?: {action: DeferredItem; running?: DeferredItem; stored?: DeferredItem; result?: DeferredItem};
 };
 
 /** How a deferred row reads its stored value and writes a draft. */
@@ -79,6 +80,7 @@ export type DeferredRow = {
   held?: {
     action: {command: string; address: number[]; bytes: number[]};
     labels: string[];
+    result?: string;
     name: (draft: MenuDraft) => string | undefined;
   };
 };
@@ -113,10 +115,11 @@ export const collectDeferredItems = (node: unknown): DeferredItem[] => {
     }
     const running = commands.running && byCommand.get(commands.running);
     const stored = commands.stored && byCommand.get(commands.stored);
+    const result = commands.result && byCommand.get(commands.result);
     return [
       {
         ...item,
-        held: {action, ...(running && {running}), ...(stored && {stored})},
+        held: {action, ...(running && {running}), ...(stored && {stored}), ...(result && {result})},
       },
     ];
   });
@@ -166,7 +169,7 @@ type Writers = {
   updateValue: (command: string, ...bytes: number[]) => Promise<boolean>;
   updateRangeValue: (command: string, value: number) => Promise<boolean>;
   /** Whether every label comes to read the text, and keeps reading it. */
-  awaitLabels: (commands: string[], text: string) => Promise<boolean>;
+  awaitLabels: (commands: string[], text: string, result?: string) => Promise<boolean>;
 };
 
 /**
@@ -190,8 +193,10 @@ const applyDrafts =
     }
     const pressed = getState().drafts[devicePath] ?? {};
     const selection = getSelectionGeneration(getState());
+    const scope = menuObservationScope(getState());
     const chosen = () =>
       getSelectedDevicePath(getState()) === devicePath &&
+      menuObservationScope(getState()) === scope &&
       getSelectionGeneration(getState()) === selection;
     let stop: MenuStop | null = null;
     dispatch(beginApply({devicePath, scope: 'menu'}));
@@ -249,7 +254,7 @@ const applyDrafts =
           held &&
           held.labels.length > 0 &&
           name !== undefined &&
-          !(chosen() && (await awaitLabels(held.labels, name)))
+          !(chosen() && (await awaitLabels(held.labels, name, held.result)))
         ) {
           stop = {command: row.command, reason: 'notApplied'};
           break;

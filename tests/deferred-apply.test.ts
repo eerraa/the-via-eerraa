@@ -19,6 +19,8 @@ await import('./setup');
 // The store slices import each other; keyboard-api settles that cycle the way the
 // app's store does, so it loads before anything that reads the store.
 const {KeyboardAPI} = await import('../src/utils/keyboard-api');
+const {refreshMenuObservation, getMenuObservation} = await import('../src/store/menuObservationThunks');
+const {POLLING_CURRENT, LINK_RESULT} = await import('../src/utils/menu-observation');
 const {collectDeferredItems, DeferredApplyButtons, isDeferredApplyCommand} =
   await import('../src/components/panes/configure-panes/custom/deferred-apply');
 
@@ -832,8 +834,9 @@ const {
   default: menusReducer,
   getV3Menus,
   setLabelWatchForTesting,
-  updateCustomMenuRangeValue,
   updateSelectedCustomMenuData,
+  updateCustomMenuRangeValue,
+  readV3MenuStateSyncCandidate,
 } = await import('../src/store/menusSlice');
 const {default: stateSyncReducer} = await import('../src/store/stateSyncSlice');
 const {default: firmwareReducer} = await import('../src/store/firmwareSlice');
@@ -1099,6 +1102,7 @@ describe('ERA menu drafts', () => {
     productId = PRODUCT_ID;
     productName = 'ERA drafts';
     refuse = (_bytes: number[]) => false;
+    respond = (_bytes: number[], _reply: Uint8Array) => {};
     holding: {
       picks: (bytes: number[]) => boolean;
       held: (answer: () => void) => void;
@@ -1122,6 +1126,8 @@ describe('ERA menu drafts', () => {
       const reply = Uint8Array.from(bytes);
       if (this.refuse(bytes)) {
         reply[0] = 0xff;
+      } else {
+        this.respond(bytes, reply);
       }
       const answer = () =>
         this.listeners.forEach((listener) =>
@@ -1385,6 +1391,82 @@ describe('ERA menu drafts', () => {
     });
   };
 
+  const pollingMenu = {label: 'SYSTEM', content: [{label: 'USB POLLING', content: [
+    {label: 'Boot Polling Mode', type: 'dropdown', content: ['id_qmk_usb_bootmode', 13, 1], options: [['8 kHz (HS)', 0], ['1 kHz (FS)', 3]]},
+    {label: 'Current Polling', type: 'label', content: [POLLING_CURRENT, 13, 4], showIf: '{id_firmware_version} >= 1'},
+  ]}]};
+  const pollingKeyboard = () => {
+    const keyboard = new MenuKeyboard();
+    const reply = {revision: 1, text: '8000 Hz (HS)', malformed: false};
+    keyboard.respond = ([command, channel, id], bytes) => {
+      if (command === 2 && channel === 4) { bytes.fill(0, 2); bytes[5] = reply.revision; }
+      if (command === 8 && channel === 13 && id === 4) {
+        bytes.fill(reply.malformed ? 65 : 0, 3);
+        if (!reply.malformed) bytes.set(new TextEncoder().encode(reply.text), 3);
+      }
+    };
+    return {keyboard, reply};
+  };
+
+  test('polling TEXT verifies live support, refreshes on activation and cannot be restored by CONFIG', async () => {
+    const {keyboard, reply} = pollingKeyboard();
+    const {store, connect} = await openKeyboard('era', pollingMenu, {id_qmk_usb_bootmode: [0], id_firmware_version: [0]}, keyboard);
+    await showLink(store);
+    expect(textOf(renderer!.root)).toContain('8000 Hz (HS)');
+    expect(keyboard.sent.slice(0, 2).map((bytes) => bytes.slice(0, 3))).toEqual([[2, 4, 0], [8, 13, 4]]);
+    expect(keyboard.sent.some(([command, selector]) => command === 2 && selector === 7)).toBe(false);
+    act(() => store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {id_qmk_usb_bootmode: [3], [POLLING_CURRENT]: [...new TextEncoder().encode('1000 Hz (FS)'), 0]}})));
+    expect(textOf(renderer!.root)).toContain('8000 Hz (HS)');
+    reply.malformed = true;
+    await act(async () => { await button('Refresh').props.onClick(); });
+    expect(textOf(renderer!.root)).toContain('Invalid response');
+    act(() => store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {id_qmk_usb_bootmode: [3], [POLLING_CURRENT]: [...new TextEncoder().encode('1000 Hz (FS)'), 0]}})));
+    expect(textOf(renderer!.root)).not.toContain('1000 Hz (FS)');
+    reply.malformed = false;
+    reply.text = '1000 Hz (FS)';
+    act(() => connect());
+    await show(store);
+    expect(textOf(renderer!.root)).toContain('1000 Hz (FS)');
+    reply.revision = 0;
+    const before = keyboard.sent.length;
+    await show(store);
+    expect(textOf(renderer!.root)).toContain('Not supported by this firmware');
+    expect(keyboard.sent.slice(before).every(([command]) => command === 2)).toBe(true);
+  });
+
+  test('polling unhandled is optional; a late response after definition replacement cannot publish', async () => {
+    const {keyboard} = pollingKeyboard();
+    const {store} = await openKeyboard('era', pollingMenu, {}, keyboard);
+    keyboard.refuse = ([command]) => command === 8;
+    expect(await store.dispatch(refreshMenuObservation(POLLING_CURRENT) as any)).toEqual({status: 'unsupported'});
+    expect(new KeyboardAPI(PATH).isConnectionLocked()).toBe(false);
+    keyboard.refuse = () => false;
+    const held = keyboard.hold(([command]) => command === 8);
+    const pending = store.dispatch(refreshMenuObservation(POLLING_CURRENT) as any);
+    const answer = await held;
+    const old = store.getState().definitions.eraDefinitions[VPID].v3!;
+    store.dispatch(updateEraDefinitions({[VPID]: {v3: {...old, name: 'replacement'}}} as any));
+    answer();
+    await pending;
+    expect(getMenuObservation(store.getState() as any, POLLING_CURRENT)).toBeUndefined();
+  });
+
+  test('switching devices during support GET never sends polling TEXT to either new context', async () => {
+    const {keyboard} = pollingKeyboard();
+    const opened = await openKeyboard('era', pollingMenu, {}, keyboard);
+    const other = new MenuKeyboard();
+    const chooseOther = await addKeyboard(opened, other, {});
+    const held = keyboard.hold(([command]) => command === 2);
+    const pending = opened.store.dispatch(refreshMenuObservation(POLLING_CURRENT) as any);
+    const answer = await held;
+    chooseOther();
+    answer();
+    expect(await pending).toBeNull();
+    expect(other.sent).toEqual([]);
+    expect(keyboard.sent.every(([command]) => command !== 8)).toBe(true);
+    expect(getMenuObservation(opened.store.getState() as any, POLLING_CURRENT)).toBeUndefined();
+  });
+
   test('FEATURE SAVE refusal remains retryable at the accepted runtime value across reread and reentry', async () => {
     const opened = await openKeyboard();
     const {keyboard, store, connect} = opened;
@@ -1469,6 +1551,17 @@ describe('ERA menu drafts', () => {
     await act(async () => { await store.dispatch(updateCustomMenuRangeValue('id_qmk_tapdance_1_hold_term', 100) as any); });
     expect(keyboard.sent.slice(before).filter(([cmd]) => cmd === SET || cmd === SAVE).map(b => b.slice(0, b[0] === SET ? 5 : 2))).toEqual([[SET, 0, 88, 0, 100], [SAVE, 0]]);
     expect(store.getState().menus.saveRetries[PATH].id_qmk_tapping_global_term_exact).toBe(true);
+  });
+
+  test('generic CONFIG excludes both observation commands even when legacy firmware would reject them', async () => {
+    const {keyboard} = pollingKeyboard();
+    keyboard.refuse = ([cmd, channel, id]) => cmd === 8 && ((channel === 13 && id === 4) || (channel === 9 && id === 66));
+    const menu = {label: 'SYSTEM', content: [...pollingMenu.content, {label: 'LINK', content: [{label: 'Last Apply (local)', type: 'label', content: [LINK_RESULT, 9, 66]}]}]};
+    const {store, device} = await openKeyboard('era', menu, {}, keyboard);
+    const candidate = await readV3MenuStateSyncCandidate(device, store.getState() as any, new KeyboardAPI(PATH).getConnectionGeneration());
+    expect(candidate?.menuData?.[POLLING_CURRENT]).toBeUndefined();
+    expect(candidate?.menuData?.[LINK_RESULT]).toBeUndefined();
+    expect(keyboard.sent.every(([cmd, ch, id]) => !(cmd === 8 && ((ch === 13 && id === 4) || (ch === 9 && id === 66))))).toBe(true);
   });
 
   test('shows a draft where it was set and keeps it across the sub-tab, the pane and a reconnect', async () => {
@@ -2072,6 +2165,127 @@ describe('ERA menu drafts', () => {
     });
   };
 
+  const resultMenu = () => {
+    const menu = linkMenu();
+    menu.content[0].content.push({label: 'Last Apply (local)', type: 'label', content: [LINK_RESULT, 9, 66]} as any);
+    return menu;
+  };
+  class ResultKeyboard extends LinkKeyboard {
+    result = 'No Apply this boot';
+    nextResult = 'Applied Medium';
+    resultReads = 0;
+    pendingReads = 0;
+    respond = ([command, channel, id]: number[], bytes: Uint8Array) => {
+      if (command === SET && channel === 9 && id === 9) this.result = this.nextResult;
+      if (command === GET && channel === 9 && id === 66) {
+        this.resultReads++;
+        const text = this.pendingReads-- > 0 ? 'Pending Medium' : this.result;
+        bytes.fill(0, 3); bytes.set(new TextEncoder().encode(text), 3);
+      }
+    };
+  }
+
+  test('Last Apply reads Pending through completion, catches later failure and retries the same speed', async () => {
+    const keyboard = new ResultKeyboard();
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
+    await showLink(store);
+    expect(textOf(renderer!.root)).toContain('No Apply this boot');
+    await chooseSpeed('Medium');
+    keyboard.pendingReads = 2;
+    await apply();
+    expect(keyboard.resultReads).toBeGreaterThan(3);
+    expect(textOf(renderer!.root)).toContain('Applied Medium');
+    expect(store.getState().drafts).toEqual({});
+    keyboard.result = 'Failed - check levels';
+    keyboard.running = 'Low';
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
+    expect(textOf(renderer!.root)).toContain('Failed - check levels');
+    expect(speed().props.value.label).toBe('Low');
+    keyboard.nextResult = 'Already set';
+    await chooseSpeed('Medium');
+    await apply();
+    expect(textOf(renderer!.root)).toContain('Already set');
+    // An explicit choice at the same running/stored speed is still an Apply request.
+    await chooseSpeed('Medium');
+    expect(button('Apply').props.disabled).toBe(false);
+    await apply();
+    expect(store.getState().drafts).toEqual({});
+  });
+
+  for (const result of ['Busy - retry', 'Failed - check levels', 'Cancelled - retry']) {
+    test(`Last Apply ${result} does not accept matching levels as success`, async () => {
+      const keyboard = new ResultKeyboard();
+      keyboard.nextResult = result;
+      const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+      setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
+      await showLink(store);
+      await chooseSpeed('Medium');
+      await apply();
+      expect(textOf(renderer!.root)).toContain(result);
+      expect(button('Apply').props.disabled).toBe(false);
+      expect(failed()).toBe(true);
+      expect(store.getState().drafts[PATH]).toBeDefined();
+    });
+  }
+
+  test('legacy value 66 unhandled falls back to Runtime/Saved checks and never locks the connection', async () => {
+    const keyboard = new ResultKeyboard();
+    keyboard.refuse = ([command, channel, id]) => command === GET && channel === 9 && id === 66;
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
+    await showLink(store);
+    expect(textOf(renderer!.root)).toContain('Not supported by this firmware');
+    await chooseSpeed('Medium');
+    await apply();
+    expect(store.getState().drafts).toEqual({});
+    expect(new KeyboardAPI(PATH).isConnectionLocked()).toBe(false);
+  });
+
+  test('visibility activation must keep one polling loop', async () => {
+    let signal!: () => void;
+    let release!: () => void;
+    let delayRuntime = false;
+    const waiting = new Promise<void>(resolve => { signal = resolve; });
+    class DelayedKeyboard extends ResultKeyboard {
+      async sendReport(reportId: number, data: BufferSource) {
+        const bytes = [...new Uint8Array(data instanceof Uint8Array ? data : data as ArrayBuffer)];
+        if (delayRuntime && bytes[0] === GET && bytes[1] === 9 && bytes[2] === 64) {
+          delayRuntime = false;
+          signal();
+          await new Promise<void>(resolve => { release = resolve; });
+        }
+        return super.sendReport(reportId, data);
+      }
+    }
+    const keyboard = new DelayedKeyboard();
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    await showLink(store);
+    delayRuntime = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await waiting;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 30)); });
+    const baseline = keyboard.resultReads;
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    expect(keyboard.resultReads - baseline).toBe(1);
+  });
+
+  test('manual recovery must resume fallback monitoring', async () => {
+    const keyboard = new ResultKeyboard();
+    keyboard.result = 'Malformed';
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    await showLink(store);
+    expect(textOf(renderer!.root)).toContain('Invalid response');
+    keyboard.result = 'Applied High';
+    await act(async () => { await button('Refresh').props.onClick(); });
+    expect(textOf(renderer!.root)).toContain('Applied High');
+    keyboard.result = 'Failed - check levels';
+    const baseline = keyboard.resultReads;
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    expect(textOf(renderer!.root)).toContain('Failed - check levels');
+    expect(keyboard.resultReads - baseline).toBe(1);
+  });
   test('LINK shows the speed the pair runs, and Apply sends a new one with its switch', async () => {
     const keyboard = new LinkKeyboard();
     const {store} = await openKeyboard('era', linkMenu(), linkValues, keyboard);

@@ -1081,7 +1081,7 @@ describe('canonical ERA definition inventory', () => {
   // `via.h` assigns `id_qmk_mousekey = 17`. Value ids 1-6 match the reference.
   test('gives every H7S definition the MOUSE page on channel 17', () => {
     const h7s = manifest.definitions.filter(
-      ({usbDiagnostics}) => usbDiagnostics === true,
+      ({exactMsFamily}) => exactMsFamily === 'h7s',
     );
     expect(h7s.map(({id}) => id).sort()).toEqual(
       expectedUsbDiagnosticsDefinitionIds,
@@ -1954,15 +1954,16 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
-  test('opts only the five H7S definitions into USB diagnostics', () => {
+  test('retires diagnostics and exposes revision-gated polling TEXT on five H7S definitions', () => {
     const optedIn = manifest.definitions.filter(
-      ({usbDiagnostics}) => usbDiagnostics === true,
+      ({exactMsFamily}) => exactMsFamily === 'h7s',
     );
     expect(optedIn.map(({id}) => id).sort()).toEqual(
       expectedUsbDiagnosticsDefinitionIds,
     );
     for (const entry of optedIn) {
-      expect(entry.exactMsFamily).toBe('h7s');
+      expect(entry.usbDiagnostics).not.toBe(true);
+      expect(JSON.stringify(readJSON(entry.path))).toContain('id_qmk_usb_polling_current');
       expect(JSON.stringify(readJSON(entry.path))).not.toContain(
         'id_qmk_usb_autodg_beta',
       );

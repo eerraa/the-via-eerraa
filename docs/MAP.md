@@ -22,13 +22,13 @@ looks right, report it; do not silently invert the table.
 | What older firmware under a legacy identity is served | frozen JSON under `era-definitions/legacy/v3/`, never edited ([ADR 0004](adr/0004-firmware-distribution.md) §2) | the legacy digest in `tests/era-definition.test.ts`, `scripts/build-keyboards.ts` |
 | Fork-managed external stock V3 definitions | JSON under `era-definitions/external/v3/` + `config/external-definitions.manifest.json` | `tests/validate-external-v3.test.ts`, `scripts/build-keyboards.ts` |
 | Which board has which feature | the same JSON | `FEATURE_COVERAGE` in that file |
-| Per-board capability opt-in (state sync / exact-ms / diagnostics / split pair) | `config/era-definitions.manifest.json` | `tests/era-definition.test.ts` |
+| Per-board capability opt-in (state sync / exact-ms / split pair) | `config/era-definitions.manifest.json` | `tests/era-definition.test.ts` |
 | Official VIA V3 definitions | `the-via/keyboards` — the installed `node_modules/via-keyboards` is a pinned snapshot only | `Verify build output` in the deploy workflow |
 | Explicit validation of firmware-local VIA V3 files | `scripts/validate-external-v3.ts`, using the app's `@the-via/reader` guard and transform | `tests/validate-external-v3.test.ts` |
 | Host wire encode/decode implementation | `src/utils/era-state-sync.ts`, `src/utils/era-usb-diagnostics.ts` | `tests/era-state-sync.test.ts`, `tests/era-usb-diagnostics.test.ts`, `tests/state-sync-transport.test.ts` |
 | VERSION ASCII display grammar and build ordering | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts`, `tests/firmware-distribution.test.tsx` |
-| Diagnostics observation / no-verdict boundary | [ADR 0003](adr/0003-era-menu-help-ui.md) §3 | `src/locales/*.json`, `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
-| Current shipped diagnostics strings | `src/locales/*.json` | `tests/locales.test.ts`, `tests/diagnostics-pane.test.tsx` |
+| Observation / no-verdict boundary | [ADR 0003](adr/0003-era-menu-help-ui.md) §3 | `src/locales/*.json`, `DIAGNOSTIC_OBSERVATION_KEYS` in `tests/locales.test.ts` |
+| Observation and historical diagnostics strings | `src/locales/*.json` | `tests/locales.test.ts`, `tests/diagnostics-pane.test.tsx` |
 | ERA menu-help summary / disclosure / attach policy | [ADR 0003](adr/0003-era-menu-help-ui.md) §6 | `src/utils/era-feature-help.ts`, `src/components/panes/configure-panes/custom/help-content.tsx`, `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | Current ERA help copy and command targets | `src/utils/era-feature-help.ts` | `tests/locales.test.ts`, `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 | Keycode chooser (KEYMAP pane, V3 `keycode` dock) and Tap Dance editing from KEYMAP | `docs/PROJECT_DIRECTION.md` **Tap Dance and exact-ms**; Basic layout, search, combined keys and Tap Dance write planning in `src/utils/keycode-palette.ts` | `tests/keycode-palette.test.ts`, `tests/keycode-palette-render.test.tsx` |
@@ -61,7 +61,7 @@ does not duplicate their addresses, ranges, packet layouts, or polling values.
 | Concern | Contract owner | First app/source anchor | Verification |
 | --- | --- | --- | --- |
 | State Sync, exact-ms, legacy projection, Custom Menu invalidation | [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/era-state-sync.ts`, `src/utils/era-exact-ms.ts`, `src/utils/ui-sync.ts` | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
-| H7S USB diagnostics app acceptance, observation/comparison, and lifecycle | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) | `src/utils/era-usb-diagnostics.ts` | `tests/era-usb-diagnostics.test.ts`, `tests/diagnostics-pane.test.tsx` |
+| H7S current polling observation and diagnostics retirement | [ADR 0002](adr/0002-h7s-usb-diagnostics.md) | `src/utils/menu-observation.ts`, `src/store/menuObservationThunks.ts` | `tests/menu-observation.test.ts`, `tests/deferred-apply.test.ts` |
 | Lighting sleep preset/exact/master compatibility | `docs/PROJECT_DIRECTION.md` **QMK lighting sleep exact-sec**, **H7S RGB sleep exact-sec**, **RGB Sleep master** | `era-definitions/custom/v3`, `src/utils/era-exact-sec.ts` | `tests/era-definition.test.ts`, `tests/custom-menu-pane.test.tsx` |
 | VERSION display compatibility | [ADR 0003](adr/0003-era-menu-help-ui.md) | `src/utils/era-firmware-version.ts` | `tests/custom-menu-pane.test.tsx`, `tests/era-definition.test.ts` |
 
@@ -183,7 +183,7 @@ Tests do not bite these. Touch one side, look at the other.
   `src/utils/firmware-route.ts`; the deploy rewrite list is hand-matched.
   `/diagnostics` redirects to `/` in `src/Routes.tsx` but is absent from
   `_redirects`. In-app navigation works; a **cold deep link on the deploy host
-  404s**. Inline placement is [ADR 0003](adr/0003-era-menu-help-ui.md).
+  404s**. Observation placement is [ADR 0003](adr/0003-era-menu-help-ui.md).
 - **`hash.json` is platform-dependent.** A different value is not a
   reproducibility break. The difference is the installed `via-keyboards`
   `officialHash` from its own build, which depends on file-walk order. The app

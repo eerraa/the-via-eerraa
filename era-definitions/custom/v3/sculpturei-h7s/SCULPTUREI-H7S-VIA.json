@@ -382,6 +382,12 @@
               "label": "Apply Selected Mode",
               "type": "toggle",
               "content": ["id_qmk_usb_bootmode_apply", 13, 2]
+            },
+            {
+              "label": "Current Polling",
+              "type": "label",
+              "showIf": "{id_firmware_version} >= 1",
+              "content": ["id_qmk_usb_polling_current", 13, 4]
             }
           ]
         },

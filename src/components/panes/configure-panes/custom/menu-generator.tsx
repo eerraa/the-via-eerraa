@@ -58,12 +58,12 @@ import {
 import {useTranslation} from 'react-i18next';
 import {
   isCustomMenuCommandContent,
-  isUsbPollingModeCommand,
 } from 'src/utils/custom-menu';
 import {getEraFirmwareVersionSource} from 'src/utils/era-firmware-version';
 import {useIsEraDefinition} from 'src/utils/use-is-era-definition';
 import {useSubmenuTab} from 'src/utils/use-configure-place';
-import {UsbDiagnosticsSection} from './usb-diagnostics-section';
+import {MenuObservation} from './menu-observation';
+import {observationAddress} from 'src/utils/menu-observation';
 import {FeatureHelp} from './feature-help';
 import {FirmwareVersion} from './firmware-version';
 import {ConfigureStatusMessage} from '../status-message';
@@ -145,6 +145,7 @@ function itemGenerator(
 
   if (
     'showIf' in elem &&
+    !(props.eraDefinition && observationAddress(itemCommand(elem) ?? '')) &&
     !(
       'type' in elem &&
       elem.type === 'color' &&
@@ -227,15 +228,6 @@ const MenuComponent = React.memo((props: any) => {
     .filter((item: any) => isCustomMenuCommandContent(item.content))
     .map((item: any) => item.content[0]);
   const firmwareVersionSource = getEraFirmwareVersionSource(commandNames);
-  // The submenu that owns the boot polling-mode control also hosts the diagnostics
-  // that measure it, so the measurement lives where the setting is changed instead of
-  // in a separate top-level page the user has to know about first. The section itself
-  // still checks the ERA diagnostics opt-in before sending anything to the keyboard.
-  const hasPollingModeControl = items.some(
-    (item: any) =>
-      isCustomMenuCommandContent(item.content) &&
-      isUsbPollingModeCommand(item.content[0]),
-  );
   return (
     <>
       <FeatureHelp commandNames={commandNames} />
@@ -247,6 +239,9 @@ const MenuComponent = React.memo((props: any) => {
       ) : (
         items.map((itemProps: any) => {
           const command = itemCommand(itemProps);
+          if (eraDefinition && command && observationAddress(command)) {
+            return <MenuObservation key={itemProps.key} command={command} label={itemProps.label} />;
+          }
           const row: DeferredRow | undefined =
             command && props.deferredRows.get(command);
           return (
@@ -306,7 +301,6 @@ const MenuComponent = React.memo((props: any) => {
           ) : null}
         </DeferredApplyButtons>
       ) : null}
-      {hasPollingModeControl && <UsbDiagnosticsSection />}
     </>
   );
 });
@@ -381,7 +375,6 @@ export const Pane: React.FC<Props> = (props: any) => {
     const path = getSelectedDevicePath(state);
     return path ? state.menus.saveRetries?.[path] : undefined;
   });
-
   const eraDefinition = useIsEraDefinition();
   const deferredRows = useMemo(() => {
     const rows = new Map<string, DeferredRow>();
@@ -422,6 +415,7 @@ export const Pane: React.FC<Props> = (props: any) => {
 
   const childProps = {
     ...props,
+    eraDefinition,
     selectedDefinition,
     selectedCustomMenuData,
     showIfMenuData,
@@ -431,8 +425,8 @@ export const Pane: React.FC<Props> = (props: any) => {
     rangeControls,
     updateCustomMenuValue: (command: string, ...rest: number[]) =>
       dispatch(updateCustomMenuValue(command, ...rest)),
-    awaitCustomMenuLabels: (commands: string[], text: string) =>
-      dispatch(awaitCustomMenuLabels(commands, text)),
+    awaitCustomMenuLabels: (commands: string[], text: string, result?: string) =>
+      dispatch(awaitCustomMenuLabels(commands, text, result)),
     refreshCustomMenuValue: (command: string) =>
       dispatch(refreshCustomMenuValue(command)),
     updateCustomMenuRangeValue: (command: string, value: number) =>

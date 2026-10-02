@@ -13,8 +13,8 @@ State Sync product guarantees, and the durable non-goals
 
 Implementation/source ownership and verification entry points are
 `docs/MAP.md` §§1–4. Wire and exact-ms requirements are
-[ADR 0001](adr/0001-state-sync-protocol.md); USB diagnostics requirements are
-[ADR 0002](adr/0002-h7s-usb-diagnostics.md); user-facing ERA help and diagnostics
+[ADR 0001](adr/0001-state-sync-protocol.md); USB polling observation and diagnostics retirement are
+[ADR 0002](adr/0002-h7s-usb-diagnostics.md); user-facing ERA help and observation
 UI requirements are [ADR 0003](adr/0003-era-menu-help-ui.md). This file keeps
 product boundaries and reasons rather than a second implementation inventory.
 

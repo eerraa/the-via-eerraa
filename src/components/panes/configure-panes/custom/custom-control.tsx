@@ -319,7 +319,7 @@ export const deferredRowFor = (
     }
     case 'dropdown': {
       const choices = dropdownChoices(item.options);
-      const {action, running, stored} = item.held ?? {};
+      const {action, running, stored, result} = item.held ?? {};
       // The option a label names, where the definition has the label.
       const named = (label: DeferredItem | undefined) => {
         const name =
@@ -343,7 +343,7 @@ export const deferredRowFor = (
         // can send it, even the one shown: a speed the pair fell back to is kept
         // only that way, and a definition without the labels cannot tell.
         pending: action
-          ? (draft) => saveRetry || draft !== inEffect || draft !== kept
+          ? (draft) => !!result || saveRetry || draft !== inEffect || draft !== kept
           : differs(saved),
       };
       if (action) {
@@ -352,6 +352,7 @@ export const deferredRowFor = (
           (action.options as (number | number[])[] | undefined) ||
           DEFAULT_TOGGLE_OPTIONS;
         row.held = {
+          result: result?.content[0],
           action: {
             command: actionCommand,
             address: actionAddress,

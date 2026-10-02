@@ -405,7 +405,6 @@
         "productId": "0x0022"
       },
       "stateSync": true,
-      "usbDiagnostics": true,
       "exactMsFamily": "h7s"
     },
     {
@@ -419,7 +418,6 @@
         "productId": "0x0030"
       },
       "stateSync": true,
-      "usbDiagnostics": true,
       "exactMsFamily": "h7s"
     },
     {
@@ -433,7 +431,6 @@
         "productId": "0x0028"
       },
       "stateSync": true,
-      "usbDiagnostics": true,
       "exactMsFamily": "h7s"
     },
     {
@@ -447,7 +444,6 @@
         "productId": "0x0023"
       },
       "stateSync": true,
-      "usbDiagnostics": true,
       "exactMsFamily": "h7s"
     },
     {
@@ -461,7 +457,6 @@
         "productId": "0x0034"
       },
       "stateSync": true,
-      "usbDiagnostics": true,
       "exactMsFamily": "h7s"
     }
   ]

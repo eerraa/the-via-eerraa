@@ -47,6 +47,11 @@ import {
   updateConnectedDevices,
 } from './devicesSlice';
 import {discardDrafts, draftKey} from './draftsSlice';
+import {
+  observationAddress,
+  type MenuObservationValue,
+} from '../utils/menu-observation';
+import {menuObservationScope, refreshMenuObservation} from './menuObservationThunks';
 import type {AppThunk, RootState} from './index';
 import {
   getFirmwareVersionMap,
@@ -77,6 +82,10 @@ type CustomMenuData = {
 type CustomMenuDataMap = {[devicePath: string]: CustomMenuData};
 
 type MenusState = {
+  observations: Record<
+    string,
+    {scope: string; request: number; value: MenuObservationValue}
+  >;
   saveRetries: Record<string, Record<string, boolean>>;
   customMenuDataMap: CustomMenuDataMap;
   commonMenusMap: CommonMenusMap;
@@ -295,6 +304,7 @@ const getPendingCustomMenuSyncKey = (
 ) => `${devicePath}:${connectionGeneration}`;
 
 const initialState: MenusState = {
+  observations: {},
   saveRetries: {},
   customMenuDataMap: {},
   commonMenusMap: {},
@@ -305,6 +315,18 @@ const menusSlice = createSlice({
   name: 'menus',
   initialState,
   reducers: {
+    setMenuObservation: (
+      state,
+      action: PayloadAction<{
+        command: string;
+        scope: string;
+        request: number;
+        value: MenuObservationValue;
+      }>,
+    ) => {
+      const {command, ...observation} = action.payload;
+      state.observations[command] = observation;
+    },
     setMenuSaveRetry: (
       state,
       action: PayloadAction<{devicePath: string; command: string; retry: boolean}>,
@@ -374,6 +396,7 @@ const menusSlice = createSlice({
     });
     builder.addCase(clearAllDevices, (state) => {
       state.saveRetries = {};
+      state.observations = {};
     });
     builder.addCase(commitStableConfigCandidate, (state, action) => {
       const {devicePath, candidate} = action.payload;
@@ -391,6 +414,7 @@ const menusSlice = createSlice({
 });
 
 export const {
+  setMenuObservation,
   setMenuSaveRetry,
   updateShowKeyPainter,
   updateSelectedCustomMenuData,
@@ -702,6 +726,7 @@ export const setLabelWatchForTesting = (timing: typeof LABEL_WATCH | null) => {
 // merged as it arrives, so a CONFIG read that finished meanwhile keeps the rest. It
 // gives null when the keyboard did not answer or is no longer the one selected.
 const customMenuValueReader = (state: RootState, command: string) => {
+  const scope = menuObservationScope(state);
   const devicePath = getSelectedDevicePath(state);
   const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
   const commandBytes = getCustomCommandsForSelectedDefinition(state)[command];
@@ -713,6 +738,10 @@ const customMenuValueReader = (state: RootState, command: string) => {
     dispatch: (action: any) => any,
     getState: () => RootState,
   ): Promise<number[] | null> => {
+    if (
+      menuObservationScope(getState()) !== scope ||
+      !api.isConnectionGenerationCurrent(connectionGeneration)
+    ) return null;
     let value: number[];
     try {
       value = (await api.getCustomMenuValue(commandBytes)).slice(1);
@@ -723,6 +752,7 @@ const customMenuValueReader = (state: RootState, command: string) => {
     const menuData = getSelectedCustomMenuData(current);
     if (
       !menuData ||
+      menuObservationScope(current) !== scope ||
       getSelectedDevicePath(current) !== devicePath ||
       !api.isConnectionGenerationCurrent(connectionGeneration)
     ) {
@@ -753,8 +783,11 @@ export const refreshCustomMenuValue =
  * one.
  */
 export const awaitCustomMenuLabels =
-  (commands: string[], text: string): AppThunk<Promise<boolean>> =>
+  (
+    commands: string[], text: string, resultCommand?: string,
+  ): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
+    const scope = menuObservationScope(getState());
     const reads = commands.flatMap((command) => {
       const read = customMenuValueReader(getState(), command);
       return read ? [read] : [];
@@ -767,7 +800,17 @@ export const awaitCustomMenuLabels =
     let readingSince: number | null = null;
     while (Date.now() - start < timeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      if (menuObservationScope(getState()) !== scope) return false;
       let reading = true;
+      if (resultCommand) {
+        const result = await dispatch(refreshMenuObservation(resultCommand));
+        if (!result) return false;
+        if (result.status === 'ready') {
+          if (/^(Busy|Failed|Cancelled)/.test(result.text)) return false;
+          reading =
+            result.text === `Applied ${text}` || result.text === 'Already set';
+        } else if (result.status !== 'unsupported') return false;
+      }
       for (const read of reads) {
         const value = await read(dispatch, getState);
         if (!value) {
@@ -1037,8 +1080,11 @@ const readCustomMenuValues = async (
   api: KeyboardAPI,
   commands: Record<string, number[]>,
   ids?: string[],
+  separateObservations = false,
 ): Promise<CustomMenuData> => {
-  const idsToSync = (ids ?? Object.keys(commands)).filter((id) => commands[id]);
+  const idsToSync = (ids ?? Object.keys(commands)).filter(
+    (id) => commands[id] && !(separateObservations && observationAddress(id)),
+  );
   const advanced = idsToSync.filter((id) => /^id_qmk_tapdance_[1-8]_hold_(term|other)$/.test(id));
   const modeOf = (id: string) => id.replace(/hold_(term|other)$/, 'mode');
   const baseIds = [...new Set([
@@ -1109,7 +1155,10 @@ export const syncCustomMenuValues =
     const menuData = state.menus.customMenuDataMap[devicePath] || {};
 
     await api.waitForCommandQueueIdle();
-    const syncedMenuData = await readCustomMenuValues(api, commands, ids);
+    const syncedMenuData = await readCustomMenuValues(
+      api, commands, ids,
+      getDefinitionSourceForDevice(state, connectedDevice) === 'era',
+    );
     const currentState = getState();
     const currentDevice = getConnectedDevices(currentState)[devicePath];
     if (
@@ -1274,6 +1323,8 @@ export const readV3MenuStateSyncCandidate = async (
 
   const menuData = await readCustomMenuValues(
     api, Object.fromEntries(commands.map(([name, ...bytes]) => [name, bytes])),
+    undefined,
+    getDefinitionSourceForDevice(state, connectedDevice) === 'era',
   );
 
   const maxLedIndex = collectMaxLedIndex(definition);

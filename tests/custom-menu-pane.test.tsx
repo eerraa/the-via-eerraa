@@ -1780,7 +1780,7 @@ describe('ERA LINK and BOOT controls', () => {
 });
 
 describe('USB diagnostics placement', () => {
-  test('renders the diagnostics block under the polling-mode controls', () => {
+  test('never mounts retired diagnostics, even with stale opt-in metadata', () => {
     optIn(true);
     const html = render(makeStore({era: true, menuData}), {
       label: 'SYSTEM',
@@ -1788,11 +1788,7 @@ describe('USB diagnostics placement', () => {
     });
 
     expect(html).toContain('Apply Selected Mode');
-    expect(html).toContain('USB Polling Diagnostics');
-    // The measurement follows the control it explains, so it comes after it.
-    expect(html.indexOf('USB Polling Diagnostics')).toBeGreaterThan(
-      html.indexOf('Apply Selected Mode'),
-    );
+    expect(html).not.toContain('USB Polling Diagnostics');
   });
 
   test('omits the block from submenus without a polling-mode control', () => {

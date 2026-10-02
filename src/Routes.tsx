@@ -64,9 +64,8 @@ export default () => {
             <Home hasHIDSupport={hasHIDSupport}>
               {RouteComponents}
               {firmwareRoute && <FirmwarePane />}
-              {/* USB Diagnostics moved into CONFIGURE > SYSTEM > USB POLLING, next to
-                  the polling-mode controls it measures. An open tab or bookmark on the
-                  removed page would otherwise render nothing at all. */}
+              {/* USB diagnostics is retired. Preserve old bookmarks by redirecting
+                  the removed page to the configurator. */}
               <Route path="/diagnostics">
                 <Redirect to="/" />
               </Route>

@@ -873,5 +873,13 @@
   "Waits for the decision before sending the selected action.": "동작을 판정한 뒤 입력합니다.",
   "The first press sends the base key immediately; only the second press waits.": "첫 누름은 즉시 입력하고, 두 번째 누름만 판정을 기다립니다.",
   "A separate Hold action requires After decision.": "홀드를 따로 지정하려면 ‘판정 후’를 사용합니다.",
-  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "흰색에 가까울수록 색상 변화가 잘 보이지 않습니다. Color에서 더 진한 색을 선택하세요."
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "흰색에 가까울수록 색상 변화가 잘 보이지 않습니다. Color에서 더 진한 색을 선택하세요.",
+  "Not supported by this firmware": "이 펌웨어에서 지원하지 않음",
+  "Read timed out": "조회 시간 초과",
+  "Invalid response": "잘못된 응답",
+  "Read failed": "조회 실패",
+  "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "마지막 조회에 성공했을 때의 키보드 IN 간격 설정입니다. 호스트 폴링이나 입력 지연의 측정값이 아닙니다.",
+  "Result for this unit only; it does not confirm all saved settings on the other half.": "이 유닛의 결과만 표시합니다. 반대쪽의 모든 설정이 저장되었음을 보장하지 않습니다.",
+  "Refresh": "새로고침",
+  "Disconnected": "연결 해제됨"
 }

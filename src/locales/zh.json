@@ -873,5 +873,13 @@
   "Waits for the decision before sending the selected action.": "判定动作后再发送所选按键。",
   "The first press sends the base key immediately; only the second press waits.": "第一次按下立即发送基本键，只有第二次按下需要等待判定。",
   "A separate Hold action requires After decision.": "单独指定长按动作需要选择“判定后”。",
-  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "颜色越接近白色，颜色变化越不明显。请在 Color 中选择饱和度更高的颜色。"
+  "Near-white colors make color changes hard to see. Choose a more saturated color in Color.": "颜色越接近白色，颜色变化越不明显。请在 Color 中选择饱和度更高的颜色。",
+  "Not supported by this firmware": "此固件不支持",
+  "Read timed out": "读取超时",
+  "Invalid response": "无效响应",
+  "Read failed": "读取失败",
+  "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "上次成功读取时的键盘 IN 间隔设置，并非主机轮询或输入延迟的测量值。",
+  "Result for this unit only; it does not confirm all saved settings on the other half.": "仅表示此单元的结果，不保证另一半的所有设置均已保存。",
+  "Refresh": "刷新",
+  "Disconnected": "已断开连接"
 }

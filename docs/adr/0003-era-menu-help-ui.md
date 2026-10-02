@@ -2,85 +2,65 @@
 
 Status: Accepted
 Genre: contract
-Canonical for: ERA help and diagnostics UI placement, user-visible support
+Canonical for: ERA help and observation UI placement, user-visible support
 boundaries, observation wording, localization/accessibility, per-control help
 rules, naming policy, and VERSION read-only presentation
 
 This ADR owns durable user-facing decisions, not the current React structure.
 Current components, CSS values, translation keys, command-id tables, supported-board
 inventory, and exact copy are source-owned and are routed by `docs/MAP.md`.
-Diagnostics wire and instrumentation are [ADR 0002](0002-h7s-usb-diagnostics.md);
+Polling observation and retired diagnostics boundaries are [ADR 0002](0002-h7s-usb-diagnostics.md);
 the fork's product and official-VIA boundary is `docs/PROJECT_DIRECTION.md`.
 
-## 1. Diagnostics belongs with the setting it measures
+## 1. Observations belong with their controls
 
-The diagnostics surface stays inline under `CONFIGURE → SYSTEM → USB POLLING`,
-where the user chooses the mode whose behavior is being observed. It is not a
-global diagnostics destination.
+Current Polling stays in SYSTEM / USB POLLING. It reports the endpoint interval
+setting at the last successful read, with an explicit scope note and Refresh.
+The retired diagnostics session UI is not mounted, including for older firmware.
+The support and lifetime boundary is [ADR 0002](0002-h7s-usb-diagnostics.md).
 
-Only an app-owned ERA definition that explicitly opts into USB diagnostics may
-expose this surface. The same hardware opened through an official or user-uploaded
-definition must not start the custom diagnostics protocol merely because its
-identity matches. Ordinary VIA keyboards and official-VIA workflows remain
-unchanged.
+Last Apply (local) stays in SYSTEM / LINK. It is the result of the request on the
+selected unit, not proof of all saved settings on the other half. Pending,
+success, refusal and later failure remain visible as firmware reports them.
+GET of the Apply toggle returning zero is consumption, never success evidence.
 
-> **REFUSED:** a top-level diagnostics page, modal, accordion, or definition-only
-> injection of the diagnostics block.
-> **WHY:** separating the measurement from polling-mode control made the feature
-> hard to discover; global placement exposed an ERA/H7S-only aid to unrelated
-> keyboards; and a modal or folded live session adds avoidable state loss. A
-> definition-only gate would also let official/uploaded definitions invoke a
-> custom-app extension they did not opt into.
-> **REOPENS:** only if the supported-client boundary or the measurement workflow
-> changes.
+## 2. Link result and confirmation
 
-## 2. Summary first; advanced evidence remains available
+Apply reads SYSTEM channel 9/value 66 together with Runtime and Saved Level.
+A supported result must report Applied for the requested level or Already set,
+and both levels must match through the fallback confirmation window. Busy,
+Failed and Cancelled leave a retryable draft even when runtime matches it.
+An explicit same-speed selection may be reapplied because local storage can
+fail independently of runtime switching.
 
-The default result answers what the measured window observed in plain language.
-Raw counters, timing distributions, historical comparison, and other expert
-evidence stay available on request rather than competing with that answer.
+The result changes without CONFIG revision. The active LINK screen rereads it
+and both levels, including after initial success, and pauses while hidden or an
+Apply owns the watch. Activation and explicit refresh reacquire the observation.
+Connection, selection or definition changes retire outstanding reads.
 
-A caveat that can reverse the interpretation of a result stays visible when it
-applies; it is not hidden merely to make the card shorter. Recovery or
-leftover-session actions appear with the condition they act on rather than as an
-unexplained global control.
-
-> **REFUSED:** an always-expanded metrics dashboard, deleting advanced evidence,
-> or collapsing interpretation-changing caveats.
-> **WHY:** the first overwhelms the actual answer, while the latter two make a
-> technically precise measurement easier to misread.
-> **REOPENS:** if the diagnostics question or evidence set changes materially.
+Value 66 is optional on older firmware: unhandled displays unsupported and
+uses the existing Runtime/Saved confirmation, without claiming a local receipt.
+Timeout, malformed and disconnect are failures, not legacy support evidence.
+ERA observations live outside CONFIG caches so replacement cannot resurrect
+old receipts. The six current Custom definitions and firmware-local official
+V3 definitions expose the same read-only address.
 
 ## 3. Observation copy is not a verdict
 
-Diagnostics may state only what was observed in the measured window. Wording such
-as “no report queue drops were observed” is valid; “stable”, “perfect”,
-“certified”, “no problems”, or a composite health score is not.
+Observations state their scope, without stability scores, latency guarantees,
+or claims about another unit's complete saved state. Translations preserve
+those limits. Firmware response text remains exact; surrounding guidance and
+host error states are localized.
 
-The UI must make measurement scope explicit. A run with no keypress samples must
-say so rather than allowing delivery statements to read as a clean result.
-Condition-specific caveats such as a negotiated-speed mismatch must remain
-attached to the observation they qualify.
+## 4. Failed persistence remains actionable
 
-Translations are part of this boundary: a fluent translation must not strengthen
-“not observed” into a broader reliability claim.
-
-**Cause:** hardware validation produced an incorrect conclusion more than once
-when limited evidence was phrased like a general health judgment. Keeping only the
-measurement claim prevents the diagnostics UI from certifying failure classes it
-does not measure.
-
-## 4. Words and visual hierarchy serve the user question
-
-User-facing names describe the thing the user is trying to understand, not the
-transport or firmware implementation. Protocol jargon belongs in advanced
-evidence only when precision requires it. The diagnostics block is therefore
-about USB polling behavior, not about an internal instrumentation object.
-
-Primary observations must read as the primary information. Secondary state, raw
-metrics, axes, and explanatory detail must not visually outrank the answer.
-Exact typography and layout values are implementation-owned rather than part of
-this ADR.
+A successful SET followed by a failed SAVE leaves the authoritative runtime
+value visible. A separate retry obligation keeps a valid draft actionable even
+if GET equals it. Only a successful SAVE clears that obligation; CONFIG equality
+cannot. Editing retains it, invalid drafts cannot Apply, and Cancel discards the
+local retry/draft without rolling back runtime. Pane reentry and device selection
+retain per-device intent; physical removal discards it with the drafts. A
+connection reload alone is not evidence of persistence and retains retry intent.
 
 ## 5. Language and accessibility boundaries
 
@@ -90,9 +70,7 @@ miss, so missing or semantically weaker translations are defects rather than an
 acceptable supported state. Supported translations must remain readable without
 clipping or overlap as copy expands; exact layout and breakpoints are source-owned.
 
-The copied diagnostic report body stays English because its audience is the
-maintainer receiving a bug report; the button and surrounding UI may localize.
-Changing the UI language must not abort an active measurement.
+Changing the UI language must not retire an observation or its active query.
 
 Help disclosures must be keyboard-operable, expose expanded/collapsed state and
 their controlled content relationship, and have contextual accessible names when
@@ -163,7 +141,7 @@ the keyboard has not made. Until the keyboard reports a value both in effect and
 kept, choosing it is a change Apply can send, even at the value shown, so a speed
 the pair fell back to can still be kept.
 
-Custom-app presentation may add help and diagnostics that official VIA does not
+Custom-app presentation may add help and observations that official VIA does not
 provide, but it must not imply that the firmware depends on this fork. Features
 covered by the official-VIA compatibility contract remain usable through official
 `usevia.app` plus the official definition; app-only aids are additive and
@@ -174,16 +152,6 @@ or SAVE affordance. Malformed or unavailable firmware data is shown as unknown
 rather than guessed from a definition or static app string. The wire/display
 grammar and current command identities are source-owned and routed by
 `docs/MAP.md`.
-
-### Failed persistence remains actionable
-
-A successful SET followed by a failed SAVE leaves the authoritative runtime
-value visible. A separate retry obligation keeps a valid draft actionable even
-if GET equals it. Only a successful SAVE clears that obligation; CONFIG equality
-cannot. Editing retains it, invalid drafts cannot Apply, and Cancel discards the
-local retry/draft without rolling back runtime. Pane reentry and device selection
-retain per-device intent; physical removal discards it with the drafts. A
-connection reload alone is not evidence of persistence and retains retry intent.
 
 ## 8. Low-saturation RGB effect guidance
 
