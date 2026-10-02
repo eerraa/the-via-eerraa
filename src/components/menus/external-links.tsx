@@ -22,6 +22,14 @@ const ExternalLinkContainer = styled.span`
   display: flex;
   align-items: center;
   gap: 1em;
+
+  @media (max-width: 720px) {
+    max-width: 100%;
+    margin-right: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
 `;
 
 // ADR 0004 §4: one split control, `ERA │ Firmware`. The wordmark stays the

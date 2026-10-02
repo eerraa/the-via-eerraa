@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, test} from 'bun:test';
+import {afterEach, describe, expect, spyOn, test} from 'bun:test';
 import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
@@ -165,6 +165,29 @@ afterEach(() => {
   for (const board of ['n86', 'n87', 'n8x']) {
     rememberMaker(board, null);
   }
+});
+
+test('a failed maker storage write or removal overrides stale storage for this page', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!;
+  const storage = globalThis.localStorage;
+  storage.setItem('era-firmware-maker:n86', 'linworks');
+  Object.defineProperty(globalThis, 'localStorage', {configurable: true, value: {
+    getItem: (key: string) => storage.getItem(key),
+    setItem: () => { throw new Error('Storage full'); },
+    removeItem: () => { throw new Error('Storage blocked'); },
+  }});
+  try {
+    rememberMaker('n86', 'sirind');
+    expect(readRememberedMaker('n86')).toBe('sirind');
+    rememberMaker('n86', null);
+    expect(readRememberedMaker('n86')).toBeNull();
+    expect(storage.getItem('era-firmware-maker:n86')).toBe('linworks');
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', descriptor);
+  }
+  rememberMaker('n86', 'keynetix');
+  expect(readRememberedMaker('n86')).toBe('keynetix');
+  expect(storage.getItem('era-firmware-maker:n86')).toBe('keynetix');
 });
 
 describe('firmware catalog', () => {
@@ -603,6 +626,9 @@ const {FirmwareVersion} = await import(
   '../src/components/panes/configure-panes/custom/firmware-version'
 );
 const {FirmwarePane} = await import('../src/components/panes/firmware');
+const {FirmwareDevice} = await import('../src/components/panes/firmware-device');
+const {Badge: DeviceBadge} = await import('../src/components/panes/configure-panes/badge');
+const {HID} = await import('../src/shims/node-hid');
 const {BadgeDropdown, badgePopupBounds} = await import('../src/components/inputs/badge-dropdown');
 const {ExternalLinks} = await import('../src/components/menus/external-links');
 const {default: settingsReducer} = await import('../src/store/settingsSlice');
@@ -620,6 +646,14 @@ const makeStore = (
   const path = 'firmware-distribution-test';
   const state = {
     settings: settingsReducer(undefined, {type: 'init'}),
+    definitions: {
+      definitions: device
+        ? {[device.vendorId * 0x10000 + device.productId]: {v3: {name: 'Firmware test keyboard'}}}
+        : {},
+      eraDefinitions: {},
+      customDefinitions: {},
+    },
+    definitionName: {selectedOptionMap: {}},
     devices: {
       selectedDevicePath: device ? path : null,
       connectedDevicePaths: device
@@ -1009,12 +1043,12 @@ describe('firmware page', () => {
     expect(split).toContain('Split keyboard: flash both halves with the same .uf2 file');
     // A release can change the stored format, so the QMK note never promises settings survive.
     expect(split).toContain(
-      'Installing a different firmware version can reset the keymap, macros and VIA settings on first boot.',
+      'Settings may reset after updating.',
     );
     expect(split).not.toContain('A normal update keeps stored settings');
     // The backup names what a layout file brings back: not the VIA settings.
     expect(split).toContain(
-      'Back up the keymap, macros and Tap Dance with Save + Load first.',
+      'Export a backup first.',
     );
 
     const h7s = renderPage(published(), '/firmware/sirind/brick60-h7s');
@@ -1023,12 +1057,27 @@ describe('firmware page', () => {
     );
     expect(h7s).toContain('bootloader&#x27;s removable disk');
     expect(h7s).toContain(
-      'resets the keymap, macros and VIA settings on first boot. Back up the keymap, macros and Tap Dance with Save + Load first.',
+      'Settings may reset after updating. Export a backup first.',
     );
+    expect(h7s).not.toContain('Installing a different firmware version resets');
+    const may65 = renderPage(published(), '/firmware/keynetix/may65-h7s');
+    expect(may65).toContain('backups from before Insert was added require manual keymap reconfiguration');
+    expect(may65).toContain('manual keymap reconfiguration');
+    expect(h7s).not.toContain('manual keymap reconfiguration');
     expect(h7s).toContain('>SR Industry<');
     expect(h7s).not.toContain('RPI-RP2');
     expect(h7s).not.toContain('Bootmagic');
     expect(h7s).not.toContain('resets the keymap and settings');
+  });
+
+  test('every H7S and EERRAA board shares the short reset and export warning', () => {
+    for (const maker of committed.catalog.makers) {
+      for (const entry of maker.boards) {
+        const html = renderPage(committed, `/firmware/${maker.id}/${entry.board}`);
+        expect(html).toContain('Settings may reset after updating. Export a backup first.');
+        expect(html).not.toContain('Installing a different firmware version resets');
+      }
+    }
   });
 
   // The right half reads its own top-left key, Bootmagic clears the stored
@@ -1352,6 +1401,126 @@ describe('firmware badge dropdown', () => {
     const bottom = badgePopupBounds({right: 200, top: 340, bottom: 365}, {width: 390, height: 390}, 220, 200);
     expect(bottom.top).toBeLessThan(340);
     expect(bottom.top + bottom.maxHeight).toBeLessThanOrEqual(335);
+  });
+});
+
+describe('firmware HID device badge', () => {
+  const setup = (device: {vendorId: number; productId: number} | null = null) => {
+    const descriptors = ['navigator', 'history'].map((key) =>
+      [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
+    );
+    const navigations: string[] = [];
+    Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {hid: {}}});
+    Object.defineProperty(globalThis, 'history', {
+      configurable: true,
+      value: {pushState: (_state: unknown, _title: string, to: string) => navigations.push(to)},
+    });
+    const store = makeStore(device);
+    // Connection transport has its own integration suite. Here assert that
+    // every explicit choice invokes it, without opening real HID devices.
+    const dispatch = spyOn(store, 'dispatch').mockImplementation(() => undefined);
+    const request = spyOn(HID, 'requestDevice');
+    let renderer!: ReturnType<typeof create>;
+    const render = (child = <FirmwareDevice />) => (
+      <Provider store={store}>
+        <I18nextProvider i18n={translations}>{child}</I18nextProvider>
+      </Provider>
+    );
+    act(() => { renderer = create(render()); });
+    return {
+      navigations, dispatch, request, renderer,
+      button: (text: string) => renderer.root.find((node) =>
+        node.type === 'button' && node.children.includes(text),
+      ),
+      render,
+      cleanup: () => {
+        act(() => renderer.unmount());
+        dispatch.mockRestore();
+        request.mockRestore();
+        descriptors.forEach(([key, descriptor]) => {
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        });
+      },
+    };
+  };
+
+  test('authorizing a new keyboard opens its board, resolving maker and legacy identities', async () => {
+    const context = setup();
+    try {
+      for (const [device, destination] of [
+        [usbId('may65-h7s'), '/firmware/keynetix/may65-h7s'],
+        [usbId('classicd-a1'), '/firmware/classicd/classicd-a1'],
+        [usbId('n86', 'legacy'), '/firmware/n86'],
+      ] as const) {
+        context.request.mockResolvedValue({...device, __path: 'new-keyboard'} as any);
+        await act(async () => { await context.button('Authorize device').props.onClick(); });
+        expect(context.navigations.at(-1)).toBe(destination);
+      }
+      rememberMaker('n86', 'linworks');
+      await act(async () => { await context.button('Authorize device').props.onClick(); });
+      expect(context.navigations.at(-1)).toBe('/firmware/linworks/n86');
+      expect(context.dispatch).toHaveBeenCalledTimes(4);
+      expect(context.dispatch.mock.calls.every(([action]) => typeof action === 'function')).toBe(true);
+    } finally { context.cleanup(); }
+  });
+
+  test('explicitly selecting an already connected keyboard navigates, and Authorize New stays available', async () => {
+    const context = setup(usbId('may65-h7s'));
+    try {
+      expect(context.navigations).toEqual([]);
+      const title = () => context.renderer.root.find((node) =>
+        node.type === 'button' && node.props['aria-expanded'] !== undefined,
+      );
+      expect(context.button('Authorize New').props.tabIndex).toBe(-1);
+      expect(context.renderer.root.findByType('ul').props['aria-hidden']).toBe(true);
+      act(() => title().props.onClick());
+      expect(title().props['aria-expanded']).toBe(true);
+      expect(context.button('Authorize New').props.tabIndex).toBe(0);
+      expect(context.renderer.root.findByType('ul').props['aria-hidden']).toBe(false);
+      const option = context.renderer.root.find((node) =>
+        node.type === 'button' && node.children.includes('Firmware test keyboard') &&
+        node.props['aria-expanded'] === undefined,
+      );
+      act(() => option.props.onClick());
+      expect(context.navigations).toEqual(['/firmware/keynetix/may65-h7s']);
+      expect(title().props['aria-expanded']).toBe(false);
+      expect(option.props.tabIndex).toBe(-1);
+      expect(context.request).not.toHaveBeenCalled();
+      act(() => title().props.onClick());
+      context.request.mockResolvedValue({...usbId('classicd-a1'), __path: 'new-keyboard'} as any);
+      await act(async () => { await context.button('Authorize New').props.onClick(); });
+      expect(context.navigations.at(-1)).toBe('/firmware/classicd/classicd-a1');
+      expect(context.dispatch).toHaveBeenCalledTimes(2);
+    } finally { context.cleanup(); }
+  });
+
+  test('cancellation, refusal and an unknown keyboard preserve the download address', async () => {
+    const context = setup();
+    try {
+      context.request.mockResolvedValue(undefined as any);
+      await act(async () => { await context.button('Authorize device').props.onClick(); });
+      context.request.mockRejectedValue(new DOMException('Cancelled', 'NotFoundError'));
+      await act(async () => { await context.button('Authorize device').props.onClick(); });
+      expect(context.dispatch).not.toHaveBeenCalled();
+      context.request.mockResolvedValue({vendorId: 1, productId: 2, __path: 'unknown'} as any);
+      await act(async () => { await context.button('Authorize device').props.onClick(); });
+      expect(context.dispatch).toHaveBeenCalledTimes(1);
+      expect(context.navigations).toEqual([]);
+    } finally { context.cleanup(); }
+  });
+
+  test('download-only browsers omit HID controls and Configure keeps its unconnected behavior', () => {
+    const context = setup();
+    try {
+      act(() => context.renderer.update(context.render(<DeviceBadge />)));
+      expect(context.renderer.toJSON()).toBeNull();
+      Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {}});
+      act(() => context.renderer.update(context.render()));
+      expect(context.renderer.toJSON()).toBeNull();
+      expect(context.request).not.toHaveBeenCalled();
+      expect(context.navigations).toEqual([]);
+    } finally { context.cleanup(); }
   });
 });
 

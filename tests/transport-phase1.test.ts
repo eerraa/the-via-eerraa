@@ -2663,12 +2663,17 @@ describe('device chooser and reconnect', () => {
       });
       const selectionGeneration =
         testStore.getState().devices.selectionGeneration;
+      const badgeTitle = () => badge!.root.find((node) =>
+        node.type === 'button' && node.props['aria-expanded'] !== undefined,
+      );
+      act(() => badgeTitle().props.onClick());
       await act(async () => {
         await browser.click(
           () =>
-            findButton(
-              badge!,
-              (text) => !text.includes('새 키보드 인증'),
+            badge!.root.find(
+              (node) => node.type === 'button' &&
+                node.props['aria-expanded'] === undefined &&
+                !textOf(node).includes('새 키보드 인증'),
             ).props.onClick(),
           () =>
             testStore.getState().devices.selectionGeneration >
@@ -2680,6 +2685,7 @@ describe('device chooser and reconnect', () => {
 
       const second = makeProtocol13Board('chooser-second', [0, 0, 0, 0x09]);
       browser.plugIn(asHIDDevice(second.fake));
+      act(() => badgeTitle().props.onClick());
       await act(async () => {
         await browser.click(
           () =>

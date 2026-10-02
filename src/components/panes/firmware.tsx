@@ -62,7 +62,8 @@ import {
 // one column of setting rows, with maker selection in the body; a board's page puts
 // that board where Configure shows the keyboard, with its file and steps as rows
 // below. It reads the bundled catalog and the selected keyboard's already-loaded
-// state only; it never talks to the keyboard, and it renders without WebHID.
+// state. Its device badge reuses Configure's connection flow; downloads also
+// render without WebHID.
 
 const NARROW = '@media (max-width: 720px)';
 
@@ -400,13 +401,12 @@ const FlashingSteps: FC<{board: FirmwareBoardInfo}> = ({board}) => {
       : t('Check SYSTEM → VERSION after the update.'),
   ];
   const notes = [
-    h7s
-      ? t(
-          'Installing a different firmware version resets the keymap, macros and VIA settings on first boot. Back up the keymap, macros and Tap Dance with Save + Load first.',
-        )
-      : t(
-          'Installing a different firmware version can reset the keymap, macros and VIA settings on first boot. Back up the keymap, macros and Tap Dance with Save + Load first.',
-        ),
+    t(
+      'Settings may reset after updating. Export a backup first.',
+    ),
+    ...(board.id === 'may65-h7s' ? [t(
+      'MAY65: backups from before Insert was added require manual keymap reconfiguration.',
+    )] : []),
     t(
       "If the keyboard doesn't appear after the update, press Authorize device again.",
     ),

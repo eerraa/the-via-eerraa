@@ -13,6 +13,7 @@ import {
 import {useSize} from 'src/utils/use-size';
 import {useKeyboardAreaHeight} from 'src/utils/keyboard-area';
 import {KeyboardCanvas} from '../two-string/keyboard-canvas';
+import {FirmwareDevice} from './firmware-device';
 
 // A board's page shows that board where Configure shows the connected keyboard:
 // its own layout, drawn from its bundled definition on the same background, keys
@@ -48,6 +49,13 @@ const Background = styled.div<{$color: string}>`
     )} 50%, rgba(150,150,150,1) 90%)`};
 `;
 
+const DeviceBadge = styled.div`
+  position: absolute;
+  top: 0;
+  right: 15px;
+  z-index: 2;
+`;
+
 /** One keyboard area across catalogue choices, board lists and board details. */
 export const FirmwareStage: FC<{
   children: ReactNode;
@@ -65,6 +73,9 @@ export const FirmwareStage: FC<{
     >
       <Background $color={accent} />
       {children}
+      <DeviceBadge>
+        <FirmwareDevice />
+      </DeviceBadge>
     </Stage>
   );
 };

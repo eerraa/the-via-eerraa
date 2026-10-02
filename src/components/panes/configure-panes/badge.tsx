@@ -47,28 +47,22 @@ type ConnectedKeyboardDefinition = [
 const KeyboardSelectors: React.FC<{
   show: boolean;
   keyboards: ConnectedKeyboardDefinition[];
-  selectedPath: string;
+  selectedPath: string | null;
   onClickOut: () => void;
   selectKeyboard: (kb: string) => void;
+  authorizeKeyboard: () => Promise<void>;
 }> = (props) => {
   const {t} = useTranslation();
-
-  const requestAndChangeDevice = async () => {
-    const device = await HID.requestDevice();
-
-    if (device) {
-      props.selectKeyboard((device as any).__path);
-    }
-  };
 
   return (
     <>
       {props.show && <ClickCover onClick={props.onClickOut} />}
 
-      <KeyboardList $show={props.show}>
+      <KeyboardList $show={props.show} aria-hidden={!props.show}>
         {props.keyboards.map(([path, , name]) => {
           return (
             <KeyboardButton
+              tabIndex={props.show ? 0 : -1}
               $selected={path === props.selectedPath}
               key={path}
               onClick={() => props.selectKeyboard(path as string)}
@@ -79,7 +73,10 @@ const KeyboardSelectors: React.FC<{
         })}
 
         {!isElectron && (
-          <KeyboardButton onClick={requestAndChangeDevice}>
+          <KeyboardButton
+            tabIndex={props.show ? 0 : -1}
+            onClick={props.authorizeKeyboard}
+          >
             {t('Authorize New')}
             <FontAwesomeIcon icon={faPlus} style={{marginLeft: '10px'}} />
           </KeyboardButton>
@@ -89,7 +86,16 @@ const KeyboardSelectors: React.FC<{
   );
 };
 
-export const Badge = () => {
+export const Badge = ({
+  allowAuthorize = false,
+  onDeviceSelected,
+}: {
+  allowAuthorize?: boolean;
+  onDeviceSelected?: (
+    device: Pick<ConnectedDevice, 'vendorId' | 'productId'>,
+  ) => void;
+}) => {
+  const {t} = useTranslation();
   const dispatch = useAppDispatch();
   const definitions = useAppSelector(getDefinitions);
   const selectedDefinition = useAppSelector(getSelectedDefinition);
@@ -120,17 +126,45 @@ export const Badge = () => {
     [connectedDevices, definitions, getConnectedDefinitionName],
   );
 
-  if (!selectedDefinition || !selectedPath) {
+  const selectKeyboard = (path: string) => {
+    dispatch(selectConnectedDeviceByPath(path));
+    setShowList(false);
+    const device = connectedDevices[path];
+    if (device) onDeviceSelected?.(device);
+  };
+
+  const authorizeKeyboard = async () => {
+    let device;
+    try {
+      device = await HID.requestDevice();
+    } catch {
+      // Cancelling or refusing the browser chooser keeps the current page.
+      return;
+    }
+    if (device) {
+      dispatch(selectConnectedDeviceByPath((device as any).__path));
+      setShowList(false);
+      onDeviceSelected?.(device);
+    }
+  };
+
+  const hasSelection = !!selectedDefinition && !!selectedPath;
+  if (!hasSelection && !allowAuthorize) {
     return null;
   }
 
   return (
     <Container>
-      <KeyboardTitle onClick={() => setShowList(!showList)}>
-        {selectedDefinitionName}
+      <KeyboardTitle
+        as="button"
+        type="button"
+        aria-expanded={hasSelection ? showList : undefined}
+        onClick={hasSelection ? () => setShowList(!showList) : authorizeKeyboard}
+      >
+        {hasSelection ? selectedDefinitionName : t('Authorize device')}
 
         <FontAwesomeIcon
-          icon={faAngleDown}
+          icon={hasSelection ? faAngleDown : faPlus}
           style={{
             transform: showList ? 'rotate(180deg)' : '',
             transition: 'transform 0.2s ease-out',
@@ -139,16 +173,16 @@ export const Badge = () => {
         />
       </KeyboardTitle>
 
-      <KeyboardSelectors
-        show={showList}
-        selectedPath={selectedPath}
-        keyboards={connectedKeyboardDefinitions}
-        onClickOut={() => setShowList(false)}
-        selectKeyboard={(path) => {
-          dispatch(selectConnectedDeviceByPath(path));
-          setShowList(false);
-        }}
-      />
+      {hasSelection && (
+        <KeyboardSelectors
+          show={showList}
+          selectedPath={selectedPath}
+          keyboards={connectedKeyboardDefinitions}
+          onClickOut={() => setShowList(false)}
+          selectKeyboard={selectKeyboard}
+          authorizeKeyboard={authorizeKeyboard}
+        />
+      )}
     </Container>
   );
 };

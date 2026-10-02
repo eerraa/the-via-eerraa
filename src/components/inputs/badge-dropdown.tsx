@@ -60,6 +60,7 @@ export const BadgeList = styled.ul<{$show: boolean}>`
   transition: all 0.2s ease-out;
   z-index: 11;
   opacity: ${(props) => (props.$show ? 1 : 0)};
+  visibility: ${(props) => (props.$show ? 'visible' : 'hidden')};
   transform: ${(props) => (props.$show ? 'translateY(0)' : 'translateY(-5px)')};
 `;
 

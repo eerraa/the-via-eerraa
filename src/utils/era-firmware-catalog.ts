@@ -466,11 +466,14 @@ export const getFirmwareFileName = (file: FirmwareFile) =>
 // guarded and the app works without it.
 const MAKER_CHOICE_PREFIX = 'era-firmware-maker:';
 const makerChoiceListeners = new Set<() => void>();
-// Fallback when storage is unavailable: the choice then lasts for this page view.
+// The latest choice in this page view also survives blocked storage reads/writes.
 const pageViewChoices = new Map<string, string | null>();
 let makerChoiceRevision = 0;
 
 export const readRememberedMaker = (boardId: string): string | null => {
+  if (pageViewChoices.has(boardId)) {
+    return pageViewChoices.get(boardId) ?? null;
+  }
   try {
     const storage = globalThis.localStorage;
     const stored = storage?.getItem(MAKER_CHOICE_PREFIX + boardId);
@@ -486,10 +489,11 @@ export const readRememberedMaker = (boardId: string): string | null => {
 export const rememberMaker = (boardId: string, makerId: string | null) => {
   pageViewChoices.set(boardId, makerId);
   try {
+    const storage = globalThis.localStorage;
     if (makerId === null) {
-      globalThis.localStorage?.removeItem(MAKER_CHOICE_PREFIX + boardId);
+      storage?.removeItem(MAKER_CHOICE_PREFIX + boardId);
     } else {
-      globalThis.localStorage?.setItem(MAKER_CHOICE_PREFIX + boardId, makerId);
+      storage?.setItem(MAKER_CHOICE_PREFIX + boardId, makerId);
     }
   } catch {
     // Storage blocked or full: the page-view choice above still applies.

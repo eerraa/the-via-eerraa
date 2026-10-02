@@ -66,9 +66,14 @@ mirrors it for the app.
 - A layout saved before the change carries the old identity. The app loads a
   saved layout onto any identity of the same board, legacy or another maker's,
   or onto its other half on a split board, so a legacy definition keeps the
-  current one's matrix, keycodes and layout
-  options. The same release took most EERRAA boards from four layers to six: a
-  layer the file lacks keeps what the keyboard has, and a layer the keyboard
+  current one's matrix, keycodes and layout options when the stored geometry
+  is unchanged. MAY65 V261002R1 intentionally expands from 5×15 to 5×16 to add
+  Insert: its frozen legacy definition keeps 5×15 for the old firmware, while
+  its current definition uses 5×16. This release resets EEPROM on every H7S
+  board; MAY65's old keymap backup requires manual reconfiguration, and the
+  existing key-count check refuses a direct cross-geometry import. The same
+  release took most EERRAA boards from four layers to six: a layer the file
+  lacks keeps what the keyboard has, and a layer the keyboard
   lacks is taken only when it is empty. The file stays official VIA's format:
   keys load per switch position whatever layout option is showing, so a key
   the current option hides is still written, and layout options are not saved.
@@ -99,9 +104,16 @@ one split control, `ERA │ Firmware`: the wordmark stays the platform identity
 and the second segment opens the firmware page. When the connected keyboard has
 a newer release, the action segment stays filled and its tooltip names the
 board and version. The control lives in `src/components/menus/external-links.tsx`.
+On narrow windows, the header groups wrap within the viewport so every route
+and language choice stays reachable.
 
 The page speaks the grammar of the rest of the app
-(`src/components/panes/firmware.tsx`). It has no maker or keyboard badges above
+(`src/components/panes/firmware.tsx`). With WebHID, the keyboard area's upper
+right reuses Configure's device badge. Without a selected keyboard it offers
+device authorization. Choosing an authorized keyboard or authorizing a new one
+opens that keyboard's download page, using its USB identity and the same maker
+resolution as connected-board entry. A cancelled chooser or a device outside
+the catalogue leaves the address unchanged. No maker badge is shown above
 the drawing. Maker choices, board lists and board details keep the same keyboard
 area above the content, with the same position, shared height and theme
 background (`src/components/panes/firmware-keyboard.tsx`). The choice and list
@@ -118,7 +130,7 @@ page, the current maker's link returns to that maker's board list; choosing
 another maker keeps the board when that maker distributes it. On the list, a
 click on the current maker stays there. Maker choices have no visible heading
 or separate return links; the navigation keeps its accessible name. The real
-maker links keep every maker reachable after the badges are removed. Long
+maker links keep every maker reachable. Long
 names wrap within the viewport, and the content scrolls when space is limited.
 The board list is one column of setting rows: each board with its version
 and download, or "not published". The list's Download link opens that board's
@@ -155,7 +167,10 @@ is connected, so catalogue navigation never traps the user on their own board.
 `/firmware/<maker>` opens that maker's board list, `/firmware/<maker>/<board>`
 opens a board's page, and the short `/firmware/<board>` is resolved in
 `src/utils/firmware-route.ts`. Explicit maker and board links take precedence
-over the connected keyboard. Ids match without regard to case. The short link
+over background device recognition; an explicit device choice in the badge
+navigates to that device's page even from another board or `?makers=1`.
+Disconnecting still keeps the download page open. Ids match without regard to
+case. The short link
 opens the board when one maker distributes it, or the maker this browser
 remembered; otherwise the board's page asks which maker sold it. Unknown
 addresses fall back to catalogue navigation; a valid maker stays selected when
@@ -181,6 +196,10 @@ gate.
 A board's page shows the version, release date, size and download, the SHA-256
 and the flashing steps for that family. ZIP contents are unchanged: `.uf2`,
 readme, and the `usevia.app` folder.
+The steps conservatively warn that an update may reset settings and ask for
+a backup first. They do not promise either retention or a reset on every
+version change. MAY65 also warns that backups from before the Insert expansion
+require manual keymap reconfiguration, as described in §2.
 
 Versions use the VERSION grammar (`YYMMDDRn`) everywhere in the app through
 `formatEraFirmwareVersion` in `src/utils/era-firmware-version.ts`; file names

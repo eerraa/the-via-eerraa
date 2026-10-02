@@ -367,9 +367,9 @@ describe('era definition layout options', () => {
     ).toEqual([]);
   });
 
-  // The app loads a layout saved under a board's legacy identity onto its current
-  // one, so both definitions must put the same keys and keycodes in the same places.
-  test('a legacy definition lays out the same keys as the current one', () => {
+  // Identity-only upgrades preserve geometry. MAY65 explicitly changes its matrix,
+  // so the old firmware keeps its frozen definition and old backups fail closed.
+  test('legacy geometry stays compatible except the explicit MAY65 matrix expansion', () => {
     const signature = (path: string) => {
       const raw = readJSON(path) as {
         matrix: unknown;
@@ -384,10 +384,17 @@ describe('era definition layout options', () => {
     };
     for (const {id, path, legacy} of manifest.definitions) {
       if (legacy) {
-        expect({id, ...signature(legacy.path)}).toEqual({
-          id,
-          ...signature(path),
-        });
+        const previous = signature(legacy.path);
+        const current = signature(path);
+        if (id === 'may65-h7s') {
+          // Insert expands the current matrix; the frozen legacy firmware stays 5x15.
+          expect(previous.matrix).toEqual({rows: 5, cols: 15});
+          expect(current.matrix).toEqual({rows: 5, cols: 16});
+          expect(previous.tapdance).toEqual(current.tapdance);
+          expect(previous.custom).toEqual(current.custom);
+        } else {
+          expect({id, ...previous}).toEqual({id, ...current});
+        }
       }
     }
   });
@@ -457,6 +464,84 @@ describe('era definition layout options', () => {
       ...[...Array.from({length: 13}, (_, col) => col), 14].map((col) => `4,${col}`),
       ...[0, 1, 2, 6, 10, 11, 13, 14, 15].map((col) => `5,${col}`),
     ].sort());
+  });
+
+  test('MAY65 keeps Insert, Enter and backslash in all 16 solder/hotswap layouts', async () => {
+    const {keyboardDefinitionV3ToVIADefinitionV3, isKeyboardDefinitionV3} =
+      await import('@the-via/reader');
+    const entry = manifest.definitions.find(({id}) => id === 'may65-h7s')!;
+    const {definitionRaw} = splitTapDanceKeycodesFromRaw(readJSON(entry.path));
+    if (!isKeyboardDefinitionV3(definitionRaw)) {
+      throw new Error('MAY65: invalid VIA V3 definition');
+    }
+    const {layouts, matrix} = keyboardDefinitionV3ToVIADefinitionV3(definitionRaw);
+    expect(matrix).toEqual({rows: 5, cols: 16});
+    expect([layouts.width, layouts.height]).toEqual([16, 5]);
+    expect(layouts.labels).toEqual([
+      ['Backspace', 'Unified', 'Split'], ['Enter', 'ANSI', 'ISO'],
+      ['Left Shift', 'Unified', 'Split'], ['Bottom Row', '6.25U', '7U'],
+    ]);
+    // Coordinates from the physical layout, independent of option membership.
+    const expected = [
+      [[[0, 13, 13, 0, 2, 1]],
+        [[0, 14, 13, 0, 1, 1], [0, 13, 14, 0, 1, 1]]],
+      [[[1, 13, 13.5, 1, 1.5, 1], [2, 13, 12.75, 2, 2.25, 1]],
+        [[2, 13, 13.75, 1, 1.25, 2], [2, 12, 12.75, 2, 1, 1]]],
+      [[[3, 0, 0, 3, 2.25, 1]],
+        [[3, 0, 0, 3, 1.25, 1], [3, 1, 1.25, 3, 1, 1]]],
+      [[[4, 0, 0, 4, 1.25, 1], [4, 1, 1.25, 4, 1.25, 1],
+        [4, 2, 2.5, 4, 1.25, 1], [4, 7, 3.75, 4, 6.25, 1],
+        [4, 10, 10, 4, 1.25, 1], [4, 11, 11.25, 4, 1.25, 1]],
+        [[4, 0, 0, 4, 1.5, 1], [4, 1, 1.5, 4, 1, 1],
+          [4, 2, 2.5, 4, 1.5, 1], [4, 7, 4, 4, 7, 1],
+          [4, 11, 11, 4, 1.5, 1]]],
+    ];
+    expected.forEach((choices, group) => choices.forEach((keys, choice) => {
+      expect(layouts.optionKeys[group][choice].map(
+        ({row, col, x, y, w, h}) => [row, col, x, y, w, h],
+      )).toEqual(keys);
+    }));
+    expect(layouts.optionKeys[1][1][0]).toMatchObject({w2: 1.5, h2: 1, x2: -0.25});
+    const rectangles = (key: typeof layouts.keys[number]) => [
+      [key.x, key.y, key.w, key.h],
+      ...(key.w2 === undefined ? [] : [[
+        key.x + (key.x2 ?? 0), key.y + (key.y2 ?? 0), key.w2, key.h2 ?? key.h,
+      ]]),
+    ];
+    for (let bits = 0; bits < 16; bits++) {
+      const choices = Array.from({length: 4}, (_, group) => (bits >> group) & 1);
+      const selected = layouts.keys.concat(
+        choices.flatMap((choice, group) => layouts.optionKeys[group][choice]),
+      );
+      expect(selected).toHaveLength(67 + choices[0] + choices[2] - choices[3]);
+      expect(new Set(selected.map(({row, col}) => `${row},${col}`)).size).toBe(selected.length);
+      expect(selected.filter(({row, col}) => row === 0 && col === 15)).toMatchObject([
+        {x: 15, y: 0, w: 1, h: 1},
+      ]);
+      for (const expectedKey of expected[1][choices[1]]) {
+        const [row, col, x, y, w, h] = expectedKey;
+        expect(selected.filter((key) => key.row === row && key.col === col))
+          .toMatchObject([{x, y, w, h}]);
+      }
+      const overlaps: string[] = [];
+      selected.forEach((key, index) => {
+        expect(key.row >= 0 && key.row < matrix.rows && key.col >= 0 && key.col < matrix.cols).toBe(true);
+        for (const [x, y, w, h] of rectangles(key)) {
+          expect(x >= 0 && y >= 0 && x + w <= layouts.width && y + h <= layouts.height).toBe(true);
+          for (const other of selected.slice(index + 1)) {
+            if (rectangles(other).some(([ox, oy, ow, oh]) =>
+              x < ox + ow && ox < x + w && y < oy + oh && oy < y + h,
+            )) overlaps.push(`${key.row},${key.col}:${other.row},${other.col}`);
+          }
+        }
+      });
+      expect({choices, overlaps}).toEqual({choices, overlaps: []});
+    }
+    const legacy = readJSON(entry.legacy!.path);
+    expect(legacy.matrix).toEqual({rows: 5, cols: 15});
+    expect(legacy.layouts.keymap.flat().filter((key: unknown) =>
+      typeof key === 'string' && key.split('\n')[0] === '0,15',
+    )).toEqual([]);
   });
 
   test('BRICK65S exposes both firmware-supported Backspace layouts', async () => {
