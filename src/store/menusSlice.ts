@@ -43,7 +43,10 @@ import {
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
   getSelectionGeneration,
+  clearAllDevices,
+  updateConnectedDevices,
 } from './devicesSlice';
+import {discardDrafts, draftKey} from './draftsSlice';
 import type {AppThunk, RootState} from './index';
 import {
   getFirmwareVersionMap,
@@ -74,6 +77,7 @@ type CustomMenuData = {
 type CustomMenuDataMap = {[devicePath: string]: CustomMenuData};
 
 type MenusState = {
+  saveRetries: Record<string, Record<string, boolean>>;
   customMenuDataMap: CustomMenuDataMap;
   commonMenusMap: CommonMenusMap;
   showKeyPainter: boolean;
@@ -291,6 +295,7 @@ const getPendingCustomMenuSyncKey = (
 ) => `${devicePath}:${connectionGeneration}`;
 
 const initialState: MenusState = {
+  saveRetries: {},
   customMenuDataMap: {},
   commonMenusMap: {},
   showKeyPainter: false,
@@ -300,6 +305,14 @@ const menusSlice = createSlice({
   name: 'menus',
   initialState,
   reducers: {
+    setMenuSaveRetry: (
+      state,
+      action: PayloadAction<{devicePath: string; command: string; retry: boolean}>,
+    ) => {
+      const {devicePath, command, retry} = action.payload;
+      if (retry) (state.saveRetries[devicePath] ??= {})[command] = true;
+      else delete state.saveRetries[devicePath]?.[command];
+    },
     updateShowKeyPainter: (state, action: PayloadAction<boolean>) => {
       state.showKeyPainter = action.payload;
     },
@@ -347,6 +360,21 @@ const menusSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
+    builder.addCase(discardDrafts, (state, {payload: {devicePath, keys}}) => {
+      for (const command of Object.keys(state.saveRetries[devicePath] ?? {})) {
+        if (keys.includes(draftKey('menu', command))) {
+          delete state.saveRetries[devicePath][command];
+        }
+      }
+    });
+    builder.addCase(updateConnectedDevices, (state, action) => {
+      for (const path of Object.keys(state.saveRetries)) {
+        if (!action.payload[path]) delete state.saveRetries[path];
+      }
+    });
+    builder.addCase(clearAllDevices, (state) => {
+      state.saveRetries = {};
+    });
     builder.addCase(commitStableConfigCandidate, (state, action) => {
       const {devicePath, candidate} = action.payload;
       if (
@@ -363,6 +391,7 @@ const menusSlice = createSlice({
 });
 
 export const {
+  setMenuSaveRetry,
   updateShowKeyPainter,
   updateSelectedCustomMenuData,
   updateCustomMenuData,
@@ -403,6 +432,9 @@ export const updateCustomMenuValue =
     const {path} = connectedDevice;
     const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
     const connectionGeneration = api.getConnectionGeneration();
+    const currentWrite = () =>
+      api.isConnectionGenerationCurrent(connectionGeneration) &&
+      getConnectedDevices(getState())[path] !== undefined;
     beginConfigWriteSession(dispatch, path, connectionGeneration);
     dispatch(
       beginForegroundMutation({
@@ -436,9 +468,18 @@ export const updateCustomMenuValue =
         async (reservedApi) => {
           await reservedApi.setCustomMenuValue(...rest.slice(0));
           setCompleted = true;
+          // A timeout can retire the transport generation before catch runs.
+          // Record the persistence obligation while SET is acknowledged; only
+          // SAVE acknowledgement or an explicit draft discard can clear it.
+          if (getConnectedDevices(getState())[path]) {
+            dispatch(setMenuSaveRetry({devicePath: path, command, retry: true}));
+          }
           await reservedApi.commitCustomMenu(rest[0]);
         },
       );
+      if (currentWrite()) {
+        dispatch(setMenuSaveRetry({devicePath: path, command, retry: false}));
+      }
       return true;
     } catch (error) {
       console.warn(
@@ -516,7 +557,10 @@ export const updateCustomMenuRangeValue =
       logicalValues,
     );
     const updates = Object.entries(resolvedValues).filter(
-      ([id, value]) => logicalValues[id] !== value && rangeControls[id],
+      ([id, value]) =>
+        (logicalValues[id] !== value ||
+          (id === command && state.menus.saveRetries[connectedDevice.path]?.[id])) &&
+        rangeControls[id],
     );
 
     if (!updates.length) {
@@ -568,6 +612,7 @@ export const updateCustomMenuRangeValue =
       );
     };
     const channels = new Set<number>();
+    const accepted = new Set<string>();
     let setsCompleted = false;
     try {
       const owner = Symbol(`custom-range:${command}`);
@@ -583,11 +628,24 @@ export const updateCustomMenuRangeValue =
             );
             const channel = encodedCommand[0];
             await reservedApi.setCustomMenuValue(...encodedCommand);
+            accepted.add(id);
+            if (getConnectedDevices(getState())[connectedDevice.path]) {
+              dispatch(setMenuSaveRetry({
+                devicePath: connectedDevice.path, command: id, retry: true,
+              }));
+            }
             channels.add(channel);
           }
           setsCompleted = true;
           for (const channel of channels) {
             await reservedApi.commitCustomMenu(channel);
+            for (const id of accepted) {
+              if (rangeControls[id].content[1] === channel) {
+                dispatch(setMenuSaveRetry({
+                  devicePath: connectedDevice.path, command: id, retry: false,
+                }));
+              }
+            }
           }
         },
       );
@@ -603,7 +661,9 @@ export const updateCustomMenuRangeValue =
         dispatch(
           rollbackCustomMenuData({
             devicePath: connectedDevice.path,
-            expected: expectedMenuData,
+            expected: Object.fromEntries(
+              Object.entries(expectedMenuData).filter(([id]) => !accepted.has(id)),
+            ),
             previous: previousMenuData,
           }),
         );

@@ -40,7 +40,7 @@ import type {
 } from '@the-via/reader';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
-import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
+import {getSelectedConnectedDevice, getSelectedDevicePath} from 'src/store/devicesSlice';
 import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
 import {
   awaitCustomMenuLabels,
@@ -377,6 +377,11 @@ export const Pane: React.FC<Props> = (props: any) => {
     (state) => getSelectedConnectedDevice(state)?.vendorProductId,
   );
   const menuDrafts = useAppSelector(getSelectedMenuDrafts);
+  const saveRetries = useAppSelector((state) => {
+    const path = getSelectedDevicePath(state);
+    return path ? state.menus.saveRetries?.[path] : undefined;
+  });
+
   const eraDefinition = useIsEraDefinition();
   const deferredRows = useMemo(() => {
     const rows = new Map<string, DeferredRow>();
@@ -390,13 +395,13 @@ export const Pane: React.FC<Props> = (props: any) => {
       if (item.held && !eraDefinition) {
         return;
       }
-      const row = deferredRowFor(item, selectedCustomMenuData, exactMsFamily);
+      const row = deferredRowFor(item, selectedCustomMenuData, exactMsFamily, saveRetries?.[item.content[0]]);
       if (row) {
         rows.set(row.command, row);
       }
     });
     return rows;
-  }, [props.viaMenu, selectedCustomMenuData, vendorProductId, eraDefinition]);
+  }, [props.viaMenu, selectedCustomMenuData, vendorProductId, eraDefinition, saveRetries]);
   // Apply sends a held value's switch and the value reads as its labels, so none of
   // them gets a row.
   const hiddenCommands = useMemo(

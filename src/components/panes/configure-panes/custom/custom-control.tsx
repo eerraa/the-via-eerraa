@@ -286,10 +286,11 @@ export const deferredRowFor = (
   item: DeferredItem,
   menuData: Record<string, unknown>,
   exactMsFamily: ExactMsFamily | null,
+  saveRetry = false,
 ): DeferredRow | null => {
   const [command, ...address] = item.content;
   const value = menuData[command] as number[] | undefined;
-  const differs = (saved: MenuDraft) => (draft: MenuDraft) => draft !== saved;
+  const differs = (saved: MenuDraft) => (draft: MenuDraft) => saveRetry || draft !== saved;
   switch (item.type) {
     case 'toggle': {
       const options =
@@ -342,7 +343,7 @@ export const deferredRowFor = (
         // can send it, even the one shown: a speed the pair fell back to is kept
         // only that way, and a definition without the labels cannot tell.
         pending: action
-          ? (draft) => draft !== inEffect || draft !== kept
+          ? (draft) => saveRetry || draft !== inEffect || draft !== kept
           : differs(saved),
       };
       if (action) {
@@ -384,7 +385,8 @@ export const deferredRowFor = (
             return parsed.ok ? shiftFrom16Bit(parsed.value) : null;
           },
           pending: (draft) =>
-            canApplyIntegerDraft(String(draft), savedValue, bounds),
+            canApplyIntegerDraft(String(draft), savedValue, bounds) ||
+            (saveRetry && parseIntegerDraft(String(draft), bounds.min, bounds.max).ok),
         };
       }
       const max = (item.options as number[])[1];

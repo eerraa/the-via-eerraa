@@ -101,7 +101,7 @@ describe('continuous control lifecycle wiring', () => {
 // The lighting pane of a board on VIA before protocol 11 (a V2 definition). A colour
 // drag holds the keyboard's command queue until the drag ends; the end must SAVE the
 // colour and let the next command through.
-const {HID, registerHIDDeviceForTesting, resetHIDTransportForTesting} =
+const {HID, registerHIDDeviceForTesting, resetHIDTransportForTesting, configureHIDTransport} =
   await import('../src/shims/node-hid');
 const {resetContinuousHIDTransactionsForTesting} =
   await import('../src/utils/continuous-hid-transaction');
@@ -832,6 +832,7 @@ const {
   default: menusReducer,
   getV3Menus,
   setLabelWatchForTesting,
+  updateCustomMenuRangeValue,
   updateSelectedCustomMenuData,
 } = await import('../src/store/menusSlice');
 const {default: stateSyncReducer} = await import('../src/store/stateSyncSlice');
@@ -1383,6 +1384,92 @@ describe('ERA menu drafts', () => {
       await applying;
     });
   };
+
+  test('FEATURE SAVE refusal remains retryable at the accepted runtime value across reread and reentry', async () => {
+    const opened = await openKeyboard();
+    const {keyboard, store, connect} = opened;
+    keyboard.refuse = ([command]) => command === SAVE;
+    await show(store);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '137'}}));
+    await act(async () => { await button('Apply').props.onClick(); });
+    expect(store.getState().menus.customMenuDataMap[PATH].id_qmk_tapping_global_term_exact).toEqual([0, 137]);
+    expect(refusal('Global Tapping Term')).toBe(true);
+    expect(button('Apply').props.disabled).toBe(false);
+    expect(button('Cancel').props.disabled).toBe(false);
+    // An authoritative GET of the running value does not acknowledge SAVE.
+    store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {...storedValues, id_qmk_tapping_global_term_exact: [0, 137]}}));
+    const chooseOther = await addKeyboard(opened, new MenuKeyboard());
+    chooseOther();
+    await show(store);
+    expect(button('Apply').props.disabled).toBe(true);
+    act(() => connect());
+    await show(store);
+    expect(button('Apply').props.disabled).toBe(false);
+    keyboard.refuse = () => false;
+    await act(async () => { await button('Apply').props.onClick(); });
+    expect(writes(keyboard)).toEqual([[SET, 15, 5, 0, 137], [SAVE, 15], [SET, 15, 5, 0, 137], [SAVE, 15]]);
+    expect(store.getState().drafts).toEqual({});
+    expect(store.getState().menus.saveRetries[PATH]).toEqual({});
+    expect(button('Apply').props.disabled).toBe(true);
+  });
+
+  test('editing and cancelling a failed SAVE never roll back the accepted runtime value', async () => {
+    const {keyboard, store} = await openKeyboard();
+    keyboard.refuse = ([command]) => command === SAVE;
+    await show(store);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '137'}}));
+    await act(async () => { await button('Apply').props.onClick(); });
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: ''}}));
+    expect(button('Apply').props.disabled).toBe(true);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '137'}}));
+    expect(button('Apply').props.disabled).toBe(false);
+    await act(async () => button('Cancel').props.onClick());
+    expect(field('Global Tapping Term').props.value).toBe('137');
+    expect(button('Apply').props.disabled).toBe(true);
+    expect(store.getState().menus.saveRetries[PATH]).toEqual({});
+    expect(writes(keyboard)).toHaveLength(2);
+    store.dispatch(updateConnectedDevices({}));
+    expect(store.getState().menus.saveRetries).toEqual({});
+  });
+
+  test('SAVE timeout preserves retry across transport retirement and connection reload', async () => {
+    const {keyboard, store, device, connect} = await openKeyboard();
+    configureHIDTransport({responseTimeoutMs: 25});
+    await show(store);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '137'}}));
+    const held = keyboard.hold(([command]) => command === SAVE);
+    await act(async () => { await button('Apply').props.onClick(); });
+    await held;
+    expect(new KeyboardAPI(PATH).isConnectionLocked()).toBe(true);
+    expect(store.getState().menus.saveRetries[PATH].id_qmk_tapping_global_term_exact).toBe(true);
+    // Reload preserves the session's intent; GET equality still cannot prove SAVE.
+    resetHIDTransportForTesting();
+    registerHIDDeviceForTesting(PATH, keyboard as any);
+    await new HID.HID(PATH).openPromise;
+    act(() => {
+      store.dispatch(updateConnectedDevices({[PATH]: device}));
+      connect();
+      store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {...storedValues, id_qmk_tapping_global_term_exact: [0, 137]}}));
+    });
+    await show(store);
+    expect(button('Apply').props.disabled).toBe(false);
+    await act(async () => { await button('Apply').props.onClick(); });
+    expect(store.getState().menus.saveRetries[PATH]).toEqual({});
+  });
+
+  test('applying another range never writes an unrelated failed SAVE retry', async () => {
+    const menu = {...featureMenu, content: [...featureMenu.content, {label: 'TD', content: [{label: 'Hold decision time', type: 'range', content: ['id_qmk_tapdance_1_hold_term', 0, 88], options: [0, 65535]}]}]};
+    const {keyboard, store} = await openKeyboard('era', menu, {...storedValues, id_qmk_tapdance_1_hold_term: [0, 0]});
+    keyboard.refuse = ([command]) => command === SAVE;
+    await show(store);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '137'}}));
+    await act(async () => { await button('Apply').props.onClick(); });
+    const before = keyboard.sent.length;
+    keyboard.refuse = () => false;
+    await act(async () => { await store.dispatch(updateCustomMenuRangeValue('id_qmk_tapdance_1_hold_term', 100) as any); });
+    expect(keyboard.sent.slice(before).filter(([cmd]) => cmd === SET || cmd === SAVE).map(b => b.slice(0, b[0] === SET ? 5 : 2))).toEqual([[SET, 0, 88, 0, 100], [SAVE, 0]]);
+    expect(store.getState().menus.saveRetries[PATH].id_qmk_tapping_global_term_exact).toBe(true);
+  });
 
   test('shows a draft where it was set and keeps it across the sub-tab, the pane and a reconnect', async () => {
     const {keyboard, store, device, connect} = await openKeyboard();

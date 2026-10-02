@@ -175,6 +175,16 @@ rather than guessed from a definition or static app string. The wire/display
 grammar and current command identities are source-owned and routed by
 `docs/MAP.md`.
 
+### Failed persistence remains actionable
+
+A successful SET followed by a failed SAVE leaves the authoritative runtime
+value visible. A separate retry obligation keeps a valid draft actionable even
+if GET equals it. Only a successful SAVE clears that obligation; CONFIG equality
+cannot. Editing retains it, invalid drafts cannot Apply, and Cancel discards the
+local retry/draft without rolling back runtime. Pane reentry and device selection
+retain per-device intent; physical removal discards it with the drafts. A
+connection reload alone is not evidence of persistence and retains retry intent.
+
 ## 8. Low-saturation RGB effect guidance
 
 For an ERA definition, a known RGBLight or RGB Matrix effect whose main color
