@@ -69,6 +69,10 @@ const {ConfigurePane} = await import('../src/components/panes/configure');
 const {Row} = await import('../src/components/panes/grid');
 const {SubmenuTabBar} = await import('../src/components/panes/submenu-tabs');
 const {DirtyDot} = await import('../src/components/inputs/dirty-dot');
+const {HostKeyboardLayoutBadge} = await import('../src/components/panes/configure-panes/host-keyboard-layout-badge');
+const {keymapExtras} = await import('../src/utils/keymap-extras');
+const {getSettings} = await import('../src/utils/device-store');
+const {updateHostKeyboardLayout} = await import('../src/store/settingsSlice');
 
 const translations = i18n.createInstance();
 await translations.init({lng: 'en', resources: {en: {translation: {}}}});
@@ -660,5 +664,102 @@ describe('Configure opens where it was left', () => {
     await show(store);
     expect(openMenu()).toEqual(['Lighting']);
     expect(openTab()).toEqual(['Advanced']);
+  });
+});
+
+describe('Host keyboard layout menu', () => {
+  test.each(['v2', 'v3'] as const)('a native button preserves the ordinary VIA %s host layout workflow by keyboard', async (version) => {
+    const store = makeStore();
+    store.dispatch(definitions.updateDefinitions({
+      [VPID]: version === 'v2' ? {v2: v2Definition} : {v3: v3Definition},
+    } as any));
+    await connect(store, board(PATH, {version}));
+    const initial = store.getState();
+    const previousLayout = getSettings().hostKeyboardLayout;
+    const focused: string[] = [];
+    const nativeButtons = new Map<string, {focus: () => void; getBoundingClientRect: () => {right: number; top: number; bottom: number}}>();
+    act(() => {
+      renderer = create(
+        <Provider store={store}><HostKeyboardLayoutBadge /></Provider>,
+        {
+          createNodeMock: ({type, props}) => {
+            if (type !== 'button') return null;
+            const identity = props.role === 'menuitemradio' ? props.children : 'host-layout-trigger';
+            const existing = nativeButtons.get(identity);
+            if (existing) return existing;
+            const node = {
+              focus: () => {
+                (document as any).activeElement = node;
+                focused.push(props['aria-label'] ?? props.children);
+              },
+              getBoundingClientRect: () => ({right: 163, top: 50, bottom: 75}),
+            };
+            nativeButtons.set(identity, node);
+            return node;
+          },
+        },
+      );
+    });
+    try {
+      const root = renderer!.root;
+      const triggers = root.findAll((node) =>
+        node.type === 'button' && node.props['aria-haspopup'] === 'menu',
+      );
+      expect(triggers).toHaveLength(1);
+      const trigger = () => root.find((node) =>
+        node.type === 'button' && node.props['aria-haspopup'] === 'menu',
+      );
+      const choices = () => root.findAll((node) =>
+        node.type === 'button' && node.props.role === 'menuitemradio',
+      );
+      const list = () => root.find((node) => node.type === 'ul' && node.props.role === 'menu');
+      const key = (name: string) => {
+        const container = root.find((node) => node.type === 'div' && node.props.onKeyDown);
+        act(() => container.props.onKeyDown({key: name, preventDefault: () => undefined}));
+      };
+      const labels = Object.values(keymapExtras).map(({label}) => label);
+      expect(trigger().props.type).toBe('button');
+      expect(trigger().props['aria-label']).toBe('English (US)');
+      expect(trigger().props.title).toBe('English (US)');
+      expect(trigger().props['aria-expanded']).toBe(false);
+      expect(list().props['aria-hidden']).toBe(true);
+      expect(choices().map(textOf)).toEqual(labels);
+      expect(choices().every((node) => node.props.tabIndex === -1)).toBe(true);
+
+      // Enter and Space on the native button emit a click with detail 0.
+      act(() => trigger().props.onClick({detail: 0}));
+      expect(trigger().props['aria-expanded']).toBe(true);
+      expect(focused.at(-1)).toBe('English (US)');
+      expect(choices().find((node) => node.props['aria-checked'])?.props.children).toBe('English (US)');
+      key('ArrowDown');
+      expect(focused.at(-1)).toBe(labels[1]);
+      expect(store.getState()).toBe(initial);
+      key('Escape');
+      expect(trigger().props['aria-expanded']).toBe(false);
+      expect(focused.at(-1)).toBe('English (US)');
+
+      key('ArrowDown');
+      expect(trigger().props['aria-expanded']).toBe(true);
+      expect(focused.at(-1)).toBe(labels[0]);
+      const canadianIndex = Object.keys(keymapExtras).indexOf('keymap_canadian_multilingual');
+      for (let index = 0; index < canadianIndex; index++) key('ArrowDown');
+      const choice = choices().find((node) => node.props.tabIndex === 0)!;
+      expect(textOf(choice)).toBe('Canadian Multilingual');
+      act(() => choice.props.onClick({detail: 0}));
+
+      expect(store.getState().settings.hostKeyboardLayout).toBe('keymap_canadian_multilingual');
+      expect(getSettings().hostKeyboardLayout).toBe('keymap_canadian_multilingual');
+      expect(trigger().props['aria-label']).toBe('Canadian Multilingual');
+      expect(trigger().props.title).toBe('Canadian Multilingual');
+      expect(trigger().props['aria-expanded']).toBe(false);
+      expect(list().props['aria-hidden']).toBe(true);
+      expect(choices().every((node) => node.props.tabIndex === -1)).toBe(true);
+      const {settings: initialSettings, ...initialKeyboardState} = initial;
+      const {settings: currentSettings, ...currentKeyboardState} = store.getState();
+      expect(currentKeyboardState).toEqual(initialKeyboardState);
+      expect({...currentSettings, hostKeyboardLayout: initialSettings.hostKeyboardLayout}).toEqual(initialSettings);
+    } finally {
+      store.dispatch(updateHostKeyboardLayout(previousLayout));
+    }
   });
 });

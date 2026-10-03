@@ -20,6 +20,10 @@ const LanguageList = styled.ul<{$show: boolean}>`
   margin-top: 5px;
   top: 30px;
   right: 0px;
+  @media (max-width: 720px) {
+    left: 0;
+    right: auto;
+  }
   position: absolute;
   pointer-events: ${(props) => (props.$show ? 'all' : 'none')};
   transition: all 0.2s ease-out;

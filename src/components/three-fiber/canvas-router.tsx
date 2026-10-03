@@ -35,6 +35,7 @@ import {
   useKeyboardAreaHeight,
 } from 'src/utils/keyboard-area';
 import {useSize} from 'src/utils/use-size';
+import {globalMenuHeight} from 'src/utils/global-menu-height';
 import {Object3D, SpotLight as ThreeSpotLight} from 'three';
 import {useLocation} from 'wouter';
 import {ConfigureKeyboard} from '../n-links/keyboard/configure';
@@ -142,8 +143,8 @@ export const NonSuspenseCanvasRouter = () => {
               : !dimensions
               ? ''
               : `translateY(calc(${
-                  dimensions!.height / 2 - 50
-                }px - ${keyboardAreaHeight} / 2))`
+                  dimensions!.height / 2
+                }px - ${globalMenuHeight} - ${keyboardAreaHeight} / 2))`
             : '',
           position: hideCanvasScene && !hideTerrainBG ? 'absolute' : 'relative',
           overflow: 'visible',

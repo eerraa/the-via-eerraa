@@ -168,6 +168,7 @@ export const badgePopupBounds = (
 };
 
 const DropdownList = styled(BadgeList)<{$bounds: PopupBounds}>`
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
   position: fixed;
   top: ${(props) => props.$bounds.top}px;
   left: ${(props) => props.$bounds.left}px;

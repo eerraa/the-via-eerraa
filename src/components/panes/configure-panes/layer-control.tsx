@@ -15,6 +15,14 @@ const Container = styled.div`
   left: 15px;
   font-weight: 400;
   top: 10px;
+
+  @media (max-width: 720px) {
+    position: static;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
 `;
 const Label = styled.label`
   font-size: 20px;

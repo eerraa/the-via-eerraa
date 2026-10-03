@@ -10,6 +10,7 @@ import {CategoryIconContainer} from '../panes/grid';
 import {ErrorLink, ErrorsPaneConfig} from '../panes/errors';
 import {ExternalLinks} from './external-links';
 import {useTranslation} from 'react-i18next';
+import {useGlobalMenuHeight} from 'src/utils/global-menu-height';
 
 const Container = styled.div`
   width: 100vw;
@@ -58,14 +59,19 @@ const PaneIcons = styled.div`
   }
 `;
 
+const GlobalMenuContainer = ({children}: React.PropsWithChildren) => {
+  const ref = useGlobalMenuHeight();
+  return <GlobalContainer ref={ref}>{children}</GlobalContainer>;
+};
+
 /**
  * Without WebHID there is nothing to configure, but firmware downloads still
  * work, so the header keeps only language selection and the firmware entry.
  */
 export const DownloadOnlyGlobalMenu = () => (
-  <GlobalContainer>
+  <GlobalMenuContainer>
     <ExternalLinks />
-  </GlobalContainer>
+  </GlobalMenuContainer>
 );
 
 export const UnconnectedGlobalMenu = () => {
@@ -101,13 +107,13 @@ export const UnconnectedGlobalMenu = () => {
 
   return (
     <React.Fragment>
-      <GlobalContainer>
+      <GlobalMenuContainer>
         <PaneIcons>
           <ErrorLink />
           {Panes}
         </PaneIcons>
         <ExternalLinks />
-      </GlobalContainer>
+      </GlobalMenuContainer>
     </React.Fragment>
   );
 };

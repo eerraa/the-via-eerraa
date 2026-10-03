@@ -48,6 +48,7 @@ import {MenuTooltip} from '../inputs/tooltip';
 import {getRenderMode, getSelectedTheme} from 'src/store/settingsSlice';
 import {menuKeys, useConfigureMenu} from 'src/utils/use-configure-place';
 import {useTranslation} from 'react-i18next';
+import {globalMenuHeight} from 'src/utils/global-menu-height';
 
 const MenuContainer = styled.div`
   padding: 15px 10px 20px 10px;
@@ -87,6 +88,48 @@ const BadgeRow = styled.div`
 
   pointer-events: none;
   white-space: nowrap;
+
+  @media (max-width: 720px) {
+    position: static;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    max-width: 100%;
+
+    > div {
+      min-width: 0;
+      max-width: calc((100vw - 40px) / 2);
+    }
+    > div > button {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    > div > button > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    > div > button > svg {
+      flex: none;
+    }
+  }
+`;
+
+const KeyboardToolbar = styled.div`
+  pointer-events: all;
+
+  @media (max-width: 720px) {
+    position: absolute;
+    top: 0;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2px 10px;
+  }
 `;
 
 const Rows = [
@@ -251,7 +294,7 @@ const LoaderPane = styled(CenterPane)`
   row-gap: 50px;
   position: absolute;
   bottom: 50px;
-  top: 50px;
+  top: ${globalMenuHeight};
   left: 0;
   right: 0;
   z-index: 4;
@@ -307,19 +350,19 @@ const ConfigureGrid = () => {
         style={{
           pointerEvents: 'none',
           position: 'absolute',
-          top: 50,
+          top: globalMenuHeight,
           left: 0,
           right: 0,
         }}
       >
-        <div style={{pointerEvents: 'all'}}>
+        <KeyboardToolbar>
           <LayerControl />
 
           <BadgeRow>
             <HostKeyboardLayoutBadge />
             <Badge />
           </BadgeRow>
-        </div>
+        </KeyboardToolbar>
       </ConfigureFlexCell>
 
       <Grid style={{pointerEvents: 'none'}}>

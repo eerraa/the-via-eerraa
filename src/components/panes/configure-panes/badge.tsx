@@ -161,7 +161,7 @@ export const Badge = ({
         aria-expanded={hasSelection ? showList : undefined}
         onClick={hasSelection ? () => setShowList(!showList) : authorizeKeyboard}
       >
-        {hasSelection ? selectedDefinitionName : t('Authorize device')}
+        {hasSelection ? <span>{selectedDefinitionName}</span> : t('Authorize device')}
 
         <FontAwesomeIcon
           icon={hasSelection ? faAngleDown : faPlus}
