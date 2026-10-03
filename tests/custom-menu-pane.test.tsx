@@ -122,6 +122,11 @@ const makeStore = (
       ownerSelectionGeneration: null,
     },
     menus: {
+      readContexts: overrides.menuData ? {[device.path]: {
+        connectionGeneration: 0,
+        selectionGeneration: 1,
+        definitionIdentity: `${device.vendorProductId}:v3:0`,
+      }} : {},
       customMenuDataMap: overrides.menuData
         ? {[device.path]: overrides.menuData}
         : {},

@@ -3,7 +3,7 @@ import catalogSource from '../../config/firmware-catalog.json';
 import manifestSource from '../../config/era-definitions.manifest.json';
 import {useAppSelector} from 'src/store/hooks';
 import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
-import {getSelectedCustomMenuData} from 'src/store/menusSlice';
+import {getSelectedCurrentCustomMenuData} from 'src/store/menusSlice';
 import {
   type FirmwareCatalog,
   type FirmwareData,
@@ -52,7 +52,7 @@ export const useSelectedFirmwareUpdate = (
   version?: string | null,
 ): FirmwareUpdateStatus | null => {
   const device = useAppSelector(getSelectedConnectedDevice);
-  const menuData = useAppSelector(getSelectedCustomMenuData) as
+  const menuData = useAppSelector(getSelectedCurrentCustomMenuData) as
     | Record<string, unknown>
     | null
     | undefined;
@@ -61,7 +61,9 @@ export const useSelectedFirmwareUpdate = (
     return null;
   }
   const current =
-    version !== undefined
+    !menuData
+      ? null
+      : version !== undefined
       ? version
       : decodeEraFirmwareVersion(menuData?.[ERA_FIRMWARE_VERSION_COMMAND]);
   return getFirmwareUpdateStatus(getFirmwareData(), {

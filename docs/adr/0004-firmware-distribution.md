@@ -243,7 +243,13 @@ up to date, a newer version with a button that opens the board's download
 page, a maker choice for a legacy shared identity, or no distributed file. The
 header indicator uses the same comparison. The row sends nothing to the
 keyboard and adds no SET or SAVE affordance, preserving ADR 0003 §7. An
-unreadable or malformed version makes no claim.
+unreadable or malformed version makes no claim. VERSION used by the header and
+download page must come from a successful full CONFIG read on the current
+connection, selection and definition. Reconnection or definition replacement
+cannot reuse the previous read's authority, even when its bytes are identical.
+Partial reads and optimistic SET updates do not establish that authority.
+Background reconciliation within the same context retains the last accepted
+VERSION so the update indicator does not flicker.
 
 A bootloader shortcut on the firmware page may reuse the existing Jump To BOOT
 custom value behind a confirmation; it must not introduce a new command.

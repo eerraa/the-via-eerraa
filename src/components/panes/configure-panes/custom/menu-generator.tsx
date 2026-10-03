@@ -249,7 +249,6 @@ const MenuComponent = React.memo((props: any) => {
       {firmwareVersionSource ? (
         <FirmwareVersion
           source={firmwareVersionSource}
-          menuData={props.selectedCustomMenuData}
         />
       ) : (
         items.map((itemProps: any) => {

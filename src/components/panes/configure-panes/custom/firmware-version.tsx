@@ -12,10 +12,11 @@ import {
 import {getStatusMaker, rememberMaker} from 'src/utils/era-firmware-catalog';
 import {FIRMWARE_ROUTE, getFirmwareBoardPath} from 'src/utils/firmware-route';
 import {useSelectedFirmwareUpdate} from 'src/utils/use-firmware-catalog';
+import {useAppSelector} from 'src/store/hooks';
+import {getSelectedCurrentCustomMenuData} from 'src/store/menusSlice';
 
 type Props = {
   source: EraFirmwareVersionSource;
-  menuData: Record<string, unknown>;
 };
 
 const UpdateLabel = styled(Label)`
@@ -120,9 +121,10 @@ const FirmwareUpdateRow: FC<{version: string | null}> = ({version}) => {
 };
 
 /** One read-only presentation for both firmware-family wire adapters. */
-export const FirmwareVersion: FC<Props> = ({source, menuData}) => {
+export const FirmwareVersion: FC<Props> = ({source}) => {
   const {t} = useTranslation();
-  const version = readEraFirmwareVersion(source, menuData);
+  const menuData = useAppSelector(getSelectedCurrentCustomMenuData);
+  const version = menuData ? readEraFirmwareVersion(source, menuData) : null;
   return (
     <>
       <ControlRow data-era-firmware-version="true">

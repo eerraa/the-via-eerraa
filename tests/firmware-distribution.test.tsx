@@ -652,10 +652,14 @@ const makeStore = (
         : {},
       eraDefinitions: {},
       customDefinitions: {},
+      definitionEpochs: {},
     },
     definitionName: {selectedOptionMap: {}},
     devices: {
       selectedDevicePath: device ? path : null,
+      selectedConnectionGeneration: device ? 1 : null,
+      selectionGeneration: 0,
+      selectedConnectionNeedsReload: false,
       connectedDevicePaths: device
         ? {
             [path]: {
@@ -671,6 +675,11 @@ const makeStore = (
         : {},
     },
     menus: {
+      readContexts: device && version ? {[path]: {
+        connectionGeneration: 1,
+        selectionGeneration: 0,
+        definitionIdentity: `${device.vendorId * 0x10000 + device.productId}:v3:0`,
+      }} : {},
       customMenuDataMap:
         device && version
           ? {[path]: {[ERA_FIRMWARE_VERSION_COMMAND]: ascii(version)}}
@@ -692,7 +701,6 @@ const renderVersionRow = (
         <I18nextProvider i18n={translations}>
           <FirmwareVersion
             source="ascii"
-            menuData={{[ERA_FIRMWARE_VERSION_COMMAND]: ascii(version)}}
           />
         </I18nextProvider>
       </Provider>,
