@@ -384,6 +384,19 @@ const HELP_BY_CONTROL: readonly EraControlHelpEntry[] = [
     command: 'id_qmk_mousekey_cursor_acceleration',
     help: line('Time from start speed to top speed. Off keeps the start speed.'),
   },
+  ...[
+    'id_qmk_mousekey_cursor_ramp_exact',
+    'id_qmk_mousekey_wheel_ramp_exact',
+  ].map((command) => ({command, help: line('Time to reach the target speed. Zero keeps the starting speed.')})),
+  ...[
+    'id_qmk_mousekey_cursor_start_exact',
+    'id_qmk_mousekey_cursor_target_exact',
+    'id_qmk_mousekey_wheel_target_exact',
+  ].map((command) => ({command, help: line('Movement per report. The computer also controls pointer and scroll speed.')})),
+  ...[
+    'id_qmk_mousekey_cursor_interval_exact',
+    'id_qmk_mousekey_wheel_interval_exact',
+  ].map((command) => ({command, help: line('Time between repeated reports. Shorter intervals send movement more often.')})),
   {
     command: 'id_qmk_mousekey_cursor_min_speed',
     labels: ['Cursor Speed'],

@@ -1360,6 +1360,160 @@ describe('ERA menu drafts', () => {
     await act(async () => toggle('Hold on Other Key Press').props.onChange({}));
   };
 
+  const mouseMenu = {label: 'FEATURE', content: [{label: 'MOUSE', content: [
+    {label: 'Cursor Start Speed', type: 'dropdown', content: ['id_qmk_mousekey_cursor_min_speed', 13, 1], options: [['4 px', 4], ['8 px', 8]]},
+    {label: 'Precision Support', showIf: '0', type: 'label', content: ['id_qmk_mousekey_precision', 13, 7]},
+    {label: 'Cursor Start Speed', showIf: '0', type: 'range', content: ['id_qmk_mousekey_cursor_start_exact', 13, 8], options: [1, 127]},
+    {label: 'Cursor Acceleration Time', showIf: '0', type: 'range', content: ['id_qmk_mousekey_cursor_ramp_exact', 13, 10], options: [0, 65535]},
+  ]}]};
+  const mouseValues = {
+    id_qmk_mousekey_cursor_min_speed: [4], id_qmk_mousekey_precision: [0xe4, 1],
+    id_qmk_mousekey_cursor_start_exact: [0, 4, 0xe4], id_qmk_mousekey_cursor_ramp_exact: [3, 232, 0xe4],
+  };
+  const precisionToggle = () => renderer!.root.findAllByType(AccentSlider).at(-1)!;
+  const mouseKeyboard = () => {
+    const keyboard = new MenuKeyboard();
+    const running: Record<number, number[]> = {1: [4], 7: [0xe4, 1], 8: [0, 4, 0xe4], 10: [3, 232, 0xe4]};
+    keyboard.respond = (bytes, reply) => {
+      if (bytes[1] !== 13) return;
+      if (bytes[0] === 7) running[bytes[2]] = [bytes[3], bytes[4], 0xe4];
+      if (bytes[0] === 8) reply.set(running[bytes[2]] ?? [0], 3);
+    };
+    return {keyboard, running};
+  };
+  test('MOUSE precision toggle preserves integer drafts without writes; same-value SAVE retry works', async () => {
+    const {keyboard} = mouseKeyboard();
+    const {store} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    await showLink(store);
+    await act(async () => precisionToggle().props.onChange(true));
+    expect(field('Cursor Start Speed').props.value).toBe('4'); // BE16 even below 256
+    await act(async () => field('Cursor Start Speed').props.onChange({target: {value: '17'}}));
+    await act(async () => precisionToggle().props.onChange(false));
+    await act(async () => precisionToggle().props.onChange(true));
+    expect(field('Cursor Start Speed').props.value).toBe('17');
+    expect(writes(keyboard)).toEqual([]);
+    keyboard.refuse = ([id]) => id === SAVE;
+    await act(async () => button('Apply').props.onClick());
+    expect(alerts()).toContain(REFUSED);
+    expect(button('Apply').props.disabled).toBe(false);
+    expect(store.getState().menus.saveRetries[PATH].id_qmk_mousekey_cursor_start_exact).toBe(true);
+    keyboard.refuse = () => false;
+    await act(async () => button('Apply').props.onClick());
+    expect(writes(keyboard)).toEqual([[SET,13,8,0,17],[SAVE,13],[SET,13,8,0,17],[SAVE,13]]);
+    expect(button('Apply').props.disabled).toBe(true);
+    await act(async () => field('Cursor Acceleration Time').props.onChange({target: {value: '137.5'}}));
+    expect(button('Apply').props.disabled).toBe(true);
+    await act(async () => field('Cursor Acceleration Time').props.onChange({target: {value: '137'}}));
+    await act(async () => button('Apply').props.onClick());
+    expect(writes(keyboard).at(-2)).toEqual([SET,13,10,0,137]);
+  });
+  for (const absent of ['unhandled', 'zero'] as const) {
+    test(`MOUSE ${absent} capability keeps legacy CONFIG usable and never reads exact ids`, async () => {
+      const {keyboard, running} = mouseKeyboard();
+      running[7] = [0, 0];
+      keyboard.refuse = ([op, channel, id]) => absent === 'unhandled' && op === 8 && channel === 13 && id === 7;
+      const {store, device} = await openKeyboard('era', mouseMenu, {}, keyboard);
+      const candidate = await readV3MenuStateSyncCandidate(device, store.getState() as any, new KeyboardAPI(PATH).getConnectionGeneration());
+      expect(candidate).not.toBeNull();
+      expect(keyboard.sent.some(([op,ch,id]) => op===8 && ch===13 && id>=8)).toBe(false);
+      store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: candidate!.menuData}));
+      await showLink(store);
+      expect(renderer!.root.findAllByType(AccentSlider)).toHaveLength(0);
+    });
+  }
+  test('advertised MOUSE precision rejects malformed values instead of publishing zeros', async () => {
+    const {keyboard, running} = mouseKeyboard(); running[8] = [0,17,0];
+    const {store, device} = await openKeyboard('era', mouseMenu, {}, keyboard);
+    await expect(readV3MenuStateSyncCandidate(device, store.getState() as any, new KeyboardAPI(PATH).getConnectionGeneration())).rejects.toThrow('Invalid MOUSE precision response');
+  });
+  test('MOUSE precision mode and draft do not leak across devices', async () => {
+    const {keyboard} = mouseKeyboard();
+    const opened = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    const chooseOther = await addKeyboard(opened, new MenuKeyboard(), mouseValues);
+    await showLink(opened.store);
+    await act(async () => precisionToggle().props.onChange(true));
+    await act(async () => field('Cursor Start Speed').props.onChange({target: {value:'17'}}));
+    chooseOther();
+    expect(precisionToggle().props.isChecked).toBe(false);
+    await act(async () => precisionToggle().props.onChange(true));
+    expect(field('Cursor Start Speed').props.value).toBe('4');
+    expect(writes(keyboard)).toEqual([]);
+  });
+
+  test('MOUSE held probe followed by reconnect cannot publish old CONFIG', async () => {
+    const {updateV3MenuData} = await import('../src/store/menusSlice');
+    const {disconnectHIDDeviceForTesting} = await import('../src/shims/node-hid');
+    const {keyboard} = mouseKeyboard();
+    const {store, device, connect} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    const held = keyboard.hold(([op,ch,id]) => op===8 && ch===13 && id===7);
+    const pending = store.dispatch(updateV3MenuData(device) as any).catch((e:unknown) => e);
+    const release = await held;
+    disconnectHIDDeviceForTesting(PATH);
+    const newer = mouseKeyboard();
+    newer.running[8] = [0,23,0xe4];
+    registerHIDDeviceForTesting(PATH, newer.keyboard as any);
+    await new HID.HID(PATH).openPromise;
+    connect();
+    await store.dispatch(updateV3MenuData(device) as any);
+    release();
+    const result = await pending;
+    expect(result).toBeInstanceOf(Error);
+    expect(store.getState().menus.customMenuDataMap[PATH].id_qmk_mousekey_cursor_start_exact.slice(0,3)).toEqual([0,23,0xe4]);
+    expect(keyboard.sent.filter(([op,ch,id]) => op===8 && ch===13 && id>=8)).toHaveLength(0);
+    expect(writes(keyboard)).toEqual([]);
+    expect(writes(newer.keyboard)).toEqual([]);
+  });
+
+  test('MOUSE held probe followed by definition replacement cannot publish stale CONFIG', async () => {
+    const {updateV3MenuData} = await import('../src/store/menusSlice');
+    const {keyboard} = mouseKeyboard();
+    const {store, device} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    const held = keyboard.hold(([op,ch,id]) => op===8 && ch===13 && id===7);
+    const pending = store.dispatch(updateV3MenuData(device) as any);
+    const release = await held;
+    const oldDefinition = store.getState().definitions.eraDefinitions[VPID].v3;
+    store.dispatch(updateEraDefinitions({[VPID]: {v3: {...oldDefinition, name:'Replacement', menus:[featureMenu]}}} as any));
+    store.dispatch(updateSelectedCustomMenuData({devicePath:PATH,menuData:{replacement:[99]}}));
+    release(); await pending;
+    expect(store.getState().menus.customMenuDataMap[PATH]).toEqual({replacement:[99]});
+    expect(writes(keyboard)).toEqual([]);
+  });
+
+  test('MOUSE held probe timeout is error and never unsupported fresh CONFIG', async () => {
+    const {updateV3MenuData} = await import('../src/store/menusSlice');
+    const {keyboard} = mouseKeyboard();
+    const {store, device} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    configureHIDTransport({responseTimeoutMs:25});
+    const held = keyboard.hold(([op,ch,id]) => op===8 && ch===13 && id===7);
+    const pending = store.dispatch(updateV3MenuData(device) as any).catch((e:unknown) => e);
+    const release = await held;
+    const result = await pending;
+    expect(result).toBeInstanceOf(Error);
+    expect(new KeyboardAPI(PATH).isConnectionLocked()).toBe(true);
+    expect(store.getState().menus.customMenuDataMap[PATH]).toEqual(mouseValues);
+    expect(keyboard.sent.filter(([op,ch,id]) => op===8 && ch===13 && id>=8)).toHaveLength(0);
+    release();
+    expect(store.getState().menus.customMenuDataMap[PATH]).toEqual(mouseValues);
+    expect(writes(keyboard)).toEqual([]);
+  });
+
+  for(const source of ['official','era'] as const) {
+    test(`MOUSE ${source} legacy-only V3 still reads and writes normal dropdown without probe`, async () => {
+      const {updateV3MenuData} = await import('../src/store/menusSlice');
+      const legacy={label:'FEATURE',content:[{label:'MOUSE',content:[mouseMenu.content[0].content[0]]}]};
+      const {keyboard} = mouseKeyboard();
+      const {store,device}=await openKeyboard(source,legacy,{},keyboard);
+      await store.dispatch(updateV3MenuData(device) as any);
+      expect(keyboard.sent.filter(([op])=>op===8).map(b=>b.slice(0,3))).toEqual([[8,13,1]]);
+      await showLink(store);
+      expect(renderer!.root.findAllByType(AccentSlider)).toHaveLength(0);
+      expect(renderer!.root.findAllByType(DeferredApplyButtons)).toHaveLength(0);
+      await act(async()=>renderer!.root.findByType(AccentSelect).props.onChange({value:8}));
+      expect(writes(keyboard)).toEqual([[SET,13,1,8,0],[SAVE,13]]);
+      expect(keyboard.sent.some(([op,ch,id])=>op===8&&ch===13&&id>=7)).toBe(false);
+    });
+  }
+
   const expectTappingDrafts = () => {
     expect(field('Global Tapping Term').props.value).toBe('137');
     expect(toggle('Hold on Other Key Press').props.checked).toBe(true);

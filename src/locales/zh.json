@@ -1,4 +1,8 @@
 {
+  "Time to reach the target speed. Zero keeps the starting speed.": "达到目标速度所需的时间。设为零将保持初始速度。",
+  "Movement per report. The computer also controls pointer and scroll speed.": "每次报告的移动量。电脑设置也会影响指针和滚动速度。",
+  "Time between repeated reports. Shorter intervals send movement more often.": "重复报告之间的时间。间隔越短，发送移动越频繁。",
+  "Precise values": "精确设置",
   "Record": "录制",
   "Script": "脚本",
   "Authorize device": "选择键盘",

@@ -6,7 +6,10 @@ import {
   faMicrochip,
   faSliders,
 } from '@fortawesome/free-solid-svg-icons';
-import React, {useEffect, useMemo} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
+import {AccentSlider} from '../../../inputs/accent-slider';
+import {ControlRow, Label, Detail} from '../../grid';
+import {MOUSE_PRECISION, hasMousePrecision, mouseExact} from 'src/utils/era-mousekey';
 import styled from 'styled-components';
 import {SpanOverflowCell} from '../../grid';
 import {CenterPane} from '../../pane';
@@ -40,7 +43,7 @@ import type {
 } from '@the-via/reader';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
-import {getSelectedConnectedDevice, getSelectedDevicePath} from 'src/store/devicesSlice';
+import {getSelectedConnectedDevice, getSelectedDevicePath, getSelectedConnectionGeneration} from 'src/store/devicesSlice';
 import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
 import {
   awaitCustomMenuLabels,
@@ -143,6 +146,12 @@ function itemGenerator(
     return [];
   }
 
+  const command = itemCommand(elem);
+  if (props.eraDefinition && command?.startsWith('id_qmk_mousekey_')) {
+    if (command === MOUSE_PRECISION) return [];
+    if (mouseExact(command)) return props.mousePrecise && 'label' in elem ? {...elem, key: elem._id} : [];
+    if (props.mousePrecise) return [];
+  }
   if (
     'showIf' in elem &&
     !(props.eraDefinition && observationAddress(itemCommand(elem) ?? '')) &&
@@ -181,6 +190,12 @@ const deferredRowsOf = (
 const MenuComponent = React.memo((props: any) => {
   const {t} = useTranslation();
   const eraDefinition = useIsEraDefinition();
+  const [precise, setPrecise] = useState(false);
+  const precisionLabel = React.useId();
+  useEffect(() => { setPrecise(false); }, [props.precisionScope, props.selectedDefinition]);
+  const precisionAvailable = eraDefinition && hasMousePrecision(props.selectedCustomMenuData) &&
+    collectDeferredItems(props.elem).some((item) => mouseExact(item.content[0]));
+  props = {...props, mousePrecise: precisionAvailable && precise};
   const visibleItems = props.elem.content
     .flatMap((elem: any) => itemGenerator(elem, props))
     .filter((item: any) => !props.hiddenCommands.has(itemCommand(item)));
@@ -288,6 +303,18 @@ const MenuComponent = React.memo((props: any) => {
           );
         })
       )}
+      {precisionAvailable ? (
+        <ControlRow>
+          <Label id={precisionLabel}>
+            {t('Precise values')}
+            {collectDeferredItems(props.elem).some((item) => {
+              const row = props.deferredRows.get(item.content[0]);
+              return mouseExact(item.content[0]) && row && isDraftDirty(row, drafts[row.command]);
+            }) ? <DirtyDot aria-hidden="true" /> : null}
+          </Label>
+          <Detail><AccentSlider labelledBy={precisionLabel} isChecked={precise} onChange={setPrecise} /></Detail>
+        </ControlRow>
+      ) : null}
       {!firmwareVersionSource && rows.length > 0 ? (
         <DeferredApplyButtons
           canCancel={deferredApply.canCancel}
@@ -376,6 +403,8 @@ export const Pane: React.FC<Props> = (props: any) => {
     return path ? state.menus.saveRetries?.[path] : undefined;
   });
   const eraDefinition = useIsEraDefinition();
+  const devicePath = useAppSelector(getSelectedDevicePath);
+  const connectionGeneration = useAppSelector(getSelectedConnectionGeneration);
   const deferredRows = useMemo(() => {
     const rows = new Map<string, DeferredRow>();
     if (!selectedCustomMenuData) {
@@ -388,6 +417,7 @@ export const Pane: React.FC<Props> = (props: any) => {
       if (item.held && !eraDefinition) {
         return;
       }
+      if (mouseExact(item.content[0]) && (!eraDefinition || !hasMousePrecision(selectedCustomMenuData))) return;
       const row = deferredRowFor(item, selectedCustomMenuData, exactMsFamily, saveRetries?.[item.content[0]]);
       if (row) {
         rows.set(row.command, row);
@@ -416,6 +446,7 @@ export const Pane: React.FC<Props> = (props: any) => {
   const childProps = {
     ...props,
     eraDefinition,
+    precisionScope: `${devicePath}:${connectionGeneration}`,
     selectedDefinition,
     selectedCustomMenuData,
     showIfMenuData,

@@ -1,4 +1,8 @@
 {
+  "Time to reach the target speed. Zero keeps the starting speed.": "Zeit bis zur Zielgeschwindigkeit. Null behält die Startgeschwindigkeit bei.",
+  "Movement per report. The computer also controls pointer and scroll speed.": "Bewegung pro Meldung. Auch der Computer steuert Zeiger- und Scrollgeschwindigkeit.",
+  "Time between repeated reports. Shorter intervals send movement more often.": "Zeit zwischen wiederholten Meldungen. Kürzere Intervalle senden Bewegungen häufiger.",
+  "Precise values": "Präzise Werte",
   "Record": "Aufnehmen",
   "Script": "Skript",
   "Authorize device": "Gerät autorisieren",

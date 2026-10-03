@@ -1,4 +1,8 @@
 {
+  "Time to reach the target speed. Zero keeps the starting speed.": "目標速度に達するまでの時間です。0では開始速度を維持します。",
+  "Movement per report. The computer also controls pointer and scroll speed.": "1回の送信での移動量です。ポインターやスクロールの速度はコンピューターの設定にも左右されます。",
+  "Time between repeated reports. Shorter intervals send movement more often.": "繰り返し送信の間隔です。短いほど頻繁に移動を送信します。",
+  "Precise values": "詳細設定",
   "Record": "録画",
   "Script": "スクリプト",
   "Authorize device": "デバイスを認証",

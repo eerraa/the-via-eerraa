@@ -1,4 +1,8 @@
 {
+  "Time to reach the target speed. Zero keeps the starting speed.": "Time to reach the target speed. Zero keeps the starting speed.",
+  "Movement per report. The computer also controls pointer and scroll speed.": "Movement per report. The computer also controls pointer and scroll speed.",
+  "Time between repeated reports. Shorter intervals send movement more often.": "Time between repeated reports. Shorter intervals send movement more often.",
+  "Precise values": "Precise values",
   "Record": "Record",
   "Script": "Script",
   "Default": "Default",

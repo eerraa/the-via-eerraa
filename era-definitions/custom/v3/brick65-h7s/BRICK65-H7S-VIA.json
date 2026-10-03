@@ -349,6 +349,82 @@
               "options": [
                 ["Off (constant speed)", 0], ["Mild", 1], ["Strong", 2]
               ]
+            },
+            {
+              "showIf": "0",
+              "label": "Precision Support",
+              "type": "label",
+              "content": ["id_qmk_mousekey_precision", 17, 7]
+            },
+            {
+              "showIf": "0",
+              "label": "Cursor Start Speed",
+              "type": "range",
+              "content": ["id_qmk_mousekey_cursor_start_exact", 17, 8],
+              "options": [
+                1,
+                127
+              ]
+            },
+            {
+              "showIf": "0",
+              "label": "Cursor Target Speed",
+              "type": "range",
+              "content": ["id_qmk_mousekey_cursor_target_exact", 17, 9],
+              "options": [
+                1,
+                127
+              ]
+            },
+            {
+              "showIf": "0",
+              "label": "Cursor Acceleration Time",
+              "type": "range",
+              "content": ["id_qmk_mousekey_cursor_ramp_exact", 17, 10],
+              "options": [
+                0,
+                65535
+              ]
+            },
+            {
+              "showIf": "0",
+              "label": "Cursor Interval",
+              "type": "range",
+              "content": ["id_qmk_mousekey_cursor_interval_exact", 17, 11],
+              "options": [
+                1,
+                255
+              ]
+            },
+            {
+              "showIf": "0",
+              "label": "Wheel Interval",
+              "type": "range",
+              "content": ["id_qmk_mousekey_wheel_interval_exact", 17, 12],
+              "options": [
+                1,
+                255
+              ]
+            },
+            {
+              "showIf": "0",
+              "label": "Wheel Target Speed",
+              "type": "range",
+              "content": ["id_qmk_mousekey_wheel_target_exact", 17, 13],
+              "options": [
+                1,
+                127
+              ]
+            },
+            {
+              "showIf": "0",
+              "label": "Wheel Acceleration Time",
+              "type": "range",
+              "content": ["id_qmk_mousekey_wheel_ramp_exact", 17, 14],
+              "options": [
+                0,
+                65535
+              ]
             }
           ]
         }

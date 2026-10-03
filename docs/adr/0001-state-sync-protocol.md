@@ -526,3 +526,49 @@ Automated tests do not replace hardware. Still open:
 
 Flashing hardware or changing firmware is not auto-approved because this ADR's
 host implementation exists.
+
+## MOUSE precision
+
+V261004R1 stores integer report counts and real millisecond ramp durations.
+Custom VIA offers one local **Precise values** switch at the bottom of MOUSE;
+it changes presentation only, never SET/SAVE or drafts. Stock VIA retains the
+six basic dropdown controls. A read projects to the nearest preset without
+changing stored precision; ties choose the lower preset. Wheel acceleration
+projects zero ramp to Off, otherwise the nearest Mild/Strong target count,
+ignoring duration for this classification. Choosing a preset writes that preset.
+
+The existing V3 Custom Value channel is QMK 13 / H7S 17. IDs 1–6 keep their
+legacy byte payloads. ID 7 is read-only capability: payload `E4 01`. IDs 8–14
+carry BE16; GET adds `E4` after the two value bytes:
+
+| ID | Value | Integer range |
+| --- | --- | --- |
+| 8 | Cursor start report count | 1–127 |
+| 9 | Cursor target report count | 1–127 |
+| 10 | Cursor ramp ms | 0–65535 |
+| 11 | Cursor interval ms | 1–255 |
+| 12 | Wheel interval ms | 1–255 |
+| 13 | Wheel target report count | 1–127 |
+| 14 | Wheel ramp ms | 0–65535 |
+
+Zero ramp uses constant start count (wheel: one step). A smaller target than
+start ramps down. Counts are HID report units, not guaranteed screen pixels;
+OS pointer/scroll processing still applies. Ramps use elapsed time from the
+first held direction, independently for cursor and wheel. Adding an axis does
+not restart a ramp; releasing the last direction or clearing starts the next
+press fresh. Existing cadence, diagonal correction and acceleration keys remain.
+
+Probe support on the current connection before querying exact fields. Only
+unhandled or an all-zero legacy H7S reply means unsupported. Timeout, malformed
+and disconnect remain errors. Once advertised, exact fields are required CONFIG
+values, subject to the existing device/definition/generation candidate lifetime.
+The date version is not a capability. Invalid exact SET is unhandled and leaves
+runtime/storage unchanged. SET changes runtime; SAVE acknowledges persistence.
+A failed SAVE remains retryable even if a GET already equals the draft.
+
+MOUSE v2 remains 16 bytes with version at byte 10 and signature at byte 12.
+V261004R1 changes both global EEPROM reset keys: the first boot from an older
+storage identity resets **all** keymaps, macros and settings. Back up first;
+backup formats do not necessarily contain every feature. No v1 migration is
+performed. Split units must use matching firmware, as required by the existing
+storage contract.

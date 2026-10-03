@@ -1,4 +1,5 @@
 import React from 'react';
+import {mouseExact} from 'src/utils/era-mousekey';
 import styled from 'styled-components';
 import {PelpiKeycodeInput} from '../../../inputs/pelpi/keycode-input';
 import {AccentButton} from '../../../inputs/accent-button';
@@ -250,6 +251,8 @@ const integerBounds = (
   exactMsFamily: ExactMsFamily | null,
 ) => {
   const [command] = item.content;
+  const mouse = mouseExact(command);
+  if (mouse) return {min: mouse.min, max: mouse.max};
   if (isExactTermCommand(command)) {
     const {minMs, maxMs} = exactTermBoundsFromOptions(
       item.options,
@@ -262,11 +265,11 @@ const integerBounds = (
 
 // The unit such a field draws after its number.
 const integerUnit = (command: string) =>
-  isExactTermCommand(command)
+  mouseExact(command)?.unit ?? (isExactTermCommand(command)
     ? 'ms'
     : isExactSecondCommand(command)
       ? 's'
-      : null;
+      : null);
 
 // A row whose field draws its unit drops the same "(ms)" or "(s)" from the end of
 // its name, where a definition keeps it for official VIA, which draws none.
@@ -370,7 +373,7 @@ export const deferredRowFor = (
     case 'range': {
       const bounds = integerBounds(item, exactMsFamily);
       if (bounds) {
-        const savedValue = getRangeValue(value ?? [0, 0], bounds.max);
+        const savedValue = getRangeValue(value ?? [0, 0], mouseExact(command) ? 65535 : bounds.max);
         return {
           command,
           address,
@@ -509,7 +512,7 @@ const VIACustomControl = (
       );
     }
     case 'range': {
-      const unit = integerUnit(name);
+      const unit = mouseExact(name) && !eraDefinition ? null : integerUnit(name);
       if (unit) {
         const bounds = deferred?.row.bounds;
         if (!deferred || !bounds) {

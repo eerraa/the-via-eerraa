@@ -1,4 +1,8 @@
 {
+  "Time to reach the target speed. Zero keeps the starting speed.": "목표 속도에 도달하는 시간입니다. 0이면 시작 속도를 유지합니다.",
+  "Movement per report. The computer also controls pointer and scroll speed.": "보고 한 번의 이동량입니다. 컴퓨터 설정도 포인터와 스크롤 속도에 영향을 줍니다.",
+  "Time between repeated reports. Shorter intervals send movement more often.": "반복 보고 사이의 시간입니다. 짧을수록 더 자주 이동을 보냅니다.",
+  "Precise values": "정밀 설정",
   "Record": "녹화",
   "Script": "스크립트",
   "Authorize device": "기기 인증",

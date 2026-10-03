@@ -9,6 +9,7 @@ import {
 } from '../../../inputs/accent-button';
 import {Announcement} from '../../../inputs/keycode-palette/palette-parts';
 import {isExactSecondCommand} from 'src/utils/era-exact-sec';
+import {mouseExact} from 'src/utils/era-mousekey';
 import {HELD_VALUES, isCustomMenuCommandContent} from 'src/utils/custom-menu';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import type {AppThunk} from 'src/store/index';
@@ -37,7 +38,7 @@ export const isDeferredApplyCommand = (name: string | undefined) =>
   typeof name === 'string' &&
   (name.startsWith('id_qmk_tapping_') ||
     name.startsWith('id_qmk_tapdance_') ||
-    isExactSecondCommand(name));
+    isExactSecondCommand(name) || !!mouseExact(name));
 
 /**
  * A value set on a deferred row and not written yet, in the terms its control

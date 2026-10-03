@@ -12,6 +12,7 @@ import {
   makeCustomMenus,
 } from 'src/components/panes/configure-panes/custom/menu-generator';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
+import {MOUSE_PRECISION, hasMousePrecision, mouseExact, readMouseExact} from 'src/utils/era-mousekey';
 import {getUISyncCommandIds, type UISyncRequest} from 'src/utils/ui-sync';
 import {
   decodeCustomMenuText,
@@ -449,6 +450,10 @@ export const updateCustomMenuValue =
     }
     const previous: CustomMenuData = menuData || {};
     const nextValue = [...rest.slice(commandBytes.length)];
+    if (mouseExact(command) && getDefinitionSourceForDevice(state, connectedDevice) === 'era') {
+      if (!hasMousePrecision(menuData || undefined) || rest[0] !== commandBytes[0] || rest[1] !== mouseExact(command).id || nextValue.length !== 2) return false;
+      try { readMouseExact(command, [...nextValue, 0xe4]); } catch { return false; }
+    }
     const data = {
       ...previous,
       [command]: nextValue,
@@ -1085,15 +1090,33 @@ const readCustomMenuValues = async (
   const idsToSync = (ids ?? Object.keys(commands)).filter(
     (id) => commands[id] && !(separateObservations && observationAddress(id)),
   );
+  const mouseFields = separateObservations ? idsToSync.filter((id) => mouseExact(id)) : [];
+  const mouseProbe = separateObservations && commands[MOUSE_PRECISION] &&
+    (mouseFields.length > 0 || idsToSync.includes(MOUSE_PRECISION));
   const advanced = idsToSync.filter((id) => /^id_qmk_tapdance_[1-8]_hold_(term|other)$/.test(id));
   const modeOf = (id: string) => id.replace(/hold_(term|other)$/, 'mode');
   const baseIds = [...new Set([
-    ...idsToSync.filter((id) => !advanced.includes(id)),
+    ...idsToSync.filter((id) => !advanced.includes(id) && !mouseFields.includes(id) && !(mouseProbe && id === MOUSE_PRECISION)),
     ...advanced.map(modeOf).filter((id) => commands[id]),
   ])];
   // A State Sync candidate holds the path reservation. Reserved calls run
   // directly, without the outer FIFO; await each reply before sending another.
   const data: CustomMenuData = {};
+  if (mouseProbe) {
+    const probe = (await api.getOptionalCustomMenuValue(commands[MOUSE_PRECISION]))?.slice(1);
+    // Old H7S answered unknown ids with zero. Only that legacy shape or an
+    // explicit unhandled reply means absent; transport errors remain errors.
+    if (probe && !probe.every((v) => v === 0) && !hasMousePrecision({[MOUSE_PRECISION]: probe})) {
+      throw new Error('Invalid MOUSE precision capability');
+    }
+    data[MOUSE_PRECISION] = probe ?? [0, 0];
+    for (const id of mouseFields) {
+      if (!hasMousePrecision(data)) { data[id] = [0, 0, 0]; continue; }
+      const value = (await api.getCustomMenuValue(commands[id])).slice(1);
+      readMouseExact(id, value);
+      data[id] = value;
+    }
+  }
   for (const id of baseIds) {
     // Old firmware can reject the newly added mode probe. Only this optional
     // capability query may be absent; existing actions/settings stay required.

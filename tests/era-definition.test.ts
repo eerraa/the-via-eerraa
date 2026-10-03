@@ -1133,8 +1133,8 @@ describe('canonical ERA definition inventory', () => {
       expect(mouse.map(({channel}) => channel)).toEqual(
         Array.from({length: mouse.length}, () => 17),
       );
-      expect([...new Set(mouse.map(({id}) => id))].sort()).toEqual([
-        1, 2, 3, 4, 5, 6,
+      expect([...new Set(mouse.map(({id}) => id))].sort((a,b) => a-b)).toEqual([
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
       ]);
       // Acceleration off swaps a single "Cursor Speed" row in for the start/top pair.
       const serialized = JSON.stringify(definition);
