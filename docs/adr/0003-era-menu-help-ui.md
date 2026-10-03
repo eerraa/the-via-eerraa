@@ -126,6 +126,11 @@ matching and help text live in source; this ADR owns their user-facing shape.
 
 ## 7. Names and controls must match real supported behavior
 
+MOUSE's advanced presentation retains the basic controls' relative order:
+cursor acceleration, speed, then interval; wheel interval, then acceleration.
+Additional advanced values stay next to their related controls. Toggling the
+presentation must not force users to relearn the page or change their drafts.
+
 Labels describe observable behavior and scope. An ERA definition's submenu, row
 and option names are shown as the definition spells them, in the custom app and in
 its help, so a catalog word shared with another board never translates one name

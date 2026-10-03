@@ -306,7 +306,7 @@ const MenuComponent = React.memo((props: any) => {
       {precisionAvailable ? (
         <ControlRow>
           <Label id={precisionLabel}>
-            {t('Precise values')}
+            {t('Advanced settings')}
             {collectDeferredItems(props.elem).some((item) => {
               const row = props.deferredRows.get(item.content[0]);
               return mouseExact(item.content[0]) && row && isDraftDirty(row, drafts[row.command]);

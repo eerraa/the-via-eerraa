@@ -1149,6 +1149,24 @@ describe('canonical ERA definition inventory', () => {
     }
   });
 
+  test('keeps advanced MOUSE controls in the basic page order across both families', () => {
+    let checked = 0;
+    for (const entry of manifest.definitions) {
+      const controls = collectCommandControls(readJSON(entry.path)).filter(
+        ({name}) => name.startsWith('id_qmk_mousekey_'),
+      );
+      if (!controls.some(({id}) => id === 7)) continue;
+      expect(controls.filter(({id}) => id < 7).map(({id}) => id)).toEqual([
+        3, 1, 1, 2, 4, 5, 6,
+      ]);
+      expect(controls.filter(({id}) => id > 7).map(({id}) => id)).toEqual([
+        10, 8, 9, 11, 12, 14, 13,
+      ]);
+      checked++;
+    }
+    expect(checked).toBe(32);
+  });
+
   test('leaves the QMK definitions on the reference mouse channel', () => {
     const era65 = collectCommandControls(
       readJSON('era-definitions/custom/v3/era65/ERA65-VIA.json'),
