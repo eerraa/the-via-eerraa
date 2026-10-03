@@ -12,7 +12,6 @@ import {getSelectedDevicePath} from 'src/store/devicesSlice';
 import {isApplying} from 'src/store/applyingSlice';
 import {refreshCustomMenuValue} from 'src/store/menusSlice';
 import {ControlRow, Label, Detail} from '../../grid';
-import {AccentButton} from '../../../inputs/accent-button';
 
 const Row = styled(ControlRow)`
   flex-wrap: wrap;
@@ -22,13 +21,6 @@ const Actions = styled(Detail)`
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-`;
-const Note = styled.div`
-  flex-basis: 100%;
-  font-size: 16px;
-  line-height: 1.4;
-  padding-bottom: 12px;
-  color: var(--color_label);
 `;
 
 export const MenuObservation = ({
@@ -65,6 +57,8 @@ export const MenuObservation = ({
         if (active)
           await dispatch(refreshCustomMenuValue('id_qmk_split_link_stored'));
         if (active) timer = setTimeout(refresh, 1000);
+      } else if (active && result?.status === 'malformed') {
+        timer = setTimeout(refresh, 1000);
       }
     };
     void refresh();
@@ -102,21 +96,7 @@ export const MenuObservation = ({
       <Label>{label}</Label>
       <Actions>
         <span role="status">{text}</span>
-        {command === POLLING_CURRENT && (
-          <AccentButton
-            type="button"
-            disabled={!scope || applying || status === 'loading'}
-            onClick={() => setRefreshEpoch((epoch) => epoch + 1)}
-          >
-            {t('Refresh')}
-          </AccentButton>
-        )}
       </Actions>
-      {command === POLLING_CURRENT && (
-        <Note>
-          {t('Keyboard IN interval setting at the last successful read; not measured host polling or input latency.')}
-        </Note>
-      )}
     </Row>
   );
 };

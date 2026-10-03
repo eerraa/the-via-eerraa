@@ -176,6 +176,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
       summary: 'Sets the USB polling rate; applying restarts the keyboard.',
       detail: [
         '1 kHz works on any port. The faster rates need a port running at USB High Speed; hubs and front-panel ports often do not.',
+        'Keyboard IN interval setting at the last successful read; not measured host polling or input latency.',
       ],
     },
   ],
@@ -193,7 +194,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
     {
       summary: 'Erases the keymap and every setting.',
       detail: [
-        'Turn on all three switches within ten seconds to erase everything and restart. After ten seconds they turn themselves off.',
+        'Turn on all three switches to erase everything and restart.',
       ],
     },
   ],

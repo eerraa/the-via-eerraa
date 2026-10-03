@@ -1418,7 +1418,8 @@ describe('ERA menu drafts', () => {
     act(() => store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {id_qmk_usb_bootmode: [3], [POLLING_CURRENT]: [...new TextEncoder().encode('1000 Hz (FS)'), 0]}})));
     expect(textOf(renderer!.root)).toContain('8000 Hz (HS)');
     reply.malformed = true;
-    await act(async () => { await button('Refresh').props.onClick(); });
+    expect(renderer!.root.findAllByType('button').some(node => textOf(node) === 'Refresh')).toBe(false);
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     expect(textOf(renderer!.root)).toContain('Invalid response');
     act(() => store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {id_qmk_usb_bootmode: [3], [POLLING_CURRENT]: [...new TextEncoder().encode('1000 Hz (FS)'), 0]}})));
     expect(textOf(renderer!.root)).not.toContain('1000 Hz (FS)');
@@ -1432,6 +1433,29 @@ describe('ERA menu drafts', () => {
     await show(store);
     expect(textOf(renderer!.root)).toContain('Not supported by this firmware');
     expect(keyboard.sent.slice(before).every(([command]) => command === 2)).toBe(true);
+  });
+
+  test('polling observation refreshes automatically without blanking and recovers malformed replies', async () => {
+    const {keyboard, reply} = pollingKeyboard();
+    const {store} = await openKeyboard('era', pollingMenu, {id_qmk_usb_bootmode: [0]}, keyboard);
+    await showLink(store);
+    expect(renderer!.root.findAllByType('button').some(node => textOf(node) === 'Refresh')).toBe(false);
+    reply.malformed = true;
+    const held = keyboard.hold(([command]) => command === GET);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    const answer = await held;
+    expect(textOf(renderer!.root)).toContain('8000 Hz (HS)');
+    expect(textOf(renderer!.root)).not.toContain('Loading...');
+    await act(async () => { answer(); await new Promise(resolve => setTimeout(resolve, 20)); });
+    expect(textOf(renderer!.root)).toContain('Invalid response');
+    expect(textOf(renderer!.root)).not.toContain('8000 Hz (HS)');
+    reply.malformed = false;
+    reply.text = '1000 Hz (FS)';
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    expect(textOf(renderer!.root)).toContain('1000 Hz (FS)');
+    const reads = keyboard.sent.length;
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    expect(keyboard.sent.length).toBe(reads);
   });
 
   test('polling unhandled is optional; a late response after definition replacement cannot publish', async () => {
@@ -1556,7 +1580,7 @@ describe('ERA menu drafts', () => {
   test('generic CONFIG excludes both observation commands even when legacy firmware would reject them', async () => {
     const {keyboard} = pollingKeyboard();
     keyboard.refuse = ([cmd, channel, id]) => cmd === 8 && ((channel === 13 && id === 4) || (channel === 9 && id === 66));
-    const menu = {label: 'SYSTEM', content: [...pollingMenu.content, {label: 'LINK', content: [{label: 'Last Apply (local)', type: 'label', content: [LINK_RESULT, 9, 66]}]}]};
+    const menu = {label: 'SYSTEM', content: [...pollingMenu.content, {label: 'LINK', content: [{label: 'Last Apply', type: 'label', content: [LINK_RESULT, 9, 66]}]}]};
     const {store, device} = await openKeyboard('era', menu, {}, keyboard);
     const candidate = await readV3MenuStateSyncCandidate(device, store.getState() as any, new KeyboardAPI(PATH).getConnectionGeneration());
     expect(candidate?.menuData?.[POLLING_CURRENT]).toBeUndefined();
@@ -2167,7 +2191,7 @@ describe('ERA menu drafts', () => {
 
   const resultMenu = () => {
     const menu = linkMenu();
-    menu.content[0].content.push({label: 'Last Apply (local)', type: 'label', content: [LINK_RESULT, 9, 66]} as any);
+    menu.content[0].content.push({label: 'Last Apply', type: 'label', content: [LINK_RESULT, 9, 66]} as any);
     return menu;
   };
   class ResultKeyboard extends LinkKeyboard {

@@ -43,8 +43,11 @@ the existing KeyboardAPI transport/connection-lock policy.
 
 For ERA definitions, exclude this observation from generic CONFIG/menu reads.
 Its separate state is scoped to device, connection generation, selection and
-definition identity. Read on screen activation, reconnection and explicit
-Refresh; visibility resume also refreshes. A failed read clears the displayed
+definition identity. Read automatically on screen activation, reconnection and
+visibility resume, without a Refresh button. Same-session reads retain the last
+observation while in flight; malformed replies retry on the active-screen
+interval. Unsupported and transport failures do not start an automatic retry
+loop. A failed read clears the displayed
 observation. A stale request cannot publish after its context changes, and a
 CONFIG replacement must never restore a previous observation.
 

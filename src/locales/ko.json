@@ -559,7 +559,7 @@
   "Turn it off if an old BIOS or a KVM switch cannot see the keyboard; it then registers up to six keys at once.": "오래된 BIOS나 KVM 스위치에서 키보드가 인식되지 않으면 끄세요. 끄면 최대 6키까지 동시에 입력됩니다.",
   "1 kHz works on any port. The faster rates need a port running at USB High Speed; hubs and front-panel ports often do not.": "1 kHz는 어느 포트에서나 동작합니다. 더 높은 속도는 USB High Speed로 동작하는 포트가 필요하며, 허브나 전면 포트는 그렇지 않은 경우가 많습니다.",
   "A removable drive appears on the computer; copy the firmware .uf2 file onto it.": "PC에 이동식 드라이브가 나타나면 펌웨어 .uf2 파일을 그 드라이브에 복사하세요.",
-  "Turn on all three switches within ten seconds to erase everything and restart. After ten seconds they turn themselves off.": "10초 안에 세 스위치를 모두 켜면 모든 설정을 지우고 다시 시작합니다. 10초가 지나면 스위치가 저절로 꺼집니다.",
+  "Turn on all three switches to erase everything and restart.": "세 스위치를 모두 켜면 모든 설정을 지우고 다시 시작합니다.",
   "Apply changes the speed without restarting the keyboard or reconnecting USB.": "적용하면 키보드 재시작이나 USB 재연결 없이 속도가 바뀝니다.",
   "On TOMAK, one green STATUS flash confirms Apply and one red flash means it did not take. Three long red flashes mean the link fell back to Low; if that repeats, check the split cable.": "TOMAK에서는 초록색 STATUS가 한 번 깜빡이면 적용된 것이고, 빨간색이 한 번 깜빡이면 적용되지 않은 것입니다. 빨간색이 길게 세 번 깜빡이면 링크가 Low로 내려간 것이니, 반복되면 스플릿 케이블을 확인하세요.",
   "With a switch on, its light goes out after the timeout without input, and when the computer sleeps or the connection drops. A key press brings it back.": "스위치를 켜 두면 입력 없이 설정한 시간이 지나거나, PC가 절전에 들어가거나, PC와의 연결이 끊기면 그 조명이 꺼집니다. 키를 누르면 다시 켜집니다.",

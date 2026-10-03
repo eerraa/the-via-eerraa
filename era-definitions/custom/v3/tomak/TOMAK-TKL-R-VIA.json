@@ -876,7 +876,7 @@
               "content": ["id_qmk_split_link_stored", 9, 65]
             },
             {
-              "label": "Last Apply (local)",
+              "label": "Last Apply",
               "type": "label",
               "content": ["id_qmk_split_link_result", 9, 66]
             }

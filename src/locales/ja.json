@@ -559,7 +559,7 @@
   "Turn it off if an old BIOS or a KVM switch cannot see the keyboard; it then registers up to six keys at once.": "古い BIOS や KVM スイッチがキーボードを認識しない場合はオフにしてください。オフでは同時入力は 6 キーまでになります。",
   "1 kHz works on any port. The faster rates need a port running at USB High Speed; hubs and front-panel ports often do not.": "1 kHz はどのポートでも動作します。より高いレートには USB High Speed で動作するポートが必要で、ハブや前面ポートは対応しないことが多いです。",
   "A removable drive appears on the computer; copy the firmware .uf2 file onto it.": "PC にリムーバブルディスクが現れたら、ファームウェアの .uf2 ファイルをそこにコピーしてください。",
-  "Turn on all three switches within ten seconds to erase everything and restart. After ten seconds they turn themselves off.": "10 秒以内に 3 つのスイッチをすべてオンにすると、すべてを初期化して再起動します。10 秒を過ぎるとスイッチは自動でオフに戻ります。",
+  "Turn on all three switches to erase everything and restart.": "3 つのスイッチをすべてオンにすると、すべてを初期化して再起動します。",
   "Apply changes the speed without restarting the keyboard or reconnecting USB.": "適用すると、キーボードの再起動や USB の再接続なしに速度が変わります。",
   "On TOMAK, one green STATUS flash confirms Apply and one red flash means it did not take. Three long red flashes mean the link fell back to Low; if that repeats, check the split cable.": "TOMAK では、緑の STATUS が 1 回点滅すれば適用に成功、赤が 1 回なら適用されていません。赤の長い点滅 3 回はリンクが Low に下がった合図で、繰り返す場合は分割ケーブルを確認してください。",
   "With a switch on, its light goes out after the timeout without input, and when the computer sleeps or the connection drops. A key press brings it back.": "スイッチがオンのとき、入力がないまま設定時間が過ぎたときや、PC がスリープしたとき、接続が切れたときにその照明が消えます。キーを押すと再び点灯します。",

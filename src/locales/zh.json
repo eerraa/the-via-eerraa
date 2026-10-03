@@ -559,7 +559,7 @@
   "Turn it off if an old BIOS or a KVM switch cannot see the keyboard; it then registers up to six keys at once.": "如果旧 BIOS 或 KVM 切换器识别不到键盘，请关闭它；关闭后最多同时输入 6 个键。",
   "1 kHz works on any port. The faster rates need a port running at USB High Speed; hubs and front-panel ports often do not.": "1 kHz 在任何接口都可用。更高的速率需要以 USB High Speed 运行的接口，集线器和前置接口往往达不到。",
   "A removable drive appears on the computer; copy the firmware .uf2 file onto it.": "电脑上会出现一个可移动磁盘，请将固件 .uf2 文件复制到其中。",
-  "Turn on all three switches within ten seconds to erase everything and restart. After ten seconds they turn themselves off.": "在 10 秒内打开全部三个开关，即会清除所有内容并重启。超过 10 秒，开关会自动关闭。",
+  "Turn on all three switches to erase everything and restart.": "打开全部三个开关，即会清除所有内容并重启。",
   "Apply changes the speed without restarting the keyboard or reconnecting USB.": "应用后会更改速度，不会重启键盘或重新连接 USB。",
   "On TOMAK, one green STATUS flash confirms Apply and one red flash means it did not take. Three long red flashes mean the link fell back to Low; if that repeats, check the split cable.": "在 TOMAK 上，绿色 STATUS 闪烁一次表示应用已生效，红色闪烁一次表示未生效。红色长闪三次表示链路已降到 Low；若反复出现，请检查分体线缆。",
   "With a switch on, its light goes out after the timeout without input, and when the computer sleeps or the connection drops. A key press brings it back.": "开关开启时，无输入达到设定时间、电脑进入睡眠或连接断开时，对应的灯光会熄灭。按任意键即可重新点亮。",

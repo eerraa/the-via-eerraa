@@ -15,11 +15,12 @@ the fork's product and official-VIA boundary is `docs/PROJECT_DIRECTION.md`.
 ## 1. Observations belong with their controls
 
 Current Polling stays in SYSTEM / USB POLLING. It reports the endpoint interval
-setting at the last successful read, with an explicit scope note and Refresh.
+setting at the last successful automatic read. Its scope note belongs in
+collapsed help; there is no Refresh button.
 The retired diagnostics session UI is not mounted, including for older firmware.
 The support and lifetime boundary is [ADR 0002](0002-h7s-usb-diagnostics.md).
 
-Last Apply (local) stays in SYSTEM / LINK. It is the result of the request on the
+Last Apply stays in SYSTEM / LINK. It is the result of the request on the
 selected unit, not proof of all saved settings on the other half. Pending,
 success, refusal and later failure remain visible as firmware reports them.
 GET of the Apply toggle returning zero is consumption, never success evidence.

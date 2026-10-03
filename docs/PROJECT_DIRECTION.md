@@ -216,7 +216,7 @@ stock VIA supports basic Legacy Tap Dance only; the Custom app also supports
 advanced settings. Stock VIA's menu model cannot adequately support the
 complex advanced editor and its interdependent choices. Official V3 menus
 therefore edit mode-0 slots through their four actions and legacy term controls.
-Advanced slots show their stored mode and direct users to the Custom app for
+Advanced slots show only the usekb.cc guidance and direct users to the Custom app for
 editing; opening stock VIA must preserve those slots without resetting them or
 silently converting them to Legacy. Input modes, separate hold timing, and
 hold-on-other-key are edited only in the Custom app. This presentation policy changes
@@ -552,7 +552,7 @@ assumptions about browser close/open, USB endpoint flushing, response latency,
 or 8 kHz performance. Automated firmware builds are not a substitute for
 flashing or device observation.
 
-USB diagnostics selector `0x07` is read-only, opt-in, and RAM-only.
+USB diagnostics selector `0x07` is retired and receives no app probes.
 Coupling it to polling-mode apply/reset or to State Sync recovery is refused.
 Mode selection is always the user's.
 [ADR 0002](adr/0002-h7s-usb-diagnostics.md) owns that boundary.
