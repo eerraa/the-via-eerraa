@@ -179,9 +179,14 @@ controls below it remain reachable without shrinking the keys further.
 This project is an unofficial VIA fork, not official VIA. Ordinary VIA keyboards
 keep the upstream workflow. ERA-only help and diagnostics are additive and
 capability-gated, so they may exist only in this fork without implying that
-official VIA provides the same host UI. Firmware features covered by the
-compatibility contract must still work through official `usevia.app` plus the
-official V3 definition, with the advanced Tap Dance exception defined below.
+official VIA provides the same host UI. Stock VIA supports the controls it can
+present correctly and simply. Features it cannot support correctly, or that
+require complicated explanations or awkward controls, are reduced in official
+JSON and supported in the Custom app at usekb.cc; usevia.txt explains that boundary.
+Preserve existing wire meanings and the stock basic configuration path. Do not
+force equal UI exposure, stale status labels, or firmware restarts for UI refresh.
+In particular, stock LINK keeps selection and Apply without runtime/saved/result
+TEXT; stock H7S polling keeps Boot Polling Mode and Apply without polling TEXT.
 [ADR 0003](adr/0003-era-menu-help-ui.md) owns the
 custom help/diagnostics support, wording, localization, and accessibility
 boundaries.
@@ -206,7 +211,7 @@ disabled. A failed read returns to the ordinary test with an explanation.
 TOMAK firmware and VIA V3 JSON implement TD0–TD7, four action slots, tapping
 term, storage, and the engine. This host does not replace that engine.
 
-Tap Dance has an explicit support-policy exception for both QMK and H7S:
+Tap Dance follows this support policy in both QMK and H7S:
 stock VIA supports basic Legacy Tap Dance only; the Custom app also supports
 advanced settings. Stock VIA's menu model cannot adequately support the
 complex advanced editor and its interdependent choices. Official V3 menus
@@ -214,7 +219,7 @@ therefore edit mode-0 slots through their four actions and legacy term controls.
 Advanced slots show their stored mode and direct users to the Custom app for
 editing; opening stock VIA must preserve those slots without resetting them or
 silently converting them to Legacy. Input modes, separate hold timing, and
-hold-on-other-key are edited only in the Custom app. This exception changes
+hold-on-other-key are edited only in the Custom app. This presentation policy changes
 client editing support, not the firmware-owned execution, storage, or shipped
 Custom Value ABI. Other features retain the official-VIA compatibility rule.
 
@@ -342,11 +347,9 @@ been audited.
 Firmware must keep working with the official VIA app (`www.usevia.app`) plus
 the official V3 definition.
 
-> **REFUSED:** a custom-app-only feature path outside advanced Tap Dance.
-> **WHY:** official VIA plus official definitions remain required; custom-app-only
-> value IDs, ranges, or encodings are not acceptable substitutes outside the
-> explicit Tap Dance support-policy exception above.
-> **REOPENS:** never.
+Stock support is a usability boundary, not mandatory feature parity. Advanced
+Tap Dance and automatically refreshed observations belong to the Custom app;
+stock controls retain their supported basic workflow and existing wire meanings.
 
 Official VIA continues to use the existing legacy 1-byte dropdown (100–500 ms /
 20 ms grid); a stock-shaped exact range retains its loaded `options: [100, 500]`.
@@ -368,7 +371,7 @@ app extension; official JSON must not. Custom JSON keeps each TD's settings on
 its `tapdanceKeycodes` entry instead of a TAPDANCE menu, because the custom app
 edits Tap Dance from KEYMAP; the firmware-local stock JSON keeps its TAPDANCE menu
 for basic editing in official VIA. Shared controls address the same Custom Value
-commands; advanced editing follows the exception above. Source
+commands; advanced editing follows the support policy above. Source
 validation owns the current field handling rather than this document.
 
 ### QMK lighting sleep exact-sec
@@ -578,7 +581,7 @@ product non-goals that are not already a REFUSED block above.
 - Parallel definition loader or external definition service — Definitions.
 - Common ERA tapping / Tap Dance / exact-ms / State Sync on `sirind/brick65` —
   brick65.
-- Custom-app-only path outside advanced Tap Dance — Tap Dance and exact-ms.
+- Forced stock/Custom UI parity at the cost of correctness or usability — Identity UI.
 - Vial implementation copy — Tap Dance.
 - Replacing the Tap Dance engine or split EEPROM synchronization — Tap Dance.
 - Duplicate V3 Custom Value React state or a second value protocol — State

@@ -2271,20 +2271,58 @@ describe('ERA menu drafts', () => {
     expect(keyboard.resultReads - baseline).toBe(1);
   });
 
-  test('manual recovery must resume fallback monitoring', async () => {
+  test('LINK recovers a malformed result automatically without a Refresh button', async () => {
     const keyboard = new ResultKeyboard();
     keyboard.result = 'Malformed';
     const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
     await showLink(store);
     expect(textOf(renderer!.root)).toContain('Invalid response');
     keyboard.result = 'Applied High';
-    await act(async () => { await button('Refresh').props.onClick(); });
+    expect(renderer!.root.findAllByType('button').some(node => textOf(node) === 'Refresh')).toBe(false);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
     expect(textOf(renderer!.root)).toContain('Applied High');
     keyboard.result = 'Failed - check levels';
     const baseline = keyboard.resultReads;
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
     expect(textOf(renderer!.root)).toContain('Failed - check levels');
     expect(keyboard.resultReads - baseline).toBe(1);
+  });
+
+  test('background LINK reads retain the receipt until completion and invalidate it on failure', async () => {
+    let signal!: () => void;
+    let release!: () => void;
+    let delay = false;
+    const waiting = new Promise<void>(resolve => { signal = resolve; });
+    class DelayedResultKeyboard extends ResultKeyboard {
+      async sendReport(reportId: number, data: BufferSource) {
+        const bytes = [...new Uint8Array(data instanceof Uint8Array ? data : data as ArrayBuffer)];
+        if (delay && bytes[0] === GET && bytes[1] === 9 && bytes[2] === 66) {
+          delay = false;
+          signal();
+          await new Promise<void>(resolve => { release = resolve; });
+        }
+        return super.sendReport(reportId, data);
+      }
+    }
+    const keyboard = new DelayedResultKeyboard();
+    keyboard.result = 'Applied High';
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    await showLink(store);
+    delay = true;
+    let read!: Promise<unknown>;
+    act(() => { read = store.dispatch(refreshMenuObservation(LINK_RESULT)); });
+    await waiting;
+    expect(textOf(renderer!.root)).toContain('Applied High');
+    expect(textOf(renderer!.root)).not.toContain('Loading...');
+    let note = renderer!.root.findAllByType('span').find(node => textOf(node).startsWith('Result for this unit only'))!;
+    expect(note).toBeDefined();
+    while (note && !note.props.hidden) note = note.parent!;
+    expect(note?.props.hidden).toBe(true);
+    expect(getMenuObservation(store.getState(), LINK_RESULT)).toEqual({status: 'ready', text: 'Applied High'});
+    keyboard.result = 'Malformed';
+    await act(async () => { release(); await read; });
+    expect(textOf(renderer!.root)).toContain('Invalid response');
+    expect(textOf(renderer!.root)).not.toContain('Applied High');
   });
   test('LINK shows the speed the pair runs, and Apply sends a new one with its switch', async () => {
     const keyboard = new LinkKeyboard();

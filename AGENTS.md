@@ -70,11 +70,11 @@ bun run build
   UI 캐시에 미리 써 넣지 않는다.
 - 기존 VIA GET/SET과 V3 Custom Value 경로를 우선한다. 상태 동기화는 두 번째 값 프로토콜이
   아니라 무효화 + 권위 있는 재조회로 만든다.
-- **커스텀 앱만 말할 수 있는 경로는 오류다.** 펌웨어는 공식 `usevia.app` + 공식 V3 정의로
-  계속 동작해야 한다. 기능을 추가하면 앱 정의와 펌웨어 공식 JSON 양쪽에 넣는다.
-  **Tap Dance 고급 설정만 예외다.** 복잡한 편집을 스톡 VIA에서 충분히 지원할 수 없으므로,
-  스톡은 기본 Tap Dance만, Custom 앱은 고급 설정까지 지원한다. 상세 경계는
-  `docs/PROJECT_DIRECTION.md`의 Tap Dance and exact-ms가 소유한다.
+- 스톡 VIA에서 제대로 지원하기 어렵거나 복잡한 설명·불편한 UI가 필요한 기능은
+  공식 JSON에서 축소하고 `usevia.txt`에서 `usekb.cc` Custom 앱을 안내한다.
+  양쪽 UI의 기능 수를 맞추기 위해 잘못된 상태 표시나 불편한 조작을 추가하지 않는다.
+  기존 wire 호환성과 스톡의 기본 설정 경로를 보존한다. 상세 경계는
+  `docs/PROJECT_DIRECTION.md`가 소유한다.
 - configurator 제어 트래픽을 8 kHz 입력 hot path에 넣지 않는다.
 - VIA core가 정확성이나 유지보수성을 실제로 막는다는 증거가 있으면 리팩터링해도 된다.
   upstream diff 최소화는 그 자체가 목적이 아니다. 다만 필요 없는 범위는 늘리지 않는다.

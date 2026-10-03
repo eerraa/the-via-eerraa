@@ -14,6 +14,7 @@ import {getCustomCommandsForDefinition, setMenuObservation} from './menusSlice';
 import {KeyboardAPI} from '../utils/keyboard-api';
 import {
   observationAddress,
+  LINK_RESULT,
   readMenuObservation,
   type MenuObservationValue,
 } from '../utils/menu-observation';
@@ -68,8 +69,14 @@ export const refreshMenuObservation =
       menuObservationScope(getState()) === scope &&
       api.isConnectionGenerationCurrent(generation);
     if (!current()) return null;
+    // Background LINK reads must not blank a valid same-session receipt. Errors
+    // still replace it on completion; a different scope never inherits it.
+    const previous =
+      command === LINK_RESULT ? getMenuObservation(state, command) : undefined;
     dispatch(
-      setMenuObservation({command, scope, request, value: {status: 'loading'}}),
+      setMenuObservation({
+        command, scope, request, value: previous ?? {status: 'loading'},
+      }),
     );
     const value = await readMenuObservation(api, command, current);
     if (

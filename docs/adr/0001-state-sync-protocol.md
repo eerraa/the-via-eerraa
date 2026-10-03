@@ -40,7 +40,7 @@ Legacy GET returns 1-byte units of 10 ms. It floors the stored exact millisecond
 This host's custom JSON has no legacy term commands, so it does not issue that GET. A client using a definition that still has the dropdown does. Exact GET/SET of 137 does not snap (`tests/state-sync-transport.test.ts`).
 
 > **REFUSED:** widening official JSON exact `options` to the custom-app range.
-> **WHY:** official VIA plus official definitions remain required for basic controls. Stock-shaped exact `options` stay `[100, 500]`; the advanced Tap Dance editing exception is owned by `docs/PROJECT_DIRECTION.md`.
+> **WHY:** official VIA plus official definitions remain required for basic controls. Stock-shaped exact `options` stay `[100, 500]`; the stock/Custom support policy is owned by `docs/PROJECT_DIRECTION.md`.
 > **REOPENS:** never.
 
 ## State authority and revision model

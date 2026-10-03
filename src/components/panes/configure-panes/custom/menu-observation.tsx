@@ -59,7 +59,7 @@ export const MenuObservation = ({
         command !== POLLING_CURRENT &&
         active &&
         result &&
-        ['ready', 'unsupported'].includes(result.status)
+        ['ready', 'unsupported', 'malformed'].includes(result.status)
       ) {
         await dispatch(refreshCustomMenuValue('id_qmk_split_link_runtime'));
         if (active)
@@ -102,21 +102,21 @@ export const MenuObservation = ({
       <Label>{label}</Label>
       <Actions>
         <span role="status">{text}</span>
-        <AccentButton
-          type="button"
-          disabled={!scope || applying || status === 'loading'}
-          onClick={() => setRefreshEpoch((epoch) => epoch + 1)}
-        >
-          {t('Refresh')}
-        </AccentButton>
-      </Actions>
-      <Note>
-        {t(
-          command === POLLING_CURRENT
-            ? 'Keyboard IN interval setting at the last successful read; not measured host polling or input latency.'
-            : 'Result for this unit only; it does not confirm all saved settings on the other half.',
+        {command === POLLING_CURRENT && (
+          <AccentButton
+            type="button"
+            disabled={!scope || applying || status === 'loading'}
+            onClick={() => setRefreshEpoch((epoch) => epoch + 1)}
+          >
+            {t('Refresh')}
+          </AccentButton>
         )}
-      </Note>
+      </Actions>
+      {command === POLLING_CURRENT && (
+        <Note>
+          {t('Keyboard IN interval setting at the last successful read; not measured host polling or input latency.')}
+        </Note>
+      )}
     </Row>
   );
 };

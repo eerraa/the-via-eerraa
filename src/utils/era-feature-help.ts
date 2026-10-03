@@ -203,6 +203,7 @@ const HELP_BY_COMMAND_PREFIX: [string, EraFeatureHelp][] = [
       summary: 'Sets the link speed of the cable between the two units.',
       detail: [
         'Apply changes the speed without restarting the keyboard or reconnecting USB.',
+        'Result for this unit only; it does not confirm all saved settings on the other half.',
         'On TOMAK, one green STATUS flash confirms Apply and one red flash means it did not take. Three long red flashes mean the link fell back to Low; if that repeats, check the split cable.',
       ],
     },

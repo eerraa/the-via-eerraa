@@ -35,15 +35,20 @@ fail independently of runtime switching.
 
 The result changes without CONFIG revision. The active LINK screen rereads it
 and both levels, including after initial success, and pauses while hidden or an
-Apply owns the watch. Activation and explicit refresh reacquire the observation.
+Apply owns the watch. Activation reacquires the observation. There is no separate
+LINK Refresh button. Background reads retain the last same-session receipt while
+in flight, then replace it on success or invalidate it on failure. Malformed
+responses retry on the next active-screen interval; transport failures retain
+the existing connection policy. The local-result scope note is in collapsed help.
 Connection, selection or definition changes retire outstanding reads.
 
 Value 66 is optional on older firmware: unhandled displays unsupported and
 uses the existing Runtime/Saved confirmation, without claiming a local receipt.
 Timeout, malformed and disconnect are failures, not legacy support evidence.
 ERA observations live outside CONFIG caches so replacement cannot resurrect
-old receipts. The six current Custom definitions and firmware-local official
-V3 definitions expose the same read-only address.
+old receipts. The six current Custom definitions expose the read-only address.
+Stock V3 definitions omit the three LINK status labels because stock VIA cannot
+keep them current after Apply; usevia.txt directs status inspection to usekb.cc.
 
 ## 3. Observation copy is not a verdict
 

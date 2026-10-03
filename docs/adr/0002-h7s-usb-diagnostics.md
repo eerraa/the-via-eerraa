@@ -52,9 +52,10 @@ The Custom definition declares the standard V3 label and firmware-only
 `showIf`, while this app independently verifies live support before querying.
 An undefined or stale cached firmware revision is never support proof. Official
 or uploaded definitions retain their ordinary V3 path, without special ERA
-observation behavior. Firmware-local polling-TEXT official definitions must be
-paired with supporting firmware; their official-client acceptance remains a
-separate release condition. Legacy identities retain their frozen definitions.
+observation behavior. Stock H7S definitions and release packages omit polling
+TEXT and keep Boot Polling Mode/Apply. After reboot and a fresh GET, the dropdown
+shows the stored mode, not the negotiated endpoint interval. usevia.txt directs
+endpoint observation to usekb.cc. Legacy identities retain their frozen definitions.
 
 ## Verification boundary
 
