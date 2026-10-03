@@ -196,6 +196,12 @@ gate.
 A board's page shows the version, release date, size and download, the SHA-256
 and the flashing steps for that family. ZIP contents are unchanged: `.uf2`,
 readme, and the `usevia.app` folder.
+The stock JSON and usevia.txt in each current package follow the firmware
+repository's canonical stock support policy. Do not add Custom observation
+labels during packaging: stock LINK omits runtime/saved/result TEXT and stock
+H7S polling omits endpoint TEXT. A compatible wire revision alone does not
+establish usable stock UI. Definition/guide-only package corrections preserve
+the UF2 bytes and update the catalog size and SHA-256 together.
 The steps conservatively warn that an update may reset settings and ask for
 a backup first. They do not promise either retention or a reset on every
 version change. MAY65 also warns that backups from before the Insert expansion

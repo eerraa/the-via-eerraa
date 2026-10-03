@@ -36,20 +36,20 @@
       "name": "SR Industry",
       "vendorId": "0x4501",
       "boards": [
-        {"board": "divine", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/DIVINE-V261003R1.zip", "size": 61884, "sha256": "6b30b76ec438583bebc273cd106652f946ae8f6802d310f173f4f97f08626fc2"}},
-        {"board": "klein-hs", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/KLEIN_HS-V261003R1.zip", "size": 62138, "sha256": "44fba395b905f597d945dfecbbe46a57b38ccc9e7865192e8ae301b3f655dcd7"}},
-        {"board": "klein-sd", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/KLEIN_SD-V261003R1.zip", "size": 75246, "sha256": "dd7196a316f33a6c0cd334203359cd73fb364e9d5211f1f0a86530c312944976"}},
-        {"board": "tomak-tkl", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/TOMAK-TKL-V261003R1.zip", "size": 140623, "sha256": "31a4602707909ca3b4acbe79d60f708a23692e201ad518a987f820d5bc2ab0bf"}},
-        {"board": "n8x", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/N8X-V261003R1.zip", "size": 63435, "sha256": "6b38b17c4c8ac846dc40908a02c5a157c7953852c4574b3b081ba29d2a7a3032"}},
-        {"board": "n86", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/N86-V261003R1.zip", "size": 74549, "sha256": "e522dee6efca22ea966a526f007d8eebf8ab0ff55afd61176670379e4a6aad31"}},
-        {"board": "n87", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/N87-V261003R1.zip", "size": 74555, "sha256": "702315e90dc7bf53a570a7125173a487d4f01b5d79d5673cce6e8601d6366f7a"}},
-        {"board": "brick65s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/BRICK65S-V261003R1.zip", "size": 67337, "sha256": "4ea3bcca9697edddfc9b557a1316389b871d77be69d41b35c63772141ecad6bd"}},
-        {"board": "tomak79s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/TOMAK79S-V261003R1.zip", "size": 140707, "sha256": "f7de990de0faef341d5aaa449cd2bbe15c5c0705ec96b14e8bd4c58d7d7b6804"}},
-        {"board": "tomak79h", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/TOMAK79H-V261003R1.zip", "size": 140499, "sha256": "cc4508b6b070930cb9c6ab3eacbba2012485deecce2520e7aa9afec6930f142f"}},
-        {"board": "chickpad", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/CHICKPAD-V261003R1.zip", "size": 72230, "sha256": "9037acac410ca4cf3e377578ba288d962ca7c7275967cee1ab292a7185c8f068"}},
-        {"board": "brick60-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/sirind/BRICK60-H7S-V261003R5.zip", "size": 120380, "sha256": "85ba3c3678f42cd4119c53b0ec769c0b50dae967df244096f9a032a0c1998622"}},
-        {"board": "brick65-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/sirind/BRICK65-H7S-V261003R5.zip", "size": 120535, "sha256": "28c5e9ecf2293cc2fb5a50698d0f585c2c822c5eb2a2463d0612b9cc25ae94aa"}},
-        {"board": "sculpturei-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/sirind/SCULPTUREI-H7S-V261003R5.zip", "size": 120800, "sha256": "0fa0cc0ec79ebbd1cd05a536b8a0e770c8ddb863c500c38ee118c69d775980bd"}}
+        {"board": "divine", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/DIVINE-V261003R1.zip", "size": 62967, "sha256": "8e558c73dc8eb8c971309cd4b89fd8dbbe2053dc6303651c6d78d026ee5d0d9b"}},
+        {"board": "klein-hs", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/KLEIN_HS-V261003R1.zip", "size": 63220, "sha256": "7f377aa02438263363f9cabfa2f0b2d169926543f321f851e8b8701f69c09f47"}},
+        {"board": "klein-sd", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/KLEIN_SD-V261003R1.zip", "size": 76441, "sha256": "bb0dc0de9aff472c08c0143cf50c2f4d09908c52e803e783fb324dd15ea29db0"}},
+        {"board": "tomak-tkl", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/TOMAK-TKL-V261003R1.zip", "size": 142905, "sha256": "02493a2b86fa614078fa24bb859e4e2fc7bf4e38fed260faec4f6a908ec0d79e"}},
+        {"board": "n8x", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/N8X-V261003R1.zip", "size": 64546, "sha256": "f56c9a69174d083bed7c5cbfa42fab01fa947e929cd47ee176bb12d76a22c62e"}},
+        {"board": "n86", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/N86-V261003R1.zip", "size": 75658, "sha256": "fc596968d36f311bf05ea831d34997dd8ab9d22908ffb904b07e423ec390442f"}},
+        {"board": "n87", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/N87-V261003R1.zip", "size": 75670, "sha256": "e7e3b39e4d6ff605f6d0f8c0d60ec5a72822b131fd324b85e6b4f21587854342"}},
+        {"board": "brick65s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/BRICK65S-V261003R1.zip", "size": 68419, "sha256": "a125845356963437393aa6b06b96be6b500d17f80d02d667086adcc5c3100693"}},
+        {"board": "tomak79s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/TOMAK79S-V261003R1.zip", "size": 142978, "sha256": "086b51af01aca64205abe7c12a6298df0a3a747762aaf650a0fd6bdb6edf63a2"}},
+        {"board": "tomak79h", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/TOMAK79H-V261003R1.zip", "size": 142768, "sha256": "9533a93560de277d19ad3a02202290160583391e4597efd6374dce7d648b5bbb"}},
+        {"board": "chickpad", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/sirind/CHICKPAD-V261003R1.zip", "size": 73401, "sha256": "ddaf306ed07e8b6596a80183963dc49228cb5ac500a67b2778c8a624ca3eed8d"}},
+        {"board": "brick60-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/sirind/BRICK60-H7S-V261003R5.zip", "size": 120499, "sha256": "03dacee56ae94011fd4def97b0d7259359409fe278148cb0abb391536a8db69d"}},
+        {"board": "brick65-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/sirind/BRICK65-H7S-V261003R5.zip", "size": 120654, "sha256": "6cd09c85305a8280ecaf5146ae6a4e80c955094173ba4c25a7b716e7c82bbf0e"}},
+        {"board": "sculpturei-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/sirind/SCULPTUREI-H7S-V261003R5.zip", "size": 120919, "sha256": "20c8509cc23abb6e73d595c23d1c12df866f5d1f4733cf466df0a4a5b002969f"}}
       ]
     },
     {
@@ -57,10 +57,10 @@
       "name": "LINWORKS",
       "vendorId": "0x4502",
       "boards": [
-        {"board": "n8x", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/N8X-V261003R1.zip", "size": 63432, "sha256": "711985ef2a69063b3440f8bedfd346dcee95212edeee44e90c520107bb4bb97c"}},
-        {"board": "n86", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/N86-V261003R1.zip", "size": 74536, "sha256": "50a6bfe926cb114282d48c3ec26506c58863e1a7788cc2a14c0c11c8606dea0c"}},
-        {"board": "n87", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/N87-V261003R1.zip", "size": 74543, "sha256": "83dd4e7eba9a18cc97d8932d923db0ab833308e5ade0ec34175cf57ff6f762a8"}},
-        {"board": "fave65s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/FAVE65S-V261003R1.zip", "size": 74142, "sha256": "9eb6607cde1ca54195c7fcedd2437c387915ddf42a8cb86bc842712b3e8a5ea1"}}
+        {"board": "n8x", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/N8X-V261003R1.zip", "size": 64554, "sha256": "ec6068271449c81e667bebc6d68a044ece2c8636883d64e833958751f89d6e54"}},
+        {"board": "n86", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/N86-V261003R1.zip", "size": 75657, "sha256": "5cbbe07cd0eef38bb75acfc564d4272aa3f2c6e816518e4e5001b5c4ec267d83"}},
+        {"board": "n87", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/N87-V261003R1.zip", "size": 75669, "sha256": "f1c7c2148117a75e305019a349b83838dbefc0787912958c856c7767e12c605e"}},
+        {"board": "fave65s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/linworks/FAVE65S-V261003R1.zip", "size": 75313, "sha256": "4904ceccdb41d3e7d0fc9874b086d8574250482f052b1a7f7b4c391bef6a9a51"}}
       ]
     },
     {
@@ -68,10 +68,10 @@
       "name": "NEWONE",
       "vendorId": "0x4503",
       "boards": [
-        {"board": "newone-a1", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/NEWONE_A1-V261003R1.zip", "size": 63508, "sha256": "91488d3e6d4ef8837a127019470ceb828645bc6dd60cadd14fd715c41c4c8d6b"}},
-        {"board": "newone-h1", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/NEWONE_H1-V261003R1.zip", "size": 59824, "sha256": "d0891fad2ba89f267e17e233960b36285b88808f95fd36f0ef250c610b8456fd"}},
-        {"board": "newone-odessey60s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/ODESSEY60S-V261003R1.zip", "size": 69471, "sha256": "60f60d871ce00e427775cce8746b33744404ceff9b734e42a3a21b2a2c0511a8"}},
-        {"board": "newone-odessey60h", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/ODESSEY60H-V261003R1.zip", "size": 69383, "sha256": "f7ecd00bdfdb713e0dc54e0019789b3503c2d2bd9085531d87414e3cef181ed3"}}
+        {"board": "newone-a1", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/NEWONE_A1-V261003R1.zip", "size": 64610, "sha256": "12e52ad389f5718d953f640395344cade4f0efc08272d61759fb2ae92fcc9c62"}},
+        {"board": "newone-h1", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/NEWONE_H1-V261003R1.zip", "size": 60910, "sha256": "3560dd0df1cf81bec5806cf88ccd82b5428b12d693c54af22a870d4213d57cf1"}},
+        {"board": "newone-odessey60s", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/ODESSEY60S-V261003R1.zip", "size": 70629, "sha256": "708e6917ca65186276df9e87fc16f0cd623615e34edc2ea7b1d9708bac1856f2"}},
+        {"board": "newone-odessey60h", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/newone/ODESSEY60H-V261003R1.zip", "size": 70537, "sha256": "a79057dba1208ce16b3ccbb038ec082e771149b7226b4382ef8e611913011af0"}}
       ]
     },
     {
@@ -79,10 +79,10 @@
       "name": "KEYNETIX",
       "vendorId": "0x4504",
       "boards": [
-        {"board": "n8x", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/keynetix/N8X-V261003R1.zip", "size": 63431, "sha256": "6866f25876f669b215f0f2582f647549f1c979663f3a248fad92de59e1ab71fc"}},
-        {"board": "n86", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/keynetix/N86-V261003R1.zip", "size": 74537, "sha256": "7c8c0aec4dcaaa91ff3ab6b2e65f3e3df452ef4219280121ab3b82a636534efe"}},
-        {"board": "n87", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/keynetix/N87-V261003R1.zip", "size": 74542, "sha256": "d6556cb0f2fa0daf031b6dc517b5e871db2ca0faae5f5081091a22173c78245c"}},
-        {"board": "may65-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/keynetix/MAY65-H7S-V261003R5.zip", "size": 120420, "sha256": "29b2712bad54f2e1dbcf1d72e5601269ad22aa4ee1a80f03aec69d5165a7bb9e"}}
+        {"board": "n8x", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/keynetix/N8X-V261003R1.zip", "size": 64550, "sha256": "811d5b85870657a12cd545cae49cfb185b2eb83855d34667924eab6bc033be7e"}},
+        {"board": "n86", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/keynetix/N86-V261003R1.zip", "size": 75658, "sha256": "00f7b651ac5dc0d934b3e04472eecd7bfe59c75cce3729e084ff96f9141fcd56"}},
+        {"board": "n87", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/keynetix/N87-V261003R1.zip", "size": 75669, "sha256": "e0b60b5dd3364b9d15ea2a5350fcadea42ada084093005a49d9aff115a97dc35"}},
+        {"board": "may65-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/keynetix/MAY65-H7S-V261003R5.zip", "size": 120539, "sha256": "1a6f73d4bd56897ad9d5160bdddde1e5262fc01f47f9cd1d8208bd6619667abc"}}
       ]
     },
     {
@@ -90,10 +90,10 @@
       "name": "CLASSIC.D",
       "vendorId": "0x4505",
       "boards": [
-        {"board": "classicd-core", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_CORE-V261003R1.zip", "size": 71848, "sha256": "e77dd66d5dffa2a2f703d130981ccaa74bbaf437d8d5cb8eba2a41102222b848"}},
-        {"board": "classicd-coreless", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_CORELESS-V261003R1.zip", "size": 71876, "sha256": "50dab9b8e965f06cf716f74c9aa987cf242154eba9c56a59bb7367c235dc2d81"}},
-        {"board": "classicd-a1", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_A1-V261003R1.zip", "size": 63520, "sha256": "1e5d832b23c7d00e8217c09a775770437cf3f6331f1ee8922e2a35c4f4c4156f"}},
-        {"board": "classicd-a1-ug", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_A1_UG-V261003R1.zip", "size": 71405, "sha256": "8618b7145b4e81d26f1d6c45e7c461a3c3c2360e4a0dc235a14227ad8919b620"}}
+        {"board": "classicd-core", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_CORE-V261003R1.zip", "size": 73083, "sha256": "735615c38e7513f622b7ec483409b4b23d83163e0e3a4bb6db018efde4cc1d76"}},
+        {"board": "classicd-coreless", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_CORELESS-V261003R1.zip", "size": 73097, "sha256": "69fc0a0be0da256f14a91975922ad7b66e50113fd652f5aeda856fe811a1c9f6"}},
+        {"board": "classicd-a1", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_A1-V261003R1.zip", "size": 64624, "sha256": "8e0f30dc3ea93467ee311ada73a31f338d0ab2c84508b6da8d1978cdabbade8e"}},
+        {"board": "classicd-a1-ug", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/classicd/CLASSICD_A1_UG-V261003R1.zip", "size": 72640, "sha256": "70d7a1c1071f2f1d86e5d91078ff852a0ad29d1f86a4f15c5fd91add7ca7d769"}}
       ]
     },
     {
@@ -101,11 +101,11 @@
       "name": "COMMON",
       "vendorId": "0x4500",
       "boards": [
-        {"board": "era65", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/ERA65-V261003R1.zip", "size": 63426, "sha256": "acef1f68acb9693388a3ec8822c0d0024280e3c279231740ffb86bf192266155"}},
-        {"board": "7b75", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/7B75-V261003R1.zip", "size": 71849, "sha256": "80062fe8be255fe43806c1006458a4376dcb7bf33bad73c44d35559782e9f529"}},
-        {"board": "et-tkl", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/ET_TKL-V261003R1.zip", "size": 63395, "sha256": "92288e0a5357a894d0c97a8884ff692a52be422f3845dc8760ba432af0803c41"}},
-        {"board": "riley", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/RILEY-V261003R1.zip", "size": 69874, "sha256": "b37a07a133878060da3335d8092c201cf80341df38bcef0153c76fe266e60c94"}},
-        {"board": "intigrity80-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/common/INTIGRITY80-H7S-V261003R5.zip", "size": 120463, "sha256": "210b48a2d8af7004751a464e99c2aa043f736708726f6289a39bd6a5d70d8e1b"}}
+        {"board": "era65", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/ERA65-V261003R1.zip", "size": 64507, "sha256": "f9cb61ac09c0eb7511a25f3e1bd37942c8e9367498e56bcc040e19891ad09213"}},
+        {"board": "7b75", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/7B75-V261003R1.zip", "size": 73091, "sha256": "5fa6da93c0715fa997ab380e9486a75b14833834cd318e2bc901a82e2985bf31"}},
+        {"board": "et-tkl", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/ET_TKL-V261003R1.zip", "size": 64510, "sha256": "7c9d3bcdb2599ebe9bac37d59048e13f471fbd68697e395dea37d3b4413f24ce"}},
+        {"board": "riley", "file": {"version": "261003R1", "url": "/firmware-files/261003R1/common/RILEY-V261003R1.zip", "size": 71022, "sha256": "81ca3e4b0410e21323dd171b7adf868dd91802bef3cd788556097b80bd9035f4"}},
+        {"board": "intigrity80-h7s", "file": {"version": "261003R5", "url": "/firmware-files/261003R5/common/INTIGRITY80-H7S-V261003R5.zip", "size": 120581, "sha256": "21a63ddf8a27a428084092a6b750652ea56ffde721efb59d298f23f7dc094b1e"}}
       ]
     }
   ]
