@@ -793,7 +793,7 @@
   "Tap, then hold": "点按后再按住",
   "Term": "Term",
   "Tap Dance settings cannot be written right now.": "目前无法写入 Tap Dance 设置。",
-  "The keyboard did not accept a change. Settings after it were not sent.": "键盘没有接受某项更改，其后的设置未发送。",
+  "Could not complete this change. Settings after it were not sent.": "未能完成此项更改，其后的设置未发送。",
   "Puts four actions on one key.": "在一个键上放入四种动作。",
   "Sets how fast mouse keys move the pointer and wheel.": "设置鼠标键移动指针和滚轮的速度。",
   "Sets the link speed of the cable between the two units.": "设置连接两个单元的线缆通信速度。",

@@ -636,7 +636,7 @@ export const KeycodePalette = ({
           ...current,
           applying: false,
           error: t(
-            'The keyboard did not accept a change. Settings after it were not sent.',
+            'Could not complete this change. Settings after it were not sent.',
           ),
         },
     );

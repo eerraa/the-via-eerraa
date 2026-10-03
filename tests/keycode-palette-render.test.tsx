@@ -747,7 +747,7 @@ describe('editing a Tap Dance', () => {
   const SAVE = 0x09;
   const [TD0] = getTapDanceSlots(definition);
   const REFUSED =
-    'The keyboard did not accept a change. Settings after it were not sent.';
+    'Could not complete this change. Settings after it were not sent.';
 
   let renderer: ReactTestRenderer | undefined;
 

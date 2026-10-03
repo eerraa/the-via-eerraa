@@ -793,7 +793,7 @@
   "Tap, then hold": "Tocar y luego mantener",
   "Term": "Term",
   "Tap Dance settings cannot be written right now.": "Ahora no se pueden escribir los ajustes de Tap Dance.",
-  "The keyboard did not accept a change. Settings after it were not sent.": "El teclado no aceptó un cambio. Los ajustes posteriores no se enviaron.",
+  "Could not complete this change. Settings after it were not sent.": "No se pudo completar este cambio. Los ajustes posteriores no se enviaron.",
   "Puts four actions on one key.": "Pone cuatro acciones en una sola tecla.",
   "Sets how fast mouse keys move the pointer and wheel.": "Define a qué velocidad las teclas de ratón mueven el puntero y la rueda.",
   "Sets the link speed of the cable between the two units.": "Define la velocidad del enlace del cable entre las dos unidades.",

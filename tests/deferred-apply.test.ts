@@ -1041,7 +1041,7 @@ describe('ERA menu drafts', () => {
   const SET = 0x07;
   const SAVE = 0x09;
   const REFUSED =
-    'The keyboard did not accept a change. Settings after it were not sent.';
+    'Could not complete this change. Settings after it were not sent.';
 
   const featureMenu = {
     label: 'FEATURE',
@@ -1381,6 +1381,47 @@ describe('ERA menu drafts', () => {
     };
     return {keyboard, running};
   };
+
+  test('MOUSE SAVE failure reports incomplete Apply while retaining the accepted runtime and retry', async () => {
+    const {keyboard, running} = mouseKeyboard();
+    const {store} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    await showLink(store);
+    await act(async () => precisionToggle().props.onChange(true));
+    await act(async () => field('Cursor Acceleration Time').props.onChange({target: {value: '1200'}}));
+    keyboard.refuse = ([command]) => command === SAVE;
+    await act(async () => button('Apply').props.onClick());
+
+    expect(writes(keyboard)).toEqual([[SET, 13, 10, 4, 176], [SAVE, 13]]);
+    expect(running[10]).toEqual([4, 176, 0xe4]);
+    expect(store.getState().menus.customMenuDataMap[PATH].id_qmk_mousekey_cursor_ramp_exact).toEqual([4, 176]);
+    expect(store.getState().menus.saveRetries[PATH].id_qmk_mousekey_cursor_ramp_exact).toBe(true);
+    expect(button('Apply').props.disabled).toBe(false);
+    expect(alerts()).toContain('Could not complete this change. Settings after it were not sent.');
+  });
+
+  test('an earlier MOUSE SAVE retry remains after a later SET refusal without describing its failure stage', async () => {
+    const {keyboard, running} = mouseKeyboard();
+    const {store} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    await showLink(store);
+    await act(async () => precisionToggle().props.onChange(true));
+    await act(async () => field('Cursor Acceleration Time').props.onChange({target: {value: '1200'}}));
+    keyboard.refuse = ([command]) => command === SAVE;
+    await act(async () => button('Apply').props.onClick());
+
+    const before = writes(keyboard).length;
+    await act(async () => field('Cursor Acceleration Time').props.onChange({target: {value: '1300'}}));
+    keyboard.refuse = ([command]) => command === SET;
+    await act(async () => button('Apply').props.onClick());
+
+    expect(writes(keyboard).slice(before)).toEqual([[SET, 13, 10, 5, 20]]);
+    expect(running[10]).toEqual([4, 176, 0xe4]);
+    expect(store.getState().menus.customMenuDataMap[PATH].id_qmk_mousekey_cursor_ramp_exact).toEqual([4, 176]);
+    expect(store.getState().menus.saveRetries[PATH].id_qmk_mousekey_cursor_ramp_exact).toBe(true);
+    expect(field('Cursor Acceleration Time').props.value).toBe('1300');
+    expect(button('Apply').props.disabled).toBe(false);
+    expect(alerts()).toHaveLength(1);
+  });
+
   test('MOUSE precision toggle preserves integer drafts without writes; same-value SAVE retry works', async () => {
     const {keyboard} = mouseKeyboard();
     const {store} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);

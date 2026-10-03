@@ -793,7 +793,7 @@
   "Tap, then hold": "Tap, then hold",
   "Term": "Term",
   "Tap Dance settings cannot be written right now.": "Tap Dance settings cannot be written right now.",
-  "The keyboard did not accept a change. Settings after it were not sent.": "The keyboard did not accept a change. Settings after it were not sent.",
+  "Could not complete this change. Settings after it were not sent.": "Could not complete this change. Settings after it were not sent.",
   "Puts four actions on one key.": "Puts four actions on one key.",
   "Sets how fast mouse keys move the pointer and wheel.": "Sets how fast mouse keys move the pointer and wheel.",
   "Sets the link speed of the cable between the two units.": "Sets the link speed of the cable between the two units.",

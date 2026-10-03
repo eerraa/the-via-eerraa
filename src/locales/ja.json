@@ -793,7 +793,7 @@
   "Tap, then hold": "タップしてから押し続ける",
   "Term": "Term",
   "Tap Dance settings cannot be written right now.": "今はタップダンスの設定を書き込めません。",
-  "The keyboard did not accept a change. Settings after it were not sent.": "キーボードが変更を受け付けませんでした。それ以降の設定は送っていません。",
+  "Could not complete this change. Settings after it were not sent.": "変更を完了できませんでした。それ以降の設定は送っていません。",
   "Puts four actions on one key.": "キー 1 つに 4 つの動作を割り当てます。",
   "Sets how fast mouse keys move the pointer and wheel.": "マウスキーで動かすポインターとホイールの速度を設定します。",
   "Sets the link speed of the cable between the two units.": "両ユニットをつなぐケーブルの通信速度を設定します。",
