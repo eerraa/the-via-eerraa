@@ -1371,6 +1371,9 @@ describe('ERA menu drafts', () => {
     id_qmk_mousekey_cursor_start_exact: [0, 4, 0xe4], id_qmk_mousekey_cursor_ramp_exact: [3, 232, 0xe4],
   };
   const precisionToggle = () => renderer!.root.findAllByType(AccentSlider).at(-1)!;
+  const precisionLabel = () => renderer!.root.find(
+    (node) => node.type === 'label' && textOf(node) === 'Advanced settings',
+  );
   const mouseKeyboard = () => {
     const keyboard = new MenuKeyboard();
     const running: Record<number, number[]> = {1: [4], 7: [0xe4, 1], 8: [0, 4, 0xe4], 10: [3, 232, 0xe4]};
@@ -1381,6 +1384,36 @@ describe('ERA menu drafts', () => {
     };
     return {keyboard, running};
   };
+
+  test('MOUSE tab marks advanced drafts while shown or hidden, including failed SAVE', async () => {
+    const {keyboard} = mouseKeyboard();
+    const {store} = await openKeyboard('era', mouseMenu, mouseValues, keyboard);
+    await showLink(store);
+    expect(hasDot(tab('MOUSE'))).toBe(false);
+    await act(async () => precisionToggle().props.onChange(true));
+    expect(hasDot(tab('MOUSE'))).toBe(false);
+    expect(hasDot(precisionLabel())).toBe(false);
+    await act(async () => field('Cursor Start Speed').props.onChange({target: {value: '17'}}));
+    expect(hasDot(row('Cursor Start Speed')!)).toBe(true);
+    expect(hasDot(tab('MOUSE'))).toBe(true);
+    expect(hasDot(precisionLabel())).toBe(false);
+    await act(async () => precisionToggle().props.onChange(false));
+    expect(hasDot(tab('MOUSE'))).toBe(true);
+    expect(hasDot(precisionLabel())).toBe(false);
+    expect(writes(keyboard)).toEqual([]);
+    await act(async () => precisionToggle().props.onChange(true));
+    keyboard.refuse = ([command]) => command === SAVE;
+    await act(async () => button('Apply').props.onClick());
+    expect(hasDot(row('Cursor Start Speed')!)).toBe(true);
+    expect(hasDot(tab('MOUSE'))).toBe(true);
+    keyboard.refuse = () => false;
+    await act(async () => button('Apply').props.onClick());
+    expect(hasDot(row('Cursor Start Speed')!)).toBe(false);
+    expect(hasDot(tab('MOUSE'))).toBe(false);
+    await act(async () => field('Cursor Start Speed').props.onChange({target: {value: '19'}}));
+    await act(async () => button('Cancel').props.onClick());
+    expect(hasDot(tab('MOUSE'))).toBe(false);
+  });
 
   test('MOUSE SAVE failure reports incomplete Apply while retaining the accepted runtime and retry', async () => {
     const {keyboard, running} = mouseKeyboard();
@@ -1695,6 +1728,8 @@ describe('ERA menu drafts', () => {
     await act(async () => { await button('Apply').props.onClick(); });
     expect(store.getState().menus.customMenuDataMap[PATH].id_qmk_tapping_global_term_exact).toEqual([0, 137]);
     expect(refusal('Global Tapping Term')).toBe(true);
+    expect(hasDot(row('Global Tapping Term')!)).toBe(true);
+    expect(hasDot(tab('TAPPING'))).toBe(true);
     expect(button('Apply').props.disabled).toBe(false);
     expect(button('Cancel').props.disabled).toBe(false);
     // An authoritative GET of the running value does not acknowledge SAVE.
@@ -2141,10 +2176,11 @@ describe('ERA menu drafts', () => {
       [SAVE, 9],
     ]);
     expect(toggle('RGB Sleep').props.checked).toBe(false);
+    expect(hasDot(row('RGB Sleep')!)).toBe(false);
     // The timeout row is hidden while its switch is off, and with it the only
-    // change Apply would write; its draft waits unseen.
+    // change Apply would write. The tab still marks the retained draft.
     expect(row('RGB Sleep Timeout')).toBeUndefined();
-    expect(hasDot(tab('SLEEP'))).toBe(false);
+    expect(hasDot(tab('SLEEP'))).toBe(true);
     expect(buttons()).toEqual([]);
 
     await act(async () => {
@@ -2153,6 +2189,8 @@ describe('ERA menu drafts', () => {
     expect(field('RGB Sleep Timeout').props.value).toBe('300');
     expect(hasDot(row('RGB Sleep Timeout')!)).toBe(true);
     expect(button('Apply').props.disabled).toBe(false);
+    await act(async () => button('Cancel').props.onClick());
+    expect(hasDot(tab('SLEEP'))).toBe(false);
   });
 
   test('a switch the keyboard refuses stays at the saved value and says so on its row', async () => {

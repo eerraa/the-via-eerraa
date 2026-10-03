@@ -12,7 +12,7 @@ import {
   type TapDanceSlot,
 } from 'src/utils/keycode-palette';
 import {AccentButton, PrimaryAccentButton, handFocus} from '../accent-button';
-import {DirtyDot} from '../dirty-dot';
+import {DIRTY_DOT_GAP, DirtyDot} from '../dirty-dot';
 import {IntegerInput, NumberBox} from '../integer-input';
 import {useExplainDisclosure} from '../explain';
 import {HelpBody, HelpContent, HelpParagraph} from '../../panes/configure-panes/custom/help-content';
@@ -75,7 +75,7 @@ const Rows = styled.section`
 const Row = styled.div<{$recent: boolean}>`
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: ${DIRTY_DOT_GAP * 2 + 6}px;
   font-size: 18px;
   min-height: 62px;
   padding: 4px 10px;
@@ -95,8 +95,9 @@ const SlotKey = styled.span`
 
 const RowDirtyDot = styled(DirtyDot)`
   position: absolute;
-  top: 4px;
-  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  left: calc(100% + ${DIRTY_DOT_GAP}px);
 `;
 
 const Summary = styled.span<{$empty: boolean}>`
@@ -292,7 +293,7 @@ const EditorButtons = styled.div`
 `;
 
 const SettingsToggle = styled(TextAction)`
-  gap: 6px;
+  gap: ${DIRTY_DOT_GAP}px;
 `;
 
 const PreviewToggle = styled(SettingsToggle)`
@@ -326,7 +327,7 @@ const TimingGrid = styled.div`
 const TimingOption = styled.label`
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: ${DIRTY_DOT_GAP}px;
   min-height: 34px;
   color: ${strong};
   cursor: pointer;
@@ -367,7 +368,7 @@ const ModeOption = styled.label`
   > span {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: ${DIRTY_DOT_GAP}px;
     min-height: 34px;
     padding: 0 8px;
     border-bottom: 2px solid transparent;
@@ -473,7 +474,7 @@ export const PickerSlotButton = styled.button<{$focused: boolean}>`
 const ActionLabel = styled(PickerSlotLabel)`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: ${DIRTY_DOT_GAP}px;
 `;
 
 // Reserve the mark's space so saving a change never moves the label or field.
@@ -500,7 +501,7 @@ const TermLabel = styled(Label)`
 const TermValue = styled.span`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: ${DIRTY_DOT_GAP}px;
 `;
 
 // Keep one text size across the editor without changing the shared palette.

@@ -306,10 +306,6 @@ const MenuComponent = React.memo((props: any) => {
         <ControlRow>
           <Label id={precisionLabel}>
             {t('Advanced settings')}
-            {collectDeferredItems(props.elem).some((item) => {
-              const row = props.deferredRows.get(item.content[0]);
-              return mouseExact(item.content[0]) && row && isDraftDirty(row, drafts[row.command]);
-            }) ? <DirtyDot aria-hidden="true" /> : null}
           </Label>
           <Detail><AccentSlider labelledBy={precisionLabel} isChecked={precise} onChange={setPrecise} /></Detail>
         </ControlRow>
@@ -354,8 +350,10 @@ function submenuGenerator(
       label: elem.label,
       dirty:
         !isHidden &&
+        // A presentation toggle or showIf may hide a field, not its draft.
+        // Only rows supported by the current definition/capability participate.
         deferredRowsOf(
-          elem.content.flatMap((child) => itemGenerator(child as any, props)),
+          collectDeferredItems(elem),
           props.deferredRows,
         ).some((row) => isDraftDirty(row, props.menuDrafts[row.command])),
       Menu: isHidden

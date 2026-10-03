@@ -1,6 +1,7 @@
 import styled, {css} from 'styled-components';
 import type {InputHTMLAttributes} from 'react';
 import {AccentButton} from '../accent-button';
+import {DIRTY_DOT_GAP} from '../dirty-dot';
 
 // Chrome for the palette. Colours come from the app's CSS variables so light and
 // dark mode both hold; only keycaps use the keyboard theme.
@@ -51,7 +52,7 @@ export const TAB_FONT = `
 export const tabStyles = css<{$selected: boolean}>`
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: ${DIRTY_DOT_GAP}px;
   margin: 0;
   padding: 0 12px;
   border: 0;

@@ -311,6 +311,8 @@ enabled states. They clear when a change is saved, cancelled or restored to the
 keyboard's value. The settings control also summarizes each pending advanced
 timing field with a vertically stacked dot, hold time above hold-on-other-key.
 The Save action reflects all pending changes.
+An action removed from the draft is summarized by the slot and category dots;
+its Add action button stays unmarked because it is an editing command.
 By default a single Decision time drives both consecutive-press and hold
 judgments. Enabling Separate hold decision time reveals Hold decision beside Tap interval
 in a dedicated timing row above the input-start choices. Both values remain

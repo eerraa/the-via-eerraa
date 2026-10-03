@@ -1030,6 +1030,11 @@ describe('editing a Tap Dance', () => {
     const remove = (name: string) => root.find((node) => node.type === 'button' && node.props['aria-label'] === `Remove ${name}`);
     act(() => remove('On Hold').props.onClick());
     expect(slotButtons(root)).toHaveLength(1);
+    expect(hasDot(button(root, 'Add action: On Hold'))).toBe(false);
+    expect(hasDot(tab(root, 'Tap Dance'))).toBe(true);
+    click(tab(root, 'Tap Dance'));
+    expect(hasDot(row(root, 'TD0'))).toBe(true);
+    openTd0(root);
     click(button(root, 'Add action: Tap+Hold'));
     expect(apply(root).props.disabled).toBe(true);
     click(button(root, 'Tap+Hold: B'));

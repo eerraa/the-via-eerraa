@@ -1,6 +1,8 @@
 import styled from 'styled-components';
 
-/** Marks what holds a change that is not written to the keyboard yet. */
+export const DIRTY_DOT_GAP = 8;
+
+/** Marks a draft awaiting Apply or a successful save, including SAVE retries. */
 export const DirtyDot = styled.span`
   display: inline-block;
   flex: none;

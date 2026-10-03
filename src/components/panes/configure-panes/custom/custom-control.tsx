@@ -6,7 +6,7 @@ import {AccentButton} from '../../../inputs/accent-button';
 import {AccentSlider} from '../../../inputs/accent-slider';
 import {AccentSelect} from '../../../inputs/accent-select';
 import {AccentRange, RangeValueDisplay} from '../../../inputs/accent-range';
-import {DirtyDot} from '../../../inputs/dirty-dot';
+import {DIRTY_DOT_GAP, DirtyDot} from '../../../inputs/dirty-dot';
 import {ControlRow, Label, Detail} from '../../grid';
 import type {VIADefinitionV2, VIADefinitionV3, VIAItem} from '@the-via/reader';
 import type {LightingData} from '../../../../types/types';
@@ -72,7 +72,7 @@ const ItemRow = styled(ControlRow)<{$wrap: boolean}>`
 const LabelGroup = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: ${DIRTY_DOT_GAP}px;
 `;
 
 const RowError = styled.div`

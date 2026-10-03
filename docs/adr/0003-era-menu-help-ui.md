@@ -68,6 +68,12 @@ local retry/draft without rolling back runtime. Pane reentry and device selectio
 retain per-device intent; physical removal discards it with the drafts. A
 connection reload alone is not evidence of persistence and retains retry intent.
 
+Pending-change dots mark unapplied or unsaved drafts, including failed SAVE
+retries; they do not promise that Apply is currently available. A submenu tab
+keeps its summary dot when a field is hidden but its draft remains. Immediate
+controls do not receive dots. MOUSE's advanced switch changes presentation only
+and has no summary dot; its fields and submenu tab carry the pending state.
+
 ## 5. Language and accessibility boundaries
 
 Every shipped locale must carry the same user-visible meaning for help, warnings,
