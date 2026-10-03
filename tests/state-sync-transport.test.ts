@@ -61,6 +61,7 @@ import definitionsReducer, {
   getSelectedLayoutOptions,
   getSelectedLayoutOptionsPending,
   loadCustomDefinitions,
+  reloadDefinitions,
   updateDefinitions,
   updateEraDefinitions,
   updateLayoutOption,
@@ -70,10 +71,12 @@ import menusReducer, {
   getCustomMenuAvailabilityForDevice,
   getSelectedCustomMenuAvailability,
   getV3Menus,
+  refreshCustomMenuValue,
   syncCustomMenuValues,
   completeCustomMenuRangeValueContinuous,
   completeCustomMenuValueContinuous,
   updateCustomMenuRangeValueContinuous,
+  updateCustomMenuRangeValue,
   updateCustomMenuValue,
   updateCustomMenuValueContinuous,
   updateSelectedCustomMenuData,
@@ -4258,4 +4261,466 @@ describe('asynchronous multi-value CONFIG reads', () => {
       expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe('available');
     },
   );
+});
+
+const prepareOrdinaryMenuReadDevice = async (path: string) => {
+  const {device} = await connectFake(path);
+  const connected = makeConnectedDevice(path, ORDINARY_VPID);
+  const definition = {
+    ...makeV3Definition(true),
+    vendorProductId: ORDINARY_VPID,
+  };
+  definition.layouts.keys[0].li = undefined;
+  definition.menus[0].content[0].content.push({
+    label: 'Other',
+    type: 'range',
+    content: ['id_test_other', 1, 2],
+    options: [0, 255],
+  });
+  const store = makeStore();
+  const dispatch = store.dispatch as any;
+  dispatch(updateDefinitions({[ORDINARY_VPID]: {v3: definition}} as any));
+  dispatch(updateConnectedDevices({[path]: connected}));
+  const api = new KeyboardAPI(path);
+  const generation = api.getConnectionGeneration();
+  dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+  dispatch(
+    markDeviceReady({
+      devicePath: path,
+      connectionGeneration: generation,
+      selectionGeneration: store.getState().devices.selectionGeneration,
+    }),
+  );
+  dispatch(
+    updateSelectedCustomMenuData({
+      devicePath: path,
+      menuData: {id_test_value: [1], id_test_other: [2]},
+    }),
+  );
+  return {device, connected, store, dispatch, api, generation};
+};
+
+for (const target of ['other', 'same'] as const) {
+  test(`legacy menu reads: 0x16 partial read preserves ${target} foreground SET`, async () => {
+    const path = `audit-partial-${target}`;
+    const {device, store, dispatch, api, generation} =
+      await prepareOrdinaryMenuReadDevice(path);
+    const values: Record<number, number> = {1: 1, 2: 2};
+    let release: (() => void) | undefined;
+    let firstGet = true;
+    device.onSend = (data) => {
+      if (data[0] === 0x08) {
+        const observed = values[data[2]];
+        if (firstGet) {
+          firstGet = false;
+          release = () =>
+            device.emit(payload(0x08, data[1], data[2], observed));
+        } else {
+          device.emit(payload(0x08, data[1], data[2], observed));
+        }
+      } else if (data[0] === 0x07) {
+        values[data[2]] = data[3];
+        device.emit(data);
+      } else if (data[0] === 0x09) {
+        device.emit(data);
+      }
+    };
+    let sync: Promise<void> | undefined;
+    const remove = api.addUISyncRequestHandler((request) => {
+      sync = dispatch(
+        handleUISyncRequest({
+          devicePath: path,
+          connectionGeneration: generation,
+          request,
+        }),
+      );
+    });
+    device.emit(payload(0x16, 1, 1, 1, 1, 1));
+    await waitUntil(() => release !== undefined);
+    const command = target === 'other' ? 'id_test_other' : 'id_test_value';
+    const id = target === 'other' ? 2 : 1;
+    const write = dispatch(updateCustomMenuValue(command, 1, id, 9));
+    expect(store.getState().menus.customMenuDataMap[path][command][0]).toBe(9);
+    release!();
+    await sync;
+    expect(await write).toBe(true);
+    remove();
+    expect(values[id]).toBe(9);
+    expect(store.getState().menus.customMenuDataMap[path][command][0]).toBe(9);
+  });
+}
+
+test('legacy menu reads: partial batch preserves newer explicit refresh of its earlier field', async () => {
+  const path = 'audit-refresh-between-batch-reads';
+  const {device, store, dispatch, generation} =
+    await prepareOrdinaryMenuReadDevice(path);
+  let releaseFirst: (() => void) | undefined;
+  let firstValueRead = true;
+  device.onSend = (data) => {
+    if (data[0] !== 0x08) return;
+    if (data[2] === 1 && firstValueRead) {
+      firstValueRead = false;
+      releaseFirst = () => device.emit(payload(0x08, 1, 1, 1));
+    } else {
+      device.emit(payload(0x08, data[1], data[2], data[2] === 1 ? 9 : 2));
+    }
+  };
+  const sync = dispatch(
+    syncCustomMenuValues(path, generation, ['id_test_value', 'id_test_other']),
+  );
+  await waitUntil(() => releaseFirst !== undefined);
+  const refresh = dispatch(refreshCustomMenuValue('id_test_value'));
+  releaseFirst!();
+  await refresh;
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    9,
+  );
+  await sync;
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    9,
+  );
+});
+
+test('legacy menu reads: full legacy load preserves later explicit refresh of an earlier field', async () => {
+  const path = 'audit-refresh-between-full-load';
+  const {device, store, dispatch, connected} =
+    await prepareOrdinaryMenuReadDevice(path);
+  let releaseFirst: (() => void) | undefined;
+  let firstValueRead = true;
+  device.onSend = (data) => {
+    if (data[0] === 0x08) {
+      if (data[2] === 1 && firstValueRead) {
+        firstValueRead = false;
+        releaseFirst = () => device.emit(payload(0x08, 1, 1, 1));
+      } else {
+        device.emit(payload(0x08, data[1], data[2], data[2] === 1 ? 9 : 2));
+      }
+    } else if (data[0] === 0x02 && data[1] === 0x12) {
+      device.emit(data);
+    }
+  };
+  const load = dispatch(updateV3MenuData(connected));
+  await waitUntil(() => releaseFirst !== undefined);
+  const refresh = dispatch(refreshCustomMenuValue('id_test_value'));
+  releaseFirst!();
+  await refresh;
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    9,
+  );
+  await load;
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    9,
+  );
+});
+
+test('legacy menu reads: explicit GET cannot replace foreground SET of the same field', async () => {
+  const path = 'audit-direct-read-vs-write';
+  const {device, store, dispatch} = await prepareOrdinaryMenuReadDevice(path);
+  let release: (() => void) | undefined;
+  let firmwareValue = 1;
+  let firstGet = true;
+  device.onSend = (data) => {
+    if (data[0] === 0x08) {
+      const observed = firmwareValue;
+      if (firstGet) {
+        firstGet = false;
+        release = () => device.emit(payload(0x08, data[1], data[2], observed));
+      } else {
+        device.emit(payload(0x08, data[1], data[2], observed));
+      }
+    } else if (data[0] === 0x07) {
+      firmwareValue = data[3];
+      device.emit(data);
+    } else if (data[0] === 0x09) {
+      device.emit(data);
+    }
+  };
+  const refresh = dispatch(refreshCustomMenuValue('id_test_value'));
+  await waitUntil(() => release !== undefined);
+  const write = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 9));
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    9,
+  );
+  release!();
+  await refresh;
+  expect(await write).toBe(true);
+  expect(firmwareValue).toBe(9);
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    9,
+  );
+});
+
+for (const kind of ['value', 'range'] as const) {
+  test(`custom menu write lifetime: ${kind} waiting write preserves the definition lifetime it began in`, async () => {
+    const path = `audit-authority-definition-${kind}`;
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice(path, {withMenu: true});
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    dispatch(
+      setDomainStatus({path, generation, domain: 'config', status: 'dirty'}),
+    );
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'reconciling',
+    );
+    const selection = store.getState().devices.selectionGeneration;
+    const originalIdentity = getDefinitionSyncIdentity(
+      store.getState() as any,
+      connected,
+    );
+    let newValue = 0;
+    firmware.device.onSend = (data) => {
+      if (data[0] === 0x08 && data[1] === 1 && data[2] === 2) {
+        firmware.device.emit(payload(0x08, 1, 2, newValue));
+      } else if (data[0] === 0x07 && data[1] === 1 && data[2] === 2) {
+        newValue = data[3];
+        firmware.revisions.config++;
+        firmware.device.emit(data);
+      } else {
+        firmware.onSend(data);
+      }
+    };
+    const writing =
+      kind === 'value'
+        ? dispatch(updateCustomMenuValue('id_test_value', 1, 1, 88))
+        : dispatch(updateCustomMenuRangeValue('id_test_value', 88));
+    const replacement = makeV3Definition(true);
+    replacement.menus[0].content[0].content[0].content = [
+      'id_test_value',
+      1,
+      2,
+    ];
+    installEraDefinition(store, replacement);
+    expect(store.getState().devices.selectionGeneration).toBe(selection);
+    expect(
+      getDefinitionSyncIdentity(store.getState() as any, connected),
+    ).not.toBe(originalIdentity);
+    const result = await writing;
+    const writes = firmware.device.sentReports.filter(
+      ({data}) => data[0] === 0x07,
+    );
+    expect(result).toBe(false);
+    expect(writes).toHaveLength(0);
+  });
+}
+
+test('custom menu write lifetime: a late overlapping definition fetch cancels a waiting write', async () => {
+  const path = 'audit-authority-late-definition-fetch';
+  const {device} = await connectFake(path);
+  const firmware = new FakeStateSyncFirmware(device);
+  const store = makeStore();
+  const dispatch = store.dispatch as any;
+  const connected = makeConnectedDevice(path, TOMAK_VPID);
+  let finishEraJson:
+    ((definition: ReturnType<typeof makeV3Definition>) => void) | undefined;
+  let officialRequests = 0;
+  let eraRequests = 0;
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input).includes('/era/')) {
+      eraRequests++;
+      return eraRequests === 1
+        ? ({
+            ok: true,
+            json: () =>
+              new Promise<ReturnType<typeof makeV3Definition>>((resolve) => {
+                finishEraJson = resolve;
+              }),
+          } as any)
+        : ({ok: true, json: async () => makeV3Definition(true)} as any);
+    }
+    officialRequests++;
+    return {ok: false} as any;
+  }) as typeof fetch;
+  try {
+    // The second reload began before another completed reload installed the ERA
+    // overlay. Its cached snapshot still allows it to replace the installed one.
+    const lateReload = dispatch(reloadDefinitions([connected]));
+    await waitUntil(() => finishEraJson !== undefined);
+    await dispatch(reloadDefinitions([connected]));
+    dispatch(updateConnectedDevices({[path]: connected}));
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    dispatch(
+      selectDevice({device: connected, connectionGeneration: generation}),
+    );
+    dispatch(
+      markDeviceReady({
+        devicePath: path,
+        connectionGeneration: generation,
+        selectionGeneration: store.getState().devices.selectionGeneration,
+      }),
+    );
+    device.onSend = firmware.onSend;
+    await dispatch(probeStateSyncForDevice(connected));
+    dispatch(
+      setDomainStatus({path, generation, domain: 'config', status: 'dirty'}),
+    );
+    const selection = store.getState().devices.selectionGeneration;
+    const replacement = makeV3Definition(true);
+    replacement.menus[0].content[0].content[0].content = [
+      'id_test_value',
+      1,
+      2,
+    ];
+    let writing: Promise<boolean> | undefined;
+    const nextSend = device.onSend;
+    device.onSend = (data) => {
+      if (data[0] === 0x08 && data[1] === 1 && data[2] === 2) {
+        device.emit(payload(0x08, 1, 2, 0));
+      } else {
+        nextSend?.(data);
+      }
+    };
+    const originalIdentity = getDefinitionSyncIdentity(
+      store.getState() as any,
+      connected,
+    );
+    // Completion jobs from the pending fetch are already queued when the input
+    // asks for the authority read; both operations use the actual app thunks.
+    finishEraJson!(replacement);
+    for (let step = 0; step < 3; step++) await Promise.resolve();
+    expect(getDefinitionSyncIdentity(store.getState() as any, connected)).toBe(
+      originalIdentity,
+    );
+    writing = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 88));
+    await lateReload;
+    const result = await writing;
+    expect(store.getState().devices.selectionGeneration).toBe(selection);
+    expect(officialRequests).toBe(2);
+    expect(eraRequests).toBe(2);
+    expect(result).toBe(false);
+    expect(firmware.customSetCount).toBe(0);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+for (const kind of ['value', 'range'] as const) {
+  test(`custom menu write lifetime: ${kind} queued write cannot outlive its definition before first SET`, async () => {
+    const path = `audit-queued-definition-${kind}`;
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice(path, {withMenu: true});
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    expect(getSelectedCustomMenuAvailability(store.getState() as any)).toBe(
+      'available',
+    );
+    firmware.device.onSend = (data) => {
+      if (data[0] === 0x08 && data[1] === 1 && data[2] === 2) {
+        firmware.device.emit(payload(0x08, 1, 2, 0));
+      } else {
+        firmware.onSend(data);
+      }
+    };
+    let acquired = false;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const busy = new KeyboardAPI(path).withPathReservation(
+      generation,
+      Symbol('queued-write-gate'),
+      async () => {
+        acquired = true;
+        await gate;
+      },
+    );
+    await waitUntil(() => acquired);
+    const writing =
+      kind === 'value'
+        ? dispatch(updateCustomMenuValue('id_test_value', 1, 1, 88))
+        : dispatch(updateCustomMenuRangeValue('id_test_value', 88));
+    const replacement = makeV3Definition(true);
+    replacement.menus[0].content[0].content[0].content = [
+      'id_test_value',
+      1,
+      2,
+    ];
+    installEraDefinition(store, replacement);
+    release!();
+    await busy;
+    const result = await writing;
+    const writes = firmware.device.sentReports.filter(
+      ({data}) => data[0] === 0x07,
+    );
+    expect(result).toBe(false);
+    expect(writes).toHaveLength(0);
+  });
+}
+
+test('legacy menu reads: a queued edit is normalized by GET after its SET reservation', async () => {
+  const path = 'audit-menu-read-before-queued-write';
+  const {device, store, dispatch, generation} =
+    await prepareOrdinaryMenuReadDevice(path);
+  let firmwareValue = 1;
+  device.onSend = (data) => {
+    if (data[0] === 0x08) {
+      device.emit(payload(0x08, data[1], data[2], firmwareValue));
+    } else if (data[0] === 0x07) {
+      firmwareValue = data[3] + 2;
+      device.emit(data);
+    } else if (data[0] === 0x09) {
+      device.emit(data);
+    }
+  };
+  let acquired = false;
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const busy = new KeyboardAPI(path).withPathReservation(
+    generation,
+    Symbol('queued-menu-read-gate'),
+    async () => {
+      acquired = true;
+      await gate;
+    },
+  );
+  await waitUntil(() => acquired);
+  const sync = dispatch(
+    syncCustomMenuValues(path, generation, ['id_test_value']),
+  );
+  const write = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 9));
+  release!();
+  await busy;
+  expect(await write).toBe(true);
+  await sync;
+  expect(firmwareValue).toBe(11);
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(
+    11,
+  );
+  expect(device.sentReports.map(({data}) => data[0])).toEqual([
+    0x07, 0x09, 0x08,
+  ]);
+});
+
+test('custom menu write lifetime: a failed SET cannot roll back a newer SET of the same value', async () => {
+  const path = 'audit-same-value-write-ownership';
+  const {device, store, dispatch, generation} =
+    await prepareOrdinaryMenuReadDevice(path);
+  let releaseRejectedSet: (() => void) | undefined;
+  let firstSet = true;
+  let firmwareValue = 1;
+  device.onSend = (data) => {
+    if (data[0] === 0x07 && firstSet) {
+      firstSet = false;
+      const rejected = data.slice();
+      rejected[0] = 0xff;
+      releaseRejectedSet = () => device.emit(rejected);
+    } else if (data[0] === 0x07) {
+      firmwareValue = data[3];
+      device.emit(data);
+    } else if (data[0] === 0x09) {
+      device.emit(data);
+    }
+  };
+  const older = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 9));
+  await waitUntil(() => releaseRejectedSet !== undefined);
+  const newer = dispatch(updateCustomMenuValue('id_test_value', 1, 1, 9));
+  releaseRejectedSet!();
+  expect(await older).toBe(false);
+  expect(await newer).toBe(true);
+  expect(new KeyboardAPI(path).getConnectionGeneration()).toBe(generation);
+  expect(firmwareValue).toBe(9);
+  expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(9);
 });

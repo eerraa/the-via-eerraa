@@ -40,10 +40,12 @@ import {
 import {
   getConnectedDevices,
   getSelectedConnectionGeneration,
+  getSelectedConnectionNeedsReload,
   getSelectedConnectedDevice,
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
   getSelectionGeneration,
+  isSelectedDeviceOperationCurrent,
   clearAllDevices,
   updateConnectedDevices,
 } from './devicesSlice';
@@ -82,6 +84,12 @@ type CustomMenuData = {
 };
 type CustomMenuDataMap = {[devicePath: string]: CustomMenuData};
 
+type MenuReadContext = {
+  connectionGeneration: number;
+  selectionGeneration: number;
+  definitionIdentity: string;
+};
+
 type MenusState = {
   observations: Record<
     string,
@@ -89,6 +97,7 @@ type MenusState = {
   >;
   saveRetries: Record<string, Record<string, boolean>>;
   customMenuDataMap: CustomMenuDataMap;
+  readContexts: Record<string, MenuReadContext>;
   commonMenusMap: CommonMenusMap;
   showKeyPainter: boolean;
 };
@@ -233,17 +242,74 @@ const reconcileCapableConfig = async (
 // read covers a keyboard whose settings changed while the first was running.
 const RECONCILE_WRITE_ATTEMPTS = 2;
 
+// Legacy menu reads have no revision bracket. Keep GET and its cache commit in
+// the same FIFO reservation, and reject a read crossed by a foreground edit.
+// Pin the epoch before queueing: a later write publishes its optimistic value
+// before its own reservation starts. Requeue only after such an invalidation,
+// behind that write; transport failures are not retried here.
+const readCurrentMenuValue = async <T>(
+  api: KeyboardAPI,
+  generation: number,
+  getState: () => RootState,
+  current: () => boolean,
+  read: (reservedApi: KeyboardAPI) => Promise<T>,
+  commit: (value: T) => void,
+): Promise<T | null> => {
+  const epoch = () => getPathSyncState(getState(), api.kbAddr)?.config.mutationEpoch ?? 0;
+  while (current()) {
+    const started = epoch();
+    let invalidated = false;
+    const value = await api.withPathReservation(
+      generation,
+      Symbol('custom-menu-read'),
+      async (reservedApi) => {
+        if (!current()) return null;
+        if (epoch() !== started) {
+          invalidated = true;
+          return null;
+        }
+        const result = await read(reservedApi);
+        if (!current()) return null;
+        if (epoch() !== started) {
+          invalidated = true;
+          return null;
+        }
+        commit(result);
+        return result;
+      },
+    );
+    if (!invalidated) return value;
+  }
+  return null;
+};
+
 // While CONFIG is being re-read (a returning tab, a change made on the keyboard)
 // the menu still shows and takes input. A write asked for then waits for that
 // read and goes out after it, rather than being dropped: writing before it would
 // act on a snapshot that is no longer current (ADR 0001). False when another
 // keyboard was chosen meanwhile; the caller checks availability again either way.
+const selectedMenuWriteIsCurrent = (getState: () => RootState) => {
+  const state = getState();
+  const device = getSelectedConnectedDevice(state);
+  if (!device) return () => false;
+  const api = new KeyboardAPI(device.path);
+  const generation = api.getConnectionGeneration();
+  const selectionGeneration = getSelectionGeneration(state);
+  const definitionIdentity = getDefinitionSyncIdentity(state, device);
+  return () =>
+    definitionIdentity !== null &&
+    api.isConnectionGenerationCurrent(generation) &&
+    isSelectedDeviceOperationCurrent(getState(), device.path, generation, selectionGeneration) &&
+    getDefinitionSyncIdentity(getState(), device) === definitionIdentity;
+};
+
 const awaitConfigReread = async (
   dispatch: (action: any) => any,
   getState: () => RootState,
 ): Promise<boolean> => {
-  const selectionGeneration = getSelectionGeneration(getState());
+  const current = selectedMenuWriteIsCurrent(getState);
   for (let attempt = 0; attempt < RECONCILE_WRITE_ATTEMPTS; attempt++) {
+    if (!current()) return false;
     const connectedDevice = getSelectedConnectedDevice(getState());
     if (
       !connectedDevice ||
@@ -253,12 +319,13 @@ const awaitConfigReread = async (
       break;
     }
     const {refreshStateSyncDomain} = await import('./stateSyncThunks');
+    if (!current()) return false;
     await dispatch(refreshStateSyncDomain(connectedDevice, 'config'));
-    if (getSelectionGeneration(getState()) !== selectionGeneration) {
+    if (!current()) {
       return false;
     }
   }
-  return true;
+  return current();
 };
 
 // A write that may go out now starts in the same tick, so its value shows at
@@ -308,6 +375,7 @@ const initialState: MenusState = {
   observations: {},
   saveRetries: {},
   customMenuDataMap: {},
+  readContexts: {},
   commonMenusMap: {},
   showKeyPainter: false,
 };
@@ -341,10 +409,15 @@ const menusSlice = createSlice({
     },
     updateSelectedCustomMenuData: (
       state,
-      action: PayloadAction<{menuData: CustomMenuData; devicePath: string}>,
+      action: PayloadAction<{
+        menuData: CustomMenuData;
+        devicePath: string;
+        readContext?: MenuReadContext;
+      }>,
     ) => {
-      const {devicePath, menuData} = action.payload;
+      const {devicePath, menuData, readContext} = action.payload;
       state.customMenuDataMap[devicePath] = menuData;
+      if (readContext) state.readContexts[devicePath] = readContext;
     },
     updateCommonMenus: (
       state,
@@ -394,13 +467,23 @@ const menusSlice = createSlice({
       for (const path of Object.keys(state.saveRetries)) {
         if (!action.payload[path]) delete state.saveRetries[path];
       }
+      for (const path of Object.keys(state.readContexts)) {
+        if (!action.payload[path]) delete state.readContexts[path];
+      }
     });
     builder.addCase(clearAllDevices, (state) => {
       state.saveRetries = {};
       state.observations = {};
+      state.readContexts = {};
     });
     builder.addCase(commitStableConfigCandidate, (state, action) => {
       const {devicePath, candidate} = action.payload;
+      if (candidate.menuData !== undefined) {
+        const {connectionGeneration, selectionGeneration, definitionIdentity} = action.payload;
+        state.readContexts[devicePath] = {
+          connectionGeneration, selectionGeneration, definitionIdentity,
+        };
+      }
       if (
         candidate.menuData !== undefined &&
         !isSameCustomMenuData(
@@ -428,10 +511,12 @@ export default menusSlice.reducer;
 export const updateCustomMenuValue =
   (command: string, ...rest: number[]): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
+    const requestIsCurrent = selectedMenuWriteIsCurrent(getState);
     const authority = awaitCustomMenuWriteAuthority(dispatch, getState);
     if (authority !== true && !(await authority)) {
       return false;
     }
+    if (!requestIsCurrent()) return false;
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
     if (
@@ -459,11 +544,14 @@ export const updateCustomMenuValue =
       [command]: nextValue,
     };
     const {path} = connectedDevice;
+    const readContext = state.menus.readContexts[path];
     const api = getSelectedKeyboardAPI(state) as KeyboardAPI;
     const connectionGeneration = api.getConnectionGeneration();
+    const definitionIdentity = getDefinitionSyncIdentity(state, connectedDevice);
     const currentWrite = () =>
       api.isConnectionGenerationCurrent(connectionGeneration) &&
-      getConnectedDevices(getState())[path] !== undefined;
+      getConnectedDevices(getState())[path] !== undefined &&
+      getDefinitionSyncIdentity(getState(), connectedDevice) === definitionIdentity;
     beginConfigWriteSession(dispatch, path, connectionGeneration);
     dispatch(
       beginForegroundMutation({
@@ -495,6 +583,7 @@ export const updateCustomMenuValue =
         connectionGeneration,
         owner,
         async (reservedApi) => {
+          if (!requestIsCurrent()) throw new Error('Custom menu write context changed before SET');
           await reservedApi.setCustomMenuValue(...rest.slice(0));
           setCompleted = true;
           // A timeout can retire the transport generation before catch runs.
@@ -517,7 +606,12 @@ export const updateCustomMenuValue =
           : 'Setting custom menu value failed',
         error,
       );
-      if (!setCompleted) {
+      // A failed send may already have retired the transport. Roll back only
+      // this write's optimistic patch, unless a newer full read has accepted it.
+      if (!setCompleted &&
+          getDefinitionSyncIdentity(getState(), connectedDevice) === definitionIdentity &&
+          getState().menus.readContexts[path] === readContext &&
+          getState().menus.customMenuDataMap[path]?.[command] === nextValue) {
         dispatch(
           rollbackCustomMenuData({
             devicePath: path,
@@ -547,10 +641,12 @@ export const updateCustomMenuValue =
 export const updateCustomMenuRangeValue =
   (command: string, requestedValue: number): AppThunk<Promise<boolean>> =>
   async (dispatch, getState) => {
+    const requestIsCurrent = selectedMenuWriteIsCurrent(getState);
     const authority = awaitCustomMenuWriteAuthority(dispatch, getState);
     if (authority !== true && !(await authority)) {
       return false;
     }
+    if (!requestIsCurrent()) return false;
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
     const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
@@ -569,6 +665,8 @@ export const updateCustomMenuRangeValue =
       return false;
     }
     const connectionGeneration = api.getConnectionGeneration();
+    const definitionIdentity = getDefinitionSyncIdentity(state, connectedDevice);
+    const readContext = state.menus.readContexts[connectedDevice.path];
 
     const logicalValues = Object.entries(rangeControls).reduce<
       Record<string, number>
@@ -649,6 +747,7 @@ export const updateCustomMenuRangeValue =
         connectionGeneration,
         owner,
         async (reservedApi) => {
+          if (!requestIsCurrent()) throw new Error('Custom range write context changed before SET');
           for (const [id, value] of updates) {
             const encodedCommand = encodeRangeCommand(
               rangeControls[id].content,
@@ -686,12 +785,17 @@ export const updateCustomMenuRangeValue =
           : 'Setting custom menu range value failed',
         error,
       );
-      if (!setsCompleted) {
+      if (!setsCompleted &&
+          getDefinitionSyncIdentity(getState(), connectedDevice) === definitionIdentity &&
+          getState().menus.readContexts[connectedDevice.path] === readContext) {
         dispatch(
           rollbackCustomMenuData({
             devicePath: connectedDevice.path,
             expected: Object.fromEntries(
-              Object.entries(expectedMenuData).filter(([id]) => !accepted.has(id)),
+              Object.entries(expectedMenuData).filter(([id, value]) =>
+                !accepted.has(id) &&
+                getState().menus.customMenuDataMap[connectedDevice.path]?.[id] === value,
+              ),
             ),
             previous: previousMenuData,
           }),
@@ -743,35 +847,29 @@ const customMenuValueReader = (state: RootState, command: string) => {
     dispatch: (action: any) => any,
     getState: () => RootState,
   ): Promise<number[] | null> => {
-    if (
-      menuObservationScope(getState()) !== scope ||
-      !api.isConnectionGenerationCurrent(connectionGeneration)
-    ) return null;
-    let value: number[];
+    const current = () =>
+      menuObservationScope(getState()) === scope &&
+      api.isConnectionGenerationCurrent(connectionGeneration);
     try {
-      value = (await api.getCustomMenuValue(commandBytes)).slice(1);
+      return await readCurrentMenuValue(
+        api,
+        connectionGeneration,
+        getState,
+        current,
+        async (reservedApi) => (await reservedApi.getCustomMenuValue(commandBytes)).slice(1),
+        (value) => {
+          const menuData = getSelectedCustomMenuData(getState());
+          if (menuData && !isSameCustomMenuValue(menuData[command], value)) {
+            dispatch(updateSelectedCustomMenuData({
+              devicePath,
+              menuData: {...menuData, [command]: value},
+            }));
+          }
+        },
+      );
     } catch {
       return null;
     }
-    const current = getState();
-    const menuData = getSelectedCustomMenuData(current);
-    if (
-      !menuData ||
-      menuObservationScope(current) !== scope ||
-      getSelectedDevicePath(current) !== devicePath ||
-      !api.isConnectionGenerationCurrent(connectionGeneration)
-    ) {
-      return null;
-    }
-    if (!isSameCustomMenuValue(menuData[command], value)) {
-      dispatch(
-        updateSelectedCustomMenuData({
-          devicePath,
-          menuData: {...menuData, [command]: value},
-        }),
-      );
-    }
-    return value;
   };
 };
 
@@ -1175,30 +1273,25 @@ export const syncCustomMenuValues =
       definition,
       firmwareVersion,
     );
-    const menuData = state.menus.customMenuDataMap[devicePath] || {};
-
-    await api.waitForCommandQueueIdle();
-    const syncedMenuData = await readCustomMenuValues(
-      api, commands, ids,
-      getDefinitionSourceForDevice(state, connectedDevice) === 'era',
-    );
-    const currentState = getState();
-    const currentDevice = getConnectedDevices(currentState)[devicePath];
-    if (
-      !currentDevice ||
-      !api.isConnectionGenerationCurrent(connectionGeneration) ||
-      getDefinitionForDevice(currentState, currentDevice) !== definition
-    ) {
-      return;
-    }
-    dispatch(
-      updateSelectedCustomMenuData({
+    const current = () => {
+      const next = getState();
+      const device = getConnectedDevices(next)[devicePath];
+      return !!device && api.isConnectionGenerationCurrent(connectionGeneration) &&
+        getDefinitionForDevice(next, device) === definition;
+    };
+    await readCurrentMenuValue(
+      api,
+      connectionGeneration,
+      getState,
+      current,
+      (reservedApi) => readCustomMenuValues(
+        reservedApi, commands, ids,
+        getDefinitionSourceForDevice(state, connectedDevice) === 'era',
+      ),
+      (syncedMenuData) => dispatch(updateSelectedCustomMenuData({
         devicePath,
-        menuData: {
-          ...menuData,
-          ...syncedMenuData,
-        },
-      }),
+        menuData: {...getState().menus.customMenuDataMap[devicePath], ...syncedMenuData},
+      })),
     );
   };
 
@@ -1376,32 +1469,37 @@ export const updateV3MenuData =
   async (dispatch, getState) => {
     const state = getState();
     const definition = getDefinitionForDevice(state, connectedDevice);
+    const definitionIdentity = getDefinitionSyncIdentity(state, connectedDevice);
+    const selectionGeneration = getSelectionGeneration(state);
     if (requiresEraCustomMenuVerification(state, connectedDevice)) {
       return;
     }
     const api = new KeyboardAPI(connectedDevice.path);
     const connectionGeneration = api.getConnectionGeneration();
-    const candidate = await readV3MenuStateSyncCandidate(
-      connectedDevice,
-      state,
+    const current = () => {
+      const next = getState();
+      const device = getConnectedDevices(next)[connectedDevice.path];
+      return !!device && api.isConnectionGenerationCurrent(connectionGeneration) &&
+        getDefinitionForDevice(next, device) === definition &&
+        getSelectionGeneration(next) === selectionGeneration;
+    };
+    await readCurrentMenuValue(
+      api,
       connectionGeneration,
-    );
-    const currentState = getState();
-    const currentDevice =
-      getConnectedDevices(currentState)[connectedDevice.path];
-    if (
-      candidate?.menuData === undefined ||
-      !currentDevice ||
-      !api.isConnectionGenerationCurrent(connectionGeneration) ||
-      getDefinitionForDevice(currentState, currentDevice) !== definition
-    ) {
-      return;
-    }
-    dispatch(
-      updateSelectedCustomMenuData({
-        devicePath: connectedDevice.path,
-        menuData: candidate.menuData,
-      }),
+      getState,
+      current,
+      (reservedApi) => readV3MenuStateSyncCandidate(
+        connectedDevice, state, connectionGeneration, reservedApi,
+      ),
+      (candidate) => {
+        if (candidate?.menuData !== undefined && definitionIdentity !== null) {
+          dispatch(updateSelectedCustomMenuData({
+            devicePath: connectedDevice.path,
+            menuData: candidate.menuData,
+            readContext: {connectionGeneration, selectionGeneration, definitionIdentity},
+          }));
+        }
+      },
     );
   };
 
@@ -1509,6 +1607,21 @@ export const getSelectedCustomMenuData = createSelector(
   getSelectedDevicePath,
   (map, path) => path && map[path],
 );
+
+// Consumers outside Configure's loading boundary (notably firmware guidance)
+// may use only a full read from this selection, connection and definition.
+// Same-context background reconciliation keeps that proof and the display.
+export const getSelectedCurrentCustomMenuData = (state: RootState) => {
+  const device = getSelectedConnectedDevice(state);
+  if (!device || getSelectedConnectionNeedsReload(state)) return null;
+  const context = state.menus.readContexts?.[device.path];
+  return context &&
+    context.connectionGeneration === getSelectedConnectionGeneration(state) &&
+    context.selectionGeneration === getSelectionGeneration(state) &&
+    context.definitionIdentity === getDefinitionSyncIdentity(state, device)
+    ? state.menus.customMenuDataMap[device.path]
+    : null;
+};
 
 export const getSelectedCustomMenuAvailability = (state: RootState) => {
   const connectedDevice = getSelectedConnectedDevice(state);

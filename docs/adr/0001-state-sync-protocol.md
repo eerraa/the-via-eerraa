@@ -265,6 +265,19 @@ The transport contract is:
   selection generation, and definition identity still match. Late work from an
   older selection must not make a newly selected device ready or fresh.
 
+Legacy menu reads keep GET and cache acceptance inside one path reservation.
+They pin the existing foreground mutation epoch before joining the FIFO; an edit
+may publish its optimistic value while its SET is still queued. If an edit
+crosses the read, the read releases its reservation and rejoins behind that edit
+before accepting existing VIA GET results. A transport failure is not retried by
+this path. This also applies to full menu loads and individual label reads, so
+neither a partial hint nor a slower read can replace a later accepted value.
+Writes waiting for CONFIG or their FIFO turn retain their original definition
+and selection until the first SET; changing context cancels the unsent write.
+Once SET starts, its SAVE may finish on the original valid connection.
+A failed SET may roll back only its own optimistic fields. A later accepted
+full read or subsequent edit supersedes that rollback, even for equal bytes.
+
 The freshness contract is:
 
 - Revision observation alone never promotes cached data. A whole-domain
