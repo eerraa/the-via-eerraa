@@ -40,7 +40,7 @@ Legacy GET returns 1-byte units of 10 ms. It floors the stored exact millisecond
 This host's custom JSON has no legacy term commands, so it does not issue that GET. A client using a definition that still has the dropdown does. Exact GET/SET of 137 does not snap (`tests/state-sync-transport.test.ts`).
 
 > **REFUSED:** widening official JSON exact `options` to the custom-app range.
-> **WHY:** official VIA plus official definitions remain required; a custom-app-only path is an error. Stock-shaped exact `options` stay `[100, 500]`.
+> **WHY:** official VIA plus official definitions remain required for basic controls. Stock-shaped exact `options` stay `[100, 500]`; the advanced Tap Dance editing exception is owned by `docs/PROJECT_DIRECTION.md`.
 > **REOPENS:** never.
 
 ## State authority and revision model
@@ -188,8 +188,11 @@ use existing Custom Value GET/SET/SAVE. Payload byte 0 is the per-slot input
 mode (0 legacy, 1 after-decision, 2 on-press). GET and SET echo append `0xD2`
 in byte 1 as explicit support evidence. An absent/invalid marker retains the
 old editor. The custom app sends the same two bytes; firmware reads the mode
-byte, so official VIA uses a normal one-byte dropdown. CONFIG invalidation
-and authoritative rereads include this control.
+byte. The payload encoding remains compatible with a one-byte V3 control, but
+official VIA exposes basic Legacy editing only and directs advanced editing to
+the Custom app (`docs/PROJECT_DIRECTION.md`, Tap Dance and exact-ms). Read-only
+mode bindings may inform that guidance without exposing mode SET. CONFIG
+invalidation and authoritative rereads include this control.
 
 Modes 1/2 reserve additional-action `KC_TRNS` for inheritance and `KC_NO`
 for explicit silence. Mode 2 requires Hold = `KC_TRNS`. Saving sends changed

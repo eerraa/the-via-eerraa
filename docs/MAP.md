@@ -166,7 +166,7 @@ speak the same HID bytes. Product rules:
 | tapping/TD term | legacy official presentation | exact integer presentation |
 | Lighting sleep timeout (QMK RGB and backlight / H7S RGB) | shipped preset presentation | exact-seconds presentation of the same persisted timeout |
 | Tap Dance keycodes | `CUSTOM(n)` in `customKeycodes` | `TD(n)` in `tapdanceKeycodes` — same `QK_KB_n` bytes |
-| Tap Dance settings | TAPDANCE menu page | `controls` on each `tapdanceKeycodes` entry, edited from KEYMAP — the same Custom Value commands |
+| Tap Dance settings | TAPDANCE menu page for basic Legacy editing; advanced slots direct users to Custom | `controls` on each `tapdanceKeycodes` entry, edited from KEYMAP, including advanced settings; shared controls use the same Custom Value commands |
 | Definition bundle | `/definitions/v3` | `/definitions/era/v3` |
 
 Exact encodings, ranges, and family-specific ids are owned by

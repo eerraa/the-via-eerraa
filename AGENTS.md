@@ -72,6 +72,9 @@ bun run build
   아니라 무효화 + 권위 있는 재조회로 만든다.
 - **커스텀 앱만 말할 수 있는 경로는 오류다.** 펌웨어는 공식 `usevia.app` + 공식 V3 정의로
   계속 동작해야 한다. 기능을 추가하면 앱 정의와 펌웨어 공식 JSON 양쪽에 넣는다.
+  **Tap Dance 고급 설정만 예외다.** 복잡한 편집을 스톡 VIA에서 충분히 지원할 수 없으므로,
+  스톡은 기본 Tap Dance만, Custom 앱은 고급 설정까지 지원한다. 상세 경계는
+  `docs/PROJECT_DIRECTION.md`의 Tap Dance and exact-ms가 소유한다.
 - configurator 제어 트래픽을 8 kHz 입력 hot path에 넣지 않는다.
 - VIA core가 정확성이나 유지보수성을 실제로 막는다는 증거가 있으면 리팩터링해도 된다.
   upstream diff 최소화는 그 자체가 목적이 아니다. 다만 필요 없는 범위는 늘리지 않는다.

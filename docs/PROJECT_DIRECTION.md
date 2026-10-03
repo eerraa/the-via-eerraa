@@ -181,7 +181,8 @@ keep the upstream workflow. ERA-only help and diagnostics are additive and
 capability-gated, so they may exist only in this fork without implying that
 official VIA provides the same host UI. Firmware features covered by the
 compatibility contract must still work through official `usevia.app` plus the
-official V3 definition. [ADR 0003](adr/0003-era-menu-help-ui.md) owns the
+official V3 definition, with the advanced Tap Dance exception defined below.
+[ADR 0003](adr/0003-era-menu-help-ui.md) owns the
 custom help/diagnostics support, wording, localization, and accessibility
 boundaries.
 
@@ -204,6 +205,18 @@ disabled. A failed read returns to the ordinary test with an explanation.
 
 TOMAK firmware and VIA V3 JSON implement TD0–TD7, four action slots, tapping
 term, storage, and the engine. This host does not replace that engine.
+
+Tap Dance has an explicit support-policy exception for both QMK and H7S:
+stock VIA supports basic Legacy Tap Dance only; the Custom app also supports
+advanced settings. Stock VIA's menu model cannot adequately support the
+complex advanced editor and its interdependent choices. Official V3 menus
+therefore edit mode-0 slots through their four actions and legacy term controls.
+Advanced slots show their stored mode and direct users to the Custom app for
+editing; opening stock VIA must preserve those slots without resetting them or
+silently converting them to Legacy. Input modes, separate hold timing, and
+hold-on-other-key are edited only in the Custom app. This exception changes
+client editing support, not the firmware-owned execution, storage, or shipped
+Custom Value ABI. Other features retain the official-VIA compatibility rule.
 
 KEYMAP and every V3 `keycode` control use one keycode palette: KEYMAP shows it
 under the keyboard, a `keycode` control opens it as a bottom dock. Search, clear,
@@ -277,7 +290,8 @@ per-device drafts and refusal handling include the mode. A newly added action
 must receive a key before Save. Backup includes the mode and preserves the
 inheritance/silence distinction. Importing unsupported or contradictory modes
 is refused before any write; a pre-mode backup restores legacy semantics.
-Official V3 definitions expose the same firmware settings through their menu.
+Official V3 definitions retain the basic Legacy editing path and direct
+advanced-mode editing to the Custom app under the support policy above.
 
 Independent Tap Dance timing has its own Advanced settings disclosure with an
 expand/collapse indicator beside the time fields and before their information
@@ -313,8 +327,8 @@ Advanced timing requires the extra `0xD3` mode-response capability and valid
 markers on both new fields. Older firmware is not queried for unknown timing
 IDs. Per-device drafts, write refusal retention and backup include these values.
 Older backups restore shared time (zero) and the disabled interruption option;
-non-default values cannot be imported to unsupported firmware. Official VIA
-exposes a 0..65535 range and an Off/On control with the same wire behavior.
+non-default values cannot be imported to unsupported firmware. These advanced
+timing controls belong to the Custom app; official VIA does not edit them.
 
 Tapping-family time values must be directly editable as integer milliseconds.
 The initial scope is the global TAPPING term and the TD0–TD7 terms. Boolean
@@ -328,9 +342,10 @@ been audited.
 Firmware must keep working with the official VIA app (`www.usevia.app`) plus
 the official V3 definition.
 
-> **REFUSED:** a path that only the custom app can speak.
+> **REFUSED:** a custom-app-only feature path outside advanced Tap Dance.
 > **WHY:** official VIA plus official definitions remain required; custom-app-only
-> value IDs, ranges, or encodings are not acceptable substitutes.
+> value IDs, ranges, or encodings are not acceptable substitutes outside the
+> explicit Tap Dance support-policy exception above.
 > **REOPENS:** never.
 
 Official VIA continues to use the existing legacy 1-byte dropdown (100–500 ms /
@@ -352,7 +367,8 @@ may still contain legacy controls. Custom JSON may add `tapdanceKeycodes` as an
 app extension; official JSON must not. Custom JSON keeps each TD's settings on
 its `tapdanceKeycodes` entry instead of a TAPDANCE menu, because the custom app
 edits Tap Dance from KEYMAP; the firmware-local stock JSON keeps its TAPDANCE menu
-for official VIA, and both address the same Custom Value commands. Source
+for basic editing in official VIA. Shared controls address the same Custom Value
+commands; advanced editing follows the exception above. Source
 validation owns the current field handling rather than this document.
 
 ### QMK lighting sleep exact-sec
@@ -562,7 +578,7 @@ product non-goals that are not already a REFUSED block above.
 - Parallel definition loader or external definition service — Definitions.
 - Common ERA tapping / Tap Dance / exact-ms / State Sync on `sirind/brick65` —
   brick65.
-- Custom-app-only path — Tap Dance and exact-ms.
+- Custom-app-only path outside advanced Tap Dance — Tap Dance and exact-ms.
 - Vial implementation copy — Tap Dance.
 - Replacing the Tap Dance engine or split EEPROM synchronization — Tap Dance.
 - Duplicate V3 Custom Value React state or a second value protocol — State
