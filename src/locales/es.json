@@ -1,4 +1,7 @@
 {
+  "Use one key after + or -": "Usa una sola tecla después de + o -",
+  "Previous macro events": "Entradas anteriores de la macro",
+  "Next macro events": "Entradas siguientes de la macro",
   "Showing recent inputs while recording": "Durante la grabación se muestran las entradas recientes",
   "Time to reach the target speed. Zero keeps the starting speed.": "Tiempo para alcanzar la velocidad objetivo. Cero mantiene la velocidad inicial.",
   "Movement per report. The computer also controls pointer and scroll speed.": "Movimiento por informe. El ordenador también controla la velocidad del puntero y del desplazamiento.",

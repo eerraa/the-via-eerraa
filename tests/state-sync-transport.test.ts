@@ -3968,6 +3968,22 @@ describe('State Sync freshness coordinator regressions', () => {
 });
 
 describe('full layout import transaction', () => {
+  test('invalid macro contents stop the complete import before any mutation', async () => {
+    const {store, connected, firmware} = await prepareSelectedStateSyncDevice('full-import-invalid-macro');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    const beforeAst = store.getState().macros.ast;
+    for (const expression of ['A\u0000B', 'é', '{KC_UNKNOWN}']) {
+      firmware.operationLog = [];
+      await expect(dispatch(importLayoutToDevice(connected, {
+        macros: [expression],
+        keymap: [[0x1234]],
+        encoders: {0: [[0x0200, 0x0201]]},
+      }))).rejects.toThrow('Invalid macro expression');
+      expect(firmware.operationLog).toEqual([]);
+      expect(store.getState().macros.ast).toEqual(beforeAst);
+    }
+  });
   test('awaits macro verification, keeps fast keymap packets and encoders under one owner', async () => {
     const {store, connected, firmware} =
       await prepareSelectedStateSyncDevice('full-import-owner');

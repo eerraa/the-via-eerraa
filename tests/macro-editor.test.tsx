@@ -31,6 +31,8 @@ import {
   convertCharacterTaps, convertToCharacterStreams, rawSequenceToOptimizedSequence,
 } from '../src/utils/macro-api/macro-api.common';
 import type {RawKeycodeSequence} from '../src/utils/macro-api/types';
+import {createMacroRecordingPreview} from '../src/utils/macro-recording-preview';
+import {expressionToSequence, foldKeydownKeyupKeys, mergeConsecutiveWaits, trimLastWait, sequenceToExpression} from '../src/utils/macro-api/macro-api.common';
 
 const loadModules = async () => {
   const originalWarn = console.warn;
@@ -87,6 +89,62 @@ const macroBytes = (...expressions: string[]) =>
   );
 
 describe('what a macro draft can hold', () => {
+  test('the linear scanner preserves VIA expression boundaries and unfinished text', () => {
+    const cases: [string, unknown][] = [
+      ['', []],
+      ['abc{KC_A}def{100}', [[5, 'abc'], [1, 'KC_A'], [5, 'def'], [4, 100]]],
+      ['\\{KC_A}{KC_B}', [[5, '{KC_A}'], [1, 'KC_B']]],
+      ['\\\\{KC_A}', [[5, '\\{KC_A}']]],
+      ['{{KC_A}', [[1, '{KC_A']]],
+      ['{KC_A', [[5, '{KC_A']]],
+      ['{\n{KC_B}', [[5, '{\n'], [1, 'KC_B']]],
+      ['{\r{KC_B}', [[5, '{\r'], [1, 'KC_B']]],
+      ['{\u2028{KC_B}', [[5, '{\u2028'], [1, 'KC_B']]],
+      ['{\u2029{KC_B}', [[5, '{\u2029'], [1, 'KC_B']]],
+      ['{\n}{KC_B}', [[5, '{\n}'], [1, 'KC_B']]],
+    ];
+    for (const [expression, expected] of cases) {
+      expect(expressionToSequence(expression)).toEqual(expected);
+    }
+    const unfinished = '{'.repeat(1_000_000);
+    expect(checkMacroDraft(macroApiFor(12), unfinished)).toEqual({
+      problem: {type: 'unclosed'}, byteCount: 1_000_001, stored: unfinished,
+    });
+  });
+  test('incremental previews match the complete transforms at every input boundary', () => {
+    let seed = 19;
+    const random = (max: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % max;
+    };
+    const keys = ['KC_A', 'KC_B', 'KC_LSFT', 'KC_RSFT', 'KC_LCTL', 'KC_ENT', 'KC_BSLS'];
+    const api = macroApiFor(12);
+    for (const smart of [true, false]) {
+      const preview = createMacroRecordingPreview(smart, true);
+      const input: RawKeycodeSequence = [];
+      for (let i = 0; i < 1200; i++) {
+        const action = random(3) + 2;
+        const item: RawKeycodeSequence[number] = [action, action === 4 ? random(20000) : keys[random(keys.length)]];
+        input.push(item);
+        preview.append(item);
+        const expected = smart
+          ? convertToCharacterStreams(foldKeydownKeyupKeys(mergeConsecutiveWaits(trimLastWait(convertCharacterTaps(input)))))
+          : input;
+        const snapshot = preview.read();
+        expect(snapshot.sequence).toEqual(expected.slice(-80));
+        expect(snapshot.totalItems).toBe(expected.length);
+        expect(snapshot.byteCount).toBe(api.rawKeycodeSequencesToMacroBytes([expressionToRawSequence(sequenceToExpression(expected))]).length);
+      }
+    }
+  });
+
+  for (const protocol of [10, 12, 13]) {
+    test(`oversized ASCII is measured without an argument-spread crash on protocol ${protocol}`, () => {
+      const api = macroApiFor(protocol);
+      expect(checkMacroDraft(api, 'a'.repeat(1_000_000))).toEqual({byteCount: 1_000_001, stored: 'a'.repeat(1_000_000)});
+      expect(api.rawKeycodeSequencesToMacroBytes([[[5, 'a'.repeat(1_000_000)]]])).toHaveLength(1_000_001);
+    });
+  }
   test('sequence transforms preserve chords, shifts and waits without mutating earlier snapshots', () => {
     const frozen = (input: RawKeycodeSequence) => {
       input.forEach(Object.freeze);
@@ -125,6 +183,12 @@ describe('what a macro draft can hold', () => {
   });
 
   test('names blocks that are unclosed or empty and keys a macro cannot send', () => {
+    for (const empty of ['{+}', '{-}', '{,}', '{+ , }']) {
+      expect(problemOf(empty)).toEqual({type: 'empty'});
+    }
+    for (const extra of ['{+KC_A,KC_B}', '{-KC_A,KC_UNKNOWN}']) {
+      expect(problemOf(extra)).toEqual({type: 'single-key'});
+    }
     expect(problemOf('{KC_A')).toEqual({type: 'unclosed'});
     expect(problemOf('{KC_A{KC_B}')).toEqual({type: 'unclosed'});
     expect(problemOf('\\{KC_A')).toBeUndefined();
@@ -624,6 +688,59 @@ const marks = (root: ReactTestInstance) =>
   root.findAll((node) => node.type === 'mark').map(textOf);
 
 describe('saving a macro script', () => {
+  test('a pending save survives pane remount and a later slot save preserves both changes', async () => {
+    const {store, keyboard, connected} = await connect('macro-save-remount', {size: 8192, stored: ['old0', 'old1']});
+    const send = keyboard.sendReport.bind(keyboard);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    let first = true;
+    keyboard.sendReport = async (report, data) => {
+      if (data[0] === 0x0f && first) { first = false; entered(); await gate; }
+      return send(report, data);
+    };
+    const root = await render(store);
+    openScript(root); type(root, 'new0');
+    let pending!: Promise<void>;
+    act(() => { pending = applyButton(root).props.onClick(); });
+    await started;
+    act(() => renderer!.unmount());
+    const reopened = await render(store);
+    act(() => tab(reopened, 'M1').props.onClick());
+    openScript(reopened); type(reopened, 'new1');
+    expect(applyButton(reopened).props.disabled).toBe(true);
+    await expect(store.dispatch(macros.saveMacro(connected, 1, 'new1') as any)).rejects.toThrow('already in progress');
+    await act(async () => { release(); await pending; });
+    expect(applyButton(reopened).props.disabled).toBe(false);
+    await clickApply(reopened);
+    expect(macros.getExpressions(store.getState() as any)).toEqual(['new0', 'new1']);
+    expect(store.getState().drafts).toEqual({});
+  });
+
+  test('all macro writers reject invalid imported expressions before RESET', async () => {
+    const {store, keyboard, connected} = await connect('macro-invalid-import', {stored: ['old0', 'old1']});
+    for (const bad of ['A\u0000B', 'é', '{KC_A', '{}', '{KC_NO}', '{KC_UNKNOWN}', '{+}', '{,}', '{+KC_A,KC_B}']) {
+      for (const writer of [macros.saveMacros, macros.replaceMacros]) {
+        await expect(store.dispatch(writer(connected, [bad, 'C']) as any)).rejects.toThrow('Invalid macro expression');
+      }
+    }
+    expect(keyboard.commands).toEqual([]);
+    expect(macros.getExpressions(store.getState() as any)).toEqual(['old0', 'old1']);
+    expect(keyboard.buffer.slice(0, 10)).toEqual(macroBytes('old0', 'old1'));
+  });
+
+  test('an oversized script keeps its draft and disables Apply without crashing', async () => {
+    const {store, keyboard} = await connect('macro-huge-script', {size: 8192});
+    const root = await render(store);
+    openScript(root);
+    for (const value of ['a'.repeat(1_000_000), '{'.repeat(1_000_000)]) {
+      type(root, value);
+      expect(textarea(root).props.value).toBe(value);
+      expect(applyButton(root).props.disabled).toBe(true);
+    }
+    expect(keyboard.commands).toEqual([]);
+  });
   test('a character the keyboard cannot type is marked, named and never sent', async () => {
     const {store, keyboard} = await connect('macro-untypeable');
     const root = await render(store);
@@ -710,6 +827,9 @@ describe('saving a macro script', () => {
       ['{KC_FOO} ', '알 수 없는 키: KC_FOO'],
       ['{KC_A ', '닫는 } 없음'],
       ['a{ } ', '빈 {}'],
+      ['{+}', '빈 {}'],
+      ['{,}', '빈 {}'],
+      ['{+KC_A,KC_B}', '+ 또는 - 뒤에는 키 하나만 입력하세요'],
     ]) {
       type(root, script);
       await clickApply(root);
@@ -946,6 +1066,41 @@ describe('macro drafts', () => {
 });
 
 describe('a script shown in the recorder', () => {
+  test('wait inputs accept pasted integers and reject fractional edits', async () => {
+    const path = 'macro-wait-paste';
+    const {store} = await connect(path, {stored: ['{KC_A}{41}', '']});
+    const root = await render(store);
+    let prevented = false;
+    waitInputs(root)[0].props.onBeforeInput({data: '777', preventDefault: () => { prevented = true; }});
+    expect(prevented).toBe(false);
+    act(() => waitInputs(root)[0].props.onChange({target: {value: '777'}}));
+    expect(store.getState().drafts[path]['macro:0']).toBe('{KC_A}{777}');
+    act(() => waitInputs(root)[0].props.onChange({target: {value: '1.5'}}));
+    expect(store.getState().drafts[path]['macro:0']).toBe('{KC_A}{777}');
+    waitInputs(root)[0].props.onBeforeInput({data: '1.5', preventDefault: () => { prevented = true; }});
+    expect(prevented).toBe(true);
+  });
+  test('paging edits and deletes the original sequence positions', async () => {
+    const expression = Array.from({length: 170}, (_, index) => `{KC_A}{${index + 1}}`).join('');
+    const path = 'macro-paged-edits';
+    const {store} = await connect(path, {size: 8192, stored: [expression, '']});
+    const root = await render(store);
+    const next = () => root.find((node) => node.type === 'button' && node.props['aria-label'] === '다음 매크로 입력');
+    act(() => next().props.onClick());
+    expect(waitInputs(root)[0].props.value).toBe(41);
+    act(() => waitInputs(root)[0].props.onChange({target: {value: '7000'}}));
+    let draft = store.getState().drafts[path]['macro:0'] as string;
+    expect(draft).toContain('{40}{KC_A}{7000}{KC_A}{42}');
+    act(() => itemDeletes(root)[0].props.onClick());
+    draft = store.getState().drafts[path]['macro:0'] as string;
+    expect(draft).toContain('{KC_A}{7040}{KC_A}{42}');
+    expect(draft).not.toContain('{7000}');
+    for (let i = 0; i < 5 && !next().props.disabled; i++) act(() => next().props.onClick());
+    expect(next().props.disabled).toBe(true);
+    expect(waitInputs(root).at(-1)?.props.value).toBe(170);
+    act(() => tab(root, 'M1').props.onClick());
+    expect(root.findAll((node) => node.type === 'button' && node.props['aria-label'] === '다음 매크로 입력')).toHaveLength(0);
+  });
   const itemDeletes = (root: ReactTestInstance) =>
     sequenceBox(root).findAll((node) => node.props.icon === faXmarkCircle);
 
@@ -1024,6 +1179,158 @@ describe('a script shown in the recorder', () => {
 });
 
 describe('recording a macro', () => {
+  test('pending fullscreen admits only one recording start', async () => {
+    const path = 'macro-record-pending-start';
+    const {store} = await connect(path);
+    const root = await render(store);
+    const original = documentElement.requestFullscreen;
+    let finish!: () => void;
+    let requests = 0;
+    documentElement.requestFullscreen = () => {
+      requests++;
+      return new Promise<void>((resolve) => { finish = resolve; });
+    };
+    try {
+      act(() => clickable(root, faCircle).props.onClick());
+      act(() => setFullscreen(true));
+      await pressRecord(root);
+      expect(requests).toBe(1);
+      expect(page.keyboard).toEqual([]);
+      await act(async () => { finish(); await Promise.resolve(); });
+      tap('KeyA'); tap('KeyB');
+      act(() => clickable(root, faSquare).props.onClick());
+      expect(store.getState().drafts[path]['macro:0']).toBe('ab');
+      expect(page.keyboard).toEqual(['lock', 'unlock']);
+    } finally {
+      documentElement.requestFullscreen = original;
+    }
+  });
+  test('a pending start is cancelled even when the slot is switched away and back', async () => {
+    const {store} = await connect('macro-record-pending-slot');
+    const root = await render(store);
+    const original = documentElement.requestFullscreen;
+    let finish!: () => void;
+    documentElement.requestFullscreen = () => new Promise<void>((resolve) => { finish = resolve; });
+    try {
+      act(() => clickable(root, faCircle).props.onClick());
+      act(() => tab(root, 'M1').props.onClick());
+      act(() => tab(root, 'M0').props.onClick());
+      await act(async () => { setFullscreen(true); finish(); await Promise.resolve(); });
+      expect(page.keyboard).toEqual([]);
+      expect(clickable(root, faCircle).props.disabled).toBeFalsy();
+      expect(applyButton(root).props.disabled).toBe(true);
+    } finally {
+      documentElement.requestFullscreen = original;
+    }
+  });
+  test('fullscreen exit during a pending lock keeps the existing draft', async () => {
+    const path = 'macro-record-pending-fullscreen-exit';
+    const {store} = await connect(path);
+    const root = await render(store);
+    openScript(root); type(root, 'existing'); openRecorder(root);
+    act(() => setFullscreen(true));
+    const original = navigator.keyboard.lock;
+    let finish!: () => void;
+    navigator.keyboard.lock = () => new Promise<void>((resolve) => { finish = resolve; });
+    try {
+      act(() => clickable(root, faCircle).props.onClick());
+      act(() => setFullscreen(false));
+      await act(async () => { finish(); await Promise.resolve(); });
+      expect(store.getState().drafts[path]['macro:0']).toBe('existing');
+      expect(clickable(root, faCircle).props.disabled).toBeFalsy();
+    } finally {
+      navigator.keyboard.lock = original;
+    }
+  });
+  test('a pending start uses the latest optimization setting for its preview', async () => {
+    const {Deletable} = await import('../src/components/panes/configure-panes/submenus/macros/deletable');
+    const {store} = await connect('macro-record-pending-settings');
+    const root = await render(store);
+    act(() => setFullscreen(true));
+    const original = navigator.keyboard.lock;
+    let finish!: () => void;
+    navigator.keyboard.lock = () => new Promise<void>((resolve) => { finish = resolve; });
+    try {
+      for (const smart of [false, true]) {
+        act(() => store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: !smart, recordDelaysEnabled: false})));
+        act(() => clickable(root, faCircle).props.onClick());
+        act(() => store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: smart, recordDelaysEnabled: false})));
+        await act(async () => { finish(); await Promise.resolve(); });
+        tap('KeyA');
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 70)); });
+        expect(sequenceBox(root).findAllByType(Deletable)).toHaveLength(smart ? 1 : 2);
+        act(() => clickable(root, faSquare).props.onClick());
+        expect(store.getState().drafts['macro-record-pending-settings']['macro:0']).toBe(smart ? 'a' : '{+KC_A}{-KC_A}');
+      }
+    } finally {
+      navigator.keyboard.lock = original;
+    }
+  });
+  test('a 64 KB recording does no full-draft encoding during previews and stops with bounded controls', async () => {
+    const {MacroAPIV11} = await import('../src/utils/macro-api/macro-api.v11');
+    const encode = MacroAPIV11.prototype.rawKeycodeSequencesToMacroBytes;
+    const {store, keyboard} = await connect('macro-bounded-work', {size: 65535});
+    store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: false, recordDelaysEnabled: true}));
+    const root = await render(store);
+    await pressRecord(root);
+    let encodes = 0;
+    MacroAPIV11.prototype.rawKeycodeSequencesToMacroBytes = function(sequences) {
+      encodes++;
+      return encode.call(this, sequences);
+    };
+    try {
+      for (const end of [2000, 4000]) {
+        act(() => {
+          for (let i = end - 2000; i < end; i++) {
+            timedKey('keydown', i === 3999 ? 'KeyZ' : 'KeyA', i * 40);
+            timedKey('keyup', i === 3999 ? 'KeyZ' : 'KeyA', i * 40 + 17);
+          }
+        });
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 70)); });
+      }
+      expect(encodes).toBe(0);
+      const start = performance.now();
+      act(() => clickable(root, faSquare).props.onClick());
+      console.log('64 KB recording stop (test renderer):', Math.round(performance.now() - start), 'ms');
+      const {Deletable} = await import('../src/components/panes/configure-panes/submenus/macros/deletable');
+      expect(root.findAllByType(Deletable)).toHaveLength(80);
+      expect(root.findAll((node) => node.type === 'input' && node.props.type === 'number').length).toBeLessThanOrEqual(40);
+      await clickApply(root);
+      const stored = macros.getExpressions(store.getState() as any)[0];
+      expect(stored.endsWith('{+KC_Z}{17}{-KC_Z}')).toBe(true);
+      expect(keyboard.buffer.slice(0, 63997)).toEqual(macroBytes(stored, ''));
+    } finally {
+      MacroAPIV11.prototype.rawKeycodeSequencesToMacroBytes = encode;
+    }
+  });
+  test('fractional event intervals preserve elapsed time after Stop and Apply', async () => {
+    const {store, keyboard} = await connect('macro-fractional-clock', {size: 8192});
+    store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: false, recordDelaysEnabled: true}));
+    const root = await render(store);
+    for (const interval of [1000 / 60, 0.4]) {
+      await pressRecord(root);
+      act(() => {
+        for (let i = 0; i < 600; i++) timedKey(i % 2 ? 'keyup' : 'keydown', 'KeyA', 1000.2 + i * interval);
+        clickable(root, faSquare).props.onClick();
+      });
+      await clickApply(root);
+      const written = macroApiFor(12).macroBytesToRawKeycodeSequences(keyboard.buffer.slice(0, -1), 2);
+      const wait = written[0].reduce((total, [action, value]) => total + (action === 4 ? Number(value) : 0), 0);
+      expect(wait).toBe(Math.round(599 * interval));
+    }
+  });
+
+  test('text ending in backslashes cannot swallow the next recorded command', async () => {
+    const {store, keyboard} = await connect('macro-record-backslash', {size: 8192});
+    store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: true, recordDelaysEnabled: false}));
+    const root = await render(store);
+    await pressRecord(root);
+    tap('Backslash'); tap('Backslash'); tap('Enter');
+    act(() => clickable(root, faSquare).props.onClick());
+    await clickApply(root);
+    const expected = macroBytes('{KC_BSLS}{KC_BSLS}{KC_ENT}', '');
+    expect(keyboard.buffer.slice(0, expected.length)).toEqual(expected);
+  });
   const draftsOf = (store: TestStore, path: string) =>
     store.getState().drafts[path] ?? {};
 
@@ -1084,7 +1391,7 @@ describe('recording a macro', () => {
     recordRange(250, 300);
     act(() => clickable(root, faSquare).props.onClick());
     expect(textOf(sequenceBox(root))).not.toContain('녹화 중에는 최근 입력');
-    expect(root.findAllByType(Deletable).length).toBe(1199);
+    expect(root.findAllByType(Deletable).length).toBe(80);
     expect(store.getState().drafts['macro-long-recording']['macro:0']).toBe(input.join(''));
     await clickApply(root);
     const expected = macroBytes(input.join(''), 'keep');

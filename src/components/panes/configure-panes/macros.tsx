@@ -24,7 +24,7 @@ import {
   getExpressions,
   getIsMacrosReady,
   getMacroCount,
-  saveMacros,
+  saveMacro as writeMacro,
 } from '../../../store/macrosSlice';
 import {getSelectedKeycodesVersion} from '../../../store/firmwareSlice';
 import {getSelectedStateSyncCapability} from '../../../store/stateSyncSlice';
@@ -92,13 +92,9 @@ export const Pane: FC = () => {
         throw new Error('Macros are not loaded');
       }
 
-      const newMacros = macroExpressions.map((oldMacro, i) =>
-        i === macroIndex ? macro : oldMacro,
-      );
-
-      await dispatch(saveMacros(selectedDevice, newMacros));
+      await dispatch(writeMacro(selectedDevice, macroIndex, macro));
     },
-    [macroExpressions, saveMacros, dispatch, selectedDevice, macrosReady],
+    [dispatch, selectedDevice, macrosReady],
   );
 
   const macroMenus = useMemo(

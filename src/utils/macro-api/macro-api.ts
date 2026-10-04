@@ -4,6 +4,7 @@ import {
   KeyAction,
   MacroTerminator,
   findMacroExpressionProblem,
+  countRawSequenceBytes,
 } from './macro-api.common';
 import {RawKeycodeSequence, RawKeycodeSequenceAction} from './types';
 
@@ -116,11 +117,9 @@ export class MacroAPI implements IMacroAPI {
             // Unsupported
             break;
           case RawKeycodeSequenceAction.CharacterStream:
-            bytes.push(
-              ...(element[1] as string)
-                .split('')
-                .map((char) => char.charCodeAt(0)),
-            );
+            for (let index = 0; index < String(element[1]).length; index++) {
+              bytes.push(String(element[1]).charCodeAt(index));
+            }
             break;
         }
       });
@@ -128,6 +127,10 @@ export class MacroAPI implements IMacroAPI {
       bytes.push(MacroTerminator);
       return bytes;
     });
+  }
+
+  countRawSequenceBytes(sequence: RawKeycodeSequence) {
+    return countRawSequenceBytes(sequence, false);
   }
 
   async writeRawKeycodeSequences(sequences: RawKeycodeSequence[]) {

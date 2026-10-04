@@ -43,6 +43,8 @@ export const MacroSaveMessage: React.FC<{
         return t('Missing }');
       case 'empty':
         return t('Empty {}');
+      case 'single-key':
+        return t('Use one key after + or -');
       case 'unknown-keys':
         return t('Unknown key: {{keys}}', {keys: problem.keys.join(', ')});
     }

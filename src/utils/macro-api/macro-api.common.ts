@@ -12,12 +12,14 @@ export type MacroExpressionProblem =
   | {type: 'untypeable'}
   | {type: 'unclosed'}
   | {type: 'empty'}
+  | {type: 'single-key'}
   | {type: 'unknown-keys'; keys: string[]};
 
 export interface IMacroAPI {
   readRawKeycodeSequences(): Promise<RawKeycodeSequence[]>;
-  writeRawKeycodeSequences(sequences: RawKeycodeSequence[]): void;
+  writeRawKeycodeSequences(sequences: RawKeycodeSequence[]): Promise<void>;
   rawKeycodeSequencesToMacroBytes(sequences: RawKeycodeSequence[]): number[];
+  countRawSequenceBytes(sequence: RawKeycodeSequence): number;
   macroBytesToRawKeycodeSequences(
     bytes: number[],
     macroCount: number,
@@ -44,14 +46,27 @@ export const MAX_MACRO_DELAY_MS = 9999;
 // split "{KC_A}bcd{KC_E}" into "{KC_A}","bcd","{KC_E}",
 // handles escaped braces e.g. "\{"
 function splitExpression(expression: string): string[] {
-  let regex;
-  try {
-    regex = eval('/(?<!\\\\)({.*?})/g');
-    return expression.split(regex).filter((s) => s.length);
-  } catch (e) {
-    console.error('Lookbehind is not supported in this browser.');
-    return [];
+  const parts: string[] = [];
+  let literalStart = 0;
+  let open = -1;
+  // Match the existing grammar in one pass. Retrying the regex at every open
+  // brace made a long, unfinished script quadratic, including after validation
+  // had already identified it as unclosed.
+  for (let index = 0; index < expression.length; index++) {
+    const character = expression[index];
+    if (character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029') {
+      open = -1;
+    } else if (open === -1 && character === '{' && expression[index - 1] !== '\\') {
+      open = index;
+    } else if (open !== -1 && character === '}') {
+      if (literalStart < open) parts.push(expression.slice(literalStart, open));
+      parts.push(expression.slice(open, index + 1));
+      literalStart = index + 1;
+      open = -1;
+    }
   }
+  if (literalStart < expression.length) parts.push(expression.slice(literalStart));
+  return parts;
 }
 
 export function optimizedSequenceToRawSequence(
@@ -383,7 +398,24 @@ export function sequenceToExpression(
   sequence: OptimizedKeycodeSequence,
 ): string {
   let result: string[] = [];
+  let text: string[] = [];
+  const flushText = (beforeCommand: boolean) => {
+    if (!text.length) return;
+    let literal = text.join('').replace(/{/g, '\\{');
+    // The existing VIA expression grammar treats a backslash before a command
+    // as an escaped brace. Spell that trailing run as ordinary key taps instead.
+    if (beforeCommand) {
+      literal = literal.replace(/\\+$/, (slashes) => '{KC_BSLS}'.repeat(slashes.length));
+    }
+    result.push(literal);
+    text = [];
+  };
   sequence.forEach((element) => {
+    if (element[0] === RawKeycodeSequenceAction.CharacterStream) {
+      text.push(element[1] as string);
+      return;
+    }
+    flushText(true);
     switch (element[0]) {
       case RawKeycodeSequenceAction.Tap:
         result.push('{' + element[1] + '}');
@@ -400,11 +432,9 @@ export function sequenceToExpression(
       case GroupedKeycodeSequenceAction.Chord:
         result.push('{' + element[1].join(',') + '}');
         break;
-      case RawKeycodeSequenceAction.CharacterStream:
-        // Insert escape character \ before {
-        result.push((element[1] as string).replace(/{/g, '\\{'));
     }
   });
+  flushText(false);
   return result.join('');
 }
 
@@ -540,8 +570,16 @@ export function findMacroExpressionProblem(
   if (unclosed) {
     return {type: 'unclosed'};
   }
-  if (blocks.some((block) => !block.trim().length)) {
-    return {type: 'empty'};
+  for (const block of blocks) {
+    const directed = /^[+-]/.test(block);
+    const keys = (directed ? block.slice(1) : block)
+      .split(',')
+      .map((key) => key.trim())
+      .filter(Boolean);
+    if (!keys.length) return {type: 'empty'};
+    // The VIA expression parser takes only one key for Down/Up. Refuse extra
+    // keys here rather than silently dropping them (or an empty action).
+    if (directed && keys.length !== 1) return {type: 'single-key'};
   }
   const unknown = new Set<string>();
   const checkKeycode = (keycode: string) => {
@@ -575,24 +613,38 @@ export type MacroDraft = {
   stored: string;
 };
 
+/** Includes the slot terminator, without allocating the encoded byte array. */
+export const countRawSequenceBytes = (
+  sequence: RawKeycodeSequence,
+  delays: boolean,
+) => sequence.reduce((total, [action, value]) => {
+  if (action === RawKeycodeSequenceAction.CharacterStream) {
+    return total + String(value).length;
+  }
+  if (action === RawKeycodeSequenceAction.Delay) {
+    return total + (delays ? String(value).length + 3 : 0);
+  }
+  return total + (delays ? 3 : 2);
+}, 1);
+
 export const countMacroBytes = (macroApi: IMacroAPI, expression: string) =>
-  macroApi.rawKeycodeSequencesToMacroBytes([
-    expressionToRawSequence(expression),
-  ]).length;
+  macroApi.countRawSequenceBytes(expressionToRawSequence(expression));
 
 export function checkMacroDraft(
   macroApi: IMacroAPI,
   expression: string,
 ): MacroDraft {
   const problem = macroApi.findExpressionProblem(expression);
+  const raw = expressionToRawSequence(expression);
+  const byteCount = macroApi.countRawSequenceBytes(raw);
+  if (problem || byteCount > 0xffff) {
+    return {problem, byteCount, stored: expression};
+  }
   const bytes = macroApi.rawKeycodeSequencesToMacroBytes([
-    expressionToRawSequence(expression),
+    raw,
   ]);
   // Only a draft a keyboard could hold is read back: the bytes of an invalid one are
   // not a macro the reader knows, and one larger than any buffer only costs time.
-  if (problem || bytes.length > 0xffff) {
-    return {problem, byteCount: bytes.length, stored: expression};
-  }
   const [stored = []] = macroApi.macroBytesToRawKeycodeSequences(bytes, 1);
   return {
     byteCount: bytes.length,

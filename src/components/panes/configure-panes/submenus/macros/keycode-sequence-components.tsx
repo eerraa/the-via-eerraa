@@ -69,6 +69,12 @@ export const SequenceLabelSeparator = styled.div`
 `;
 
 export const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
   border-color: var(--border_color_cell);
   background: var(--bg_menu);
   white-space: pre-wrap;
@@ -77,6 +83,13 @@ export const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
 `;
 
 export const KeycodePressLabel = styled(KeycodeSequenceLabel)`
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   border-color: var(--color_accent);
 `;
 
@@ -156,12 +169,12 @@ export const WaitInput: React.FC<{
 }> = (props) => {
   const inputRef = useRef(null);
   const onBeforeInput = (evt: InputEvent) => {
-    if (!evt.data || !/^\d$/.test(evt.data)) {
+    if (!evt.data || !/^\d+$/.test(evt.data)) {
       evt.preventDefault();
     }
   };
   const onChange = (evt: ChangeEvent<HTMLInputElement>) => {
-    if (+evt.target.value > 0 && +evt.target.value <= MAX_MACRO_DELAY_MS) {
+    if (Number.isInteger(+evt.target.value) && +evt.target.value > 0 && +evt.target.value <= MAX_MACRO_DELAY_MS) {
       // Update external value
       props.updateValue(props.index, +evt.target.value);
     }

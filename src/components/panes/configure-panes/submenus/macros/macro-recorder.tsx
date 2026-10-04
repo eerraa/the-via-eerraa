@@ -6,6 +6,7 @@ import {
   RawKeycodeSequenceAction,
 } from 'src/utils/macro-api/types';
 import {useKeycodeRecorder} from 'src/utils/use-keycode-recorder';
+import {MACRO_PREVIEW_ITEMS} from 'src/utils/macro-recording-preview';
 import styled from 'styled-components';
 import {
   convertCharacterTaps,
@@ -49,11 +50,29 @@ const NoMacroRecorded = styled.div`
   color: var(--color_label-highlighted);
 `;
 
-const RECORDING_PREVIEW_ITEMS = 80;
 const RECORDING_PREVIEW_CHARACTERS = 160;
+// Fullscreen/Keyboard Lock promises can outlive a recorder or a slot change.
+let keyboardLockOwner: symbol | undefined;
 const RecordingPreviewNote = styled.div`
   color: var(--color_label);
   font-size: 12px;
+`;
+const PageControls = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--color_label);
+  button {
+    font: inherit;
+    color: inherit;
+    background: var(--bg_control);
+    border: 1px solid var(--border_color_cell);
+    border-radius: 5px;
+    padding: 4px 10px;
+    cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
 `;
 
 const MacroSequenceContainer = styled.div<{$isModified: boolean}>`
@@ -184,6 +203,7 @@ export const MacroRecorder: React.FC<{
    */
   canEditItems: boolean;
   onRecordingChange(isRecording: boolean): void;
+  onRecordingPreview?(byteCount: number): void;
   isDelaySupported: boolean;
 }> = ({
   macroIndex,
@@ -193,12 +213,14 @@ export const MacroRecorder: React.FC<{
   isModified,
   canEditItems,
   onRecordingChange,
+  onRecordingPreview,
   isDelaySupported,
 }) => {
   const {t} = useTranslation();
   // The slot a recording goes to, even once another is shown.
   const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
   const isRecording = recordingIndex !== null;
+  const [page, setPage] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(
     !!document.fullscreenElement,
   );
@@ -210,12 +232,27 @@ export const MacroRecorder: React.FC<{
     sequence: keycodeSequence,
     reset: resetRecording,
     read: readRecording,
+    totalItems,
+    byteCount,
   } = useKeycodeRecorder(
     isRecording,
     recordDelaysEnabled && isDelaySupported,
+    smartOptimizeEnabled,
+    isDelaySupported,
   );
   const macroSequenceRef = useRef<HTMLDivElement>(null);
+  const resetRecordingRef = useRef(resetRecording);
+  resetRecordingRef.current = resetRecording;
   const mounted = useRef(true);
+  const starting = useRef(false);
+  const startRequest = useRef(0);
+  const lockToken = useRef<symbol>();
+  const unlockKeyboard = useCallback(() => {
+    if (lockToken.current && keyboardLockOwner === lockToken.current) {
+      navigator.keyboard.unlock();
+      keyboardLockOwner = undefined;
+    }
+  }, []);
   const recording = useRef(isRecording);
   recording.current = isRecording;
   const finalDraft = useRef({recordingIndex, editMacro, smartOptimizeEnabled});
@@ -223,13 +260,7 @@ export const MacroRecorder: React.FC<{
   const shownIndex = useRef(macroIndex);
   shownIndex.current = macroIndex;
 
-  const recordedSequence = useMemo(
-    () =>
-      smartOptimizeEnabled
-        ? optimizeKeycodeSequence(keycodeSequence)
-        : keycodeSequence,
-    [keycodeSequence, smartOptimizeEnabled],
-  );
+  const recordedSequence = keycodeSequence;
 
   const displayedSequence: OptimizedKeycodeSequence = useMemo(
     () =>
@@ -241,45 +272,64 @@ export const MacroRecorder: React.FC<{
     [draft, macroIndex, recordedSequence, recordingIndex, selectedMacro],
   );
 
-  // A recording is its slot's draft as it comes in, so however the recorder is left
-  // what was recorded stays.
+  // The complete input is flushed on Stop, slot changes and unmount. Preview
+  // updates publish only a byte count, not a full draft to parse and encode again.
   useEffect(() => {
-    if (recordingIndex !== null) {
-      editMacro(sequenceToExpression(recordedSequence), recordingIndex);
-    }
-  }, [editMacro, recordedSequence, recordingIndex]);
+    if (isRecording) onRecordingPreview?.(byteCount);
+  }, [isRecording, byteCount, onRecordingPreview]);
+
+  useEffect(() => setPage(0), [macroIndex, isRecording]);
+  useEffect(() => { startRequest.current++; }, [macroIndex]);
 
   useEffect(() => {
     onRecordingChange(isRecording);
   }, [isRecording]);
 
   const startRecording = useCallback(async () => {
+    if (starting.current || recording.current) return;
+    starting.current = true;
+    const request = ++startRequest.current;
+    const token = Symbol('macro recording');
+    lockToken.current = token;
+    keyboardLockOwner = token;
     const index = macroIndex;
+    let started = false;
+    let lockRequested = false;
+    const current = () => mounted.current && startRequest.current === request &&
+      shownIndex.current === index && keyboardLockOwner === token &&
+      !!document.fullscreenElement;
     // The keyboard is only locked in fullscreen, so one press asks for both and
     // records only once it has them.
     try {
       if (!document.fullscreenElement) {
         await document.documentElement.requestFullscreen();
       }
+      if (!current()) return;
+      lockRequested = true;
       await navigator.keyboard.lock();
+      if (!current()) return;
+      // Settings can change while fullscreen or Keyboard Lock is pending.
+      resetRecordingRef.current();
+      setIsFullscreen(!!document.fullscreenElement);
+      setRecordingIndex(index);
+      started = true;
     } catch {
       return;
+    } finally {
+      starting.current = false;
+      if (!started && keyboardLockOwner === token) {
+        if (lockRequested) unlockKeyboard();
+        else keyboardLockOwner = undefined;
+      }
     }
-    if (!mounted.current || shownIndex.current !== index) {
-      navigator.keyboard.unlock();
-      return;
-    }
-    resetRecording();
-    setIsFullscreen(!!document.fullscreenElement);
-    setRecordingIndex(index);
-  }, [macroIndex, resetRecording]);
+  }, [macroIndex, resetRecording, unlockKeyboard]);
 
   const stopRecording = useCallback(
     (exitedFullscreen = false) => {
       if (recordingIndex === null) {
         return;
       }
-      navigator.keyboard.unlock();
+      unlockKeyboard();
       const input = readRecording();
       const recorded = exitedFullscreen ? withoutFullscreenExit(input) : input;
       editMacro(
@@ -297,6 +347,7 @@ export const MacroRecorder: React.FC<{
       recordingIndex,
       resetRecording,
       smartOptimizeEnabled,
+      unlockKeyboard,
     ],
   );
 
@@ -348,10 +399,10 @@ export const MacroRecorder: React.FC<{
     [displayedSequence, editSequence],
   );
 
-  const previewStart = isRecording
-    ? Math.max(0, displayedSequence.length - RECORDING_PREVIEW_ITEMS)
-    : 0;
-  const shortenedPreview = isRecording && (previewStart > 0 ||
+  const pageCount = Math.max(1, Math.ceil(displayedSequence.length / MACRO_PREVIEW_ITEMS));
+  const currentPage = Math.min(page, pageCount - 1);
+  const previewStart = isRecording ? 0 : currentPage * MACRO_PREVIEW_ITEMS;
+  const shortenedPreview = isRecording && (totalItems > displayedSequence.length ||
     displayedSequence.some(([action, value]) =>
       action === RawKeycodeSequenceAction.CharacterStream &&
       String(value).length > RECORDING_PREVIEW_CHARACTERS,
@@ -359,7 +410,7 @@ export const MacroRecorder: React.FC<{
   const sequence = useMemo(() => {
     const itemsLocked = isRecording || !canEditItems;
     return componentJoin(
-      displayedSequence.slice(previewStart).map(([action, actionArg], offset) => {
+      displayedSequence.slice(previewStart, previewStart + MACRO_PREVIEW_ITEMS).map(([action, actionArg], offset) => {
         const id = previewStart + offset;
         const text = String(actionArg);
         const shownText = isRecording && text.length > RECORDING_PREVIEW_CHARACTERS
@@ -376,18 +427,7 @@ export const MacroRecorder: React.FC<{
             {RawKeycodeSequenceAction.Delay !== action ? (
               <Label>
                 {action === RawKeycodeSequenceAction.CharacterStream
-                  ? componentJoin(
-                      shownText
-                        .split(' ')
-                        .map((a, i) => <span key={i}>{a}</span>),
-                      <span
-                        style={{
-                          fontFamily: 'fantasy, cursive, monospace',
-                        }}
-                      >
-                        ␣
-                      </span>,
-                    )
+                  ? shownText.replace(/ /g, '␣')
                   : Array.isArray(actionArg)
                   ? actionArg
                       .map((k) => getSequenceLabel(KeycodeMap[k]) || k)
@@ -421,6 +461,7 @@ export const MacroRecorder: React.FC<{
   useEffect(() => {
     mounted.current = true;
     const onFullScreenChanged: EventListener = () => {
+      if (!document.fullscreenElement) startRequest.current++;
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.documentElement.addEventListener(
@@ -429,6 +470,7 @@ export const MacroRecorder: React.FC<{
     );
     return () => {
       mounted.current = false;
+      startRequest.current++;
       if (recording.current) {
         // A mode/pane/device change can precede the next preview. Persist all
         // captured input through the original device's guarded draft callback.
@@ -442,7 +484,7 @@ export const MacroRecorder: React.FC<{
             recordingIndex,
           );
         }
-        navigator.keyboard.unlock();
+        unlockKeyboard();
         onRecordingChange(false);
       }
       document.documentElement.removeEventListener(
@@ -450,7 +492,7 @@ export const MacroRecorder: React.FC<{
         onFullScreenChanged,
       );
     };
-  }, [setIsFullscreen, readRecording]);
+  }, [setIsFullscreen, readRecording, unlockKeyboard]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -463,7 +505,7 @@ export const MacroRecorder: React.FC<{
 
   return (
     <>
-      <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified}>
+      <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified || isRecording}>
         {shortenedPreview ? (
           <RecordingPreviewNote>
             {t('Showing recent inputs while recording')}
@@ -514,6 +556,15 @@ export const MacroRecorder: React.FC<{
           isDelaySupported={isDelaySupported}
         />
       </div>
+      {!isRecording && pageCount > 1 ? (
+        <PageControls>
+          <button type="button" aria-label={t('Previous macro events')} disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}>←</button>
+          <span>{previewStart + 1}–{Math.min(displayedSequence.length, previewStart + MACRO_PREVIEW_ITEMS)} / {displayedSequence.length}</span>
+          <button type="button" aria-label={t('Next macro events')} disabled={currentPage === pageCount - 1}
+            onClick={() => setPage(currentPage + 1)}>→</button>
+        </PageControls>
+      ) : null}
     </>
   );
 };

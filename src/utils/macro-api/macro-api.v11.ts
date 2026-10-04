@@ -6,6 +6,7 @@ import {
   KeyAction,
   IMacroAPI,
   findMacroExpressionProblem,
+  countRawSequenceBytes,
 } from './macro-api.common';
 import {RawKeycodeSequence, RawKeycodeSequenceAction} from './types';
 
@@ -156,11 +157,9 @@ export class MacroAPIV11 implements IMacroAPI {
             );
             break;
           case RawKeycodeSequenceAction.CharacterStream:
-            bytes.push(
-              ...(element[1] as string)
-                .split('')
-                .map((char) => char.charCodeAt(0)),
-            );
+            for (let index = 0; index < String(element[1]).length; index++) {
+              bytes.push(String(element[1]).charCodeAt(index));
+            }
             break;
         }
       });
@@ -169,6 +168,10 @@ export class MacroAPIV11 implements IMacroAPI {
       return bytes;
     });
   }
+  countRawSequenceBytes(sequence: RawKeycodeSequence) {
+    return countRawSequenceBytes(sequence, true);
+  }
+
   async writeRawKeycodeSequences(sequences: RawKeycodeSequence[]) {
     const macroBytes = this.rawKeycodeSequencesToMacroBytes(sequences);
     await this.keyboardApi.setMacroBytes(macroBytes);

@@ -35,6 +35,7 @@ type MacrosState = {
   ownerPath: string | null;
   ownerConnectionGeneration: number | null;
   ownerSelectionGeneration: number | null;
+  writes: Record<string, number>;
 };
 
 const macrosInitialState: MacrosState = {
@@ -46,12 +47,21 @@ const macrosInitialState: MacrosState = {
   ownerPath: null,
   ownerConnectionGeneration: null,
   ownerSelectionGeneration: null,
+  writes: {},
 };
 
 const macrosSlice = createSlice({
   name: 'macros',
   initialState: macrosInitialState,
   reducers: {
+    macroWriteStarted: (state, action: PayloadAction<{path: string; generation: number}>) => {
+      state.writes[action.payload.path] = action.payload.generation;
+    },
+    macroWriteFinished: (state, action: PayloadAction<{path: string; generation: number}>) => {
+      if (state.writes[action.payload.path] === action.payload.generation) {
+        delete state.writes[action.payload.path];
+      }
+    },
     macrosLoadStarted: (
       state,
       action: PayloadAction<{
@@ -153,7 +163,7 @@ const macrosSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(selectDevice, () => macrosInitialState)
+      .addCase(selectDevice, (state) => ({...macrosInitialState, writes: state.writes}))
       .addCase(commitStableMacroCandidate, (state, action) => {
         const {devicePath, connectionGeneration, selectionGeneration, candidate} =
           action.payload;
@@ -175,6 +185,8 @@ export const {
   loadMacrosSuccess,
   saveMacrosSuccess,
   setMacrosNotSupported,
+  macroWriteStarted,
+  macroWriteFinished,
 } = macrosSlice.actions;
 
 export default macrosSlice.reducer;
@@ -321,7 +333,23 @@ const writeMacroSet =
     if (!isCurrentOwner) {
       throw new Error('Macro state does not belong to the current device');
     }
+    if (macroState.writes[connectedDevice.path] === connectionGeneration) {
+      throw new Error('A macro write is already in progress');
+    }
+    if (macros.length !== macroState.macroCount) {
+      throw new Error('Macro slot count does not match the keyboard');
+    }
+    // Imports and editor writes share this gate, before RESET or any mutation.
+    if (macros.some((expression) => macroApi.findExpressionProblem(expression))) {
+      throw new Error('Invalid macro expression');
+    }
     const sequences = macros.map(expressionToRawSequence);
+    const byteCount = sequences.reduce((total, sequence) => total + macroApi.countRawSequenceBytes(sequence), 0);
+    const capacity = macroState.status === 'ready' ? macroState.macroBufferSize - 1 : 0xfffe;
+    if (byteCount > capacity) {
+      throw new Error('Macro set exceeds buffer capacity');
+    }
+    dispatch(macroWriteStarted({path: connectedDevice.path, generation: connectionGeneration}));
 
     if (!options.mutationEpochAlreadyAdvanced) {
       dispatch(
@@ -378,6 +406,8 @@ const writeMacroSet =
         await dispatch(refreshAllDomains(connectedDevice));
       }
       throw error;
+    } finally {
+      dispatch(macroWriteFinished({path: connectedDevice.path, generation: connectionGeneration}));
     }
   };
 
@@ -387,6 +417,24 @@ export const saveMacros = (
   macros: string[],
   options: SaveMacrosOptions = {},
 ) => writeMacroSet(connectedDevice, macros, options, 'contents');
+
+/** Rebuild at admission, rather than using a component's earlier snapshot. */
+export const saveMacro = (
+  device: ConnectedDevice,
+  index: number,
+  expression: string,
+): AppThunk<Promise<void>> => (dispatch, getState) => {
+  const expressions = getExpressions(getState());
+  if (!Number.isInteger(index) || index < 0 || index >= expressions.length) {
+    return Promise.reject(new Error('Invalid macro slot'));
+  }
+  return dispatch(saveMacros(device, expressions.map((value, slot) => slot === index ? expression : value)));
+};
+
+export const getIsMacroWriting = (state: RootState) => {
+  const device = getSelectedConnectedDevice(state);
+  return !!device && state.macros.writes[device.path] === getSelectedConnectionGeneration(state);
+};
 
 /**
  * Replaces every macro, as loading a layout file does. The keyboard's current

@@ -1,4 +1,7 @@
 {
+  "Use one key after + or -": "+ 或 - 后只能输入一个键",
+  "Previous macro events": "上一组宏输入",
+  "Next macro events": "下一组宏输入",
   "Showing recent inputs while recording": "录制时显示最近的输入",
   "Time to reach the target speed. Zero keeps the starting speed.": "达到目标速度所需的时间。设为零将保持初始速度。",
   "Movement per report. The computer also controls pointer and scroll speed.": "每次报告的移动量。电脑设置也会影响指针和滚动速度。",

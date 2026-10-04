@@ -1,4 +1,7 @@
 {
+  "Use one key after + or -": "+ 또는 - 뒤에는 키 하나만 입력하세요",
+  "Previous macro events": "이전 매크로 입력",
+  "Next macro events": "다음 매크로 입력",
   "Showing recent inputs while recording": "녹화 중에는 최근 입력을 표시합니다",
   "Time to reach the target speed. Zero keeps the starting speed.": "목표 속도에 도달하는 시간입니다. 0이면 시작 속도를 유지합니다.",
   "Movement per report. The computer also controls pointer and scroll speed.": "보고 한 번의 이동량입니다. 컴퓨터 설정도 포인터와 스크롤 속도에 영향을 줍니다.",

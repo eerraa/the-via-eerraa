@@ -4,6 +4,7 @@ import {PropsWithChildren} from 'react';
 import styled from 'styled-components';
 const DeletableContainer = styled.div`
   display: inline-flex;
+  max-width: 100%;
   vertical-align: middle;
   position: relative;
   svg {

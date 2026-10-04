@@ -7,7 +7,7 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faClapperboard, faCode} from '@fortawesome/free-solid-svg-icons';
 import {ScriptExample, ScriptMode} from './script-mode';
 import {ProgressBarTooltip} from 'src/components/inputs/tooltip';
-import {getIsDelaySupported, getMacroBufferSize} from 'src/store/macrosSlice';
+import {getIsDelaySupported, getMacroBufferSize, getIsMacroWriting} from 'src/store/macrosSlice';
 import {
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
@@ -191,10 +191,12 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   const macroText = draft ?? currentMacro;
   const [showAdvancedView, setShowAdvancedView] = React.useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordingBytes, setRecordingBytes] = useState(1);
   const ast = useAppSelector((state) => state.macros.ast);
   const isDelaySupported = useAppSelector(getIsDelaySupported);
   const bufferSize = useAppSelector(getMacroBufferSize);
   const [saving, setSaving] = useState(false);
+  const writing = useAppSelector(getIsMacroWriting);
   const [saveStatus, setSaveStatus] = useState<MacroSaveStatus>();
   const savingRef = useRef(false);
   const selectedMacroRef = useRef(macroIndex);
@@ -275,7 +277,7 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   }, [devicePath, dispatch, macroIndex]);
 
   const apply = useCallback(async () => {
-    if (!macroApi || !devicePath || savingRef.current) {
+    if (!macroApi || !devicePath || savingRef.current || writing) {
       return;
     }
     const index = macroIndex;
@@ -324,9 +326,10 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
     macroIndex,
     macroText,
     props.saveMacros,
+    writing,
   ]);
 
-  const idle = !recording && !saving;
+  const idle = !recording && !saving && !writing;
   return (
     <>
       <CenterTabContainer>
@@ -354,7 +357,7 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
         </TabBar>
       </CenterTabContainer>
       <BufferSizeUsage
-        bytesUsed={otherMacroBytes + macroCheck.byteCount}
+        bytesUsed={otherMacroBytes + (recording ? recordingBytes : macroCheck.byteCount)}
         capacity={capacity}
       />
       {showAdvancedView ? (
@@ -374,6 +377,7 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
           isModified={pending}
           canEditItems={!macroCheck.problem}
           onRecordingChange={setRecording}
+          onRecordingPreview={setRecordingBytes}
           isDelaySupported={isDelaySupported}
         />
       )}

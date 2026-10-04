@@ -348,6 +348,14 @@ cache before successful verification (`saveMacros`). Same generation then
 requests one authoritative reconciliation. Marker zero is this host transcript's
 observable completion. It is not a generic QMK power-loss durability proof.
 
+Editor saves and layout imports validate every macro expression before RESET;
+byte-range checks alone cannot reject an embedded terminator or an untypeable
+character. Macro write admission belongs to the device connection, survives
+pane changes, and remains held through cache commit or failure reconciliation.
+An overlapping write is refused with its draft intact, because serializing HID
+packets alone would still allow an older whole-buffer snapshot to erase a
+completed edit. A slot edit rebuilds its set from the current store at admission.
+
 Full layout import (`importLayoutToDevice`) runs macro write/verification,
 keymap write, encoder write, and the file's Custom Values (Tap Dance) as one
 outer reservation and one foreground operation over every domain it touches.
