@@ -40,6 +40,7 @@ const TextArea = styled.textarea`
 const TextAreaFrame = styled.div`
   position: relative;
   background: var(--bg_control);
+  height: 100%;
 `;
 
 // Laid out like the textarea over it, with its text invisible, so a mark sits under
@@ -135,6 +136,9 @@ const MarkedTextArea: React.FC<MarkedTextAreaProps> = ({
 
 const AutoHeightRow = styled(ControlRow)`
   height: auto;
+  flex: 1 1 0;
+  min-height: 140px;
+  align-items: stretch;
 `;
 
 const Example = styled.div`
@@ -227,13 +231,14 @@ export const ScriptMode: React.FC<{
           fontSize: '16px',
           lineHeight: '18px',
           width: '100%',
-          height: '140px',
+          height: '100%',
           fontFamily: 'monospace',
           resize: 'none',
           borderColor: refused ? errorColor : 'var(--border_color_icon)',
           borderStyle: isModified ? 'dashed' : 'solid',
         }}
         containerStyle={{
+          height: '100%',
           border: 'none',
           lineHeight: '20px',
         }}

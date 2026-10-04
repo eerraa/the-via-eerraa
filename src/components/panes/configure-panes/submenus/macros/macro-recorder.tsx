@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {
   OptimizedKeycodeSequence,
   OptimizedKeycodeSequenceItem,
@@ -35,6 +35,7 @@ import {
 } from 'src/store/settingsSlice';
 import {useDispatch} from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import {focusRing} from 'src/components/inputs/accent-button';
 
 declare global {
   interface Navigator {
@@ -62,6 +63,7 @@ const PageControls = styled.div`
   align-items: center;
   gap: 12px;
   margin-top: 12px;
+  min-height: 32px;
   color: var(--color_label);
   button {
     font: inherit;
@@ -71,6 +73,8 @@ const PageControls = styled.div`
     border-radius: 5px;
     padding: 4px 10px;
     cursor: pointer;
+    outline: none;
+    ${focusRing}
     &:disabled { opacity: 0.4; cursor: default; }
   }
 `;
@@ -79,13 +83,18 @@ const MacroSequenceContainer = styled.div<{$isModified: boolean}>`
   max-width: 960px;
   width: 100%;
   display: block;
+  flex: 1 1 0;
+  min-height: 140px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  outline: none;
+  ${focusRing}
   border: 1px solid var(--border_color_cell);
   border-style: ${(props) => (props.$isModified ? 'dashed' : 'solid')};
   padding: 30px 20px;
   border-radius: 15px;
   margin-top: 10px;
   box-sizing: border-box;
-}
 `;
 
 type SmartTransformAcc = [
@@ -220,7 +229,16 @@ export const MacroRecorder: React.FC<{
   // The slot a recording goes to, even once another is shown.
   const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
   const isRecording = recordingIndex !== null;
-  const [page, setPage] = useState(0);
+  const [pageStarts, setPageStarts] = useState([0]);
+  const [viewport, setViewport] = useState({width: 0, height: 0});
+  const wheelGesture = useRef({accumulated: 0, lastPage: -Infinity});
+  const [fit, setFit] = useState<{
+    source: OptimizedKeycodeSequence;
+    start: number;
+    width: number;
+    height: number;
+    count: number;
+  }>();
   const [isFullscreen, setIsFullscreen] = useState(
     !!document.fullscreenElement,
   );
@@ -241,6 +259,7 @@ export const MacroRecorder: React.FC<{
     isDelaySupported,
   );
   const macroSequenceRef = useRef<HTMLDivElement>(null);
+  const pageButtonFocus = useRef<HTMLButtonElement | null>(null);
   const resetRecordingRef = useRef(resetRecording);
   resetRecordingRef.current = resetRecording;
   const mounted = useRef(true);
@@ -278,7 +297,10 @@ export const MacroRecorder: React.FC<{
     if (isRecording) onRecordingPreview?.(byteCount);
   }, [isRecording, byteCount, onRecordingPreview]);
 
-  useEffect(() => setPage(0), [macroIndex, isRecording]);
+  useEffect(() => {
+    setPageStarts([0]);
+    wheelGesture.current = {accumulated: 0, lastPage: -Infinity};
+  }, [macroIndex, isRecording]);
   useEffect(() => { startRequest.current++; }, [macroIndex]);
 
   useEffect(() => {
@@ -383,6 +405,10 @@ export const MacroRecorder: React.FC<{
 
   const deleteSequenceItem = useCallback(
     (id: number) => {
+      // Deleting the focused item must not leave focus on a shifted event or body.
+      if (document.activeElement?.closest('[data-macro-event]')?.getAttribute('data-macro-event') === String(id)) {
+        macroSequenceRef.current?.focus({preventScroll: true});
+      }
       const newSequence = [...displayedSequence];
       newSequence.splice(id, 1);
       editSequence(newSequence);
@@ -399,9 +425,140 @@ export const MacroRecorder: React.FC<{
     [displayedSequence, editSequence],
   );
 
-  const pageCount = Math.max(1, Math.ceil(displayedSequence.length / MACRO_PREVIEW_ITEMS));
-  const currentPage = Math.min(page, pageCount - 1);
-  const previewStart = isRecording ? 0 : currentPage * MACRO_PREVIEW_ITEMS;
+  const previewStart = isRecording ? 0 : Math.min(pageStarts[pageStarts.length - 1], Math.max(0, displayedSequence.length - 1));
+  const fitted = fit?.source === displayedSequence && fit.start === previewStart &&
+    fit.width === viewport.width && fit.height === viewport.height;
+  // Probe only a viewport-sized suffix, then keep the events whose actual
+  // wrapped bounds fit. Capture still uses its bounded 80-event preview.
+  const probeCount = viewport.width && viewport.height
+    ? Math.min(1000, Math.max(1, Math.ceil(viewport.width / 40) * Math.ceil(viewport.height / 50)))
+    : MACRO_PREVIEW_ITEMS;
+  const visibleCount = isRecording ? MACRO_PREVIEW_ITEMS : fitted ? fit.count : probeCount;
+  const hasPrevious = !isRecording && pageStarts.length > 1;
+  const hasNext = !isRecording && previewStart + visibleCount < displayedSequence.length;
+
+  useEffect(() => {
+    setPageStarts((starts) => {
+      if (starts[starts.length - 1] < displayedSequence.length || starts.length === 1) return starts;
+      return starts.filter((start) => start === 0 || start < displayedSequence.length);
+    });
+  }, [displayedSequence.length]);
+
+  useEffect(() => {
+    const element = macroSequenceRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const update = () => setViewport((previous) => {
+      const width = element.clientWidth;
+      const height = element.clientHeight;
+      return width === previous.width && height === previous.height
+        ? previous : {width, height};
+    });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const fonts = document.fonts;
+    if (!fonts) return;
+    const invalidate = () => setFit(undefined);
+    fonts.addEventListener('loadingdone', invalidate);
+    return () => fonts.removeEventListener('loadingdone', invalidate);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (isRecording && macroSequenceRef.current) {
+      macroSequenceRef.current.scrollTop = macroSequenceRef.current.scrollHeight;
+    }
+  }, [isRecording, recordedSequence]);
+
+  useLayoutEffect(() => {
+    const element = macroSequenceRef.current;
+    if (isRecording || fitted || !element || !viewport.height) return;
+    element.scrollTop = 0;
+    const bottom = element.getBoundingClientRect().bottom - parseFloat(getComputedStyle(element).paddingBottom) - element.clientTop;
+    const items = Array.from(element.querySelectorAll<HTMLElement>('[data-macro-event]'));
+    const overflow = items.findIndex((item) => item.getBoundingClientRect().bottom > bottom + 1);
+    setFit({source: displayedSequence, start: previewStart, ...viewport,
+      count: Math.max(1, overflow === -1 ? items.length : overflow)});
+  }, [displayedSequence, previewStart, viewport, isRecording, fitted]);
+
+  const changePage = useCallback((direction: number, origin: 'wheel' | 'keyboard' | 'button' = 'button') => {
+    if (direction < 0 ? !hasPrevious : !hasNext) return false;
+    const element = macroSequenceRef.current;
+    const active = document.activeElement;
+    pageButtonFocus.current = origin === 'button' && active?.tagName === 'BUTTON'
+      ? active as HTMLButtonElement : null;
+    setPageStarts((starts) => direction < 0 ? starts.slice(0, -1) : [...starts, previewStart + visibleCount]);
+    if (element) {
+      element.scrollTop = 0;
+      // Wheel gestures preserve outside focus. A child on the outgoing page
+      // needs a stable destination before React replaces it.
+      if (origin === 'keyboard' || (active && active !== element && element.contains(active))) {
+        element.focus({preventScroll: true});
+      }
+    }
+    return true;
+  }, [hasPrevious, hasNext, previewStart, visibleCount]);
+
+  useLayoutEffect(() => {
+    if (!fitted && viewport.height) return;
+    const button = pageButtonFocus.current;
+    pageButtonFocus.current = null;
+    if (button?.disabled && (document.activeElement === button || document.activeElement === document.body)) {
+      macroSequenceRef.current?.focus({preventScroll: true});
+    }
+  }, [fitted, viewport.height, hasPrevious, hasNext]);
+
+  useEffect(() => {
+    const element = macroSequenceRef.current;
+    if (!element || isRecording) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.altKey || event.metaKey || !event.deltaY) return;
+      const target = event.target as HTMLElement;
+      if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const direction = Math.sign(event.deltaY);
+      // Inner text/chord scrolling and the viewport itself take precedence.
+      for (let node: HTMLElement | null = target; node; node = node.parentElement) {
+        if (node.scrollHeight > node.clientHeight + 1 &&
+          /auto|scroll/.test(getComputedStyle(node).overflowY) &&
+          (direction > 0 ? node.scrollTop + node.clientHeight < node.scrollHeight - 1 : node.scrollTop > 1)) return;
+        if (node === element) break;
+      }
+      if (direction < 0 ? !hasPrevious : !hasNext) return;
+      event.preventDefault();
+      const now = performance.now();
+      const gesture = wheelGesture.current;
+      if (now - gesture.lastPage < 250) return;
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
+      gesture.accumulated = Math.sign(gesture.accumulated) === direction ? gesture.accumulated + delta : delta;
+      if (Math.abs(gesture.accumulated) >= 40 && changePage(direction, 'wheel')) {
+        gesture.accumulated = 0;
+        gesture.lastPage = now;
+      }
+    };
+    element.addEventListener('wheel', onWheel, {passive: false});
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [isRecording, hasPrevious, hasNext, changePage]);
+
+  const onPageKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isRecording || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey ||
+      (event.target as HTMLElement).closest('input, textarea, select, button, [contenteditable="true"]')) return;
+    const direction = ['ArrowRight', 'ArrowDown', 'PageDown'].includes(event.key) ? 1
+      : ['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key) ? -1 : 0;
+    const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+    for (let node: HTMLElement | null = event.target as HTMLElement; direction && node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const length = horizontal ? node.scrollWidth : node.scrollHeight;
+      const visible = horizontal ? node.clientWidth : node.clientHeight;
+      const position = horizontal ? node.scrollLeft : node.scrollTop;
+      if (length > visible + 1 && /auto|scroll/.test(horizontal ? style.overflowX : style.overflowY) &&
+        (direction > 0 ? position + visible < length - 1 : position > 1)) return;
+      if (node === macroSequenceRef.current) break;
+    }
+    if (direction && changePage(direction, 'keyboard')) event.preventDefault();
+  };
   const shortenedPreview = isRecording && (totalItems > displayedSequence.length ||
     displayedSequence.some(([action, value]) =>
       action === RawKeycodeSequenceAction.CharacterStream &&
@@ -410,7 +567,7 @@ export const MacroRecorder: React.FC<{
   const sequence = useMemo(() => {
     const itemsLocked = isRecording || !canEditItems;
     return componentJoin(
-      displayedSequence.slice(previewStart, previewStart + MACRO_PREVIEW_ITEMS).map(([action, actionArg], offset) => {
+      displayedSequence.slice(previewStart, previewStart + visibleCount).map(([action, actionArg], offset) => {
         const id = previewStart + offset;
         const text = String(actionArg);
         const shownText = isRecording && text.length > RECORDING_PREVIEW_CHARACTERS
@@ -425,7 +582,7 @@ export const MacroRecorder: React.FC<{
             disabled={itemsLocked}
           >
             {RawKeycodeSequenceAction.Delay !== action ? (
-              <Label>
+              <Label tabIndex={!isRecording && text.length > RECORDING_PREVIEW_CHARACTERS ? 0 : undefined}>
                 {action === RawKeycodeSequenceAction.CharacterStream
                   ? shownText.replace(/ /g, '␣')
                   : Array.isArray(actionArg)
@@ -456,6 +613,7 @@ export const MacroRecorder: React.FC<{
     isRecording,
     canEditItems,
     previewStart,
+    visibleCount,
   ]);
 
   useEffect(() => {
@@ -505,7 +663,9 @@ export const MacroRecorder: React.FC<{
 
   return (
     <>
-      <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified || isRecording}>
+      <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified || isRecording}
+        style={{'--macro-item-max-height': `${Math.max(60, viewport.height - 90)}px`} as React.CSSProperties}
+        tabIndex={0} aria-label={t('Macros')} onKeyDown={onPageKeyDown}>
         {shortenedPreview ? (
           <RecordingPreviewNote>
             {t('Showing recent inputs while recording')}
@@ -556,13 +716,13 @@ export const MacroRecorder: React.FC<{
           isDelaySupported={isDelaySupported}
         />
       </div>
-      {!isRecording && pageCount > 1 ? (
-        <PageControls>
-          <button type="button" aria-label={t('Previous macro events')} disabled={currentPage === 0}
-            onClick={() => setPage(currentPage - 1)}>←</button>
-          <span>{previewStart + 1}–{Math.min(displayedSequence.length, previewStart + MACRO_PREVIEW_ITEMS)} / {displayedSequence.length}</span>
-          <button type="button" aria-label={t('Next macro events')} disabled={currentPage === pageCount - 1}
-            onClick={() => setPage(currentPage + 1)}>→</button>
+      {!isRecording ? (
+        <PageControls style={{visibility: hasPrevious || hasNext ? 'visible' : 'hidden'}}>
+          <button type="button" aria-label={t('Previous macro events')} disabled={!hasPrevious}
+            onClick={() => changePage(-1)}>←</button>
+          <span>{previewStart + 1}–{Math.min(displayedSequence.length, previewStart + visibleCount)} / {displayedSequence.length}</span>
+          <button type="button" aria-label={t('Next macro events')} disabled={!hasNext}
+            onClick={() => changePage(1)}>→</button>
         </PageControls>
       ) : null}
     </>

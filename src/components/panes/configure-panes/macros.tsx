@@ -43,8 +43,13 @@ const Container = styled.div`
   display: flex;
   align-items: center;
   flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
   padding: 12px;
   padding-top: 0;
+  > * {
+    flex-shrink: 0;
+  }
 `;
 
 export const Pane: FC = () => {

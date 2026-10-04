@@ -9,6 +9,7 @@ import {
 } from 'src/utils/macro-api/types';
 import {MAX_MACRO_DELAY_MS} from 'src/utils/macro-api/macro-api.common';
 import styled from 'styled-components';
+import {focusRing} from 'src/components/inputs/accent-button';
 
 const CharacterStreamContainer = styled.div`
   border: 2px solid var(--bg_control);
@@ -23,6 +24,8 @@ const CharacterStreamContainer = styled.div`
 `;
 
 const KeycodeSequenceLabel = styled.div`
+  outline: none;
+  ${focusRing}
   display: inline-flex;
   user-select: none;
   color: #717070;
@@ -72,7 +75,7 @@ export const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
   display: block;
   box-sizing: border-box;
   max-width: 100%;
-  max-height: 240px;
+  max-height: var(--macro-item-max-height, 240px);
   overflow: auto;
   overflow-wrap: anywhere;
   border-color: var(--border_color_cell);
@@ -86,7 +89,7 @@ export const KeycodePressLabel = styled(KeycodeSequenceLabel)`
   display: block;
   box-sizing: border-box;
   max-width: 100%;
-  max-height: 240px;
+  max-height: var(--macro-item-max-height, 240px);
   overflow: auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -149,6 +152,7 @@ export const NumberInput = styled.input.attrs({
   &:focus {
     color: var(--color_accent);
   }
+  ${focusRing}
   &::-webkit-inner-spin-button {
     appearance: none;
     display: none;

@@ -6,7 +6,6 @@ import {
   faCode,
   faSquare,
   faTrash,
-  faXmarkCircle,
 } from '@fortawesome/free-solid-svg-icons';
 import i18n from 'i18next';
 import {Provider} from 'react-redux';
@@ -384,6 +383,9 @@ const inertElement = () => ({
   appendChild: () => undefined,
   removeChild: () => undefined,
   contains: () => true,
+  addEventListener: () => undefined,
+  removeEventListener: () => undefined,
+  focus: () => undefined,
   scrollTop: 0,
   offsetTop: 0,
   offsetLeft: 0,
@@ -1099,10 +1101,37 @@ describe('a script shown in the recorder', () => {
     expect(next().props.disabled).toBe(true);
     expect(waitInputs(root).at(-1)?.props.value).toBe(170);
     act(() => tab(root, 'M1').props.onClick());
-    expect(root.findAll((node) => node.type === 'button' && node.props['aria-label'] === '다음 매크로 입력')).toHaveLength(0);
+    expect(next().props.disabled).toBe(true);
+  });
+  test('page keys navigate bounded ranges without changing waits or drafts', async () => {
+    const expression = Array.from({length: 100}, (_, index) => `{KC_A}{${index + 1}}`).join('');
+    const path = 'macro-page-keys';
+    const {store} = await connect(path, {size: 8192, stored: [expression, '']});
+    const root = await render(store);
+    const press = (key: string, input = false, ctrlKey = false) => {
+      let prevented = false;
+      act(() => sequenceBox(root).props.onKeyDown({key, ctrlKey,
+        target: {closest: () => input ? {} : null},
+        preventDefault: () => { prevented = true; }}));
+      return prevented;
+    };
+    expect(press('ArrowUp')).toBe(false);
+    expect(press('ArrowDown', true)).toBe(false);
+    expect(press('ArrowRight', false, true)).toBe(false);
+    expect(waitInputs(root)[0].props.value).toBe(1);
+    expect(press('ArrowDown')).toBe(true);
+    expect(waitInputs(root)[0].props.value).toBe(41);
+    expect(press('PageDown')).toBe(true);
+    expect(waitInputs(root)[0].props.value).toBe(81);
+    expect(press('ArrowRight')).toBe(false);
+    expect(press('ArrowLeft')).toBe(true);
+    expect(waitInputs(root)[0].props.value).toBe(41);
+    expect(press('PageUp')).toBe(true);
+    expect(waitInputs(root)[0].props.value).toBe(1);
+    expect(store.getState().drafts[path]?.['macro:0']).toBeUndefined();
   });
   const itemDeletes = (root: ReactTestInstance) =>
-    sequenceBox(root).findAll((node) => node.props.icon === faXmarkCircle);
+    sequenceBox(root).findAll((node) => node.type === 'button' && node.props['aria-label']?.startsWith('삭제 '));
 
   const waitInputs = (root: ReactTestInstance) =>
     sequenceBox(root).findAll(
