@@ -10,21 +10,27 @@ import type {EraHelpContent} from 'src/utils/era-feature-help';
 // out. Nothing here adds a box or a heading: it stays quiet.
 
 export const HelpBody = styled.div`
-  flex-basis: 100%;
-  max-width: 760px;
+  /* Keep the flex item on its own line; constrain its text, not its flex base. */
+  flex: 0 0 100%;
+  min-width: 0;
+  max-width: 100%;
   box-sizing: border-box;
   margin: 2px 0 14px;
   color: var(--color_label);
   font-size: 16px;
   line-height: 1.65;
+  overflow-wrap: anywhere;
 
   &[hidden] {
     display: none;
   }
 `;
 
-// A span laid out as a block, so a folded body holds no nested div and reads as one
-// element to anything that strips it.
+const Content = styled.div`
+  max-width: 760px;
+`;
+
+// Paragraphs retain explicit line breaks in the translated help text.
 export const HelpParagraph = styled.span`
   display: block;
   margin: 0 0 8px;
@@ -76,7 +82,7 @@ export const HelpContent: FC<{
 }> = ({content, current}) => {
   const {t} = useTranslation();
   return (
-    <>
+    <Content>
       {content.detail?.map((paragraph) => (
         <HelpParagraph key={paragraph}>{t(paragraph)}</HelpParagraph>
       ))}
@@ -95,6 +101,6 @@ export const HelpContent: FC<{
           ))}
         </Choices>
       ) : null}
-    </>
+    </Content>
   );
 };
