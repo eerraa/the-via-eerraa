@@ -802,6 +802,7 @@
   "Sets how fast mouse keys move the pointer and wheel.": "设置鼠标键移动指针和滚轮的速度。",
   "Sets the link speed of the cable between the two units.": "设置连接两个单元的线缆通信速度。",
   "Firmware update": "固件更新",
+  "You can configure this keyboard after updating its firmware.": "更新固件后即可配置此键盘。",
   "Up to date": "已是最新版本",
   "New version": "新版本",
   "New version {{version}}": "新版本 {{version}}",

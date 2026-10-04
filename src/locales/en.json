@@ -802,6 +802,7 @@
   "Sets how fast mouse keys move the pointer and wheel.": "Sets how fast mouse keys move the pointer and wheel.",
   "Sets the link speed of the cable between the two units.": "Sets the link speed of the cable between the two units.",
   "Firmware update": "Firmware update",
+  "You can configure this keyboard after updating its firmware.": "You can configure this keyboard after updating its firmware.",
   "Up to date": "Up to date",
   "New version": "New version",
   "New version {{version}}": "New version {{version}}",

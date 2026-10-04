@@ -63,7 +63,11 @@ export type FirmwareManifestEntry = FirmwareManifestIdentity & {
   exactMsFamily?: string;
 };
 
-export type FirmwareManifest = {definitions: FirmwareManifestEntry[]};
+export type FirmwareManifest = {
+  definitions: FirmwareManifestEntry[];
+  /** Older identities used only for downloads, never as Custom definitions. */
+  downloadOnlyIdentities?: (FirmwareManifestIdentity & {board: string})[];
+};
 
 export type FirmwareData = {
   catalog: FirmwareCatalog;
@@ -211,6 +215,28 @@ export const validateFirmwareCatalog = ({
     }
   }
 
+  const servedIdentities = new Set(manifest.definitions.flatMap((entry) =>
+    getManifestEntryIdentities(entry).map((identity) =>
+      `${parseUsbId(identity.vendorId)}:${parseUsbId(identity.productId)}`,
+    ),
+  ));
+  const downloadIdentities = new Set<string>();
+  for (const identity of manifest.downloadOnlyIdentities ?? []) {
+    const vid = parseUsbId(identity.vendorId);
+    const pid = parseUsbId(identity.productId);
+    const key = `${vid}:${pid}`;
+    if (vid !== LEGACY_ERA_VENDOR_ID || pid === null) {
+      errors.push(`download-only identity for "${identity.board}" is not a legacy ERA VID/PID`);
+    }
+    if (!boardIds.has(identity.board)) {
+      errors.push(`download-only identity names an undeclared board "${identity.board}"`);
+    }
+    if (servedIdentities.has(key) || downloadIdentities.has(key)) {
+      errors.push(`download-only identity ${key} repeats another USB identity`);
+    }
+    downloadIdentities.add(key);
+  }
+
   const makerIds = new Set<string>();
   const makerVendorIds = new Set<number>();
   const listedBoards = new Set<string>();
@@ -309,6 +335,8 @@ export type FirmwareIdentity = {
   board: FirmwareBoardInfo;
   /** Makers that distribute this board, in display order. */
   makers: FirmwareMaker[];
+  /** No current Custom definition is safe to serve under this identity. */
+  downloadOnly?: true;
 };
 
 /**
@@ -328,10 +356,14 @@ export const resolveFirmwareIdentity = (
         parseUsbId(identity.productId) === productId,
     ),
   );
-  if (!definition) {
+  const downloadIdentity = !definition && data.manifest.downloadOnlyIdentities?.find(
+    (identity) => parseUsbId(identity.vendorId) === vendorId &&
+      parseUsbId(identity.productId) === productId,
+  );
+  const boardId = definition?.pair ?? definition?.id ?? (downloadIdentity && downloadIdentity.board);
+  if (!boardId) {
     return null;
   }
-  const boardId = definition.pair ?? definition.id;
   if (!data.catalog.boards.some((board) => board.id === boardId)) {
     return null;
   }
@@ -347,6 +379,7 @@ export const resolveFirmwareIdentity = (
   return {
     board: getFirmwareBoardInfo(data, boardId),
     makers: byVendor.length === 1 ? byVendor : candidates,
+    ...(downloadIdentity ? {downloadOnly: true as const} : {}),
   };
 };
 

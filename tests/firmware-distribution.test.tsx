@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, spyOn, test} from 'bun:test';
 import {createHash} from 'node:crypto';
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {configureStore} from '@reduxjs/toolkit';
@@ -792,6 +792,85 @@ const readOnly = (html: string) => {
 };
 
 describe('VERSION firmware update row', () => {
+  for (const alias of committed.manifest.downloadOnlyIdentities ?? []) {
+    test(`pre-split PID ${alias.productId} offers downloads without a modern definition`, () => {
+      const device = {
+        vendorId: Number.parseInt(alias.vendorId, 16),
+        productId: Number.parseInt(alias.productId, 16),
+      };
+      const identity = resolveFirmwareIdentity(committed, device.vendorId, device.productId)!;
+      expect(identity.board.id).toBe(alias.board);
+      expect(identity.downloadOnly).toBe(true);
+      const status = getFirmwareUpdateStatus(committed, {...device, version: null});
+      expect(status.kind).toBe('no-claim');
+      const html = renderVersionRow(committed, device, '');
+      expect(html).toContain('Latest 261005R1');
+      expect(html).toContain(`href="/firmware/sirind/${alias.board}"`);
+      expect(html).not.toContain('Up to date');
+      expect(existsSync(path.join(repoRoot, 'public/definitions/era/v3',
+        `${device.vendorId * 65536 + device.productId}.json`))).toBe(false);
+    });
+  }
+
+  test('download-only identities reject collisions and invalid destinations', () => {
+    for (const alias of [
+      {...committed.manifest.downloadOnlyIdentities![0], board: 'unknown-board'},
+      {...committed.manifest.downloadOnlyIdentities![0], vendorId: '0x1234'},
+      {...committed.manifest.downloadOnlyIdentities![0], productId: 'oops'},
+      committed.manifest.downloadOnlyIdentities![0],
+      {...committed.manifest.downloadOnlyIdentities![0],
+        ...committed.manifest.definitions.find(({legacy}) => legacy)!.legacy},
+    ]) {
+      const invalid = clone(committed);
+      invalid.manifest.downloadOnlyIdentities!.push(alias);
+      expect(validateFirmwareCatalog(invalid).some((message) => message.includes('download-only'))).toBe(true);
+    }
+  });
+
+  const frozenEntries = readJSON<{
+    definitions: {id: string; legacy?: {path: string}}[];
+  }>('config/era-definitions.manifest.json').definitions;
+  for (const entry of committed.manifest.definitions.filter(({legacy}) => legacy)) {
+    test(`pre-migration USB identity ${entry.id} reaches the shipped update`, () => {
+      const device = usbId(entry.id, 'legacy');
+      const frozen = readJSON<{vendorId: string; productId: string}>(
+        frozenEntries.find(({id}) => id === entry.id)!.legacy!.path,
+      );
+      expect(Number.parseInt(frozen.vendorId, 16)).toBe(device.vendorId);
+      expect(Number.parseInt(frozen.productId, 16)).toBe(device.productId);
+      const boardId = entry.pair ?? entry.id;
+      const identity = resolveFirmwareIdentity(committed, device.vendorId, device.productId);
+      expect(identity?.board.id).toBe(boardId);
+      expect(identity?.makers.map(({id}) => id).sort()).toEqual(makersOf(committed, boardId));
+      const makers = identity!.makers;
+      const latest = makers[0].boards.find(({board}) => board === boardId)!.file!.version;
+      const html = renderVersionRow(committed, device, '260913R1');
+      if (makers.length === 1) {
+        expect(html).toContain('data-era-firmware-update="update-available"');
+        expect(html).toContain(`New version ${latest}`);
+        expect(html).toContain(`href="/firmware/${makers[0].id}/${boardId}"`);
+      } else {
+        expect(html).toContain('data-era-firmware-update="choose-maker"');
+        expect(html).toContain(`Latest ${latest}`);
+        for (const maker of makers) {
+          expect(html).toContain(`>${maker.name}</button>`);
+          const chosen = getFirmwareUpdateStatus(committed, {
+            ...device, version: '260913R1', rememberedMaker: () => maker.id,
+          });
+          expect(chosen.kind).toBe('update-available');
+          expect('maker' in chosen && chosen.maker?.id).toBe(maker.id);
+        }
+      }
+      // Very old firmware may not supply VERSION. Still offer the latest
+      // download or maker choice without claiming a measured current version.
+      const unknown = renderVersionRow(committed, device, '');
+      expect(unknown).not.toContain('New version');
+      expect(unknown).not.toContain('Up to date');
+      expect(unknown).toContain(makers.length === 1 ? `Latest ${latest}` : 'Which maker sold this keyboard?');
+      readOnly(html);
+    });
+  }
+
   // One verb for the board page in every state; "Download" is kept for the ZIP.
   test('a newer release opens the board page', () => {
     const html = renderVersionRow(published(), usbId('classicd-a1'), '260913R1');
@@ -1503,6 +1582,27 @@ describe('firmware HID device badge', () => {
       },
     };
   };
+
+  test('authorizing every historical VID/PID opens its board or maker question', async () => {
+    const context = setup();
+    try {
+      const identities = [
+        ...committed.manifest.definitions.filter(({legacy}) => legacy).map((entry) => usbId(entry.id, 'legacy')),
+        ...(committed.manifest.downloadOnlyIdentities ?? []).map((alias) => ({
+          vendorId: Number.parseInt(alias.vendorId, 16), productId: Number.parseInt(alias.productId, 16),
+        })),
+      ];
+      for (const device of identities) {
+        const identity = resolveFirmwareIdentity(committed, device.vendorId, device.productId)!;
+        const maker = identity.makers.length === 1 ? identity.makers[0].id : null;
+        context.request.mockResolvedValue({...device, __path: `historical-${device.productId}`} as any);
+        await act(async () => { await context.button('Authorize device').props.onClick(); });
+        expect(context.navigations.at(-1)).toBe(
+          maker ? `/firmware/${maker}/${identity.board.id}` : `/firmware/${identity.board.id}`,
+        );
+      }
+    } finally { context.cleanup(); }
+  });
 
   test('authorizing a new keyboard opens its board, resolving maker and legacy identities', async () => {
     const context = setup();

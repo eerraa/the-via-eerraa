@@ -802,6 +802,7 @@
   "Sets how fast mouse keys move the pointer and wheel.": "마우스 키로 움직이는 포인터와 휠의 속도를 설정합니다.",
   "Sets the link speed of the cable between the two units.": "양쪽 유닛을 잇는 케이블의 통신 속도를 설정합니다.",
   "Firmware update": "펌웨어 업데이트",
+  "You can configure this keyboard after updating its firmware.": "펌웨어를 업데이트한 후 이 키보드를 설정할 수 있습니다.",
   "Up to date": "최신 버전입니다",
   "New version": "새 버전",
   "New version {{version}}": "새 버전 {{version}}",

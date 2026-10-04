@@ -802,6 +802,7 @@
   "Sets how fast mouse keys move the pointer and wheel.": "Legt fest, wie schnell Maustasten Zeiger und Mausrad bewegen.",
   "Sets the link speed of the cable between the two units.": "Legt die Verbindungsgeschwindigkeit des Kabels zwischen beiden Einheiten fest.",
   "Firmware update": "Firmware-Update",
+  "You can configure this keyboard after updating its firmware.": "Nach dem Firmware-Update können Sie diese Tastatur konfigurieren.",
   "Up to date": "Auf dem neuesten Stand",
   "New version": "Neue Version",
   "New version {{version}}": "Neue Version {{version}}",

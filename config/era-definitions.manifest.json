@@ -459,5 +459,10 @@
       "stateSync": true,
       "exactMsFamily": "h7s"
     }
+  ],
+  "downloadOnlyIdentities": [
+    {"board": "tomak-tkl", "vendorId": "0x4552", "productId": "0x0006"},
+    {"board": "tomak79h", "vendorId": "0x4552", "productId": "0x0014"},
+    {"board": "tomak79s", "vendorId": "0x4552", "productId": "0x0013"}
   ]
 }

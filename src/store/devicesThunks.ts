@@ -5,7 +5,7 @@ import {
   getSupportedIdsFromStore,
   syncStore,
 } from '../utils/device-store';
-import {getRecognisedDevices, getVendorProductId} from '../utils/hid-keyboards';
+import {getRecognisedDevices, getVendorProductId, isDownloadOnlyFirmwareDevice} from '../utils/hid-keyboards';
 import {
   isSupportedVIAProtocolVersion,
   KeyboardAPI,
@@ -424,7 +424,8 @@ export const reloadConnectedDevices =
 
     // Remove authorized devices that we could not find definitions for
     authorizedDevices
-      .filter((device) => !isAuthorizedDeviceConnected(device, newDefinitions))
+      .filter((device) => !isAuthorizedDeviceConnected(device, newDefinitions) &&
+        !isDownloadOnlyFirmwareDevice(device))
       .forEach(tryForgetDevice);
 
     const validDevicesArr = Object.entries(connectedDevices);

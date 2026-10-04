@@ -51,6 +51,9 @@ import {addHIDTransportGenerationListener} from 'src/shims/node-hid';
 import {StateSyncRuntime} from './state-sync-runtime';
 import {failContinuousHIDTransactionsForPath} from 'src/utils/continuous-hid-transaction';
 import {useLocation} from 'wouter';
+import {resolveFirmwareIdentity} from 'src/utils/era-firmware-catalog';
+import {getFirmwareData} from 'src/utils/use-firmware-catalog';
+import {getFirmwareBoardPath, isFirmwarePath} from 'src/utils/firmware-route';
 
 const ErrorHome = styled.div`
   background: var(--bg_gradient);
@@ -169,6 +172,18 @@ export const Home: React.FC<HomeProps> = (props) => {
   const api = useAppSelector(getSelectedKeyboardAPI);
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const [location, setLocation] = useLocation();
+  const unresolvedIdentity = unresolvedDefinitionDevice
+    ? resolveFirmwareIdentity(getFirmwareData(), unresolvedDefinitionDevice.vendorId,
+        unresolvedDefinitionDevice.productId)
+    : null;
+  const migrationIdentity = unresolvedIdentity?.downloadOnly ? unresolvedIdentity : null;
+  const migrationMaker = migrationIdentity?.makers[0];
+  const migrationFile = migrationMaker?.boards.find(
+    ({board}) => board === migrationIdentity?.board.id,
+  )?.file;
+  const migrationPath = migrationIdentity && migrationFile
+    ? getFirmwareBoardPath(migrationMaker!.id, migrationIdentity.board.id)
+    : null;
 
   const logRouteError = (error: unknown) =>
     dispatch(
@@ -324,7 +339,8 @@ export const Home: React.FC<HomeProps> = (props) => {
           )}
         </MessageDialog>
       )}
-      {!invalidProtocolDevice && unresolvedDefinitionDevice && (
+      {!invalidProtocolDevice && unresolvedDefinitionDevice &&
+        (!migrationPath || !isFirmwarePath(location)) && (
         <MessageDialog
           isOpen={true}
           confirmLabel="OK"
@@ -333,8 +349,13 @@ export const Home: React.FC<HomeProps> = (props) => {
               dismissUnresolvedDefinitionDevice(unresolvedDefinitionDevice),
             );
           }}
-          secondaryLabel="Upload"
+          secondaryLabel={migrationPath ? 'Firmware update' : 'Upload'}
           onSecondary={() => {
+            if (migrationPath) {
+              dispatch(dismissUnresolvedDefinitionDevice(unresolvedDefinitionDevice));
+              setLocation(migrationPath);
+              return;
+            }
             // The Design tab is hidden by default; its warning would only ask
             // again what this click already answered.
             dispatch(setShowDesignTab(true));
@@ -345,7 +366,9 @@ export const Home: React.FC<HomeProps> = (props) => {
             setLocation('/design');
           }}
         >
-          {t(
+          {migrationPath
+            ? `${migrationIdentity!.board.name}\n\n${t('You can configure this keyboard after updating its firmware.')}\n${t('Latest {{version}}', {version: migrationFile!.version})}`
+            : t(
             "VIA could not find a {{definitionVersion}} definition for {{deviceName}}.\nVID: {{vid}} | PID: {{pid}}\n\nThis means that:\n- this keyboard is not officially supported through the remote definition database\n- the definition file of the keyboard has not been sideloaded through the Design tab\n\nPlease contact your keyboard's manufacturer or vendor to add it to the database, or upload the JSON definition provided by your keyboard's manufacturer or vendor in the Design tab.",
             {
               definitionVersion:

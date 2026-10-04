@@ -1111,6 +1111,40 @@ const makeProtocolReloadStore = () =>
   });
 
 describe('protocol probe lifecycle classification', () => {
+  for (const productId of [0x0006, 0x0013, 0x0014]) {
+    test(`already authorized download-only PID ${productId} keeps its grant and update notice`, async () => {
+      const fake = new FakeHIDDevice();
+      fake.productId = productId;
+      const devicePath = `download-only-${productId}`;
+      const webDevice = asHIDDevice(fake);
+      (webDevice as HIDDevice & {__path?: string}).__path = devicePath;
+      let forgotten = 0;
+      fake.forget = async () => { forgotten += 1; };
+      fake.onSend = (data) => {
+        expect(data[0]).toBe(0x01);
+        fake.emit(payload(0x01, 0x00, 0x0c));
+      };
+      const unknown = new FakeHIDDevice();
+      unknown.productId = 0x7fff;
+      const navigatorHID = installFakeNavigatorHID(() => [webDevice, asHIDDevice(unknown)]);
+      const restoreFetch = stubGlobals({fetch: async () => new Response('', {status: 404})});
+      try {
+        const protocolStore = makeProtocolReloadStore();
+        await (protocolStore.dispatch as any)(reloadConnectedDevices());
+        const state = protocolStore.getState();
+        expect(state.devices.unresolvedDefinitionDevicePaths[devicePath]?.productId).toBe(productId);
+        expect(state.devices.connectedDevicePaths).toEqual({});
+        expect(state.devices.selectedDevicePath).toBeNull();
+        expect(forgotten).toBe(0);
+        expect(fake.sentReports.length).toBeGreaterThan(0);
+        expect(unknown.sentReports).toHaveLength(0);
+      } finally {
+        restoreFetch();
+        navigatorHID.restore();
+      }
+    });
+  }
+
   test('a successful but unsupported protocol response remains an invalid-protocol error', async () => {
     const fake = new FakeHIDDevice();
     const webDevice = asHIDDevice(fake);
@@ -2990,6 +3024,54 @@ describe('dialogs', () => {
 
   afterEach(() => {
     setEraAdvancedMetadataForTesting(null);
+  });
+
+  test('older download-only identities open firmware updates without enabling Design', async () => {
+    const shell = await loadAppShell();
+    const {updateUnresolvedDefinitionDevices} = await import('../src/store/devicesSlice');
+    const navigatorHID = installFakeNavigatorHID(() => []);
+    const restoreDocument = stubGlobals({document: {
+      hidden: false, addEventListener: () => undefined,
+      removeEventListener: () => undefined, getElementById: () => null,
+    }});
+    let app: ReactTestRenderer | undefined;
+    try {
+      for (const [productId, board] of [[0x0006, 'tomak-tkl'], [0x0013, 'tomak79s'], [0x0014, 'tomak79h']] as const) {
+        const testStore = makeAppTestStore();
+        const dialogs = dialogMocks();
+        let location = '/';
+        const listeners = new Set<() => void>();
+        const useTestLocation = (): [string, (to: string) => void] => [
+          useSyncExternalStore((listener) => {
+            listeners.add(listener); return () => listeners.delete(listener);
+          }, () => location),
+          (to) => { location = to; listeners.forEach((listener) => listener()); },
+        ];
+        await act(async () => { app = create(appShellElement(shell, testStore, useTestLocation, []), {
+          createNodeMock: dialogs.createNodeMock,
+        }); });
+        await waitUntil(() => testStore.getState().devices.selectionGeneration > 0, 2000);
+        const unresolved = {path: 'old-firmware', vendorId: 0x4552, productId,
+          productName: board, protocol: 12, hasResolvedDefinition: false,
+          requiredDefinitionVersion: 'v3' as const, vendorProductId: 0x4552 * 65536 + productId};
+        act(() => { testStore.dispatch(updateUnresolvedDefinitionDevices({'old-firmware': unresolved})); });
+        expect(dialogs.openMessages(app!)).toEqual([expect.stringContaining(
+          koTranslation['You can configure this keyboard after updating its firmware.'],
+        )]);
+        await act(async () => { app!.root.find((node) => node.type === 'button' &&
+          textOf(node) === koTranslation['Firmware update']).props.onClick(); });
+        expect(location).toBe(`/firmware/sirind/${board}`);
+        expect(testStore.getState().settings.showDesignTab).toBe(false);
+        expect(dialogs.openMessages(app!)).toEqual([]);
+        // A later scan must not put the same warning over its download page.
+        act(() => { testStore.dispatch(updateUnresolvedDefinitionDevices({'old-firmware': unresolved})); });
+        expect(dialogs.openMessages(app!)).toEqual([]);
+        act(() => app!.unmount()); app = undefined;
+      }
+    } finally {
+      act(() => app?.unmount()); usbDetect.stopMonitoring();
+      restoreDocument(); navigatorHID.restore();
+    }
   });
 
   test('a keyboard with no definition reaches the upload in one click, and Escape closes the device dialogs', async () => {

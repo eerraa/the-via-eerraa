@@ -63,6 +63,18 @@ mirrors it for the app.
 - A browser grants WebHID access per VID/PID, so after flashing a build with a
   new identity the user authorizes the keyboard once more. The flashing steps
   say so.
+- Pre-split-identity firmware may report an older undifferentiated PID. The
+  manifest's `downloadOnlyIdentities` maps these historical identities to a
+  board's current downloads without guessing a half or serving a modern
+  Custom definition. Existing stock definitions remain usable where present;
+  otherwise the missing-definition notice offers the firmware update page.
+  Already-authorized aliases participate in the ordinary VIA protocol probe
+  and keep their WebHID permission while that notice is open. They remain
+  outside selectable configuration devices until a compatible definition
+  exists; unrelated unknown keyboards retain the existing recognition path.
+  VERSION may be absent, so latest-file guidance makes no claim about the
+  device's measured current version. These aliases are validated separately
+  and never enter the generated definition or advanced-capability inventory.
 - A layout saved before the change carries the old identity. The app loads a
   saved layout onto any identity of the same board, legacy or another maker's,
   or onto its other half on a split board, so a legacy definition keeps the
