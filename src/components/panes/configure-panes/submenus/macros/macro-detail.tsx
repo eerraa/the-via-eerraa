@@ -48,7 +48,7 @@ const ProgressBarContainer = styled.div`
     opacity: 0;
   }
 `;
-const ProgressBar = styled.div<{$over: boolean}>`
+const ProgressBar = styled.div<{$over: boolean; $recording: boolean}>`
   background: var(--bg_control);
   position: relative;
   padding: 5px;
@@ -68,7 +68,7 @@ const ProgressBar = styled.div<{$over: boolean}>`
     width: 100%;
     transform: scaleX(0.1);
     transform-origin: left;
-    transition: transform 0.4s ease-in-out;
+    transition: ${(props) => props.$recording ? 'none' : 'transform 0.4s ease-in-out'};
   }
 `;
 const MacroTab = styled.button<{$selected: boolean}>`
@@ -159,15 +159,16 @@ const printBytesUsed = (bytesUsed: number, bufferSize: number) => {
   )} ${suffix} ${t('space used')}`;
 };
 
-const BufferSizeUsage: React.FC<{bytesUsed: number; capacity: number}> = ({
+const BufferSizeUsage: React.FC<{bytesUsed: number; capacity: number; recording: boolean}> = ({
   bytesUsed,
   capacity,
+  recording,
 }) => {
   const over = bytesUsed > capacity;
   const filled = capacity > 0 ? Math.min(1, bytesUsed / capacity) : +over;
   return (
     <ProgressBarContainer>
-      <ProgressBar $over={over}>
+      <ProgressBar $over={over} $recording={recording}>
         <span style={{transform: `scaleX(${filled})`}} />
       </ProgressBar>
       <ProgressBarTooltip>
@@ -359,6 +360,7 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
       <BufferSizeUsage
         bytesUsed={otherMacroBytes + (recording ? recordingBytes : macroCheck.byteCount)}
         capacity={capacity}
+        recording={recording}
       />
       {showAdvancedView ? (
         <ScriptMode
