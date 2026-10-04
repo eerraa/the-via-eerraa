@@ -39,6 +39,7 @@ import {
   PrimaryAccentLink,
 } from '../firmware-link';
 import {AccentButton, focusRing} from '../inputs/accent-button';
+import {DirtyDot} from '../inputs/dirty-dot';
 import {Announcement} from '../inputs/keycode-palette/palette-parts';
 import {FirmwareKeyboard, FirmwareStage} from './firmware-keyboard';
 import {
@@ -195,6 +196,7 @@ const MakerNavigation: FC<{
   boardId?: string;
 }> = ({makers, maker, boardId}) => {
   const {t} = useTranslation();
+  const connected = useConnected();
   return (
     <MakerTabs
       data-firmware-maker-navigation={!maker && !boardId ? 'chooser' : 'true'}
@@ -203,6 +205,7 @@ const MakerNavigation: FC<{
         {makers.map((candidate) => {
           const keepBoard = !!(boardId && getMakerBoard(candidate, boardId));
           const selected = candidate.id === maker?.id;
+          const isConnected = candidate.id === connected.maker?.id;
           const to = getFirmwarePath(
             candidate.id,
             !selected && keepBoard ? boardId : null,
@@ -214,6 +217,9 @@ const MakerNavigation: FC<{
               $selected={selected}
               aria-current={selected ? 'page' : undefined}
               data-firmware-maker={candidate.id}
+              title={isConnected
+                ? t('Connected keyboard {{board}}', {board: connected.board?.name})
+                : undefined}
               onClick={
                 selected && !boardId
                   ? stayOnFirmwarePage
@@ -228,6 +234,12 @@ const MakerNavigation: FC<{
               }
             >
               {candidate.name}
+              {isConnected && (
+                <DirtyDot
+                  aria-hidden="true"
+                  data-firmware-connected-maker={candidate.id}
+                />
+              )}
             </MakerChoice>
           );
         })}
@@ -601,12 +613,6 @@ const ListView: FC<{
             <MakerNavigation makers={makers} maker={maker} />
             <TabbedBody>
               <Column>
-                {connected.status && (
-                  <ConnectedRow
-                    status={connected.status}
-                    viewing={{maker: null, board: null}}
-                  />
-                )}
                 {maker.boards.map((entry) => {
                   const board = getFirmwareBoardInfo(data, entry.board);
                   const to = getFirmwarePath(maker.id, board.id);

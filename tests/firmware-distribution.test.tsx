@@ -1138,16 +1138,34 @@ describe('firmware page', () => {
     return html.slice(start, Math.min(...ends));
   };
 
-  test('a connected comparison names only its board when browsing another maker', () => {
+  test('browsing another maker marks the connected maker without adding its board to the list', () => {
     const html = renderPage(published(), '/firmware/classicd', usbId('brick60-h7s'), '260910R1');
-    const row = connectedRow(html);
-    expect(row).toContain('>BRICK60 H7S<');
-    expect(row).not.toContain('Connected keyboard');
-    expect(row).toContain('href="/firmware/sirind/brick60-h7s"');
-    expect(row).toMatch(/<a [^>]*href="\/firmware\/sirind\/brick60-h7s"[^>]*>Download<\/a>/);
-    expect(row).not.toContain('/firmware-files/');
-    expect(row).not.toContain(' download=');
-    expect(row).toContain('Current 260910R1 →');
+    expect(html).not.toContain('data-firmware-status=');
+    expect(html).not.toContain('data-firmware-board="brick60-h7s"');
+    expect(html).not.toContain('href="/firmware/sirind/brick60-h7s"');
+    expect(html.match(/data-firmware-connected-maker="sirind"/g)).toHaveLength(1);
+    expect(openingTag(html, 'data-firmware-maker="classicd"')).toContain('aria-current="page"');
+    expect(openingTag(html, 'data-firmware-maker="sirind"')).toContain('title="Connected keyboard BRICK60 H7S"');
+  });
+
+  test('the connected board appears once at its catalog position with its name emphasis', () => {
+    const html = renderPage(published(), '/firmware/sirind', usbId('tomak-tkl-left'), '260910R1');
+    const expected = published().catalog.makers.find(({id}) => id === 'sirind')!.boards.map(({board}) => board);
+    expect([...html.matchAll(/data-firmware-board="([^"]+)"/g)].map((match) => match[1])).toEqual(expected);
+    expect(html.match(/data-firmware-board="tomak-tkl"/g)).toHaveLength(1);
+    expect(openingTag(html, 'data-firmware-board="tomak-tkl"')).toContain('data-firmware-connected="true"');
+    expect(html.match(/data-firmware-connected-maker="sirind"/g)).toHaveLength(1);
+    expect(html).not.toContain('data-firmware-status=');
+  });
+
+  test('maker connection dots require a resolved supported identity and follow a remembered legacy maker', () => {
+    for (const device of [null, {vendorId: 0x1234, productId: 0x5678}, usbId('n86', 'legacy')]) {
+      expect(renderPage(published(), '/firmware?makers=1', device)).not.toContain('data-firmware-connected-maker=');
+    }
+    rememberMaker('n86', 'linworks');
+    const html = renderPage(published(), '/firmware?makers=1', usbId('n86', 'legacy'));
+    expect(html.match(/data-firmware-connected-maker="linworks"/g)).toHaveLength(1);
+    expect(html).not.toContain('data-firmware-connected-maker="sirind"');
   });
 
   test('catalogue entry opens the recognised board and keeps its comparison before the file', () => {
@@ -1722,7 +1740,7 @@ describe('firmware page history', () => {
       for (const entry of [
         {route: '/firmware/classicd', device: null, maker: 'classicd', board: 'classicd-a1', file: 'CLASSICD_A1-V260916R1.zip', version: '260916R1'},
         {route: '/firmware/linworks', device: null, maker: 'linworks', board: 'n86', file: 'N86-V260916R1.zip', version: '260916R1'},
-        {route: '/firmware/classicd', device: usbId('brick60-h7s'), maker: 'sirind', board: 'brick60-h7s', file: 'BRICK60-H7S-V260913R1.zip', version: '260913R1'},
+        {route: '/firmware/sirind', device: usbId('brick60-h7s'), maker: 'sirind', board: 'brick60-h7s', file: 'BRICK60-H7S-V260913R1.zip', version: '260913R1'},
       ]) {
         calls.length = 0;
         rememberMaker('n86', null);

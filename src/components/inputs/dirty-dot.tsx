@@ -2,7 +2,7 @@ import styled from 'styled-components';
 
 export const DIRTY_DOT_GAP = 8;
 
-/** Marks a draft awaiting Apply or a successful save, including SAVE retries. */
+/** Shared dot for pending drafts (including SAVE retries) and connected makers. */
 export const DirtyDot = styled.span`
   display: inline-block;
   flex: none;

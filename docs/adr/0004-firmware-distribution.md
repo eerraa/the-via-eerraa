@@ -133,9 +133,15 @@ or separate return links; the navigation keeps its accessible name. The real
 maker links keep every maker reachable. Long
 names wrap within the viewport, and the content scrolls when space is limited.
 The board list is one column of setting rows: each board with its version
-and download, or "not published". The list's Download link opens that board's
-page without downloading a file; the connected-keyboard row's Download link
-does the same. The drawing, file information and flashing steps are visible
+and download, or "not published". A connected keyboard keeps its name emphasis
+at its original position in the list; it is never duplicated or promoted to a
+separate first row. Its resolved maker's navigation link carries the same dot
+used for pending changes elsewhere in the app, here indicating connection.
+This keeps the list stable while making the maker reachable from another maker's
+list. An unresolved shared legacy identity marks no maker until the user chooses,
+because its USB identity cannot identify which maker sold it. The list's Download
+link opens that board's page without downloading a file. The drawing, file
+information and flashing steps are visible
 before the user starts the ZIP download with the board page's Download link.
 List links keep their real board addresses, so modified clicks can open the
 details through the browser. Only the board page's file link has a native
