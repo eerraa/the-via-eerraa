@@ -884,5 +884,7 @@
   "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "最後に読み取りに成功した時点のキーボードIN間隔設定です。ホストのポーリングや入力遅延の測定値ではありません。",
   "Result for this unit only; it does not confirm all saved settings on the other half.": "このユニットのみの結果です。反対側のすべての設定が保存されたことを保証するものではありません。",
   "Refresh": "更新",
-  "Disconnected": "切断されました"
+  "Disconnected": "切断されました",
+  "Applying...": "適用中...",
+  "Current and saved speeds differ.": "現在の速度と保存された速度が異なります。"
 }

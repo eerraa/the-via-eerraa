@@ -943,7 +943,7 @@
               "content": ["id_qmk_split_link_apply", 9, 9]
             },
             {
-              "label": "Runtime Level",
+              "label": "Current Link Speed",
               "type": "label",
               "content": ["id_qmk_split_link_runtime", 9, 64]
             },

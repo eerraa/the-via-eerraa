@@ -48,6 +48,7 @@ export const isDeferredApplyCommand = (name: string | undefined) =>
 export type MenuDraft = boolean | number | string;
 
 export type DeferredItem = {
+  label?: string;
   type: string;
   content: [string, number, number, ...number[]];
   options?: unknown;

@@ -65,8 +65,8 @@ import {
 import {getEraFirmwareVersionSource} from 'src/utils/era-firmware-version';
 import {useIsEraDefinition} from 'src/utils/use-is-era-definition';
 import {useSubmenuTab} from 'src/utils/use-configure-place';
-import {MenuObservation} from './menu-observation';
-import {observationAddress} from 'src/utils/menu-observation';
+import {LinkApplyStatus, MenuObservation, ObservationRow, useMenuObservation} from './menu-observation';
+import {LINK_RESULT, observationAddress} from 'src/utils/menu-observation';
 import {FeatureHelp} from './feature-help';
 import {FirmwareVersion} from './firmware-version';
 import {ConfigureStatusMessage} from '../status-message';
@@ -214,6 +214,10 @@ const MenuComponent = React.memo((props: any) => {
     .filter((item: any) => !props.hiddenCommands.has(itemCommand(item)));
   const drafts: Record<string, MenuDraft> = props.menuDrafts;
   const rows = deferredRowsOf(items, props.deferredRows);
+  const linkItem = eraDefinition && collectDeferredItems(props.elem).find(
+    (item) => item.held?.result?.content[0] === LINK_RESULT && item.held.running,
+  );
+  const linkObservation = useMenuObservation(linkItem ? LINK_RESULT : undefined);
   const deferredApply = useDeferredApply(
     rows,
     collectDeferredItems(props.elem).flatMap(
@@ -253,6 +257,10 @@ const MenuComponent = React.memo((props: any) => {
       ) : (
         items.map((itemProps: any) => {
           const command = itemCommand(itemProps);
+          if (linkItem && command === LINK_RESULT) {
+            return <ObservationRow key={itemProps.key} label={linkItem.held!.running!.label ?? 'Current Link Speed'}
+              value={linkObservation.levels?.current} />;
+          }
           if (eraDefinition && command && observationAddress(command)) {
             return <MenuObservation key={itemProps.key} command={command} label={itemProps.label} />;
           }
@@ -316,9 +324,11 @@ const MenuComponent = React.memo((props: any) => {
           canApply={deferredApply.canApply}
           onCancel={deferredApply.cancel}
           onApply={deferredApply.apply}
-          status={deferredApply.applied ? t('Applied') : undefined}
+          status={!linkItem && deferredApply.applied ? t('Applied') : undefined}
         >
-          {deferredApply.notApplied ? (
+          {linkItem ? <LinkApplyStatus observation={linkObservation} confirmed={deferredApply.applied} /> : null}
+          {deferredApply.notApplied && (!linkItem || linkObservation.value?.status !== 'ready' ||
+            !/^(Busy|Failed|Cancelled)/.test(linkObservation.value.text)) ? (
             <ApplyNote role="alert">{t('Failed')}</ApplyNote>
           ) : null}
         </DeferredApplyButtons>

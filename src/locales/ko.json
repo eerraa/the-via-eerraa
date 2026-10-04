@@ -884,5 +884,7 @@
   "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "마지막 조회에 성공했을 때의 키보드 IN 간격 설정입니다. 호스트 폴링이나 입력 지연의 측정값이 아닙니다.",
   "Result for this unit only; it does not confirm all saved settings on the other half.": "이 유닛의 결과만 표시합니다. 반대쪽의 모든 설정이 저장되었음을 보장하지 않습니다.",
   "Refresh": "새로고침",
-  "Disconnected": "연결 해제됨"
+  "Disconnected": "연결 해제됨",
+  "Applying...": "적용 중...",
+  "Current and saved speeds differ.": "현재 속도와 저장된 속도가 다릅니다."
 }

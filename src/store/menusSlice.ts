@@ -875,9 +875,9 @@ const customMenuValueReader = (state: RootState, command: string) => {
 
 /** Reads a value the keyboard changes without a CONFIG revision, such as a label. */
 export const refreshCustomMenuValue =
-  (command: string): AppThunk<Promise<void>> =>
+  (command: string): AppThunk<Promise<number[] | null>> =>
   async (dispatch, getState) => {
-    await customMenuValueReader(getState(), command)?.(dispatch, getState);
+    return await customMenuValueReader(getState(), command)?.(dispatch, getState) ?? null;
   };
 
 /**

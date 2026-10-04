@@ -20,9 +20,15 @@ collapsed help; there is no Refresh button.
 The retired diagnostics session UI is not mounted, including for older firmware.
 The support and lifetime boundary is [ADR 0002](0002-h7s-usb-diagnostics.md).
 
-Last Apply stays in SYSTEM / LINK. It is the result of the request on the
-selected unit, not proof of all saved settings on the other half. Pending,
-success, refusal and later failure remain visible as firmware reports them.
+SYSTEM / LINK pairs the editable selection with Current Link Speed, the actual
+runtime level at the last successful automatic read. Editing or requesting Apply
+does not predict that observation. This follows the same selection/current-value
+pattern as USB POLLING. The last request result belongs beside Apply, not in a
+permanent Last Apply row: no-request-since-boot is normal and stays silent.
+Pending, refusal and later failure remain visible; success is shown after this
+screen confirms Apply and clears on the next edit or Cancel. Runtime/stored
+disagreement remains visible even without an Apply request. The result concerns
+the selected unit, not all saved settings on the other half.
 GET of the Apply toggle returning zero is consumption, never success evidence.
 
 ## 2. Link result and confirmation
@@ -43,11 +49,13 @@ responses retry on the next active-screen interval; transport failures retain
 the existing connection policy. The local-result scope note is in collapsed help.
 Connection, selection or definition changes retire outstanding reads.
 
-Value 66 is optional on older firmware: unhandled displays unsupported and
-uses the existing Runtime/Saved confirmation, without claiming a local receipt.
+Value 66 is optional on older firmware: unhandled keeps the current speed visible
+and uses the existing Runtime/Saved confirmation, without claiming a local receipt.
 Timeout, malformed and disconnect are failures, not legacy support evidence.
 ERA observations live outside CONFIG caches so replacement cannot resurrect
-old receipts. The six current Custom definitions expose the read-only address.
+old receipts. Current speed is also a scoped explicit-read observation; it is not
+restored from generic CONFIG data after failure. The six current Custom definitions
+retain the result address for confirmation while naming the runtime label for users.
 Stock V3 definitions omit the three LINK status labels because stock VIA cannot
 keep them current after Apply; usevia.txt directs status inspection to usekb.cc.
 

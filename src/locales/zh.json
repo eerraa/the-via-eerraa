@@ -884,5 +884,7 @@
   "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "上次成功读取时的键盘 IN 间隔设置，并非主机轮询或输入延迟的测量值。",
   "Result for this unit only; it does not confirm all saved settings on the other half.": "仅表示此单元的结果，不保证另一半的所有设置均已保存。",
   "Refresh": "刷新",
-  "Disconnected": "已断开连接"
+  "Disconnected": "已断开连接",
+  "Applying...": "正在应用...",
+  "Current and saved speeds differ.": "当前速度与已保存的速度不同。"
 }

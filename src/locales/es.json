@@ -884,5 +884,7 @@
   "Keyboard IN interval setting at the last successful read; not measured host polling or input latency.": "Intervalo del endpoint IN del teclado en la última lectura correcta; no mide el sondeo del host ni la latencia de entrada.",
   "Result for this unit only; it does not confirm all saved settings on the other half.": "Resultado solo de esta unidad; no confirma todos los ajustes guardados en la otra mitad.",
   "Refresh": "Actualizar",
-  "Disconnected": "Desconectado"
+  "Disconnected": "Desconectado",
+  "Applying...": "Aplicando...",
+  "Current and saved speeds differ.": "La velocidad actual y la guardada son diferentes."
 }

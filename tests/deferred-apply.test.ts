@@ -21,6 +21,7 @@ await import('./setup');
 const {KeyboardAPI} = await import('../src/utils/keyboard-api');
 const {refreshMenuObservation, getMenuObservation} = await import('../src/store/menuObservationThunks');
 const {POLLING_CURRENT, LINK_RESULT} = await import('../src/utils/menu-observation');
+const {ObservationRow} = await import('../src/components/panes/configure-panes/custom/menu-observation');
 const {collectDeferredItems, DeferredApplyButtons, isDeferredApplyCommand} =
   await import('../src/components/panes/configure-panes/custom/deferred-apply');
 
@@ -2424,9 +2425,12 @@ describe('ERA menu drafts', () => {
 
   const resultMenu = () => {
     const menu = linkMenu();
+    menu.content[0].content.find(item => item.content[0] === 'id_qmk_split_link_runtime')!.label = 'Current Link Speed';
     menu.content[0].content.push({label: 'Last Apply', type: 'label', content: [LINK_RESULT, 9, 66]} as any);
     return menu;
   };
+  const currentSpeed = () => textOf(renderer!.root.findAllByType(ObservationRow)
+    .find(node => node.props.label === 'Current Link Speed')!);
   class ResultKeyboard extends LinkKeyboard {
     result = 'No Apply this boot';
     nextResult = 'Applied Medium';
@@ -2442,27 +2446,87 @@ describe('ERA menu drafts', () => {
     };
   }
 
+  test('LINK is quiet on boot, retains the measured speed while editing, and retires failed reads independently of CONFIG', async () => {
+    const keyboard = new ResultKeyboard();
+    keyboard.stored = 'Low';
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    await showLink(store);
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
+    expect(textOf(renderer!.root.findByType(DeferredApplyButtons))).toBe('CancelApply');
+    await chooseSpeed('High');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
+    expect(writes(keyboard)).toEqual([]);
+    // Invalid current-level TEXT must clear the readout, even while CONFIG still
+    // holds a previously valid runtime value. A new CONFIG snapshot is not a read.
+    keyboard.running = 'garbled';
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(currentSpeed()).toBe('Current Link SpeedInvalid response');
+    act(() => store.dispatch(updateSelectedCustomMenuData({devicePath: PATH, menuData: {...linkValues}})));
+    expect(currentSpeed()).toBe('Current Link SpeedInvalid response');
+    keyboard.running = 'Medium';
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    expect(currentSpeed()).toBe('Current Link SpeedMedium');
+    expect(speed().props.value.label).toBe('High');
+  });
+
+  test('LINK current speed does not carry across device selection or accept the previous device late reply', async () => {
+    let signal!: () => void;
+    let release!: () => void;
+    let delay = false;
+    const waiting = new Promise<void>(resolve => { signal = resolve; });
+    class DelayedRuntimeKeyboard extends ResultKeyboard {
+      async sendReport(reportId: number, data: BufferSource) {
+        const bytes = [...new Uint8Array(data instanceof Uint8Array ? data : data as ArrayBuffer)];
+        if (delay && bytes[0] === GET && bytes[1] === 9 && bytes[2] === 64) {
+          delay = false; signal();
+          await new Promise<void>(resolve => { release = resolve; });
+        }
+        return super.sendReport(reportId, data);
+      }
+    }
+    const keyboard = new DelayedRuntimeKeyboard();
+    const opened = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    const other = new ResultKeyboard();
+    other.running = 'High'; other.stored = 'High';
+    const chooseOther = await addKeyboard(opened, other, linkValues);
+    await showLink(opened.store);
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
+    delay = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await waiting;
+    await act(async () => { chooseOther(); });
+    expect(currentSpeed()).not.toBe('Current Link SpeedLow');
+    await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 30)); });
+    expect(currentSpeed()).toBe('Current Link SpeedHigh');
+  });
+
   test('Last Apply reads Pending through completion, catches later failure and retries the same speed', async () => {
     const keyboard = new ResultKeyboard();
     const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
     setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
     await showLink(store);
-    expect(textOf(renderer!.root)).toContain('No Apply this boot');
+    expect(textOf(renderer!.root)).not.toContain('No Apply this boot');
+    expect(textOf(renderer!.root)).not.toContain('Last Apply');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
+    expect(textOf(renderer!.root)).toContain('Current and saved speeds differ.');
     await chooseSpeed('Medium');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
     keyboard.pendingReads = 2;
     await apply();
     expect(keyboard.resultReads).toBeGreaterThan(3);
-    expect(textOf(renderer!.root)).toContain('Applied Medium');
+    expect(currentSpeed()).toBe('Current Link SpeedMedium');
+    expect(textOf(renderer!.root.findByType(DeferredApplyButtons))).toContain('Applied');
     expect(store.getState().drafts).toEqual({});
     keyboard.result = 'Failed - check levels';
     keyboard.running = 'Low';
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
     expect(textOf(renderer!.root)).toContain('Failed - check levels');
     expect(speed().props.value.label).toBe('Low');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
     keyboard.nextResult = 'Already set';
     await chooseSpeed('Medium');
     await apply();
-    expect(textOf(renderer!.root)).toContain('Already set');
+    expect(textOf(renderer!.root.findByType(DeferredApplyButtons))).toContain('Applied');
     // An explicit choice at the same running/stored speed is still an Apply request.
     await chooseSpeed('Medium');
     expect(button('Apply').props.disabled).toBe(false);
@@ -2481,7 +2545,7 @@ describe('ERA menu drafts', () => {
       await apply();
       expect(textOf(renderer!.root)).toContain(result);
       expect(button('Apply').props.disabled).toBe(false);
-      expect(failed()).toBe(true);
+      expect(alerts()).toContain(result);
       expect(store.getState().drafts[PATH]).toBeDefined();
     });
   }
@@ -2492,7 +2556,8 @@ describe('ERA menu drafts', () => {
     const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
     setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
     await showLink(store);
-    expect(textOf(renderer!.root)).toContain('Not supported by this firmware');
+    expect(textOf(renderer!.root)).not.toContain('Not supported by this firmware');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
     await chooseSpeed('Medium');
     await apply();
     expect(store.getState().drafts).toEqual({});
@@ -2537,7 +2602,9 @@ describe('ERA menu drafts', () => {
     keyboard.result = 'Applied High';
     expect(renderer!.root.findAllByType('button').some(node => textOf(node) === 'Refresh')).toBe(false);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
-    expect(textOf(renderer!.root)).toContain('Applied High');
+    expect(getMenuObservation(store.getState(), LINK_RESULT)).toEqual({status: 'ready', text: 'Applied High'});
+    expect(textOf(renderer!.root)).not.toContain('Invalid response');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
     keyboard.result = 'Failed - check levels';
     const baseline = keyboard.resultReads;
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
@@ -2569,7 +2636,7 @@ describe('ERA menu drafts', () => {
     let read!: Promise<unknown>;
     act(() => { read = store.dispatch(refreshMenuObservation(LINK_RESULT)); });
     await waiting;
-    expect(textOf(renderer!.root)).toContain('Applied High');
+    expect(currentSpeed()).toBe('Current Link SpeedLow');
     expect(textOf(renderer!.root)).not.toContain('Loading...');
     let note = renderer!.root.findAllByType('span').find(node => textOf(node).startsWith('Result for this unit only'))!;
     expect(note).toBeDefined();
