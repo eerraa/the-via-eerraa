@@ -475,7 +475,21 @@ export const MacroRecorder: React.FC<{
 
   useLayoutEffect(() => {
     const element = macroSequenceRef.current;
-    if (isRecording || fitted || !element || !viewport.height) return;
+    if (!element || !viewport.height) return;
+    // Line breaks and viewport size can make even a short label scrollable.
+    // Keep only labels with actual overflow in the keyboard tab order.
+    if (isRecording) {
+      element.querySelectorAll('[data-macro-label][tabindex]').forEach((label) => label.removeAttribute('tabindex'));
+      return;
+    }
+    element.querySelectorAll<HTMLElement>('[data-macro-label]').forEach((label) => {
+      if (label.scrollHeight > label.clientHeight + 1 || label.scrollWidth > label.clientWidth + 1) {
+        label.tabIndex = 0;
+      } else {
+        label.removeAttribute('tabindex');
+      }
+    });
+    if (fitted) return;
     element.scrollTop = 0;
     const bottom = element.getBoundingClientRect().bottom - parseFloat(getComputedStyle(element).paddingBottom) - element.clientTop;
     const items = Array.from(element.querySelectorAll<HTMLElement>('[data-macro-event]'));
@@ -582,7 +596,7 @@ export const MacroRecorder: React.FC<{
             disabled={itemsLocked}
           >
             {RawKeycodeSequenceAction.Delay !== action ? (
-              <Label tabIndex={!isRecording && text.length > RECORDING_PREVIEW_CHARACTERS ? 0 : undefined}>
+              <Label data-macro-label="">
                 {action === RawKeycodeSequenceAction.CharacterStream
                   ? shownText.replace(/ /g, '␣')
                   : Array.isArray(actionArg)
