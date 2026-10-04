@@ -40,7 +40,9 @@ import {
 import {
   FIRMWARE_SHARE_DESCRIPTION,
   FIRMWARE_SHARE_TITLE,
+  getMakerSharePage,
   toFirmwareSharePage,
+  toFirmwareShareRedirects,
 } from '../scripts/firmware-share-page';
 import {
   validateFirmwareCatalogAt,
@@ -579,6 +581,37 @@ describe('firmware routes', () => {
 // copy of the shell with their own title and description.
 describe('firmware share page', () => {
   const index = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+
+  test('every canonical maker link has its own crawler title before the fallback', () => {
+    const {makers} = JSON.parse(readFileSync(path.join(repoRoot, 'config/firmware-catalog.json'), 'utf8'));
+    const source = readFileSync(path.join(repoRoot, 'public/_redirects'), 'utf8');
+    const redirects = toFirmwareShareRedirects(source, makers);
+    for (const maker of makers) {
+      const page = toFirmwareSharePage(index, maker.name);
+      expect(page).toContain(`<title>${maker.name} — Firmware</title>`);
+      expect(page).toContain(`property="og:title" content="${maker.name} — Firmware"`);
+      expect(page).not.toContain('og:image');
+      expect(page).toContain('<div id="root"></div>');
+      const destination = `/${getMakerSharePage(maker.id).replace(/\.html$/, '')}`;
+      for (const route of [`/firmware/${maker.id}`, `/firmware/${maker.id}/*`]) {
+        const rule = `${route} ${destination} 200`;
+        expect(redirects).toContain(rule);
+        expect(redirects.indexOf(rule)).toBeLessThan(redirects.indexOf('/firmware/*'));
+      }
+    }
+    expect(redirects).toContain('/firmware    /firmware-app  200');
+    expect(redirects).not.toMatch(/^\/firmware-files\//m);
+    expect(() => toFirmwareShareRedirects('', makers)).toThrow('generic rewrite');
+    expect(() => getMakerSharePage('../outside')).toThrow('invalid maker id');
+  });
+
+  test('maker text is escaped and never interpreted as replacement syntax', () => {
+    const page = toFirmwareSharePage(index, 'A & <B> "C" $& $1');
+    const title = 'A &amp; &lt;B&gt; &quot;C&quot; $&amp; $1 — Firmware';
+    expect(page).toContain(`<title>${title}</title>`);
+    expect(page).toContain(`property="og:title" content="${title}"`);
+    expect(page).not.toContain('<B>');
+  });
 
   test('carries the firmware title and description and drops the VIA logo', () => {
     const page = toFirmwareSharePage(index);

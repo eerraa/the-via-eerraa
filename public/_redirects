@@ -25,7 +25,9 @@
 /errors    /  200
 
 # Firmware downloads: /firmware, /firmware/<maker>, /firmware/<maker>/<board>
-# and the short /firmware/<board>. They rewrite to /firmware-app, the build's copy
+# and the short /firmware/<board>. The build inserts maker rules before the
+# wildcard, targeting /firmware-app-<maker> with that maker's preview title.
+# Remaining routes rewrite to /firmware-app, the build's copy
 # of the shell (scripts/firmware-share-page.ts) whose head carries the firmware
 # title and description: a chat link preview reads only that head. The rewrite
 # keeps the requested URL, which the app reads. Rules apply before static files,

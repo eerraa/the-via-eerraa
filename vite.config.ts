@@ -6,7 +6,9 @@ import {createHtmlPlugin} from 'vite-plugin-html';
 import fs from 'fs';
 import {
   FIRMWARE_SHARE_PAGE,
+  getMakerSharePage,
   toFirmwareSharePage,
+  toFirmwareShareRedirects,
 } from './scripts/firmware-share-page';
 
 const hash = fs.readFileSync('public/definitions/hash.json', 'utf8');
@@ -33,6 +35,17 @@ export default defineConfig({
         fs.writeFileSync(
           path.join('dist', FIRMWARE_SHARE_PAGE),
           toFirmwareSharePage(index),
+        );
+        const {makers} = JSON.parse(fs.readFileSync('config/firmware-catalog.json', 'utf8'));
+        for (const maker of makers) {
+          fs.writeFileSync(
+            path.join('dist', getMakerSharePage(maker.id)),
+            toFirmwareSharePage(index, maker.name),
+          );
+        }
+        fs.writeFileSync(
+          path.join('dist', '_redirects'),
+          toFirmwareShareRedirects(fs.readFileSync('public/_redirects', 'utf8'), makers),
         );
       },
     },

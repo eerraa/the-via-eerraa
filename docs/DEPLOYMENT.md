@@ -86,8 +86,8 @@ not a host deep-link rewrite.
 Rewrite destinations are `/`, not `/index.html`. Cloudflare Pages
 canonicalizes `/index.html` to `/`; using it as the rewrite target can turn
 a route-preserving rewrite into a redirect that loses the requested path.
-The firmware routes rewrite to `/firmware-app` for the same reason, not
-`/firmware-app.html`: that is the build's copy of the shell with the firmware
+The firmware routes rewrite to `/firmware-app` or `/firmware-app-<maker>` for
+the same reason, without `.html`: these are the build's copies of the shell with the firmware
 link-preview head (docs/adr/0004-firmware-distribution.md §4).
 
 A host check after deployment should establish all of the following without
@@ -95,7 +95,9 @@ claiming device validation:
 
 - declared SPA deep links return the app without changing the requested URL;
 - a firmware link such as `/firmware/sirind/brick60-h7s` returns the shell
-  titled `Firmware`, still without changing the URL;
+  titled `SR Industry — Firmware`, still without changing the URL; every
+  canonical maker list link must also expose its catalog display name in
+  `og:title` to crawlers that run no JavaScript;
 - an unknown path returns 404;
 - known definition JSON returns JSON;
 - a missing definition returns 404 rather than HTML.

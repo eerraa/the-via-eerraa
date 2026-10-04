@@ -94,9 +94,9 @@ export const getFirmwareBoardPath = (maker: string | null, board: string) =>
   maker ? getFirmwarePath(maker, board) : getFirmwarePath(board);
 
 /**
- * The browser tab's title. The firmware routes take the share shell's plain
- * title (`scripts/firmware-share-page.ts`), so a shared link and the page it
- * opens read the same; every other route keeps index.html's VIA.
+ * The browser tab's title stays generic for firmware routes. Canonical maker
+ * links have maker-specific crawler titles in scripts/firmware-share-page.ts;
+ * every other route keeps index.html's VIA.
  */
 export const getPageTitle = (location: string) =>
   isFirmwarePath(location) ? 'Firmware' : 'VIA';

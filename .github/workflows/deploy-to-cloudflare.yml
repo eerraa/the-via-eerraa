@@ -55,6 +55,7 @@ jobs:
         run: |
           test -f dist/index.html
           test -f dist/firmware-app.html
+          node -e 'const fs = require("fs"); const {makers} = require("./config/firmware-catalog.json"); for (const maker of makers) { if (!fs.existsSync(`dist/firmware-app-${maker.id}.html`)) throw new Error(`Missing share page: ${maker.id}`); }'
           test -f dist/404.html
           test -f dist/_redirects
           test -f dist/_headers

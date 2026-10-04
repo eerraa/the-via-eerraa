@@ -182,14 +182,18 @@ remembered; otherwise the board's page asks which maker sold it. Unknown
 addresses fall back to catalogue navigation; a valid maker stays selected when
 only its board segment is unknown.
 
-A chat link preview reads only the HTML head and runs no script, so the
-firmware routes rewrite to `/firmware-app`, a copy of the built shell whose
-head carries a plain firmware title and description, without the board and
-firmware supplier's name
-(`scripts/firmware-share-page.ts`, emitted by `vite.config.ts`). The build
-fails when the shell no longer has the tags it rewrites. Rewrite rules apply
-before static files on the host, which is why the routes share this one shell
-rather than one HTML file per board. ZIP files are served from
+A chat link preview reads only the HTML head and runs no script. Canonical
+`/firmware/<maker>` and `/firmware/<maker>/<board>` links therefore rewrite to
+`/firmware-app-<maker>`, a copy of the built shell whose title and `og:title`
+contain the catalog's maker display name followed by `— Firmware`. The build
+generates these shells and their host rules from `config/firmware-catalog.json`
+(`scripts/firmware-share-page.ts`, emitted by `vite.config.ts`), before the
+generic wildcard in `public/_redirects`. Root, short board and unknown-maker links
+retain `/firmware-app` with the generic `Firmware` title. The app's runtime tab
+title remains generic; crawler metadata does not depend on device recognition
+or script execution. All shells boot the same app assets and omit the VIA logo
+preview image. The build fails when the shell no longer has the tags it
+rewrites. No per-board HTML inventory is needed. ZIP files are served from
 `/firmware-files/`, outside `/firmware/`, so a route rewrite can never answer a
 file request with the app shell, for the same reason definitions keep real
 404s.
