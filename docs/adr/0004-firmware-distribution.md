@@ -103,11 +103,12 @@ mirrors it for the app.
 A maker VID resolves directly to its maker, and the PID to the product. A
 legacy identity resolves to the product; when exactly one maker distributes
 that product the app uses that maker, and when several do (the shared N-series)
-the app asks the user to choose rather than guessing. The choice is a per-
-browser convenience, never a claim about the keyboard. When every one of those
-makers has a release newer than VERSION, the update is shown before the
-question, with a version only when they agree: it holds whichever maker sold
-the keyboard, so nothing is guessed.
+the app opens the ordinary firmware maker selection page. It adds no special
+question, board-specific chooser, or remembered maker selection. Explicit
+maker links remain ordinary catalogue navigation and do not establish the
+connected device's maker. When every candidate has a release newer than
+VERSION, the update indicator may show that result, with a version only when
+they agree; its action still opens ordinary firmware selection.
 
 ## 4. Download surface
 
@@ -150,9 +151,10 @@ at its original position in the list; it is never duplicated or promoted to a
 separate first row. Its resolved maker's navigation link carries the same dot
 used for pending changes elsewhere in the app, here indicating connection.
 This keeps the list stable while making the maker reachable from another maker's
-list. An unresolved shared legacy identity marks no maker until the user chooses,
-because its USB identity cannot identify which maker sold it. The list's Download
-link opens that board's page without downloading a file. The drawing, file
+list. A shared legacy identity marks no maker, including after catalogue navigation,
+because its USB identity cannot identify which maker sold it. Its board name
+keeps the connection emphasis in each candidate maker's existing list. The
+list's Download link opens that board's page without downloading a file. The drawing, file
 information and flashing steps are visible
 before the user starts the ZIP download with the board page's Download link.
 List links keep their real board addresses, so modified clicks can open the
@@ -176,22 +178,23 @@ reshuffle whenever a board is added and break scanning.
 
 Distribution starts with a link posted where users gather, so an address alone
 must reach the right board. The header opens a recognised connected board's
-page, including the maker question for a shared legacy identity. `/firmware`
-also prioritises that board; without a recognised board it shows the maker
-choices. Connected-board entry replaces the root address with the board's link,
-so disconnecting to flash leaves its download page open.
+page when its maker is resolved; an unresolved shared identity opens ordinary
+maker selection. `/firmware` prioritises a board only with a resolved maker;
+otherwise it shows the same ordinary maker choices. Connected-board entry
+replaces the root address with the board's link, so disconnecting to flash leaves its download page open.
 `/firmware?makers=1` explicitly opens those choices even while a board
 is connected, so catalogue navigation never traps the user on their own board.
 `/firmware/<maker>` opens that maker's board list, `/firmware/<maker>/<board>`
 opens a board's page, and the short `/firmware/<board>` is resolved in
 `src/utils/firmware-route.ts`. Explicit maker and board links take precedence
 over background device recognition; an explicit device choice in the badge
-navigates to that device's page even from another board or `?makers=1`.
+opens its downloads or ordinary maker selection even from another board or
+`?makers=1`.
 Disconnecting still keeps the download page open. Ids match without regard to
 case. The short link
-opens the board when one maker distributes it, or the maker this browser
-remembered; otherwise the board's page asks which maker sold it. Unknown
-addresses fall back to catalogue navigation; a valid maker stays selected when
+opens the board when one maker distributes it; shared board short links show
+the ordinary maker selection page. Unknown addresses fall back to catalogue
+navigation; a valid maker stays selected when
 only its board segment is unknown.
 
 A chat link preview reads only the HTML head and runs no script. Canonical
@@ -265,8 +268,8 @@ repository growth becomes a real cost.
 Under `CONFIGURE → SYSTEM → VERSION`, one read-only row below Current Version
 reports the result of comparing the VERSION value with the bundled catalog:
 up to date, a newer version with a button that opens the board's download
-page, a maker choice for a legacy shared identity, or no distributed file. The
-header indicator uses the same comparison. The row sends nothing to the
+page, the ordinary firmware selection link for a shared legacy identity,
+or no distributed file. The header indicator uses the same comparison. The row sends nothing to the
 keyboard and adds no SET or SAVE affordance, preserving ADR 0003 §7. An
 unreadable or malformed version makes no claim. VERSION used by the header and
 download page must come from a successful full CONFIG read on the current

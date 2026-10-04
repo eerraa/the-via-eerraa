@@ -16,8 +16,6 @@ import {
   getFirmwareFileName,
   getMakerBoard,
   getStatusMaker,
-  readRememberedMaker,
-  rememberMaker,
   sortMakersForDisplay,
 } from 'src/utils/era-firmware-catalog';
 import {getEraFirmwareReleaseDate} from 'src/utils/era-firmware-version';
@@ -225,11 +223,6 @@ const MakerNavigation: FC<{
                   ? stayOnFirmwarePage
                   : followFirmwareLink(to, {
                       replace: !!maker || !!boardId,
-                      onNavigate: () => {
-                        if (!selected && keepBoard && boardId) {
-                          rememberMaker(boardId, candidate.id);
-                        }
-                      },
                     })
               }
             >
@@ -489,27 +482,6 @@ const ConnectedRow: FC<{
         )}
       </Label>
       <Values>
-        {status.kind === 'choose-maker' && (
-          <>
-            {status.update && (
-              <Muted>
-                {status.update.version
-                  ? t('Latest {{version}}', {version: status.update.version})
-                  : t('New version')}
-              </Muted>
-            )}
-            <Muted>{t('Which maker sold this keyboard?')}</Muted>
-            {status.makers.map((candidate) => (
-              <FirmwareLinkButton
-                key={candidate.id}
-                to={getFirmwarePath(candidate.id, board.id)}
-                onNavigate={() => rememberMaker(board.id, candidate.id)}
-              >
-                {candidate.name}
-              </FirmwareLinkButton>
-            ))}
-          </>
-        )}
         {status.kind === 'unpublished' && <Muted>{t('Not published')}</Muted>}
         {status.kind === 'no-claim' && (
           <VersionText>
@@ -539,16 +511,6 @@ const ConnectedRow: FC<{
           >
             {t('Download')}
           </FirmwareLinkButton>
-        )}
-        {maker && status.makers.length > 1 && (
-          <AccentButton
-            type="button"
-            title={t('Change maker')}
-            aria-label={t('Change maker')}
-            onClick={() => rememberMaker(board.id, null)}
-          >
-            {t('Change')}
-          </AccentButton>
         )}
       </Values>
     </Line>
@@ -662,15 +624,16 @@ const ListView: FC<{
 const BoardView: FC<{
   data: FirmwareData;
   boardId: string;
-  maker: FirmwareMaker | null;
-  makers: FirmwareMaker[];
-}> = ({data, boardId, maker, makers}) => {
+  maker: FirmwareMaker;
+}> = ({data, boardId, maker}) => {
   const {t} = useTranslation();
   const connected = useConnected();
   const board = getFirmwareBoardInfo(data, boardId);
-  const file = maker ? getMakerBoard(maker, boardId)?.file ?? null : null;
+  const file = getMakerBoard(maker, boardId)?.file ?? null;
   const showConnected =
-    connected.status !== null && connected.board?.id === boardId;
+    connected.status !== null &&
+    connected.maker !== null &&
+    connected.board?.id === boardId;
   return (
     <BoardPane data-firmware-page="true" data-firmware-view="board">
       <FirmwareKeyboard data={data} boardId={boardId} />
@@ -699,22 +662,7 @@ const BoardView: FC<{
                     {board.name}
                   </Label>
                   <Values>
-                    {!maker ? (
-                      <>
-                        <Muted>{t('Which maker sold this keyboard?')}</Muted>
-                        {makers.map((candidate) => (
-                          <FirmwareLinkButton
-                            key={candidate.id}
-                            to={getFirmwarePath(candidate.id, boardId)}
-                            onNavigate={() =>
-                              rememberMaker(boardId, candidate.id)
-                            }
-                          >
-                            {candidate.name}
-                          </FirmwareLinkButton>
-                        ))}
-                      </>
-                    ) : file ? (
+                    {file ? (
                       <>
                         <VersionText>{file.version}</VersionText>
                         <Muted>
@@ -766,14 +714,16 @@ export const FirmwarePane: FC = () => {
   const route = resolveFirmwareRoute(
     parseFirmwarePath(location) ?? {maker: null, board: null},
     makers,
-    readRememberedMaker,
   );
   const rootEntry = location.replace(/\/+$/, '') === getFirmwarePath();
   const showConnectedBoard =
-    rootEntry && !!connected.board && !new URLSearchParams(search).has('makers');
+    rootEntry &&
+    !!connected.board &&
+    !!connected.maker &&
+    !new URLSearchParams(search).has('makers');
   // Keep the file page open after the user disconnects to flash the keyboard.
   useEffect(() => {
-    if (showConnectedBoard && connected.board) {
+    if (showConnectedBoard && connected.board && connected.maker) {
       navigate(
         getFirmwareBoardPath(connected.maker?.id ?? null, connected.board.id),
         {replace: true},
@@ -786,20 +736,18 @@ export const FirmwarePane: FC = () => {
         data={data}
         boardId={route.board}
         maker={route.maker}
-        makers={route.makers}
       />
     );
   }
   if (route.maker) {
     return <ListView data={data} makers={makers} maker={route.maker} />;
   }
-  if (showConnectedBoard && connected.board) {
+  if (showConnectedBoard && connected.board && connected.maker) {
     return (
       <BoardView
         data={data}
         boardId={connected.board.id}
         maker={connected.maker}
-        makers={makers.filter((maker) => connected.makerIds.includes(maker.id))}
       />
     );
   }

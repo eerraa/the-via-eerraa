@@ -36,18 +36,17 @@ type RoutableMaker = {id: string; boards: readonly {board: string}[]};
 
 export type ResolvedFirmwareRoute<M extends RoutableMaker> =
   | {view: 'list'; maker: M | null}
-  | {view: 'board'; board: string; maker: M | null; makers: M[]};
+  | {view: 'board'; board: string; maker: M; makers: M[]};
 
 /**
  * What a firmware URL shows. Ids match without regard to case, so a link typed
  * by hand still lands. The short board link opens the board when one maker
- * distributes it, or the one this browser remembered; otherwise the board page
- * asks which maker sold it. Anything unknown falls back to the list.
+ * distributes it; shared boards use the ordinary maker selection page.
+ * Anything unknown falls back to the list.
  */
 export const resolveFirmwareRoute = <M extends RoutableMaker>(
   route: FirmwareRoute,
   makers: readonly M[],
-  rememberedMaker: (boardId: string) => string | null = () => null,
 ): ResolvedFirmwareRoute<M> => {
   const first = route.maker?.toLowerCase() ?? null;
   const second = route.board?.toLowerCase() ?? null;
@@ -61,18 +60,8 @@ export const resolveFirmwareRoute = <M extends RoutableMaker>(
     const distributing = makers.filter((candidate) =>
       candidate.boards.some((entry) => entry.board === first),
     );
-    if (distributing.length > 0) {
-      const remembered = rememberedMaker(first);
-      return {
-        view: 'board',
-        board: first,
-        maker:
-          distributing.length === 1
-            ? distributing[0]
-            : distributing.find((candidate) => candidate.id === remembered) ??
-              null,
-        makers: distributing,
-      };
+    if (distributing.length === 1) {
+      return {view: 'board', board: first, maker: distributing[0], makers: distributing};
     }
   }
   return {view: 'list', maker: null};
@@ -89,9 +78,9 @@ export const getFirmwarePath = (
     )
     .join('/');
 
-/** A board's page: under its maker, or the short link that asks for one. */
+/** Open known maker downloads; otherwise use the ordinary selection page. */
 export const getFirmwareBoardPath = (maker: string | null, board: string) =>
-  maker ? getFirmwarePath(maker, board) : getFirmwarePath(board);
+  maker ? getFirmwarePath(maker, board) : FIRMWARE_ROUTE;
 
 /**
  * The browser tab's title stays generic for firmware routes. Canonical maker

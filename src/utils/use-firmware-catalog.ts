@@ -1,4 +1,3 @@
-import {useSyncExternalStore} from 'react';
 import catalogSource from '../../config/firmware-catalog.json';
 import manifestSource from '../../config/era-definitions.manifest.json';
 import {useAppSelector} from 'src/store/hooks';
@@ -10,9 +9,6 @@ import {
   type FirmwareManifest,
   type FirmwareUpdateStatus,
   getFirmwareUpdateStatus,
-  getRememberedMakerRevision,
-  readRememberedMaker,
-  subscribeRememberedMakers,
 } from './era-firmware-catalog';
 import {
   decodeEraFirmwareVersion,
@@ -35,14 +31,6 @@ export const setFirmwareDataForTesting = (data: FirmwareData | null) => {
 export const getFirmwareData = (): FirmwareData =>
   firmwareDataOverride ?? bundledFirmwareData;
 
-/** Re-render when a maker choice for a legacy shared board changes. */
-export const useRememberedMakerRevision = () =>
-  useSyncExternalStore(
-    subscribeRememberedMakers,
-    getRememberedMakerRevision,
-    getRememberedMakerRevision,
-  );
-
 /**
  * Update status of the selected keyboard. `version` is the VERSION value when
  * the caller already holds it; otherwise it is read from the loaded custom menu
@@ -56,7 +44,6 @@ export const useSelectedFirmwareUpdate = (
     | Record<string, unknown>
     | null
     | undefined;
-  useRememberedMakerRevision();
   if (!device) {
     return null;
   }
@@ -70,6 +57,5 @@ export const useSelectedFirmwareUpdate = (
     vendorId: device.vendorId,
     productId: device.productId,
     version: current,
-    rememberedMaker: readRememberedMaker,
   });
 };

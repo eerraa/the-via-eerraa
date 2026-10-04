@@ -146,7 +146,7 @@ const FirmwareEntry = () => {
     ? getFirmwareBoardPath(maker?.id ?? null, board.id)
     : FIRMWARE_ROUTE;
   // A legacy shared board counts once every maker's release is newer; the
-  // number shows only when they agree, and the link still asks for the maker.
+  // number shows only when they agree, and the link opens ordinary selection.
   const newer =
     status?.kind === 'update-available'
       ? {version: status.file.version}

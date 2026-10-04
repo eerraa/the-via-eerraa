@@ -2,7 +2,6 @@ import {navigate} from 'wouter/use-location';
 import {
   getFirmwareUpdateStatus,
   getStatusMaker,
-  readRememberedMaker,
 } from 'src/utils/era-firmware-catalog';
 import {getFirmwareBoardPath} from 'src/utils/firmware-route';
 import {getFirmwareData} from 'src/utils/use-firmware-catalog';
@@ -19,7 +18,6 @@ export const FirmwareDevice = () => {
         const status = getFirmwareUpdateStatus(getFirmwareData(), {
           ...device,
           version: null,
-          rememberedMaker: readRememberedMaker,
         });
         if ('board' in status) {
           navigate(

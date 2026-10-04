@@ -342,7 +342,7 @@ export type FirmwareIdentity = {
 /**
  * ADR 0004 §3. A VID/PID resolves to a board through the manifest. A maker VID
  * narrows the makers to that maker; a legacy identity leaves every maker that
- * distributes the board, and the caller asks when there is more than one.
+ * distributes the board, and unresolved makers use the ordinary firmware selection page.
  */
 export const resolveFirmwareIdentity = (
   data: FirmwareData,
@@ -421,12 +421,10 @@ export const getFirmwareUpdateStatus = (
     vendorId,
     productId,
     version,
-    rememberedMaker,
   }: {
     vendorId: number;
     productId: number;
     version: string | null;
-    rememberedMaker?: (boardId: string) => string | null;
   },
 ): FirmwareUpdateStatus => {
   const identity = resolveFirmwareIdentity(data, vendorId, productId);
@@ -434,37 +432,33 @@ export const getFirmwareUpdateStatus = (
     return {kind: 'not-distributed'};
   }
   const {board, makers} = identity;
-  let maker: FirmwareMaker | undefined = makers[0];
   if (makers.length > 1) {
-    const remembered = rememberedMaker?.(board.id);
-    maker = makers.find((candidate) => candidate.id === remembered);
-    if (!maker) {
-      const files = makers.map(
-        (candidate) => getMakerBoard(candidate, board.id)?.file ?? null,
-      );
-      if (!files.some(Boolean)) {
-        return {kind: 'unpublished', board, maker: null, makers};
-      }
-      // Still no guess at the maker: the update is shown only when it holds
-      // for every one of them.
-      const allNewer = files.every(
-        (file) =>
-          file !== null &&
-          version !== null &&
-          (compareEraFirmwareVersions(version, file.version) ?? 0) < 0,
-      );
-      if (!allNewer) {
-        return {kind: 'choose-maker', board, makers};
-      }
-      const versions = new Set(files.map((file) => file?.version));
-      return {
-        kind: 'choose-maker',
-        board,
-        makers,
-        update: {version: versions.size === 1 ? files[0]?.version ?? null : null},
-      };
+    const files = makers.map(
+      (candidate) => getMakerBoard(candidate, board.id)?.file ?? null,
+    );
+    if (!files.some(Boolean)) {
+      return {kind: 'unpublished', board, maker: null, makers};
     }
+    // Still no guess at the maker: the update is shown only when it holds
+    // for every one of them.
+    const allNewer = files.every(
+      (file) =>
+        file !== null &&
+        version !== null &&
+        (compareEraFirmwareVersions(version, file.version) ?? 0) < 0,
+    );
+    if (!allNewer) {
+      return {kind: 'choose-maker', board, makers};
+    }
+    const versions = new Set(files.map((file) => file?.version));
+    return {
+      kind: 'choose-maker',
+      board,
+      makers,
+      update: {version: versions.size === 1 ? files[0]?.version ?? null : null},
+    };
   }
+  const maker = makers[0];
   const file = getMakerBoard(maker, board.id)?.file ?? null;
   if (!file) {
     return {kind: 'unpublished', board, maker, makers};
@@ -493,53 +487,3 @@ export const formatFirmwareFileSize = (bytes: number) =>
 
 export const getFirmwareFileName = (file: FirmwareFile) =>
   file.url.slice(file.url.lastIndexOf('/') + 1);
-
-// Which maker sold a legacy shared board is a per-browser convenience, never a
-// claim about the keyboard. Storage can be missing or blocked; every access is
-// guarded and the app works without it.
-const MAKER_CHOICE_PREFIX = 'era-firmware-maker:';
-const makerChoiceListeners = new Set<() => void>();
-// The latest choice in this page view also survives blocked storage reads/writes.
-const pageViewChoices = new Map<string, string | null>();
-let makerChoiceRevision = 0;
-
-export const readRememberedMaker = (boardId: string): string | null => {
-  if (pageViewChoices.has(boardId)) {
-    return pageViewChoices.get(boardId) ?? null;
-  }
-  try {
-    const storage = globalThis.localStorage;
-    const stored = storage?.getItem(MAKER_CHOICE_PREFIX + boardId);
-    if (stored) {
-      return stored;
-    }
-  } catch {
-    // Fall through to the page-view choice.
-  }
-  return pageViewChoices.get(boardId) ?? null;
-};
-
-export const rememberMaker = (boardId: string, makerId: string | null) => {
-  pageViewChoices.set(boardId, makerId);
-  try {
-    const storage = globalThis.localStorage;
-    if (makerId === null) {
-      storage?.removeItem(MAKER_CHOICE_PREFIX + boardId);
-    } else {
-      storage?.setItem(MAKER_CHOICE_PREFIX + boardId, makerId);
-    }
-  } catch {
-    // Storage blocked or full: the page-view choice above still applies.
-  }
-  makerChoiceRevision += 1;
-  makerChoiceListeners.forEach((listener) => listener());
-};
-
-export const subscribeRememberedMakers = (listener: () => void) => {
-  makerChoiceListeners.add(listener);
-  return () => {
-    makerChoiceListeners.delete(listener);
-  };
-};
-
-export const getRememberedMakerRevision = () => makerChoiceRevision;

@@ -2,14 +2,13 @@ import {type FC} from 'react';
 import {useTranslation} from 'react-i18next';
 import styled from 'styled-components';
 import {RangeValueDisplay} from '../../../inputs/accent-range';
-import {AccentButton} from '../../../inputs/accent-button';
 import {FirmwareLinkButton} from '../../../firmware-link';
 import {ControlRow, Detail, Label} from '../../grid';
 import {
   type EraFirmwareVersionSource,
   readEraFirmwareVersion,
 } from 'src/utils/era-firmware-version';
-import {getStatusMaker, rememberMaker} from 'src/utils/era-firmware-catalog';
+import {getStatusMaker} from 'src/utils/era-firmware-catalog';
 import {FIRMWARE_ROUTE, getFirmwareBoardPath} from 'src/utils/firmware-route';
 import {useSelectedFirmwareUpdate} from 'src/utils/use-firmware-catalog';
 import {useAppSelector} from 'src/store/hooks';
@@ -94,16 +93,7 @@ const FirmwareUpdateRow: FC<{version: string | null}> = ({version}) => {
                 : t('New version')}
             </Muted>
           )}
-          <span>{t('Which maker sold this keyboard?')}</span>
-          {status.makers.map((candidate) => (
-            <AccentButton
-              key={candidate.id}
-              type="button"
-              onClick={() => rememberMaker(status.board.id, candidate.id)}
-            >
-              {candidate.name}
-            </AccentButton>
-          ))}
+          <FirmwareLinkButton to={boardPath}>{t('Open')}</FirmwareLinkButton>
         </>
       );
       break;

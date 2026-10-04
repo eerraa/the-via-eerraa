@@ -19,8 +19,6 @@ import {
   type FirmwareFile,
   type FirmwareManifest,
   getFirmwareUpdateStatus,
-  readRememberedMaker,
-  rememberMaker,
   resolveFirmwareIdentity,
   sortMakersForDisplay,
   validateFirmwareCatalog,
@@ -165,31 +163,8 @@ const everyMakerPublished = (...versions: [string, string, string]) => {
 
 afterEach(() => {
   for (const board of ['n86', 'n87', 'n8x']) {
-    rememberMaker(board, null);
+    globalThis.localStorage.removeItem(`era-firmware-maker:${board}`);
   }
-});
-
-test('a failed maker storage write or removal overrides stale storage for this page', () => {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!;
-  const storage = globalThis.localStorage;
-  storage.setItem('era-firmware-maker:n86', 'linworks');
-  Object.defineProperty(globalThis, 'localStorage', {configurable: true, value: {
-    getItem: (key: string) => storage.getItem(key),
-    setItem: () => { throw new Error('Storage full'); },
-    removeItem: () => { throw new Error('Storage blocked'); },
-  }});
-  try {
-    rememberMaker('n86', 'sirind');
-    expect(readRememberedMaker('n86')).toBe('sirind');
-    rememberMaker('n86', null);
-    expect(readRememberedMaker('n86')).toBeNull();
-    expect(storage.getItem('era-firmware-maker:n86')).toBe('linworks');
-  } finally {
-    Object.defineProperty(globalThis, 'localStorage', descriptor);
-  }
-  rememberMaker('n86', 'keynetix');
-  expect(readRememberedMaker('n86')).toBe('keynetix');
-  expect(storage.getItem('era-firmware-maker:n86')).toBe('keynetix');
 });
 
 describe('firmware catalog', () => {
@@ -430,7 +405,6 @@ describe('update status', () => {
     getFirmwareUpdateStatus(data, {
       ...usbId(definitionId, served),
       version,
-      rememberedMaker: readRememberedMaker,
     });
 
   test('compares the keyboard version with the maker file', () => {
@@ -444,24 +418,20 @@ describe('update status', () => {
     expect(statusFor(data, 'tomak-tkl-right', '260913R1').kind).toBe('update-available');
   });
 
-  test('asks which maker sold a shared board, then remembers the answer', () => {
+  test('shared legacy identity ignores obsolete remembered makers', () => {
     const data = published();
-    const ask = statusFor(data, 'n86', '260913R1', 'legacy');
-    expect(ask.kind).toBe('choose-maker');
-    expect('makers' in ask && ask.makers.map(({id}) => id)).toEqual([
-      'keynetix',
-      'linworks',
-      'sirind',
-    ]);
-    rememberMaker('n86', 'linworks');
-    const chosen = statusFor(data, 'n86', '260913R1', 'legacy');
-    expect(chosen.kind).toBe('update-available');
-    expect('maker' in chosen && chosen.maker?.id).toBe('linworks');
-    rememberMaker('n86', 'keynetix');
-    expect(statusFor(data, 'n86', '260913R1', 'legacy').kind).toBe('unpublished');
+    for (const maker of ['linworks', 'sirind', 'keynetix']) {
+      localStorage.setItem('era-firmware-maker:n86', maker);
+      const status = statusFor(data, 'n86', '260913R1', 'legacy');
+      expect(status.kind).toBe('choose-maker');
+      expect('makers' in status && status.makers.map(({id}) => id)).toEqual([
+        'keynetix', 'linworks', 'sirind',
+      ]);
+      expect('maker' in status).toBe(false);
+    }
   });
 
-  // The maker is still asked, never guessed: the update only counts when it
+  // The maker remains unresolved: the update only counts when it
   // holds whichever maker sold the keyboard.
   test('a shared board is due an update when every maker has a newer file', () => {
     expect(
@@ -485,12 +455,7 @@ describe('update status', () => {
       expect('update' in status).toBe(false);
     }
 
-    // A remembered maker is compared on its own.
-    rememberMaker('n86', 'linworks');
-    expect(
-      statusFor(everyMakerPublished('260916R1', '260913R1', '260916R1'), 'n86', '260913R1', 'legacy')
-        .kind,
-    ).toBe('up-to-date');
+
   });
 
   test('a listed board without a published file makes no version claim', () => {
@@ -533,11 +498,10 @@ describe('firmware routes', () => {
     expect(getFirmwarePath('sirind', 'n86')).toBe('/firmware/sirind/n86');
   });
 
-  const resolve = (location: string, remembered: string | null = null) => {
+  const resolve = (location: string) => {
     const route = resolveFirmwareRoute(
       parseFirmwarePath(location)!,
       committed.catalog.makers,
-      () => remembered,
     );
     return route.view === 'board'
       ? {
@@ -559,15 +523,13 @@ describe('firmware routes', () => {
     expect(resolve('/firmware/Sirind')).toEqual({view: 'list', maker: 'sirind'});
   });
 
-  test('the short link finds the maker, or asks when several sell the board', () => {
+  test('shared short board links use ordinary selection, unique boards open details', () => {
     expect(resolve('/firmware/brick60-h7s')).toEqual({
       view: 'board', board: 'brick60-h7s', maker: 'sirind', makers: ['sirind'],
     });
-    expect(resolve('/firmware/n86')).toEqual({
-      view: 'board', board: 'n86', maker: null, makers: ['keynetix', 'linworks', 'sirind'],
-    });
-    // The maker this browser remembered for the board is taken without asking.
-    expect(resolve('/firmware/n86', 'linworks')).toMatchObject({maker: 'linworks'});
+    for (const board of ['n8x', 'n86', 'n87']) {
+      expect(resolve(`/firmware/${board}`)).toEqual({view: 'list', maker: null});
+    }
   });
 
   test('anything unknown falls back to the list', () => {
@@ -852,21 +814,16 @@ describe('VERSION firmware update row', () => {
       } else {
         expect(html).toContain('data-era-firmware-update="choose-maker"');
         expect(html).toContain(`Latest ${latest}`);
-        for (const maker of makers) {
-          expect(html).toContain(`>${maker.name}</button>`);
-          const chosen = getFirmwareUpdateStatus(committed, {
-            ...device, version: '260913R1', rememberedMaker: () => maker.id,
-          });
-          expect(chosen.kind).toBe('update-available');
-          expect('maker' in chosen && chosen.maker?.id).toBe(maker.id);
-        }
+        expect(html).toContain('href="/firmware"');
+        expect(html).not.toContain('Which maker sold this keyboard?');
+        expect(html).not.toContain('<button');
       }
       // Very old firmware may not supply VERSION. Still offer the latest
-      // download or maker choice without claiming a measured current version.
+      // download or ordinary selection without claiming a measured current version.
       const unknown = renderVersionRow(committed, device, '');
       expect(unknown).not.toContain('New version');
       expect(unknown).not.toContain('Up to date');
-      expect(unknown).toContain(makers.length === 1 ? `Latest ${latest}` : 'Which maker sold this keyboard?');
+      expect(unknown).toContain(makers.length === 1 ? `Latest ${latest}` : 'href="/firmware"');
       readOnly(html);
     });
   }
@@ -893,19 +850,17 @@ describe('VERSION firmware update row', () => {
     readOnly(html);
   });
 
-  test('a legacy shared board asks which maker sold it', () => {
+  test('a legacy shared board opens ordinary firmware selection from VERSION', () => {
     const html = renderVersionRow(published(), usbId('n86', 'legacy'), '260913R1');
     expect(html).toContain('data-era-firmware-update="choose-maker"');
-    expect(html).toContain('Which maker sold this keyboard?');
-    expect((html.match(/<button/g) ?? []).length).toBe(3);
-    for (const name of ['KEYNETIX', 'LINWORKS', 'SR Industry']) {
-      expect(html).toContain(`>${name}</button>`);
-    }
+    expect(html).toMatch(/<a [^>]*href="\/firmware"[^>]*>Open<\/a>/);
+    expect(html).not.toContain('Which maker sold this keyboard?');
+    expect(html).not.toContain('<button');
     expect(html).not.toContain('Latest');
     readOnly(html);
   });
 
-  test('a shared board shows a newer release from every maker before asking', () => {
+  test('a shared update keeps its version and opens ordinary selection', () => {
     const html = renderVersionRow(
       everyMakerPublished('260916R1', '260916R1', '260916R1'),
       usbId('n86', 'legacy'),
@@ -914,9 +869,9 @@ describe('VERSION firmware update row', () => {
     expect(html).toContain('data-era-firmware-update="choose-maker"');
     const latest = html.indexOf('Latest 260916R1');
     expect(latest).toBeGreaterThan(-1);
-    expect(latest).toBeLessThan(html.indexOf('Which maker sold this keyboard?'));
-    expect((html.match(/<button/g) ?? []).length).toBe(3);
-    expect(html).not.toContain('href=');
+    expect(html).toContain('href="/firmware"');
+    expect(html).not.toContain('Which maker sold this keyboard?');
+    expect(html).not.toContain('<button');
 
     const mixed = renderVersionRow(
       everyMakerPublished('260916R1', '260917R1', '260916R1'),
@@ -1229,15 +1184,16 @@ describe('firmware page', () => {
     expect(html).not.toContain('USB identity');
   });
 
-  test('the short link opens the board, and a shared board asks for its maker', () => {
+  test('short links open unique boards or ordinary firmware selection', () => {
     const short = renderPage(published(), '/firmware/brick60-h7s');
     expect(short).toContain('data-firmware-view="board"');
     expect(short).toContain('BRICK60-H7S-V260913R1.zip');
 
     const shared = renderPage(published(), '/firmware/n86');
-    expect(shared).toContain('Which maker sold this keyboard?');
-    expect(shared).toContain('href="/firmware/linworks/n86"');
-    expect(shared).toContain('href="/firmware/sirind/n86"');
+    expect(shared).toContain('data-firmware-view="makers"');
+    expect(shared).not.toContain('Which maker sold this keyboard?');
+    expect(shared).toContain('href="/firmware/linworks"');
+    expect(shared).toContain('href="/firmware/sirind"');
     expect(shared).not.toContain(' download=');
   });
 
@@ -1270,37 +1226,30 @@ describe('firmware page', () => {
     expect(html).not.toContain('data-firmware-status=');
   });
 
-  test('maker connection dots require a resolved supported identity and follow a remembered legacy maker', () => {
-    for (const device of [null, {vendorId: 0x1234, productId: 0x5678}, usbId('n86', 'legacy')]) {
-      expect(renderPage(published(), '/firmware?makers=1', device)).not.toContain('data-firmware-connected-maker=');
+  test('maker dots never use an obsolete remembered shared identity', () => {
+    for (const maker of ['keynetix', 'linworks', 'sirind']) {
+      localStorage.setItem('era-firmware-maker:n86', maker);
+      for (const device of [null, {vendorId: 0x1234, productId: 0x5678}, usbId('n86', 'legacy')]) {
+        expect(renderPage(published(), '/firmware?makers=1', device)).not.toContain('data-firmware-connected-maker=');
+      }
+      const explicit = renderPage(published(), '/firmware/linworks', usbId('n86', 'legacy'));
+      expect(explicit).toContain('data-firmware-connected="true"');
+      expect(explicit).not.toContain('data-firmware-connected-maker=');
     }
-    rememberMaker('n86', 'linworks');
-    const html = renderPage(published(), '/firmware?makers=1', usbId('n86', 'legacy'));
-    expect(html.match(/data-firmware-connected-maker="linworks"/g)).toHaveLength(1);
-    expect(html).not.toContain('data-firmware-connected-maker="sirind"');
   });
 
-  test('catalogue entry opens the recognised board and keeps its comparison before the file', () => {
-    rememberMaker('n86', 'sirind');
-    const html = renderPage(published(), '/firmware', usbId('n86', 'legacy'), '260913R1');
+  test('catalogue entry opens a maker-identified board and keeps its comparison', () => {
+    const html = renderPage(published(), '/firmware', usbId('n86'), '260913R1');
     const row = connectedRow(html);
     expect(html).toContain('data-firmware-view="board"');
     expect(html).toContain('data-firmware-keyboard="n86"');
     expect(row).toContain('>N86<');
-    expect(row).not.toContain('Connected keyboard');
     expect(row).not.toContain('href=');
     expect(row).toContain('Current 260913R1 →');
     expect(row).toContain('Latest 260916R1');
-    expect(row).not.toContain(' download=');
     expect(html.match(/download="N86-V260916R1.zip"/g)).toHaveLength(1);
-    expect(html.indexOf('data-firmware-status=')).toBeLessThan(html.indexOf('data-firmware-file='));
-    expect(row).not.toContain('Show file');
-    // One short verb; the name still says what it changes.
-    expect(row).toMatch(/<button [^>]*title="Change maker"[^>]*>Change<\/button>/);
-    // The remembered maker resolves the board; it is not guessed from display order.
-    expect(openingTag(html, 'data-firmware-maker="sirind"')).toContain(
-      'aria-current="page"',
-    );
+    expect(html).not.toContain('Change maker');
+    expect(openingTag(html, 'data-firmware-maker="linworks"')).toContain('aria-current="page"');
     noSelectors(html);
   });
 
@@ -1315,22 +1264,17 @@ describe('firmware page', () => {
     expect(html).not.toContain(' download=');
   });
 
-  test('a shared unpublished board opens without choosing its first maker', () => {
+  test('shared unpublished identities use ordinary selection without a guessed maker', () => {
     const html = renderPage(unpublishedData(), '/firmware', usbId('n86', 'legacy'), '260913R1');
-    const row = connectedRow(html);
-    expect(html).toContain('data-firmware-view="board"');
-    expect(html).toContain('data-firmware-keyboard="n86"');
-    expect(row).not.toContain('href=');
-    expect(row).toContain('Not published');
-    expect(html).toContain('Which maker sold this keyboard?');
-    expect(html).toContain('href="/firmware/keynetix/n86"');
+    expect(html).toContain('data-firmware-view="makers"');
+    expect(html).not.toContain('data-firmware-keyboard=');
+    expect(html).not.toContain('Which maker sold this keyboard?');
     expect(html).not.toContain('aria-current="page"');
     noSelectors(html);
   });
 
   test('on its own page the connected row neither links to itself nor repeats the file', () => {
-    rememberMaker('n86', 'sirind');
-    const html = renderPage(published(), '/firmware/sirind/n86', usbId('n86', 'legacy'), '260913R1');
+    const html = renderPage(published(), '/firmware/linworks/n86', usbId('n86'), '260913R1');
     const row = connectedRow(html);
     expect(row).toContain('>N86<');
     expect(row).not.toContain('Connected keyboard');
@@ -1339,25 +1283,26 @@ describe('firmware page', () => {
     expect(html).toContain('download="N86-V260916R1.zip"');
   });
 
-  test('an unchosen shared board asks for the maker on the page too', () => {
-    const html = renderPage(published(), '/firmware', usbId('n86', 'legacy'), '260913R1');
-    expect(html).toContain('data-firmware-status="choose-maker"');
-    expect(html).toContain('href="/firmware/linworks/n86"');
-    expect(connectedRow(html)).not.toContain('Latest');
+  test('all shared legacy boards open the same ordinary firmware selection', () => {
+    for (const board of ['n8x', 'n86', 'n87']) {
+      localStorage.setItem(`era-firmware-maker:${board}`, 'linworks');
+      const html = renderPage(published(), '/firmware', usbId(board, 'legacy'), '260913R1');
+      expect(html).toContain('data-firmware-view="makers"');
+      expect(html).not.toContain('data-firmware-keyboard=');
+      expect(html).not.toContain('data-firmware-status=');
+      expect(html).not.toContain('Which maker sold this keyboard?');
+      expect(html).not.toContain('data-firmware-connected-maker=');
+      expect(makerOrder(html)).toEqual(makerIds);
+    }
   });
 
-  test('an unchosen shared board with a newer release from every maker says so first', () => {
-    const html = renderPage(
-      everyMakerPublished('260916R1', '260916R1', '260916R1'),
-      '/firmware',
-      usbId('n86', 'legacy'),
-      '260913R1',
-    );
-    const row = connectedRow(html);
-    const latest = row.indexOf('Latest 260916R1');
-    expect(latest).toBeGreaterThan(-1);
-    expect(latest).toBeLessThan(row.indexOf('Which maker sold this keyboard?'));
-    expect(row).not.toContain(' download=');
+  test('shared update does not add a special row to ordinary selection', () => {
+    const html = renderPage(everyMakerPublished('260916R1', '260916R1', '260916R1'),
+      '/firmware', usbId('n86', 'legacy'), '260913R1');
+    expect(html).toContain('data-firmware-view="makers"');
+    expect(html).not.toContain('data-firmware-status=');
+    expect(html).not.toContain('Which maker sold this keyboard?');
+    expect(html).not.toContain(' download=');
   });
 
   test('an explicit board takes precedence over the device and its current maker tab opens the list', () => {
@@ -1369,13 +1314,14 @@ describe('firmware page', () => {
     noSelectors(known);
   });
 
-  test('a shared board link keeps its maker unchosen with every maker visible', () => {
-    const asked = renderPage(published(), '/firmware/n86');
-    expect(asked).toContain('data-firmware-keyboard="n86"');
-    expect(asked).not.toContain('aria-current="page"');
-    expect(makerOrder(asked)).toEqual(makerIds);
-    expect(asked).toContain('Which maker sold this keyboard?');
-    noSelectors(asked);
+  test('shared short board links show ordinary selection with every maker visible', () => {
+    const html = renderPage(published(), '/firmware/n86');
+    expect(html).toContain('data-firmware-view="makers"');
+    expect(html).not.toContain('data-firmware-keyboard=');
+    expect(html).not.toContain('aria-current="page"');
+    expect(makerOrder(html)).toEqual(makerIds);
+    expect(html).not.toContain('Which maker sold this keyboard?');
+    noSelectors(html);
   });
 });
 
@@ -1412,14 +1358,14 @@ describe('header firmware entry', () => {
     expect(html).not.toContain('Download');
   });
 
-  test('a shared board lights it only for a newer release from every maker, and goes to the question', () => {
+  test('a shared board lights it only for a newer release from every maker, and opens ordinary selection', () => {
     const due = renderHeader(
       everyMakerPublished('260916R1', '260916R1', '260916R1'),
       usbId('n86', 'legacy'),
       '260913R1',
     );
     expect(entry(due)).toContain('data-firmware-update="available"');
-    expect(entry(due)).toContain('href="/firmware/n86"');
+    expect(entry(due)).toContain('href="/firmware"');
     expect(due).toContain('>N86 260916R1<');
 
     // Makers on different versions: no number.
@@ -1434,7 +1380,7 @@ describe('header firmware entry', () => {
     for (const data of [published(), unpublishedData()]) {
       const plain = renderHeader(data, usbId('n86', 'legacy'), '260913R1');
       expect(entry(plain)).not.toContain('data-firmware-update');
-      expect(entry(plain)).toContain('href="/firmware/n86"');
+      expect(entry(plain)).toContain('href="/firmware"');
     }
   });
 });
@@ -1583,7 +1529,7 @@ describe('firmware HID device badge', () => {
     };
   };
 
-  test('authorizing every historical VID/PID opens its board or maker question', async () => {
+  test('authorizing every historical VID/PID opens its board or ordinary selection', async () => {
     const context = setup();
     try {
       const identities = [
@@ -1598,7 +1544,7 @@ describe('firmware HID device badge', () => {
         context.request.mockResolvedValue({...device, __path: `historical-${device.productId}`} as any);
         await act(async () => { await context.button('Authorize device').props.onClick(); });
         expect(context.navigations.at(-1)).toBe(
-          maker ? `/firmware/${maker}/${identity.board.id}` : `/firmware/${identity.board.id}`,
+          maker ? `/firmware/${maker}/${identity.board.id}` : '/firmware',
         );
       }
     } finally { context.cleanup(); }
@@ -1610,15 +1556,15 @@ describe('firmware HID device badge', () => {
       for (const [device, destination] of [
         [usbId('may65-h7s'), '/firmware/keynetix/may65-h7s'],
         [usbId('classicd-a1'), '/firmware/classicd/classicd-a1'],
-        [usbId('n86', 'legacy'), '/firmware/n86'],
+        [usbId('n86', 'legacy'), '/firmware'],
       ] as const) {
         context.request.mockResolvedValue({...device, __path: 'new-keyboard'} as any);
         await act(async () => { await context.button('Authorize device').props.onClick(); });
         expect(context.navigations.at(-1)).toBe(destination);
       }
-      rememberMaker('n86', 'linworks');
+      localStorage.setItem('era-firmware-maker:n86', 'linworks');
       await act(async () => { await context.button('Authorize device').props.onClick(); });
-      expect(context.navigations.at(-1)).toBe('/firmware/linworks/n86');
+      expect(context.navigations.at(-1)).toBe('/firmware');
       expect(context.dispatch).toHaveBeenCalledTimes(4);
       expect(context.dispatch.mock.calls.every(([action]) => typeof action === 'function')).toBe(true);
     } finally { context.cleanup(); }
@@ -1695,7 +1641,6 @@ describe('firmware page history', () => {
       for (const entry of [
         {route: '/firmware', device: usbId('classicd-a1'), board: 'classicd-a1', to: '/firmware/classicd/classicd-a1'},
         {route: '/firmware/', device: usbId('classicd-a1'), board: 'classicd-a1', to: '/firmware/classicd/classicd-a1'},
-        {route: '/firmware', device: usbId('n86', 'legacy'), board: 'n86', to: '/firmware/n86'},
       ]) {
         withPageLocation(entry.route, (initialPath) => {
           let pathname = initialPath;
@@ -1856,7 +1801,7 @@ describe('firmware page history', () => {
         ['/firmware?makers=1', 'makers'],
         ['/firmware/classicd', 'list'],
         ['/firmware/classicd/classicd-a1', 'board'],
-        ['/firmware/n86', 'board'],
+        ['/firmware/n86', 'makers'],
         ['/firmware/nobody', 'makers'],
         ['/firmware/classicd/nothing', 'list'],
       ]) {
@@ -1876,7 +1821,6 @@ describe('firmware page history', () => {
         {route: '/firmware/sirind', device: usbId('brick60-h7s'), maker: 'sirind', board: 'brick60-h7s', file: 'BRICK60-H7S-V260913R1.zip', version: '260913R1'},
       ]) {
         calls.length = 0;
-        rememberMaker('n86', null);
         const downloadPage = tree(entry.route, entry.device);
         const href = `/firmware/${entry.maker}/${entry.board}`;
         const download = anchor(downloadPage.root, (props) => props.href === href && props.children === 'Download');
@@ -1896,7 +1840,6 @@ describe('firmware page history', () => {
         ]) {
           expect(click(download, modifier)).toBe(false);
           expect(calls).toEqual([]);
-          expect(readRememberedMaker('n86')).toBeNull();
         }
         expect(click(download, {defaultPrevented: true})).toBe(true);
         expect(calls).toEqual([]);
@@ -1956,10 +1899,8 @@ describe('firmware page history', () => {
       const shared = tree('/firmware/sirind/n86');
       expect(maker(shared.root, 'linworks').props.href).toBe('/firmware/linworks/n86');
       click(maker(shared.root, 'linworks'));
-      expect(readRememberedMaker('n86')).toBe('linworks');
       expect(maker(shared.root, 'classicd').props.href).toBe('/firmware/classicd');
       click(maker(shared.root, 'classicd'));
-      expect(readRememberedMaker('n86')).toBe('linworks');
       act(() => shared.unmount());
       expect(calls).toEqual([
         'replace /firmware/linworks/n86',
@@ -1967,7 +1908,6 @@ describe('firmware page history', () => {
       ]);
 
       calls.length = 0;
-      rememberMaker('n86', null);
       const unchosen = tree('/firmware/n86');
       const sharedChoice = maker(unchosen.root, 'sirind');
       for (const modifier of [
@@ -1979,12 +1919,10 @@ describe('firmware page history', () => {
       ]) {
         expect(click(sharedChoice, modifier)).toBe(false);
         expect(calls).toEqual([]);
-        expect(readRememberedMaker('n86')).toBeNull();
       }
       click(sharedChoice);
       act(() => unchosen.unmount());
-      expect(calls).toEqual(['replace /firmware/sirind/n86']);
-      expect(readRememberedMaker('n86')).toBe('sirind');
+      expect(calls).toEqual(['push /firmware/sirind']);
 
       calls.length = 0;
       const selectedShared = tree('/firmware/sirind/n86');
