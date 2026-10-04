@@ -47,9 +47,9 @@
         {"board": "tomak79s", "file": null},
         {"board": "tomak79h", "file": null},
         {"board": "chickpad", "file": null},
-        {"board": "brick60-h7s", "file": {"version": "261004R1", "url": "/firmware-files/261004R1/sirind/BRICK60-H7S-V261004R1.zip", "size": 125667, "sha256": "4b0d84981abde17255aae9c0fc36a0fd202dee2c03ff148ab6c32ada15be0e21"}},
-        {"board": "brick65-h7s", "file": {"version": "261004R1", "url": "/firmware-files/261004R1/sirind/BRICK65-H7S-V261004R1.zip", "size": 125787, "sha256": "26f68cda08028ed80617c471d96a0d7446c4ec300b8412d061775ed45282d4d3"}},
-        {"board": "sculpturei-h7s", "file": {"version": "261004R1", "url": "/firmware-files/261004R1/sirind/SCULPTUREI-H7S-V261004R1.zip", "size": 126030, "sha256": "579973f6671a01e89c6f4c3596b7a710ed84764ebb0dee8d670486b56fbddddb"}}
+        {"board": "brick60-h7s", "file": {"version": "261004R2", "url": "/firmware-files/261004R2/sirind/BRICK60-H7S-V261004R2.zip", "size": 126419, "sha256": "1d8c8df6a06b4648293e54b243da156e611fdbf95344a7f2687f58a4796e1673"}},
+        {"board": "brick65-h7s", "file": {"version": "261004R2", "url": "/firmware-files/261004R2/sirind/BRICK65-H7S-V261004R2.zip", "size": 126511, "sha256": "9813d98cb2949e43b04166acad1ee589aac169693a868d803b8e14c5cadb171f"}},
+        {"board": "sculpturei-h7s", "file": {"version": "261004R2", "url": "/firmware-files/261004R2/sirind/SCULPTUREI-H7S-V261004R2.zip", "size": 126763, "sha256": "d1d190eebff0ad9cc4a60464117ab7bd3414cc57eb6cd1868cd1dda05bf52f32"}}
       ]
     },
     {
@@ -82,7 +82,7 @@
         {"board": "n8x", "file": null},
         {"board": "n86", "file": null},
         {"board": "n87", "file": null},
-        {"board": "may65-h7s", "file": {"version": "261004R1", "url": "/firmware-files/261004R1/keynetix/MAY65-H7S-V261004R1.zip", "size": 125644, "sha256": "73a335cda90cec7767627f1b18c8a705ebdc5b858918c77d2b21a88cbd435566"}}
+        {"board": "may65-h7s", "file": {"version": "261004R2", "url": "/firmware-files/261004R2/keynetix/MAY65-H7S-V261004R2.zip", "size": 126504, "sha256": "46395c2229228d79ec39ef13ab832ef4b35a0c7a8e2eacbe46c3241c578206aa"}}
       ]
     },
     {
@@ -105,7 +105,7 @@
         {"board": "7b75", "file": null},
         {"board": "et-tkl", "file": null},
         {"board": "riley", "file": null},
-        {"board": "intigrity80-h7s", "file": {"version": "261004R1", "url": "/firmware-files/261004R1/common/INTIGRITY80-H7S-V261004R1.zip", "size": 125692, "sha256": "d157aa2101ed281a0c81a0f3ff9b2bc435e4006dcc2a01cb6e67a8c7a6dd40ef"}}
+        {"board": "intigrity80-h7s", "file": {"version": "261004R2", "url": "/firmware-files/261004R2/common/INTIGRITY80-H7S-V261004R2.zip", "size": 126435, "sha256": "33b7193bfbfdddcfe8c99f3e87349dd37e9bf608e25c1287e9ab900bb239ac54"}}
       ]
     }
   ]
