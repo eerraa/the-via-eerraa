@@ -898,6 +898,8 @@ describe('macro drafts', () => {
     });
     const root = await render(store);
     openScript(root);
+    type(root, 'changed');
+    expect(applyButton(root).props.disabled).toBe(false);
     type(root, '{kc_lctl, kc_c}');
     expect(hasDot(tab(root, 'M0'))).toBe(false);
     expect(applyButton(root).props.disabled).toBe(true);

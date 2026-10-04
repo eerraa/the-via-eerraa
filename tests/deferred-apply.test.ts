@@ -1890,6 +1890,27 @@ describe('ERA menu drafts', () => {
     expect(row('Permissive Hold')).toBeUndefined();
   });
 
+  test('FEATURE number and toggle edits reverted to their values disable Apply without writes', async () => {
+    const {store, keyboard} = await openKeyboard();
+    await show(store);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '137'}}));
+    expect(button('Apply').props.disabled).toBe(false);
+    await act(async () => field('Global Tapping Term').props.onChange({target: {value: '200'}}));
+    expect(button('Apply').props.disabled).toBe(true);
+    await act(async () => toggle('Hold on Other Key Press').props.onChange({target: {checked: true}}));
+    expect(button('Apply').props.disabled).toBe(false);
+    await act(async () => toggle('Hold on Other Key Press').props.onChange({target: {checked: false}}));
+    expect(button('Apply').props.disabled).toBe(true);
+    expect(hasDot(tab('TAPPING'))).toBe(false);
+    await act(async () => tab('SLEEP').props.onClick());
+    await act(async () => field('RGB Sleep Timeout').props.onChange({target: {value: '300'}}));
+    expect(button('Apply').props.disabled).toBe(false);
+    await act(async () => field('RGB Sleep Timeout').props.onChange({target: {value: '600'}}));
+    expect(button('Apply').props.disabled).toBe(true);
+    expect(hasDot(tab('SLEEP'))).toBe(false);
+    expect(writes(keyboard)).toEqual([]);
+  });
+
   test('Apply stops at the first change the keyboard refuses and keeps the drafts from there', async () => {
     const {keyboard, store} = await openKeyboard();
     await show(store);
@@ -2108,7 +2129,7 @@ describe('ERA menu drafts', () => {
       [SAVE, 15],
     ]);
     expect(store.getState().drafts).toEqual({});
-    expect(store.getState().applying).toEqual({writing: {}, stops: {}});
+    expect(store.getState().applying).toEqual({writing: {}, stops: {}, menuRetries: {}});
     expect(hasDot(tab('TAPPING'))).toBe(false);
     expect(button('Apply').props.disabled).toBe(true);
     await act(async () => toggle('Hold on Other Key Press').props.onChange({}));
@@ -2446,6 +2467,96 @@ describe('ERA menu drafts', () => {
     };
   }
 
+  test('LINK Medium to High to Medium clears Apply and dots without writes when runtime and storage agree', async () => {
+    const keyboard = new ResultKeyboard();
+    keyboard.running = keyboard.stored = 'Medium';
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    await showLink(store);
+    expect(button('Apply').props.disabled).toBe(true);
+    await chooseSpeed('High');
+    expect(button('Apply').props.disabled).toBe(false);
+    await chooseSpeed('Medium');
+    expect(button('Apply').props.disabled).toBe(true);
+    expect(button('Cancel').props.disabled).toBe(true);
+    expect(hasDot(tab('LINK'))).toBe(false);
+    expect(hasDot(row('Split Link Speed')!)).toBe(false);
+    expect(store.getState().drafts).toEqual({});
+    expect(writes(keyboard)).toEqual([]);
+  });
+
+  test('LINK SET refusal does not invent a retry after returning to the original speed', async () => {
+    const keyboard = new ResultKeyboard();
+    keyboard.running = keyboard.stored = 'Medium';
+    keyboard.refuse = ([command, channel, id]) => command === SET && channel === 9 && id === 8;
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    await showLink(store);
+    await chooseSpeed('High');
+    await apply();
+    expect(button('Apply').props.disabled).toBe(false);
+    await chooseSpeed('Medium');
+    expect(button('Apply').props.disabled).toBe(true);
+    expect(store.getState().applying.menuRetries).toEqual({});
+  });
+
+  test('LINK failed confirmation survives selection and reload, but removal discards the obligation', async () => {
+    const keyboard = new ResultKeyboard();
+    keyboard.nextResult = 'Busy - retry';
+    const {store, device, connect} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
+    await showLink(store);
+    await chooseSpeed('Medium'); await apply();
+    const command = 'id_qmk_split_link_level';
+    expect(store.getState().applying.menuRetries[PATH][command]).toBe(true);
+    act(() => store.dispatch(selectDevice({device: null, connectionGeneration: null})));
+    expect(store.getState().applying.menuRetries[PATH][command]).toBe(true);
+    act(() => {
+      store.dispatch(invalidateDeviceConnection({devicePath: PATH,
+        connectionGeneration: new KeyboardAPI(PATH).getConnectionGeneration(), locked: false}));
+      store.dispatch(updateConnectedDevices({[PATH]: device}));
+      connect();
+    });
+    await showLink(store);
+    expect(button('Apply').props.disabled).toBe(false);
+    act(() => store.dispatch(updateConnectedDevices({})));
+    expect(store.getState().applying.menuRetries).toEqual({});
+  });
+
+  test('LINK action SAVE failure retains a real same-value retry until confirmation or Cancel', async () => {
+    const keyboard = new ResultKeyboard();
+    let saves = 0;
+    keyboard.refuse = ([command]) => command === SAVE && ++saves === 2;
+    const {store} = await openKeyboard('era', resultMenu(), linkValues, keyboard);
+    setLabelWatchForTesting({intervalMs: 1, holdMs: 5, timeoutMs: 1000});
+    await showLink(store);
+    await chooseSpeed('Medium');
+    await apply();
+    expect(keyboard.running).toBe('Medium');
+    expect(keyboard.stored).toBe('Medium');
+    expect(store.getState().applying.menuRetries[PATH].id_qmk_split_link_level).toBe(true);
+    await chooseSpeed('High');
+    await chooseSpeed('Medium');
+    expect(button('Apply').props.disabled).toBe(false);
+    act(() => renderer!.unmount()); renderer = undefined;
+    await showLink(store);
+    expect(button('Apply').props.disabled).toBe(false);
+    keyboard.refuse = () => false;
+    await apply();
+    expect(store.getState().applying.menuRetries).toEqual({});
+    await chooseSpeed('High'); await chooseSpeed('Medium');
+    expect(button('Apply').props.disabled).toBe(true);
+    // Another failure, then Cancel: discard both the action's SAVE retry and
+    // the held-value confirmation obligation without rolling back runtime.
+    saves = 0;
+    keyboard.refuse = ([command]) => command === SAVE && ++saves === 2;
+    await chooseSpeed('Low'); await apply();
+    await act(async () => button('Cancel').props.onClick());
+    expect(store.getState().applying.menuRetries).toEqual({});
+    expect(store.getState().menus.saveRetries[PATH]?.id_qmk_split_link_apply).toBeUndefined();
+    expect(keyboard.running).toBe('Low');
+    await chooseSpeed('High'); await chooseSpeed('Low');
+    expect(button('Apply').props.disabled).toBe(true);
+  });
+
   test('LINK is quiet on boot, retains the measured speed while editing, and retires failed reads independently of CONFIG', async () => {
     const keyboard = new ResultKeyboard();
     keyboard.stored = 'Low';
@@ -2527,10 +2638,9 @@ describe('ERA menu drafts', () => {
     await chooseSpeed('Medium');
     await apply();
     expect(textOf(renderer!.root.findByType(DeferredApplyButtons))).toContain('Applied');
-    // An explicit choice at the same running/stored speed is still an Apply request.
+    // Confirmed, matching levels have no work left, even with a result command.
     await chooseSpeed('Medium');
-    expect(button('Apply').props.disabled).toBe(false);
-    await apply();
+    expect(button('Apply').props.disabled).toBe(true);
     expect(store.getState().drafts).toEqual({});
   });
 
@@ -2547,6 +2657,16 @@ describe('ERA menu drafts', () => {
       expect(button('Apply').props.disabled).toBe(false);
       expect(alerts()).toContain(result);
       expect(store.getState().drafts[PATH]).toBeDefined();
+      // GET equality and a later receipt do not settle this app's failed Apply.
+      keyboard.result = 'Already set';
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      await chooseSpeed('High'); await chooseSpeed('Medium');
+      expect(button('Apply').props.disabled).toBe(false);
+      keyboard.nextResult = 'Applied Medium';
+      await apply();
+      expect(store.getState().applying.menuRetries).toEqual({});
+      await chooseSpeed('High'); await chooseSpeed('Medium');
+      expect(button('Apply').props.disabled).toBe(true);
     });
   }
 

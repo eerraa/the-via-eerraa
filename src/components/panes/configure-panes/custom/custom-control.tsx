@@ -290,6 +290,7 @@ export const deferredRowFor = (
   menuData: Record<string, unknown>,
   exactMsFamily: ExactMsFamily | null,
   saveRetry = false,
+  applyRetry = false,
 ): DeferredRow | null => {
   const [command, ...address] = item.content;
   const value = menuData[command] as number[] | undefined;
@@ -346,7 +347,7 @@ export const deferredRowFor = (
         // can send it, even the one shown: a speed the pair fell back to is kept
         // only that way, and a definition without the labels cannot tell.
         pending: action
-          ? (draft) => !!result || saveRetry || draft !== inEffect || draft !== kept
+          ? (draft) => applyRetry || saveRetry || draft !== inEffect || draft !== kept
           : differs(saved),
       };
       if (action) {

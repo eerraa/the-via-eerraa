@@ -37,8 +37,16 @@ Apply reads SYSTEM channel 9/value 66 together with Runtime and Saved Level.
 A supported result must report Applied for the requested level or Already set,
 and both levels must match through the fallback confirmation window. Busy,
 Failed and Cancelled leave a retryable draft even when runtime matches it.
-An explicit same-speed selection may be reapplied because local storage can
-fail independently of runtime switching.
+Returning a selection to matching runtime and stored levels clears the draft
+and disables Apply. Result-query support alone never makes a value dirty.
+Same-speed Apply remains available only for a real retry obligation or a
+runtime/stored mismatch (including an unknown level). A live failure receipt
+also permits an explicit retry, including failure reported after confirmation.
+For a definition with a result address, once the action is attempted its retry
+obligation survives edits, matching GETs and pane
+reentry until confirmation succeeds or the user cancels the draft. Device
+removal discards it; switching away does not acknowledge completion.
+Definitions without a result address retain Runtime/Saved-only confirmation.
 
 The result changes without CONFIG revision. The active LINK screen rereads it
 and both levels, including after initial success, and pauses while hidden or an

@@ -67,6 +67,7 @@ import {useIsEraDefinition} from 'src/utils/use-is-era-definition';
 import {useSubmenuTab} from 'src/utils/use-configure-place';
 import {LinkApplyStatus, MenuObservation, ObservationRow, useMenuObservation} from './menu-observation';
 import {LINK_RESULT, observationAddress} from 'src/utils/menu-observation';
+import {getMenuObservation} from 'src/store/menuObservationThunks';
 import {FeatureHelp} from './feature-help';
 import {FirmwareVersion} from './firmware-version';
 import {ConfigureStatusMessage} from '../status-message';
@@ -409,6 +410,14 @@ export const Pane: React.FC<Props> = (props: any) => {
     const path = getSelectedDevicePath(state);
     return path ? state.menus.saveRetries?.[path] : undefined;
   });
+  const applyRetries = useAppSelector((state) => {
+    const path = getSelectedDevicePath(state);
+    return path ? state.applying.menuRetries?.[path] : undefined;
+  });
+  const failedLinkResult = useAppSelector((state) => {
+    const result = getMenuObservation(state, LINK_RESULT);
+    return result?.status === 'ready' && /^(Busy|Failed|Cancelled)/.test(result.text);
+  });
   const eraDefinition = useIsEraDefinition();
   const devicePath = useAppSelector(getSelectedDevicePath);
   const connectionGeneration = useAppSelector(getSelectedConnectionGeneration);
@@ -425,13 +434,15 @@ export const Pane: React.FC<Props> = (props: any) => {
         return;
       }
       if (mouseExact(item.content[0]) && (!eraDefinition || !hasMousePrecision(selectedCustomMenuData))) return;
-      const row = deferredRowFor(item, selectedCustomMenuData, exactMsFamily, saveRetries?.[item.content[0]]);
+      const row = deferredRowFor(item, selectedCustomMenuData, exactMsFamily,
+        saveRetries?.[item.content[0]], applyRetries?.[item.content[0]] ||
+          (item.held?.result?.content[0] === LINK_RESULT && failedLinkResult));
       if (row) {
         rows.set(row.command, row);
       }
     });
     return rows;
-  }, [props.viaMenu, selectedCustomMenuData, vendorProductId, eraDefinition, saveRetries]);
+  }, [props.viaMenu, selectedCustomMenuData, vendorProductId, eraDefinition, saveRetries, applyRetries, failedLinkResult]);
   // Apply sends a held value's switch and the value reads as its labels, so none of
   // them gets a row.
   const hiddenCommands = useMemo(

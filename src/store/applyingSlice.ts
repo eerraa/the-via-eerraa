@@ -1,6 +1,6 @@
 import {createSlice, type PayloadAction} from '@reduxjs/toolkit';
 import {clearAllDevices, updateConnectedDevices} from './devicesSlice';
-import type {DraftScope} from './draftsSlice';
+import {discardDrafts, draftKey, type DraftScope} from './draftsSlice';
 import type {RootState} from './index';
 
 // The keyboards an Apply is writing drafts to now, with what those drafts are for,
@@ -15,16 +15,29 @@ export type MenuStop = {command: string; reason: 'refused' | 'notApplied'};
 type ApplyingState = {
   writing: Record<string, DraftScope[]>;
   stops: Record<string, MenuStop>;
+  menuRetries: Record<string, Record<string, boolean>>;
 };
 
 type ApplyTarget = {devicePath: string; scope: DraftScope};
 
-const initialState: ApplyingState = {writing: {}, stops: {}};
+const initialState: ApplyingState = {writing: {}, stops: {}, menuRetries: {}};
 
 const applyingSlice = createSlice({
   name: 'applying',
   initialState,
   reducers: {
+    // A held-value action needs confirmation independently of GET equality.
+    // Editing clears the error message, but not this retry obligation.
+    setMenuApplyRetry: (state, action: PayloadAction<{
+      devicePath: string; command: string; retry: boolean;
+    }>) => {
+      const {devicePath, command, retry} = action.payload;
+      if (retry) (state.menuRetries[devicePath] ??= {})[command] = true;
+      else {
+        delete state.menuRetries[devicePath]?.[command];
+        if (!Object.keys(state.menuRetries[devicePath] ?? {}).length) delete state.menuRetries[devicePath];
+      }
+    },
     beginApply: (state, action: PayloadAction<ApplyTarget>) => {
       const {devicePath, scope} = action.payload;
       const scopes = (state.writing[devicePath] ??= []);
@@ -59,7 +72,16 @@ const applyingSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(discardDrafts, (state, {payload: {devicePath, keys}}) => {
+        for (const command of Object.keys(state.menuRetries[devicePath] ?? {})) {
+          if (keys.includes(draftKey('menu', command))) delete state.menuRetries[devicePath][command];
+        }
+        if (!Object.keys(state.menuRetries[devicePath] ?? {}).length) delete state.menuRetries[devicePath];
+      })
       .addCase(updateConnectedDevices, (state, action) => {
+        Object.keys(state.menuRetries).forEach((devicePath) => {
+          if (!action.payload[devicePath]) delete state.menuRetries[devicePath];
+        });
         Object.keys(state.stops).forEach((devicePath) => {
           if (!action.payload[devicePath]) {
             delete state.stops[devicePath];
@@ -68,11 +90,12 @@ const applyingSlice = createSlice({
       })
       .addCase(clearAllDevices, (state) => {
         state.stops = {};
+        state.menuRetries = {};
       });
   },
 });
 
-export const {beginApply, endApply, setMenuStop} = applyingSlice.actions;
+export const {beginApply, endApply, setMenuStop, setMenuApplyRetry} = applyingSlice.actions;
 
 export default applyingSlice.reducer;
 

@@ -31,6 +31,7 @@ import {
   getMenuStop,
   isApplying,
   setMenuStop,
+  setMenuApplyRetry,
   type MenuStop,
 } from 'src/store/applyingSlice';
 
@@ -239,6 +240,11 @@ const applyDrafts =
           }
           break;
         }
+        // Definitions with an operation receipt keep an explicit obligation;
+        // legacy definitions retain their Runtime/Saved-only confirmation path.
+        if (written && held?.result) {
+          dispatch(setMenuApplyRetry({devicePath, command: row.command, retry: true}));
+        }
         const accepted =
           written &&
           (!held ||
@@ -261,6 +267,7 @@ const applyDrafts =
           stop = {command: row.command, reason: 'notApplied'};
           break;
         }
+        if (held) dispatch(setMenuApplyRetry({devicePath, command: row.command, retry: false}));
         dispatch(settleWrittenDraft({devicePath, key, value: draft}));
       }
     } finally {
@@ -343,7 +350,10 @@ export const useDeferredApply = (
       dispatch(
         discardDrafts({
           devicePath,
-          keys: allRows.map((row) => draftKey('menu', row.command)),
+          keys: allRows.flatMap((row) => [
+            draftKey('menu', row.command),
+            ...(row.held ? [draftKey('menu', row.held.action.command)] : []),
+          ]),
         }),
       );
     }
