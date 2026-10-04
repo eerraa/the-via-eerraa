@@ -74,9 +74,17 @@ const catalog = JSON.parse(
 const entry = manifest.definitions.find(
   (value: any) => value.id === 'classicd-a1',
 );
-const latestVersion: string = catalog.makers
+// VERSION lifetime tests need a published release even when the live catalog
+// intentionally lists this board as not published yet.
+const latestVersion = '261003R1';
+catalog.makers
   .find((maker: any) => maker.id === 'classicd')
-  .boards.find((board: any) => board.board === entry.id).file.version;
+  .boards.find((board: any) => board.board === entry.id).file = {
+  version: latestVersion,
+  url: '/firmware-files/261003R1/classicd/CLASSICD_A1-V261003R1.zip',
+  size: 1,
+  sha256: '0'.repeat(64),
+};
 const ascii = (version: string) => [...new TextEncoder().encode(version), 0];
 const originalNavigatorHID = Object.getOwnPropertyDescriptor(navigator, 'hid');
 

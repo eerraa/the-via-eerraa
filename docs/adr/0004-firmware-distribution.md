@@ -222,8 +222,11 @@ catalog: every file exists with the recorded size and SHA-256, every entry maps
 to a manifest identity of that maker, every maker VID lies in the block, and no
 identity repeats. The rules shared with the app live in
 `src/utils/era-firmware-catalog.ts`; `scripts/validate-firmware-catalog.ts`
-adds the file checks and runs from `scripts/build-keyboards.ts`. Previous
-releases stay downloadable for rollback.
+adds the file checks and runs from `scripts/build-keyboards.ts`. The distribution
+set may be replaced as a whole with newly packaged firmware releases; removed
+archives are not guaranteed to remain downloadable for rollback. Release ZIPs
+are packaged after implementation is complete in their owning firmware
+repositories, then added together with their matching catalog entries.
 
 A maker can list a board before its file is published. That entry's `file` is
 `null`: the page shows the board as not published yet and offers no download,
