@@ -19,6 +19,7 @@ import {
 } from 'react-test-renderer';
 import {
   configureHIDTransport,
+  disconnectHIDDeviceForTesting,
   HID,
   registerHIDDeviceForTesting,
   resetHIDTransportForTesting,
@@ -26,6 +27,10 @@ import {
 import ko from '../src/locales/ko.json';
 import type {ConnectedDevice} from '../src/types/types';
 import type {KeyboardAPI} from '../src/utils/keyboard-api';
+import {
+  convertCharacterTaps, convertToCharacterStreams, rawSequenceToOptimizedSequence,
+} from '../src/utils/macro-api/macro-api.common';
+import type {RawKeycodeSequence} from '../src/utils/macro-api/types';
 
 const loadModules = async () => {
   const originalWarn = console.warn;
@@ -82,6 +87,22 @@ const macroBytes = (...expressions: string[]) =>
   );
 
 describe('what a macro draft can hold', () => {
+  test('sequence transforms preserve chords, shifts and waits without mutating earlier snapshots', () => {
+    const frozen = (input: RawKeycodeSequence) => {
+      input.forEach(Object.freeze);
+      Object.freeze(input);
+      return input;
+    };
+    expect(convertCharacterTaps(frozen([[2, 'KC_A'], [4, 17], [3, 'KC_A'], [2, 'KC_LCTL']]))).toEqual(
+      [[1, 'KC_A'], [4, 17], [2, 'KC_LCTL']],
+    );
+    const text = frozen([[5, 'ab'], [5, 'c'], [4, 19], [2, 'KC_LSFT'], [1, 'KC_D'], [3, 'KC_LSFT']]);
+    expect(convertToCharacterStreams(text)).toEqual([[5, 'abc'], [4, 19], [5, 'D']]);
+    expect(convertToCharacterStreams(text)).toEqual([[5, 'abc'], [4, 19], [5, 'D']]);
+    expect(rawSequenceToOptimizedSequence(frozen([[2, 'KC_LCTL'], [1, 'KC_C'], [3, 'KC_LCTL'], [4, 7], [1, 'KC_ENT']]))).toEqual(
+      [[6, ['KC_LCTL', 'KC_C']], [4, 7], [1, 'KC_ENT']],
+    );
+  });
   const problemOf = (expression: string, protocol = 12) =>
     checkMacroDraft(macroApiFor(protocol), expression).problem;
 
@@ -438,6 +459,9 @@ const connect = async (
       connectionGeneration: hid.getConnectionGeneration(),
     }),
   );
+  if (protocol >= 13) {
+    store.dispatch(firmware.updateKeycodesVersion({devicePath: path, version: 9}));
+  }
   await store.dispatch(macros.loadMacros(connected) as any);
   keyboard.commands = [];
   return {keyboard, store, connected, hid};
@@ -1024,6 +1048,154 @@ describe('recording a macro', () => {
     });
   };
 
+  const timedKey = (type: 'keydown' | 'keyup', code: string, time: number, repeat = false) => {
+    const event = Object.assign(new Event(type), {code, repeat});
+    Object.defineProperty(event, 'timeStamp', {value: time});
+    globalThis.dispatchEvent(event);
+  };
+
+  test('a 4.8 KB recording has a bounded preview and saves every event, including the unpainted tail', async () => {
+    const {store, keyboard} = await connect('macro-long-recording', {size: 8192, stored: ['', 'keep']});
+    store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: false, recordDelaysEnabled: true}));
+    const root = await render(store);
+    await pressRecord(root);
+    // Arrival times deliberately differ from processing time. A render delay
+    // must not become a wait, and the last batch must not need a preview tick.
+    const input: string[] = [];
+    const recordRange = (start: number, end: number) => {
+      act(() => {
+        for (let i = start; i < end; i++) {
+          const code = i === 299 ? 'KeyZ' : 'KeyA';
+          const keycode = i === 299 ? 'KC_Z' : 'KC_A';
+          if (i) input.push('{23}');
+          input.push(`{+${keycode}}{17}{-${keycode}}`);
+          timedKey('keydown', code, i * 40);
+          timedKey('keyup', code, i * 40 + 17);
+        }
+      });
+    };
+    recordRange(0, 250);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 70)); });
+    expect(textOf(sequenceBox(root))).toContain('녹화 중에는 최근 입력');
+    const {Deletable} = await import('../src/components/panes/configure-panes/submenus/macros/deletable');
+    expect(root.findAllByType(Deletable).length).toBeLessThanOrEqual(80);
+    expect(root.findAll((n) => n.type === 'input' && n.props.type === 'number')).toHaveLength(0);
+    expect(keyboard.commands).toEqual([]);
+    recordRange(250, 300);
+    act(() => clickable(root, faSquare).props.onClick());
+    expect(textOf(sequenceBox(root))).not.toContain('녹화 중에는 최근 입력');
+    expect(root.findAllByType(Deletable).length).toBe(1199);
+    expect(store.getState().drafts['macro-long-recording']['macro:0']).toBe(input.join(''));
+    await clickApply(root);
+    const expected = macroBytes(input.join(''), 'keep');
+    expect(expected.length).toBe(4801);
+    expect(keyboard.buffer.slice(0, expected.length)).toEqual(expected);
+    expect(macros.getExpressions(store.getState() as any)).toEqual([input.join(''), 'keep']);
+    expect(applyButton(root).props.disabled).toBe(true);
+  });
+
+  test('event timestamps survive a busy handler; repeat and unmapped keys do not change the timing', async () => {
+    const path = 'macro-input-clock';
+    const {store} = await connect(path);
+    store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: false, recordDelaysEnabled: true}));
+    const root = await render(store);
+    await pressRecord(root);
+    act(() => {
+      timedKey('keydown', 'KeyA', 1000.2);
+      timedKey('keydown', 'KeyA', 1005, true);
+      timedKey('keydown', 'Unidentified', 1010);
+      timedKey('keyup', 'KeyA', 1017.6);
+      clickable(root, faSquare).props.onClick();
+    });
+    expect(store.getState().drafts[path]['macro:0']).toBe('{+KC_A}{17}{-KC_A}');
+    await pressRecord(root);
+    act(() => {
+      timedKey('keydown', 'KeyB', 5000);
+      timedKey('keyup', 'KeyB', 5009);
+      clickable(root, faSquare).props.onClick();
+    });
+    expect(store.getState().drafts[path]['macro:0']).toBe('{+KC_B}{9}{-KC_B}');
+  });
+
+  test('a long text run also has a bounded preview and mode changes retain the full text', async () => {
+    const path = 'macro-text-preview';
+    const {store} = await connect(path, {size: 8192});
+    const root = await render(store);
+    await pressRecord(root);
+    act(() => {
+      for (let i = 0; i < 600; i++) {
+        timedKey('keydown', 'KeyA', i * 2);
+        timedKey('keyup', 'KeyA', i * 2 + 1);
+      }
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 70)); });
+    expect(textOf(sequenceBox(root))).toContain('…' + 'a'.repeat(160));
+    expect(textOf(sequenceBox(root))).not.toContain('a'.repeat(161));
+    tap('KeyZ');
+    openScript(root);
+    expect(textarea(root).props.value).toBe('a'.repeat(600) + 'z');
+  });
+
+  for (const protocol of [10, 12, 13]) {
+    test(`recording a modifier chord retains standard VIA ${protocol} macro encoding`, async () => {
+      const {store, keyboard} = await connect(`macro-wire-${protocol}`, {protocol});
+      store.dispatch(settings.setMacroEditorSettings({smartOptimizeEnabled: false, recordDelaysEnabled: protocol < 11}));
+      const root = await render(store);
+      await pressRecord(root);
+      key('keydown', 'ControlLeft');
+      tap('KeyA');
+      key('keyup', 'ControlLeft');
+      act(() => clickable(root, faSquare).props.onClick());
+      await clickApply(root);
+      const expected = macroApiFor(protocol).rawKeycodeSequencesToMacroBytes([
+        [[2, 'KC_LCTL'], [2, 'KC_A'], [3, 'KC_A'], [3, 'KC_LCTL']], [],
+      ]);
+      expect(keyboard.buffer.slice(0, expected.length)).toEqual(expected);
+      expect(applyButton(root).props.disabled).toBe(true);
+    });
+  }
+
+  test('an unpainted recording cannot flush into a replacement connection at the same path', async () => {
+    const path = 'macro-record-reconnect';
+    const {store, keyboard, connected} = await connect(path);
+    const root = await render(store);
+    await pressRecord(root);
+    tap('KeyA');
+    // Replace transport before React observes selection, as batched USB updates can.
+    disconnectHIDDeviceForTesting(path);
+    registerHIDDeviceForTesting(path, keyboard as unknown as HIDDevice);
+    const next = new HID.HID(path);
+    await next.openPromise;
+    act(() => {
+      store.dispatch(devices.updateConnectedDevices({}));
+      store.dispatch(devices.updateConnectedDevices({[path]: connected}));
+      store.dispatch(devices.selectDevice({device: connected, connectionGeneration: next.getConnectionGeneration()}));
+    });
+    await act(async () => { await store.dispatch(macros.loadMacros(connected) as any); });
+    expect(store.getState().drafts[path]).toBeUndefined();
+    tap('KeyZ');
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 70)); });
+    expect(store.getState().drafts[path]).toBeUndefined();
+  });
+
+  test('leaving the pane flushes to the original connected device, but disconnect does not revive its draft', async () => {
+    const path = 'macro-input-owner';
+    const {store, connected, hid} = await connect(path);
+    const root = await render(store);
+    await pressRecord(root);
+    tap('KeyA');
+    act(() => store.dispatch(devices.selectDevice({device: null, connectionGeneration: null})));
+    expect(store.getState().drafts[path]).toEqual({'macro:0': 'a'});
+    act(() => store.dispatch(devices.selectDevice({device: connected, connectionGeneration: hid.getConnectionGeneration()})));
+    await act(async () => { await store.dispatch(macros.loadMacros(connected) as any); });
+    await pressRecord(renderer!.root);
+    tap('KeyB');
+    act(() => store.dispatch(devices.updateConnectedDevices({})));
+    expect(store.getState().drafts[path]).toBeUndefined();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 70)); });
+    expect(store.getState().drafts[path]).toBeUndefined();
+  });
+
   test('one press goes to fullscreen and records, and another M tab ends the recording in its own slot', async () => {
     const path = 'macro-record-tab';
     const {store, keyboard} = await connect(path, {stored: ['A', 'B']});
@@ -1035,6 +1207,9 @@ describe('recording a macro', () => {
     expect(page.keyboard).toEqual(['lock']);
     tap('KeyH');
     tap('KeyI');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 70));
+    });
     expect(textOf(sequenceBox(root))).toBe('hi');
     expect(clickable(root, faSquare).props.disabled).toBeFalsy();
     expect(applyButton(root).props.disabled).toBe(true);

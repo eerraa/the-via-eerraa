@@ -8,7 +8,11 @@ import {faClapperboard, faCode} from '@fortawesome/free-solid-svg-icons';
 import {ScriptExample, ScriptMode} from './script-mode';
 import {ProgressBarTooltip} from 'src/components/inputs/tooltip';
 import {getIsDelaySupported, getMacroBufferSize} from 'src/store/macrosSlice';
-import {getSelectedDevicePath} from 'src/store/devicesSlice';
+import {
+  getSelectedDevicePath,
+  getSelectedKeyboardAPI,
+  getSelectedConnectionGeneration,
+} from 'src/store/devicesSlice';
 import {
   discardDrafts,
   draftKey,
@@ -178,6 +182,8 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   const {macroApi, selectedMacro: macroIndex} = props;
   const dispatch = useAppDispatch();
   const devicePath = useAppSelector(getSelectedDevicePath);
+  const keyboardApi = useAppSelector(getSelectedKeyboardAPI);
+  const connectionGeneration = useAppSelector(getSelectedConnectionGeneration);
   const currentMacro = props.macroExpressions[macroIndex] || '';
   // Both modes show and edit the slot's draft. It lives in the store, so another
   // slot, the other mode or another pane leaves it as it was.
@@ -244,13 +250,22 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
         return;
       }
       const key = macroDraftKey(index);
-      dispatch(
-        expression === (props.macroExpressions[index] || '')
-          ? discardDrafts({devicePath, keys: [key]})
-          : setDraft({devicePath, key, value: expression}),
-      );
+      dispatch((dispatch, getState) => {
+        // An unmount can flush a paced recording after a device was removed.
+        // Keep a connected device's draft, never resurrect a disconnected session.
+        if (
+          !getState().devices.connectedDevicePaths[devicePath] ||
+          !keyboardApi ||
+          keyboardApi.getConnectionGeneration() !== connectionGeneration
+        ) return;
+        dispatch(
+          expression === (props.macroExpressions[index] || '')
+            ? discardDrafts({devicePath, keys: [key]})
+            : setDraft({devicePath, key, value: expression}),
+        );
+      });
     },
-    [devicePath, dispatch, props.macroExpressions],
+    [devicePath, dispatch, props.macroExpressions, keyboardApi, connectionGeneration],
   );
 
   const cancel = useCallback(() => {

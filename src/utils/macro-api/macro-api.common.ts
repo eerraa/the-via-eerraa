@@ -93,13 +93,14 @@ function convertToTapsAndChords(
   // Convert taps to down/up so that chord detection algorithm is simpler
   const seq: OptimizedKeycodeSequence = sequence.reduce((p, n) => {
     if (n[0] === RawKeycodeSequenceAction.Tap) {
-      return [
-        ...p,
+      p.push(
         [RawKeycodeSequenceAction.Down, n[1]],
         [RawKeycodeSequenceAction.Up, n[1]],
-      ];
+      );
+    } else {
+      p.push(n);
     }
-    return [...p, n];
+    return p;
   }, [] as OptimizedKeycodeSequenceItem[]);
 
   let seq2: OptimizedKeycodeSequence = [];
@@ -245,15 +246,16 @@ export function convertCharacterTaps(
       n[0] == RawKeycodeSequenceAction.Down &&
       n[1] in mapKeycodeToCharacterStream
     ) {
-      return [...p, [RawKeycodeSequenceAction.Tap, n[1]]];
+      p.push([RawKeycodeSequenceAction.Tap, n[1]]);
     } else if (
       n[0] == RawKeycodeSequenceAction.Up &&
       n[1] in mapKeycodeToCharacterStream
     ) {
       return p;
     } else {
-      return [...p, n];
+      p.push(n);
     }
+    return p;
   }, [] as RawKeycodeSequenceItem[]);
   return result;
 }
@@ -322,19 +324,17 @@ export function convertToCharacterStreams(
         p[p.length - 1][0] === RawKeycodeSequenceAction.CharacterStream
       ) {
         // append case
-        return [
-          ...p.slice(0, -1),
-          [
-            RawKeycodeSequenceAction.CharacterStream,
-            (p[p.length - 1][1] as string) + newChars,
-          ],
+        p[p.length - 1] = [
+          RawKeycodeSequenceAction.CharacterStream,
+          (p[p.length - 1][1] as string) + newChars,
         ];
       } else {
-        return [...p, [RawKeycodeSequenceAction.CharacterStream, newChars]];
+        p.push([RawKeycodeSequenceAction.CharacterStream, newChars]);
       }
     } else {
-      return [...p, n];
+      p.push(n);
     }
+    return p;
   }, [] as RawKeycodeSequenceItem[]);
 
   // convert "{+KC_LSFT}abc{-KC_LSFT}" into "ABC"
@@ -366,12 +366,14 @@ export function convertToCharacterStreams(
       p[p.length - 1] !== undefined &&
       p[p.length - 1][0] === RawKeycodeSequenceAction.CharacterStream
     ) {
-      p[p.length - 1][1] = (p[p.length - 1][1] as string).concat(
-        n[1] as string,
-      );
+      p[p.length - 1] = [
+        RawKeycodeSequenceAction.CharacterStream,
+        (p[p.length - 1][1] as string).concat(n[1] as string),
+      ];
       return p;
     }
-    return [...p, n];
+    p.push(n);
+    return p;
   }, [] as RawKeycodeSequenceItem[]);
 
   return seq3;

@@ -18,6 +18,7 @@ import {useAppDispatch, useAppSelector} from '../../../store/hooks';
 import {
   getSelectedConnectedDevice,
   getSelectedKeyboardAPI,
+  getSelectedConnectionGeneration,
 } from '../../../store/devicesSlice';
 import {
   getExpressions,
@@ -50,6 +51,7 @@ export const Pane: FC = () => {
   const {t} = useTranslation();
   const dispatch = useAppDispatch();
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
+  const connectionGeneration = useAppSelector(getSelectedConnectionGeneration);
   const macrosReady = useAppSelector(getIsMacrosReady);
   const macroExpressions = useAppSelector(getExpressions);
   const macroCount = useAppSelector(getMacroCount);
@@ -146,6 +148,7 @@ export const Pane: FC = () => {
           <Container>
             {macrosReady ? (
               <MacroDetailPane
+                key={`${selectedDevice.path}:${connectionGeneration}`}
                 macroExpressions={macroExpressions}
                 selectedMacro={selectedMacro}
                 saveMacros={saveMacro}

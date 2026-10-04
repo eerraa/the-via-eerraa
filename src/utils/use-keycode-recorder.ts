@@ -1,76 +1,75 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {getKeycodes} from './key';
 import {mapEvtToKeycode} from './key-event';
 import {RawKeycodeSequence, RawKeycodeSequenceAction} from './macro-api/types';
 
-let heldKeys = {} as any;
-let lastEvtTime = 0;
+// Input is captured immediately. Only the preview is paced, so rendering a long
+// recording cannot turn its render time into a recorded wait.
+export const RECORDING_PREVIEW_INTERVAL_MS = 50;
+
 export const useKeycodeRecorder = (
   enableRecording: boolean,
   recordDelays: boolean,
 ) => {
-  const keycodeSequenceState = useState<RawKeycodeSequence>([]);
-  const [, setKeycodeSequence] = keycodeSequenceState;
+  const [sequence, setSequence] = useState<RawKeycodeSequence>([]);
+  const buffer = useRef<RawKeycodeSequence>([]);
+  const lastEventTime = useRef<number>();
+  const timer = useRef<ReturnType<typeof setTimeout>>();
   const keycodes = useMemo(
-    () => getKeycodes().flatMap((menu) => menu.keycodes),
+    () =>
+      new Set(
+        getKeycodes().flatMap((menu) => menu.keycodes.map((k) => k.code)),
+      ),
     [],
   );
-  // If pressed key is our target key then set to true
-  const addToSequence = useCallback(
-    (evt: KeyboardEvent, keyState: RawKeycodeSequenceAction) => {
-      evt.preventDefault();
-      if (enableRecording && !evt.repeat) {
-        setKeycodeSequence((keycodeSequence) => {
-          const keycode = keycodes.find((k) => k.code === mapEvtToKeycode(evt));
-          const currTime = Date.now();
-          const keycodeLabel = keycode?.code;
-          if (keycodeSequence.length && recordDelays) {
-            keycodeSequence.push([
-              RawKeycodeSequenceAction.Delay,
-              currTime - lastEvtTime,
-            ]);
-          }
-          if (keycodeLabel) {
-            keycodeSequence.push([keyState, keycodeLabel]);
-          }
-          lastEvtTime = currTime;
-          return [...keycodeSequence];
-        });
-      }
-    },
-    [enableRecording, recordDelays],
-  );
-  const downHandler = useCallback(
-    (evt: KeyboardEvent) => {
-      if (!evt.repeat) {
-        heldKeys[evt.code] = true;
-        addToSequence(evt, RawKeycodeSequenceAction.Down);
-      }
-    },
-    [enableRecording],
-  );
-
-  // If released key is our target key then set to false
-  const upHandler = useCallback(
-    (evt: KeyboardEvent) => {
-      heldKeys[evt.code] = false;
-      addToSequence(evt, RawKeycodeSequenceAction.Up);
-    },
-    [enableRecording],
-  );
+  const cancelPreview = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+  }, []);
+  const reset = useCallback(() => {
+    cancelPreview();
+    buffer.current = [];
+    lastEventTime.current = undefined;
+    setSequence([]);
+  }, [cancelPreview]);
+  // Stop, slot changes and unmount must read the input, not the last paint.
+  const read = useCallback(() => buffer.current.slice(), []);
 
   useEffect(() => {
-    heldKeys = {};
-    if (enableRecording) {
-      window.addEventListener('keydown', downHandler);
-      window.addEventListener('keyup', upHandler);
-    }
-    // Remove event listeners on cleanup
-    return () => {
-      heldKeys = {};
-      window.removeEventListener('keydown', downHandler);
-      window.removeEventListener('keyup', upHandler);
+    if (!enableRecording) return;
+    const record = (event: KeyboardEvent) => {
+      event.preventDefault();
+      if (event.repeat) return;
+      const code = mapEvtToKeycode(event);
+      if (!code || !keycodes.has(code)) return;
+      const time = event.timeStamp;
+      if (recordDelays && lastEventTime.current !== undefined) {
+        const delay = Math.max(0, Math.round(time - lastEventTime.current));
+        if (delay > 0)
+          buffer.current.push([RawKeycodeSequenceAction.Delay, delay]);
+      }
+      buffer.current.push([
+        event.type === 'keydown'
+          ? RawKeycodeSequenceAction.Down
+          : RawKeycodeSequenceAction.Up,
+        code,
+      ]);
+      lastEventTime.current = time;
+      if (timer.current === undefined) {
+        timer.current = setTimeout(() => {
+          timer.current = undefined;
+          setSequence(read());
+        }, RECORDING_PREVIEW_INTERVAL_MS);
+      }
     };
-  }, [enableRecording]); // Empty array ensures that effect is only run on mount and unmount
-  return keycodeSequenceState;
+    window.addEventListener('keydown', record);
+    window.addEventListener('keyup', record);
+    return () => {
+      window.removeEventListener('keydown', record);
+      window.removeEventListener('keyup', record);
+      cancelPreview();
+    };
+  }, [enableRecording, recordDelays, keycodes, read, cancelPreview]);
+
+  return {sequence, reset, read};
 };
