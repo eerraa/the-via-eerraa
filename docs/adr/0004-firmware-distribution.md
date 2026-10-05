@@ -222,8 +222,11 @@ A board's page shows the version, release date, size and download, the SHA-256
 and the flashing steps for that family. Distribution ZIPs contain `.uf2`,
 readme, and the `usevia.app` folder. Do not include `RELEASE.json` or internal
 packaging evidence; keep that evidence outside the distributed archive.
-When repackaging the same firmware version, include a content hash in the ZIP
-filename so previously cached archives cannot answer the current download URL.
+ZIP filenames use the model and firmware version without a content-hash suffix.
+Repackaging preserves those URLs and updates the catalog size and SHA-256.
+Firmware ZIP responses use `Cache-Control: no-store` in `public/_headers` to
+avoid retaining a replaced archive. Previously cached responses still require
+host cache purging and a live download hash check after deployment.
 The stock JSON and usevia.txt in each current package follow the firmware
 repository's canonical stock support policy. Do not add Custom observation
 labels during packaging: stock LINK omits runtime/saved/result TEXT and stock

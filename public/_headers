@@ -15,6 +15,10 @@
 /images/*
   Cache-Control: public, max-age=604800
 
+# Release ZIP URLs stay stable when the same firmware version is repackaged.
+/firmware-files/*
+  Cache-Control: no-store
+
 # Definition JSON is addressed by vendor/product id, not by a content hash, so
 # it must stay revalidated to avoid serving a stale definition after a deploy.
 /definitions/*

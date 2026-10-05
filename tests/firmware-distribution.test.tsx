@@ -476,6 +476,11 @@ describe('update status', () => {
 });
 
 describe('firmware routes', () => {
+  test('stable firmware download URLs do not retain replaced ZIPs in caches', () => {
+    const headers = readFileSync(path.join(repoRoot, 'public/_headers'), 'utf8');
+    expect(headers).toMatch(/^\/firmware-files\/\*\r?\n[ \t]+Cache-Control: no-store\r?$/m);
+  });
+
   test('public/_redirects rewrites the firmware routes to the firmware shell', () => {
     const redirects = readFileSync(path.join(repoRoot, 'public/_redirects'), 'utf8');
     expect(redirects).toMatch(/^\/firmware\s+\/firmware-app\s+200$/m);
