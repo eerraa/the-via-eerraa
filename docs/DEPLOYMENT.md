@@ -41,6 +41,16 @@ the production branch, rotating credentials, changing GitHub secrets or
 variables, adding a custom domain, or changing DNS requires explicit operator
 approval. Repository edits do not grant those permissions.
 
+For this static Pages site, the custom domain's CNAME points to that Pages
+alias with **DNS Only** routing. Pages still provides HTTPS and its own CDN;
+the domain does not need a second zone proxy and cache layer. Zone proxy
+rules, WAF and HTTP analytics do not apply on this route. Re-enabling the
+proxy requires a review of those settings and a live check of both current
+downloads and removed-file 404s. Cloudflare's
+[Pages debugging guide](https://developers.cloudflare.com/pages/configuration/debugging-pages/)
+recommends DNS Only when a custom domain serves incorrectly while
+`pages.dev` serves correctly.
+
 ## 2. Release and rollback procedure
 
 A release candidate is built from the repository root with:
