@@ -55,11 +55,24 @@ firmware owns wire, settings-bank encoding, mode authority and protected actions
 Its PLAN owns the cross-repository two-DK implementation sequence. Do not copy numeric wire contracts
 or development status into this document. Existing QMK/H7S behavior stays family-specific.
 
-- When a dongle is selected, show only its currently online keyboard units together in their physical
-  left/right positions. Keys are directly editable; show the selected key's unit and layer. No online
+- When a dongle is selected, the default **Whole keyboard (RF)** view shows only its currently online
+  units in their physical left/right positions. Keys are directly editable; show the selected key's unit and layer. No online
   units means an empty keyboard area with a connection explanation and instructions, while dongle
   settings and device management remain accessible. Disconnect removes that unit from the keyboard
   and leaves its registration visible as offline in device management; it does not delete pairing.
+- Put a unit selector in a corner of the keymap tab, with **Whole keyboard (RF)** as the return option.
+  Unit entries include only currently connected units whose own settings can actually be read and
+  changed through the dongle; omit offline or unsupported units rather than listing disabled entries.
+  Selecting a unit shows only its layout and loads its saved unit-local WIRED/BLE settings from that
+  unit. This is not a per-unit RF override. Clearly label the unit and the bank being edited; do not
+  enable editing until the target read completes. BLE slot choices remain subject to Q-130 below.
+  Changes are sent through the dongle and saved on that unit under the peer SPEC §10.7 contract.
+  Show saved values separately from the currently active settings: with **Always use dongle settings**
+  ON, local edits are preserved for use after following is turned OFF in the applicable mode. Editing
+  alone never turns that toggle OFF or switches the unit out of RF.
+  If the selected unit loses eligibility, remove its menu entry, end its editable view and explain the
+  loss when returning to the whole-keyboard view. Never apply pending edits to a replacement selection
+  or claim an uncertain write succeeded. Device management retains the offline registration.
 - New TRIA has no wired MAIN-to-MAIN link. USB configuration covers the directly connected unit only;
   existing H7S/EERRAA split products retain their own behavior.
 - Selecting an LM20 dongle, MAIN or NUMPAD exposes the **TOMAK TRIA** keycode category. Collect its
