@@ -203,8 +203,8 @@ session start.
 
 | Path | Role |
 | --- | --- |
-| `D:\Engineering\qmk_firmware_eerraa` | QMK firmware (RP2040 + ATmega32U4). `keyboards/era/` |
-| `D:\Engineering\eerraa-qmk-h7s-fw` | H7S firmware (main) |
+| `D:\Engineering\qmk_firmware_eerraa\qmk_firmware_eerraa` | QMK firmware (RP2040 + ATmega32U4). `keyboards/era/` |
+| `D:\Engineering\eerraa-qmk-h7s\eerraa-qmk-h7s-fw` | H7S firmware (main) |
 | `D:\Engineering\eerraa-54lm20` | LM20 single repository; firmware SPEC §9/§10 owns settings/wire and PLAN owns the approved two-DK/VIA implementation sequence. Read its root and component AGENTS before work. |
 
 - Opening an H7S repository: read **that** `AGENTS.md` first and follow it.
