@@ -78,9 +78,12 @@ or development status into this document. Existing QMK/H7S behavior stays family
   alone is not success; discard stale responses and reconcile actual state on reconnection.
 - Present RF as one keyboard whose settings are dongle-authoritative. Common changes apply to all
   compatible connected units; role-specific keys keep their own geometry. Keep WIRED and BLE user
-  settings separate, with an **Always use dongle settings** toggle for simpler cross-transport use.
-  Following while disconnected can use only previously synchronized values. The remaining toggle
-  default/preservation/BLE-bank choices are owned by LM20 DECISIONS Q-128..Q-130, not inferred by the UI.
+  settings unit-local and separate, with an **Always use dongle settings** toggle that defaults ON.
+  BLE has no dongle coordinator. Preserve the unit's separate WIRED/BLE values while following;
+  turning the toggle OFF restores those values. Following while disconnected can use only previously
+  synchronized values. Remaining toggle control scope, BLE slot granularity, multiple-dongle selection
+  and first-use behavior are owned by LM20 DECISIONS Q-128/Q-130, not inferred by the UI. Unit-local
+  ownership does not mean WIRED and BLE share identical settings.
   Display actual apply results separately from desired stored values; no optimistic offline success.
 
 The PCB-period target is one dongle DK plus one virtual TRIA DK, testing unit roles sequentially on
