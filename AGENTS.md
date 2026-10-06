@@ -24,6 +24,7 @@ git status --short
 | --- | --- | --- | --- |
 | 무엇이 어디 있고 무엇이 정본인가 | `docs/MAP.md` — 여기부터 | `docs/MAP.md` | `tests/docs-contract.test.ts` |
 | 제품 방향과 영구 금지사항 | `docs/PROJECT_DIRECTION.md` | — | `tests/docs-contract.test.ts` |
+| LM20 장치·키맵·제어와 전체 설정 백업 | `docs/PROJECT_DIRECTION.md`의 LM20 및 Complete settings 절 | `docs/MAP.md` §1·§8; `src/store/layoutFileThunks.ts`, `src/utils/layout-import.ts` | 관련 transport/save-load 검사; LM20은 peer와 paired 검증 |
 | 작은 UI·일반 앱 결함 | — (아래 계약을 바꾸면 해당 행으로 전환) | 편집 대상 `src/` 파일과 인접 테스트 | 인접 테스트; 타입 경계 변경 시 `bun x tsc --noEmit` |
 | State Sync·exact-ms wire | `docs/adr/0001-state-sync-protocol.md` | `src/utils/era-state-sync.ts`, `src/utils/era-exact-ms.ts`, `src/store/stateSyncThunks.ts` | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts` |
 | H7S 현재 폴링 관측·진단 폐기 | `docs/adr/0002-h7s-usb-diagnostics.md` | `src/utils/menu-observation.ts`, `src/store/menuObservationThunks.ts` | `tests/menu-observation.test.ts`, `tests/deferred-apply.test.ts` |

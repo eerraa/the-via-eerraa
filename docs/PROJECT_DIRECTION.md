@@ -4,7 +4,8 @@ Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
 lookup order, user-facing VIA compatibility boundary, the brick65 exception,
 Tap Dance and exact-ms/exact-sec product rules, QMK and H7S lighting sleep dual-surface rules,
-State Sync product guarantees, and the durable non-goals
+State Sync product guarantees, LM20 app-first configuration, complete settings backup/restore,
+and the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
 > it. Where a fact lives and which side is canonical is `docs/MAP.md`. Individual
@@ -46,6 +47,86 @@ architecture is the actual limitation.
 > **WHY:** complexity is admitted only for a demonstrated correctness, recovery,
 > or maintenance need; diff size is not itself a product goal.
 > **REOPENS:** never.
+
+## LM20 configuration and device management
+
+These are approved product requirements, not claims of implemented LM20 support. The peer LM20
+firmware owns wire, settings-bank encoding, mode authority and protected actions in its SPEC §9/§10.
+Its PLAN owns the cross-repository two-DK implementation sequence. Do not copy numeric wire contracts
+or development status into this document. Existing QMK/H7S behavior stays family-specific.
+
+- When a dongle is selected, show only its currently online keyboard units together in their physical
+  left/right positions. Keys are directly editable; show the selected key's unit and layer. No online
+  units means an empty keyboard area with a connection explanation and instructions, while dongle
+  settings and device management remain accessible. Disconnect removes that unit from the keyboard
+  and leaves its registration visible as offline in device management; it does not delete pairing.
+- New TRIA has no wired MAIN-to-MAIN link. USB configuration covers the directly connected unit only;
+  existing H7S/EERRAA split products retain their own behavior.
+- Selecting an LM20 dongle, MAIN or NUMPAD exposes the **TOMAK TRIA** keycode category. Collect its
+  dedicated actions, including WIRED/RF/BLE selection, cycling and supported system/sync actions;
+  explain short versus protected long press. This is a category of assignable actions, not another
+  keymap bank. With no editable key, the category may remain visible but assignment is unavailable.
+  Preserve the existing specialized Tap Dance editor and avoid a second definition of its slots.
+- VIA is the main settings/control route; remappable keys are a backup when VIA is unavailable.
+  Provide explicit RF/BLE pairing start and exact-target confirmation for BLE credential deletion;
+  physical-key gestures remain supported. Dongle registration deletion retains its exact-role
+  confirmation. UI intent never impersonates a physical hold, bypasses firmware authentication or
+  automatically retries uncertain deletion. Older firmware without the new capability is unavailable
+  for that operation, not a reason to try another family's command.
+- Confirm a mode change only when it will lose the active app control path. Identify the unit, new
+  mode and reconnection route. Settle pending configuration writes before starting it. Transport loss
+  alone is not success; discard stale responses and reconcile actual state on reconnection.
+- Present RF as one keyboard whose settings are dongle-authoritative. Common changes apply to all
+  compatible connected units; role-specific keys keep their own geometry. Keep WIRED and BLE user
+  settings separate, with an **Always use dongle settings** toggle for simpler cross-transport use.
+  Following while disconnected can use only previously synchronized values. The remaining toggle
+  default/preservation/BLE-bank choices are owned by LM20 DECISIONS Q-128..Q-130, not inferred by the UI.
+  Display actual apply results separately from desired stored values; no optimistic offline success.
+
+The PCB-period target is one dongle DK plus one virtual TRIA DK, testing unit roles sequentially on
+Windows Chrome/Edge. The paired app must work during real input and lifecycle workloads. Full concurrent
+four-unit RF and product PCB switch/RGB, power, charging, thermal and RF qualification are later work.
+Virtual input and renderer observation are test evidence, not physical-product qualification.
+
+## Complete settings backup and restore
+
+Extend the existing Save/Load operation for LM20, H7S and EERRAA to cover **all persistent user settings**,
+including RGB and other custom settings missing from layout-only files. The app owns the file format,
+coverage inventory and UX; each firmware owns truthful reads, validated writes and live application.
+Definitions alone do not prove that a field can be backed up or restored. Audit all supported settings
+and add missing family firmware interfaces where necessary; do not copy GPL implementation into LM20.
+
+| Connected device | Backup scope |
+|---|---|
+| New TRIA unit over USB | That unit's WIRED settings plus its BLE settings when separate BLE settings are enabled. No sibling wired unit is implied. |
+| LM20 RF dongle | One RF keyboard: dongle settings plus the stored RF configuration of every registered role, including offline roles. Never silently omit a registered role with missing data. |
+| H7S or EERRAA | The selected keyboard's complete persistent user settings under its existing board/split semantics; the TRIA no-LINK decision does not remove those semantics. |
+
+The complete-backup format must distinguish family, compatible board/role geometry, schema version and
+settings scope. Restore the **whole selected backup**, with no keymap/macro/RGB subset checklist.
+Validate compatibility and required capabilities before writing; do not silently translate a WIRED
+backup into RF settings or truncate unsupported settings. Show the target and replacement scope before
+restoration. Credentials, device identity, calibration, signed firmware and volatile diagnostics are
+not portable user settings and are excluded. A backup does not re-pair a device.
+
+Read current device state under one valid selection/session; do not label stale cache or mixed revisions
+as a complete backup. Unreadable required settings must be reported, not omitted under a success label.
+Distinguish dongle persistence, applied online units and offline units awaiting later synchronization.
+Multi-device restore is not assumed atomic: an interruption must expose completed/uncertain targets and
+reconcile before continuing, without claiming all-or-nothing rollback or replaying stale operations.
+
+Keep old VIA layout files importable with their existing geometry/identity checks. A missing field in an
+old file leaves that setting unchanged; call it a legacy partial backup rather than a full restore.
+Complete backups may need a versioned extension/envelope; do not claim official VIA can restore fields
+that it does not understand. Existing standard VIA commands and ordinary keyboard behavior remain intact.
+The old layout-file compatibility rules in ADR 0004 remain valid for that old format only.
+
+First implementation owners are `src/store/layoutFileThunks.ts`, `src/utils/layout-import.ts`,
+`src/components/panes/configure-panes/save-load.tsx` and the existing family definitions. Acceptance needs
+nondefault-setting round trips, legacy-file compatibility, wrong-family/geometry/schema refusal,
+disconnect/revision-change/read failures, interrupted restore and regression on H7S/EERRAA as well as LM20.
+Exercise the existing `tests/layout-import.test.ts`, `tests/state-sync-transport.test.ts` and
+`tests/save-load-pane.test.tsx` and add bounded cases there before introducing another framework.
 
 ## Definitions
 

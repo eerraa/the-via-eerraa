@@ -86,7 +86,9 @@ mirrors it for the app.
   existing key-count check refuses a direct cross-geometry import. The same
   release took most EERRAA boards from four layers to six: a layer the file
   lacks keeps what the keyboard has, and a layer the keyboard
-  lacks is taken only when it is empty. The file stays official VIA's format:
+    lacks is taken only when it is empty. These are legacy layout-file rules; the approved complete
+    settings format is owned by [PROJECT_DIRECTION](../PROJECT_DIRECTION.md#complete-settings-backup-and-restore).
+    The legacy file stays official VIA's format:
   keys load per switch position whatever layout option is showing, so a key
   the current option hides is still written, and layout options are not saved.
   The one addition is `tapDance`, the Tap Dance settings official VIA has no

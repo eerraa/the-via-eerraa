@@ -36,6 +36,8 @@ looks right, report it; do not silently invert the table.
 | Maker VID block, PID allocation, legacy identity resolution, firmware download surface | [ADR 0004](adr/0004-firmware-distribution.md); concrete USB identities stay firmware-owned and mirrored in `config/era-definitions.manifest.json` | `tests/docs-contract.test.ts`, `tests/era-definition.test.ts`, `tests/firmware-distribution.test.tsx` |
 | Firmware link previews (the `/firmware-app` and maker shells) and short board links | [ADR 0004](adr/0004-firmware-distribution.md) §4 | `scripts/firmware-share-page.ts`, `vite.config.ts`, `public/_redirects`, `tests/firmware-distribution.test.tsx` |
 | Saved layout files across identities and layer counts, Tap Dance in them | [ADR 0004](adr/0004-firmware-distribution.md) §2; transaction and lazy macros in [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/layout-import.ts`, `src/store/layoutFileThunks.ts`, `tests/layout-import.test.ts`, `tests/state-sync-transport.test.ts`, `tests/save-load-pane.test.tsx`, `tests/era-definition.test.ts` |
+| LM20 online keyboard view, TRIA actions and app-first control | [PROJECT_DIRECTION](PROJECT_DIRECTION.md#lm20-configuration-and-device-management); firmware SPEC §10 owns wire | `src/components/panes/configure.tsx`, `src/utils/keycode-menus.ts`; paired LM20 acceptance |
+| Complete LM20/H7S/EERRAA user-settings backup and restore | [PROJECT_DIRECTION](PROJECT_DIRECTION.md#complete-settings-backup-and-restore) | `src/store/layoutFileThunks.ts`, `src/utils/layout-import.ts`, `tests/layout-import.test.ts`, `tests/state-sync-transport.test.ts`, `tests/save-load-pane.test.tsx` |
 | Distributed makers, board membership, published firmware files | `config/firmware-catalog.json`; family and identity come from `config/era-definitions.manifest.json` | `tests/firmware-distribution.test.tsx`, `scripts/validate-firmware-catalog.ts` in the build |
 
 ## 2. Definition inventory ownership
@@ -203,6 +205,7 @@ session start.
 | --- | --- |
 | `D:\Engineering\qmk_firmware_eerraa` | QMK firmware (RP2040 + ATmega32U4). `keyboards/era/` |
 | `D:\Engineering\eerraa-qmk-h7s-fw` | H7S firmware (main) |
+| `D:\Engineering\eerraa-54lm20` | LM20 single repository; firmware SPEC §9/§10 owns settings/wire and PLAN owns the approved two-DK/VIA implementation sequence. Read its root and component AGENTS before work. |
 
 - Opening an H7S repository: read **that** `AGENTS.md` first and follow it.
 - Keep the app as cwd for app work. Treat a missing peer repository as
@@ -210,6 +213,11 @@ session start.
 
 Cross-repository checks keep each owner/counterpart pair separate. A local PASS
 does not promote an unchecked peer side to verified.
+
+The user-approved LM20/VIA development and complete-settings backup scope permits corresponding local
+work after each peer's entry rules; it is not production deployment or push authority. Inspect actual
+peer roots and preserve their working trees. H7S/EERRAA source changes require their own entry and
+interface review; do not infer implementation compatibility from this app's definitions.
 
 | Surface | Owner → counterpart | Verification in this repository | Still unverified here |
 | --- | --- | --- | --- |
