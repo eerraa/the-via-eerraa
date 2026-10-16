@@ -1,0 +1,22 @@
+{
+  "definitions": [
+    {
+      "id": "sirind-tomak79l",
+      "path": "era-definitions/external/v3/sirind/3151-4040.json",
+      "vendorId": "0x3151",
+      "productId": "0x4040"
+    },
+    {
+      "id": "sirind-tomak79r",
+      "path": "era-definitions/external/v3/sirind/3151-4047.json",
+      "vendorId": "0x3151",
+      "productId": "0x4047"
+    },
+    {
+      "id": "sirind-brickex",
+      "path": "era-definitions/external/v3/sirind/5352-4245.json",
+      "vendorId": "0x5352",
+      "productId": "0x4245"
+    }
+  ]
+}
