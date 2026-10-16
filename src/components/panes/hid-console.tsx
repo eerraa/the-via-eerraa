@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react';
 import styled from 'styled-components';
+import {Redirect, Route} from 'wouter';
 import {AccentSelect} from '../inputs/accent-select';
 import {Pane} from './pane';
 import {isQMKConsoleDevice, QMK_CONSOLE_FILTER} from 'src/shims/node-hid';
@@ -301,3 +302,31 @@ export const HIDConsole = ({isActive = true}: HIDConsoleProps) => {
     </Pane>
   );
 };
+
+const PersistentPane = styled.div<{$active: boolean}>`
+  display: ${({$active}) => ($active ? 'flex' : 'none')};
+  flex: 1;
+  min-height: 0;
+`;
+
+/**
+ * While its tab is on, the console stays mounted so its log outlives other
+ * pages. With the tab off /console is no page at all and goes home, as the
+ * removed /diagnostics does.
+ */
+export const HIDConsoleRoute = ({
+  shown,
+  location,
+}: {
+  shown: boolean;
+  location: string;
+}) =>
+  shown ? (
+    <PersistentPane $active={location === '/console'}>
+      <HIDConsole isActive={location === '/console'} />
+    </PersistentPane>
+  ) : (
+    <Route path="/console">
+      <Redirect to="/" />
+    </Route>
+  );

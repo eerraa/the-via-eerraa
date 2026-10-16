@@ -32,6 +32,7 @@ import {PelpiKeycodeInput} from '../inputs/pelpi/keycode-input';
 import TextInput from '../inputs/text-input';
 import Layouts from '../Layouts';
 import {MacroRecorder} from './configure-panes/submenus/macros/macro-recorder';
+import {resetMacrosOnDevice} from 'src/store/macrosSlice';
 import {
   ControlRow,
   Detail,
@@ -166,16 +167,20 @@ const TestControls = () => {
         </Detail>
       </ControlRow>
       <MacroRecorder
+        macroIndex={0}
         selectedMacro={[[RawKeycodeSequenceAction.Delay, 4]]}
-        setUnsavedMacro={(_) => _}
-        undoMacro={() => null}
-        saveMacro={() => null}
+        editMacro={() => undefined}
+        isModified={false}
+        canEditItems={true}
+        onRecordingChange={() => undefined}
         isDelaySupported={true}
       />
       <MacroRecorder
-        setUnsavedMacro={(_) => _}
-        undoMacro={() => null}
-        saveMacro={() => null}
+        macroIndex={1}
+        editMacro={() => undefined}
+        isModified={false}
+        canEditItems={true}
+        onRecordingChange={() => undefined}
         isDelaySupported={true}
       />
     </ControlGroup>
@@ -183,6 +188,7 @@ const TestControls = () => {
 };
 
 export const Debug: FC = () => {
+  const dispatch = useDispatch();
   const api = useAppSelector(getSelectedKeyboardAPI);
   const connectedDevices = useAppSelector(getConnectedDevices);
 
@@ -309,7 +315,14 @@ export const Debug: FC = () => {
               <ControlRow>
                 <Label>Clear all macros</Label>
                 <Detail>
-                  <AccentButton onClick={() => api.resetMacros()}>
+                  <AccentButton
+                    onClick={() => {
+                      void (dispatch as any)(resetMacrosOnDevice()).catch(
+                        (error: unknown) =>
+                          console.warn('Clearing macros failed', error),
+                      );
+                    }}
+                  >
                     Clear
                   </AccentButton>
                 </Detail>

@@ -1,7 +1,8 @@
 import getIconColor from '../icons/get-icon-color';
+import {keyboardAreaHeight} from 'src/utils/keyboard-area';
 import styled from 'styled-components';
 
-export const Grid = styled.div`
+export const Grid = styled.div.attrs({'data-pane-grid': true})`
   height: 100%;
   width: 100%;
   display: grid;
@@ -12,7 +13,7 @@ export const Grid = styled.div`
   }
 `;
 
-export const Cell = styled.div`
+const Cell = styled.div`
   border-right: 1px solid var(--border_color_cell);
 `;
 
@@ -47,17 +48,6 @@ export const SpanOverflowCell = styled(Cell)`
   grid-column: span 2;
 `;
 
-export const SubmenuCell = styled(Cell)`
-  border-top: 1px solid var(--border_color_cell);
-  background: var(--bg_control);
-`;
-
-export const SubmenuOverflowCell = styled(SubmenuCell)`
-  min-width: 80px;
-  overflow: auto;
-  overflow-x: hidden; /* Override just the horizontal part */
-`;
-
 export const SinglePaneFlexCell = styled(Cell)`
   display: flex;
   overflow: hidden;
@@ -69,9 +59,11 @@ export const SinglePaneFlexCell = styled(Cell)`
 
 export const ConfigureFlexCell = styled(SinglePaneFlexCell)`
   pointer-events: none;
-  height: 500px;
+  height: ${keyboardAreaHeight};
 `;
 
+// Drawn as a link or a button so the keyboard reaches it; their own face is
+// cleared, and keyboard focus looks as the pointer's hover does.
 export const CategoryIconContainer = styled.span<{$selected?: boolean}>`
   position: relative;
   color: var(--color_inside-accent);
@@ -84,8 +76,14 @@ export const CategoryIconContainer = styled.span<{$selected?: boolean}>`
     props.$selected ? 'var(--color_accent)' : 'transparent'};
   border-radius: 10px;
   width: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  opacity: 1;
 
-  &:hover {
+  &:hover,
+  &:focus-visible {
     color: ${(props) =>
       props.$selected ? 'var(--color_inside-accent)' : 'var(--color_accent)'};
 
@@ -148,8 +146,8 @@ export const Detail = styled.span`
   align-items: center;
 `;
 
-export const Row = styled.div<{$selected: boolean}>`
-  cursor: pointer;
+export const Row = styled.div<{$selected: boolean; $static?: boolean}>`
+  cursor: ${(props) => (props.$static ? 'default' : 'pointer')};
   white-space: nowrap;
   margin-bottom: 15px;
   font-size: 20px;
@@ -164,7 +162,10 @@ export const Row = styled.div<{$selected: boolean}>`
   }
 
   &:hover {
-    color: var(--color_label-highlighted);
+    color: ${(props) =>
+      props.$static
+        ? getIconColor(props.$selected).style.color
+        : 'var(--color_label-highlighted)'};
 
     & .tooltip {
       transform: scale(1) translateX(0px);
@@ -176,16 +177,4 @@ export const Row = styled.div<{$selected: boolean}>`
     transform: translateX(-5px) scale(0.6);
     opacity: 0;
   }
-`;
-
-export const SubmenuRow = styled(Row)`
-  background: ${(props) => (props.$selected ? 'var(--bg_icon)' : 'inherit')};
-  padding: 4px 8px;
-  font-weight: 400;
-  min-width: min-content;
-  border-color: transparent;
-  margin-bottom: 11px;
-  color: ${(props) =>
-    props.$selected ? 'var(--color_label-highlighted)' : 'var(--color_label)'};
-  border-radius: 12px;
 `;

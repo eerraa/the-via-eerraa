@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useId} from 'react';
 import {Pane} from './pane';
 import styled from 'styled-components';
 import {
@@ -17,7 +17,6 @@ import {useAppSelector} from 'src/store/hooks';
 import {
   getShowDesignTab,
   getShowConsoleTab,
-  getShowDesignTabConfirmationNotice,
   getDisableFastRemap,
   getShowSliderValuesMode,
   toggleCreatorMode,
@@ -30,7 +29,6 @@ import {
   updateThemeName,
   getRenderMode,
   updateRenderMode,
-  setShowDesignTabConfirmationNotice,
 } from 'src/store/settingsSlice';
 import {AccentSelect} from '../inputs/accent-select';
 import {THEMES} from 'src/utils/themes';
@@ -39,10 +37,8 @@ import {MenuTooltip} from '../inputs/tooltip';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faToolbox} from '@fortawesome/free-solid-svg-icons';
 import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
-import {ErrorMessage} from '../styled';
 import {webGLIsAvailable} from 'src/utils/test-webgl';
 import {useTranslation} from 'react-i18next';
-import {MessageDialog} from '../inputs/message-dialog';
 
 const Container = styled.div`
   display: flex;
@@ -51,40 +47,23 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
-const DiagnosticContainer = styled(Container)`
-  margin-top: 20px;
-  padding-top: 20px;
-`;
-
-const SettingsErrorMessage = styled(ErrorMessage)`
-  margin: 0;
-  font-style: italic;
+// A value to read, not a control: muted instead of the accent.
+const ValueDetail = styled(Detail)`
+  color: var(--color_label);
 `;
 
 export const Settings = () => {
   const {t} = useTranslation();
+  const id = useId();
   const dispatch = useDispatch();
   const showDesignTab = useAppSelector(getShowDesignTab);
   const showConsoleTab = useAppSelector(getShowConsoleTab);
-  const showDesignTabConfirmationNotice = useAppSelector(
-    getShowDesignTabConfirmationNotice,
-  );
   const disableFastRemap = useAppSelector(getDisableFastRemap);
   const ShowSliderValuesMode = useAppSelector(getShowSliderValuesMode);
   const themeMode = useAppSelector(getThemeMode);
   const themeName = useAppSelector(getThemeName);
   const renderMode = useAppSelector(getRenderMode);
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
-
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [showDesignTabNotice, setShowDesignTabNotice] = useState(false);
-
-  useEffect(() => {
-    if (showDesignTabConfirmationNotice) {
-      setShowDesignTabNotice(true);
-      dispatch(setShowDesignTabConfirmationNotice(false));
-    }
-  }, [dispatch, showDesignTabConfirmationNotice]);
 
   const themeSelectOptions = Object.keys(THEMES).map((k) => ({
     label: t(k.replaceAll('_', ' ')),
@@ -94,38 +73,34 @@ export const Settings = () => {
     (opt) => opt.value === themeName,
   );
 
-  const ShowSliderModeOptions = webGLIsAvailable
-    ? [
-        {
-          label: t('Slider Only'),
-          value: 'Slider Only',
-        },
-        {
-          label: t('Slider & Show Value'),
-          value: 'Slider & Show Value',
-        },
-        {
-          label: t('Slider & Input Field'),
-          value: 'Slider & Input Field',
-        },
-      ]
-    : [{label: t('Slider Only'), value: 'Slider Only'}];
+  const ShowSliderModeOptions = [
+    {
+      label: t('Slider Only'),
+      value: 'Slider Only',
+    },
+    {
+      label: t('Slider & Show Value'),
+      value: 'Slider & Show Value',
+    },
+    {
+      label: t('Slider & Input Field'),
+      value: 'Slider & Input Field',
+    },
+  ];
   const showSliderModeDefaultValue = ShowSliderModeOptions.find(
     (opt) => opt.value === ShowSliderValuesMode,
   );
 
-  const renderModeOptions = webGLIsAvailable
-    ? [
-        {
-          label: t('2D'),
-          value: '2D',
-        },
-        {
-          label: t('3D'),
-          value: '3D',
-        },
-      ]
-    : [{label: t('2D'), value: '2D'}];
+  const renderModeOptions = [
+    {
+      label: t('2D'),
+      value: '2D',
+    },
+    {
+      label: t('3D'),
+      value: '3D',
+    },
+  ];
   const renderModeDefaultValue = renderModeOptions.find(
     (opt) => opt.value === renderMode,
   );
@@ -134,7 +109,7 @@ export const Settings = () => {
       <Grid style={{overflow: 'hidden'}}>
         <MenuCell style={{pointerEvents: 'all', borderTop: 'none'}}>
           <MenuContainer>
-            <Row $selected={true}>
+            <Row $selected={true} $static>
               <IconContainer>
                 <FontAwesomeIcon icon={faToolbox} />
                 <MenuTooltip>{t('General')}</MenuTooltip>
@@ -145,36 +120,40 @@ export const Settings = () => {
         <SpanOverflowCell style={{flex: 1, borderWidth: 0}}>
           <Container>
             <ControlRow>
-              <Label>{t('Show Design tab')}</Label>
+              <Label id={`${id}-design`}>{t('Show Design tab')}</Label>
               <Detail>
                 <AccentSlider
+                  labelledBy={`${id}-design`}
                   onChange={() => dispatch(toggleCreatorMode())}
                   isChecked={showDesignTab}
                 />
               </Detail>
             </ControlRow>
             <ControlRow>
-              <Label>{t('Show HID Console tab')}</Label>
+              <Label id={`${id}-console`}>{t('Show HID Console tab')}</Label>
               <Detail>
                 <AccentSlider
+                  labelledBy={`${id}-console`}
                   onChange={() => dispatch(toggleConsoleTab())}
                   isChecked={showConsoleTab}
                 />
               </Detail>
             </ControlRow>
             <ControlRow>
-              <Label>{t('Fast Key Mapping')}</Label>
+              <Label id={`${id}-fast`}>{t('Fast Key Mapping')}</Label>
               <Detail>
                 <AccentSlider
+                  labelledBy={`${id}-fast`}
                   onChange={() => dispatch(toggleFastRemap())}
                   isChecked={!disableFastRemap}
                 />
               </Detail>
             </ControlRow>
             <ControlRow>
-              <Label>{t('Slider Mode')}</Label>
+              <Label id={`${id}-slider`}>{t('Slider Mode')}</Label>
               <Detail>
                 <AccentSelect
+                  aria-labelledby={`${id}-slider`}
                   defaultValue={showSliderModeDefaultValue}
                   options={ShowSliderModeOptions}
                   onChange={(option: any) => {
@@ -184,18 +163,20 @@ export const Settings = () => {
               </Detail>
             </ControlRow>
             <ControlRow>
-              <Label>{t('Light Mode')}</Label>
+              <Label id={`${id}-light`}>{t('Light Mode')}</Label>
               <Detail>
                 <AccentSlider
+                  labelledBy={`${id}-light`}
                   onChange={() => dispatch(toggleThemeMode())}
                   isChecked={themeMode === 'light'}
                 />
               </Detail>
             </ControlRow>
             <ControlRow>
-              <Label>{t('Keycap Theme')}</Label>
+              <Label id={`${id}-theme`}>{t('Keycap Theme')}</Label>
               <Detail>
                 <AccentSelect
+                  aria-labelledby={`${id}-theme`}
                   defaultValue={themeDefaultValue}
                   options={themeSelectOptions}
                   onChange={(option: any) => {
@@ -204,52 +185,27 @@ export const Settings = () => {
                 />
               </Detail>
             </ControlRow>
-            <ControlRow>
-              <Label>{t('Render Mode')}</Label>
-              <Detail>
-                <AccentSelect
-                  defaultValue={renderModeDefaultValue}
-                  options={renderModeOptions}
-                  onChange={(option: any) => {
-                    option && dispatch(updateRenderMode(option.value));
-                  }}
-                />
-              </Detail>
-            </ControlRow>
-            <ControlRow>
-              <Label>{t('Show Diagnostic Information')}</Label>
-
-              <Detail>
-                {selectedDevice ? (
-                  <AccentSlider
-                    onChange={() => setShowDiagnostics(!showDiagnostics)}
-                    isChecked={showDiagnostics}
+            {/* Without WebGL only 2D draws, so the row would offer no choice. */}
+            {webGLIsAvailable && (
+              <ControlRow>
+                <Label id={`${id}-render`}>{t('Render Mode')}</Label>
+                <Detail>
+                  <AccentSelect
+                    aria-labelledby={`${id}-render`}
+                    defaultValue={renderModeDefaultValue}
+                    options={renderModeOptions}
+                    onChange={(option: any) => {
+                      option && dispatch(updateRenderMode(option.value));
+                    }}
                   />
-                ) : (
-                  <SettingsErrorMessage>
-                    {t('Requires connected device')}
-                  </SettingsErrorMessage>
-                )}
-              </Detail>
+                </Detail>
+              </ControlRow>
+            )}
+            <ControlRow>
+              <Label>{t('VIA Protocol')}</Label>
+              <ValueDetail>{selectedDevice?.protocol ?? '—'}</ValueDetail>
             </ControlRow>
           </Container>
-          <MessageDialog
-            isOpen={showDesignTabNotice}
-            onConfirm={() => setShowDesignTabNotice(false)}
-            confirmLabel="OK"
-          >
-            {t(
-              "You didn't click \"Confirm\". To enable the Design tab, you must confirm first.",
-            )}
-          </MessageDialog>
-          {showDiagnostics && selectedDevice ? (
-            <DiagnosticContainer>
-              <ControlRow>
-                <Label>{t('VIA Firmware Protocol')}</Label>
-                <Detail>{selectedDevice.protocol}</Detail>
-              </ControlRow>
-            </DiagnosticContainer>
-          ) : null}
         </SpanOverflowCell>
       </Grid>
     </Pane>

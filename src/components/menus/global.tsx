@@ -10,7 +10,7 @@ import {CategoryIconContainer} from '../panes/grid';
 import {ErrorLink, ErrorsPaneConfig} from '../panes/errors';
 import {ExternalLinks} from './external-links';
 import {useTranslation} from 'react-i18next';
-import {LanguageSelect} from './language-select';
+import {useGlobalMenuHeight} from 'src/utils/global-menu-height';
 
 const Container = styled.div`
   width: 100vw;
@@ -26,9 +26,53 @@ const {DEBUG_PROD, MODE, DEV} = import.meta.env;
 const showDebugPane = MODE === 'development' || DEBUG_PROD === 'true' || DEV;
 
 const GlobalContainer = styled(Container)`
+  flex: none;
   background: var(--bg_outside-accent);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: minmax(0, 1fr);
   column-gap: 20px;
+
+  @media (max-width: 720px) {
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    height: auto;
+    gap: 8px 16px;
+    padding: 8px;
+  }
 `;
+
+// The two outer tracks balance when space permits. The right track's intrinsic
+// width moves this group left on narrow windows, including its error warning.
+const PaneIcons = styled.div`
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  column-gap: 20px;
+
+  @media (max-width: 720px) {
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+`;
+
+const GlobalMenuContainer = ({children}: React.PropsWithChildren) => {
+  const ref = useGlobalMenuHeight();
+  return <GlobalContainer ref={ref}>{children}</GlobalContainer>;
+};
+
+/**
+ * Without WebHID there is nothing to configure, but firmware downloads still
+ * work, so the header keeps only language selection and the firmware entry.
+ */
+export const DownloadOnlyGlobalMenu = () => (
+  <GlobalMenuContainer>
+    <ExternalLinks />
+  </GlobalMenuContainer>
+);
 
 export const UnconnectedGlobalMenu = () => {
   const {t, i18n} = useTranslation();
@@ -43,9 +87,15 @@ export const UnconnectedGlobalMenu = () => {
         if (pane.key === 'design' && !showDesignTab) return null;
         if (pane.key === 'console' && !showConsoleTab) return null;
         if (pane.key === 'debug' && !showDebugPane) return null;
+        const selected = pane.path === location;
         return (
           <Link key={pane.key} to={pane.path}>
-            <CategoryIconContainer $selected={pane.path === location}>
+            <CategoryIconContainer
+              as="a"
+              $selected={selected}
+              aria-label={t(pane.title)}
+              aria-current={selected ? 'page' : undefined}
+            >
               <FontAwesomeIcon size={'xl'} icon={pane.icon} />
               <CategoryMenuTooltip>{t(pane.title)}</CategoryMenuTooltip>
             </CategoryIconContainer>
@@ -53,16 +103,17 @@ export const UnconnectedGlobalMenu = () => {
         );
       },
     );
-  }, [location, showConsoleTab, showDesignTab]);
+  }, [location, showConsoleTab, showDesignTab, t]);
 
   return (
     <React.Fragment>
-      <GlobalContainer>
-        <ErrorLink />
-        {Panes}
-        <LanguageSelect />
+      <GlobalMenuContainer>
+        <PaneIcons>
+          <ErrorLink />
+          {Panes}
+        </PaneIcons>
         <ExternalLinks />
-      </GlobalContainer>
+      </GlobalMenuContainer>
     </React.Fragment>
   );
 };

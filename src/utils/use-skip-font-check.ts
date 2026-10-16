@@ -9,7 +9,9 @@ export function useSkipFontCheck() {
     setShouldSkipFontCheck(true);
   }, []);
   useEffect(() => {
-    document.fonts.load('Fira Sans').then(allowFontCheck, skipFontCheck);
+    document.fonts
+      .load('bold 16px "Fira Sans"')
+      .then(allowFontCheck, skipFontCheck);
   }, []);
   return shouldSkipFontCheck;
 }

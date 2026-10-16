@@ -11,6 +11,10 @@ import errorsReducer from './errorsSlice';
 import {errorsListenerMiddleware} from './errorsListener';
 import firmwareReducer from './firmwareSlice';
 import definitionNameReducer from './definitionNameSlice';
+import stateSyncReducer from './stateSyncSlice';
+import draftsReducer from './draftsSlice';
+import applyingReducer from './applyingSlice';
+import configurePlaceReducer from './configurePlaceSlice';
 
 export const store = configureStore({
   reducer: {
@@ -25,6 +29,10 @@ export const store = configureStore({
     errors: errorsReducer,
     firmware: firmwareReducer,
     definitionName: definitionNameReducer,
+    stateSync: stateSyncReducer,
+    drafts: draftsReducer,
+    applying: applyingReducer,
+    configurePlace: configurePlaceReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().prepend(errorsListenerMiddleware.middleware),

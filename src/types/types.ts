@@ -13,7 +13,7 @@ export enum TestKeyState {
   KeyUp,
 }
 
-export type HIDColor = {
+type HIDColor = {
   hue: number;
   sat: number;
 };
@@ -91,6 +91,8 @@ export type Settings = {
   themeName: string;
   macroEditor: MacroEditorSettings;
   testKeyboardSoundsSettings: TestKeyboardSoundsSettings;
+  /** Absent until the saved key sounds have moved to the quiet default. */
+  testKeyboardSoundsVersion?: number;
   designDefinitionVersion: DefinitionVersion;
   hostKeyboardLayout: string;
 };
