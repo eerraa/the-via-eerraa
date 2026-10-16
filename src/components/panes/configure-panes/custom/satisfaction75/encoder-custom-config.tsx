@@ -65,5 +65,3 @@ export const EncoderCustomConfig = (props: Props) => {
     </RowDiv>
   );
 };
-
-export default EncoderCustomConfig;

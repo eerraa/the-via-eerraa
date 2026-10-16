@@ -70,7 +70,6 @@ type State = {
   encoderBehaviors: EncoderBehavior[];
 };
 
-// TODO: Can we get rid of SatisfactionMenu now that we have v3 definitions?
 export const SatisfactionMenu = () => {
   const api = useAppSelector(getSelectedKeyboardAPI);
   const {t} = useTranslation();

@@ -86,5 +86,3 @@ export const EncoderModeToggle: React.FC<Props> = ({
     </CenteredColumnDiv>
   );
 };
-
-export default EncoderModeToggle;

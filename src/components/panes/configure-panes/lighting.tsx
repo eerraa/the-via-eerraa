@@ -1,7 +1,11 @@
-import {useState} from 'react';
 import styled from 'styled-components';
-import {OverflowCell, SubmenuCell, SubmenuRow} from '../grid';
 import {CenterPane} from '../pane';
+import {
+  SubmenuTab,
+  SubmenuTabBar,
+  TabbedBody,
+  TabbedCell,
+} from '../submenu-tabs';
 import {title, component} from '../../icons/lightbulb';
 import {GeneralPane} from './submenus/lighting/general';
 import {
@@ -17,6 +21,7 @@ import {useAppSelector} from 'src/store/hooks';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
 import type {FC} from 'react';
 import {useTranslation} from 'react-i18next';
+import {useSubmenuTab} from 'src/utils/use-configure-place';
 
 export const Category = {
   General: {label: 'General', Menu: GeneralPane},
@@ -36,15 +41,9 @@ const Container = styled.div`
   padding: 0 12px;
 `;
 
-const MenuContainer = styled.div`
-  padding: 15px 20px 20px 10px;
-`;
-
 export const Pane: FC = () => {
   const {t} = useTranslation();
   const selectedDefinition = useAppSelector(getSelectedDefinition);
-
-  const [selectedCategory, setSelectedCategory] = useState(Category.General);
 
   const getMenus = () => {
     if (!isVIADefinitionV2(selectedDefinition)) {
@@ -73,29 +72,37 @@ export const Pane: FC = () => {
     ].filter(({Menu}) => !!Menu);
   };
 
+  const menus = getMenus();
+  const [selectedLabel, openSubmenu] = useSubmenuTab(
+    title,
+    menus.map(({label}) => label),
+  );
+  const selectedCategory =
+    menus.find(({label}) => label === selectedLabel) ?? Category.General;
+
   return (
-    <>
-      <SubmenuCell>
-        <MenuContainer>
-          {getMenus().map((menu) => (
-            <SubmenuRow
-              $selected={selectedCategory === menu}
-              onClick={() => setSelectedCategory(menu)}
-              key={menu.label}
-            >
-              {t(menu.label)}
-            </SubmenuRow>
-          ))}
-        </MenuContainer>
-      </SubmenuCell>
-      <OverflowCell>
+    <TabbedCell>
+      <SubmenuTabBar label={t('Lighting')}>
+        {menus.map((menu) => (
+          <SubmenuTab
+            key={menu.label}
+            type="button"
+            $selected={selectedCategory === menu}
+            aria-pressed={selectedCategory === menu}
+            onClick={() => openSubmenu(menu.label)}
+          >
+            {t(menu.label)}
+          </SubmenuTab>
+        ))}
+      </SubmenuTabBar>
+      <TabbedBody>
         <LightingPane>
           <Container>
             <selectedCategory.Menu />
           </Container>
         </LightingPane>
-      </OverflowCell>
-    </>
+      </TabbedBody>
+    </TabbedCell>
   );
 };
 

@@ -1,18 +1,5 @@
 import styled from 'styled-components';
 
-export const ModalBackground = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  background: rgba(0, 0, 0, 0.75);
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 2;
-`;
-
 export const ModalContainer = styled.div`
   border: 2px solid var(--color_accent);
   min-width: 460px;
@@ -36,15 +23,12 @@ export const PromptText = styled.div`
   color: var(--color_label);
   font-size: 20px;
   line-height: 1.4;
-  max-width: calc(100vw - 80px);
+  max-width: min(640px, calc(100vw - 80px));
   white-space: pre-line;
-  text-align: center;
-`;
-
-export const RowDiv = styled.div`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 220px;
-  gap: 20px;
+  text-align: left;
+  /* Korean breaks between words. Applied to every language, keep-all would
+     make a Japanese or Chinese sentence one unbreakable word. */
+  &:lang(ko) {
+    word-break: keep-all;
+  }
 `;

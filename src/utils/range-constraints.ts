@@ -1,8 +1,8 @@
 import type {RangeConstraint, VIAControlItem} from '@the-via/reader';
 
-export type RangeControl = Extract<VIAControlItem, {type: 'range'}>;
+type RangeControl = Extract<VIAControlItem, {type: 'range'}>;
 export type RangeControlMap = Record<string, RangeControl>;
-export type LogicalRangeValues = Record<string, number>;
+type LogicalRangeValues = Record<string, number>;
 
 const referenceId = (constraint: RangeConstraint) =>
   typeof constraint.reference === 'string'

@@ -6,13 +6,21 @@ import {
   LightingValue,
 } from '@the-via/reader';
 import type {AppThunk, RootState} from './index';
-import {getSelectedDefinition} from './definitionsSlice';
+import {
+  getDefinitionForDevice,
+  getSelectedDefinition,
+} from './definitionsSlice';
 import {
   getSelectedConnectedDevice,
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
 } from './devicesSlice';
 import {KeyboardAPI} from 'src/utils/keyboard-api';
+import {
+  completeContinuousHIDTransaction,
+  enqueueContinuousHIDUpdate,
+  type ContinuousHIDResult,
+} from 'src/utils/continuous-hid-transaction';
 
 type LightingMap = {[devicePath: string]: LightingData};
 
@@ -40,7 +48,7 @@ const commandParamLengths = {
   [LightingValue.BACKLIGHT_DISABLE_WHEN_USB_SUSPENDED]: 1,
 };
 
-export type LightingState = {lightingMap: LightingMap};
+type LightingState = {lightingMap: LightingMap};
 
 const initialState: LightingState = {
   lightingMap: {},
@@ -95,38 +103,155 @@ export const updateBacklightValue =
     await api.saveLighting();
   };
 
-export const updateCustomColor =
-  (idx: number, hue: number, sat: number): AppThunk =>
+const continuousLightingKey = (scope: string | number) => `lighting:${scope}`;
+
+const continuousLightingConfig = (
+  key: string,
+  connectedDevice: ConnectedDevice,
+  connectionGeneration: number,
+  dispatch: (action: any) => any,
+) => ({
+  key,
+  path: connectedDevice.path,
+  generation: connectionGeneration,
+  save: (reservedApi: KeyboardAPI) => reservedApi.saveLighting(),
+  onSettled: async (result: ContinuousHIDResult) => {
+    if (result.status === 'failed') {
+      console.warn('Continuous lighting transaction failed', result.error);
+      const api = new KeyboardAPI(connectedDevice.path);
+      if (api.isConnectionGenerationCurrent(connectionGeneration)) {
+        await dispatch(updateLightingData(connectedDevice));
+      }
+    }
+  },
+});
+
+export const updateBacklightValueContinuous =
+  (command: LightingValue, ...rest: number[]): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
     const state = getState();
     const connectedDevice = getSelectedConnectedDevice(state);
-    const api = getSelectedKeyboardAPI(state);
-    const oldLightingData = getSelectedLightingData(state);
-    if (!connectedDevice || !oldLightingData || !api) {
-      // TODO: shoud we be throwing instead of returning whenever we do these device checks in thunks?
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+    if (!connectedDevice || !api) {
       return;
     }
+    const connectionGeneration = api.getConnectionGeneration();
+    const selectedLightingData = getSelectedLightingData(state);
+    const currentValue = selectedLightingData?.[command];
+    if (
+      Array.isArray(currentValue) &&
+      currentValue.length === rest.length &&
+      currentValue.every((value, index) => value === rest[index])
+    ) {
+      return;
+    }
+    const lightingData = {
+      ...selectedLightingData,
+      [command]: [...rest],
+    };
+    dispatch(
+      updateSelectedLightingData({
+        lightingData,
+        devicePath: connectedDevice.path,
+      }),
+    );
+    try {
+      await enqueueContinuousHIDUpdate(
+        continuousLightingConfig(
+          continuousLightingKey(`value:${command}`),
+          connectedDevice,
+          connectionGeneration,
+          dispatch,
+        ),
+        {
+          dedupeKey: rest.join(','),
+          execute: async (reservedApi) => {
+            await reservedApi.setBacklightValue(command, ...rest);
+            return ['lighting'];
+          },
+        },
+      );
+    } catch (error) {
+      console.warn('Continuous lighting SET failed', error);
+    }
+  };
 
+export const completeBacklightValueContinuous =
+  (command: LightingValue): AppThunk<Promise<void>> =>
+  async () => {
+    try {
+      await completeContinuousHIDTransaction(
+        continuousLightingKey(`value:${command}`),
+      );
+    } catch (error) {
+      console.warn('Continuous lighting SAVE failed', error);
+    }
+  };
+
+export const updateCustomColorContinuous =
+  (idx: number, hue: number, sat: number): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    const state = getState();
+    const connectedDevice = getSelectedConnectedDevice(state);
+    const api = getSelectedKeyboardAPI(state) as KeyboardAPI | undefined;
+    const oldLightingData = getSelectedLightingData(state);
+    if (!connectedDevice || !api || !oldLightingData) {
+      return;
+    }
+    const connectionGeneration = api.getConnectionGeneration();
+    const currentColor = oldLightingData.customColors?.[idx];
+    if (currentColor?.hue === hue && currentColor.sat === sat) {
+      return;
+    }
     const customColors = [...(oldLightingData.customColors || [])];
     customColors[idx] = {hue, sat};
-    const lightingData = {
-      ...oldLightingData,
-      customColors,
-    };
-    const {path} = connectedDevice;
-    dispatch(updateSelectedLightingData({lightingData, devicePath: path}));
+    dispatch(
+      updateSelectedLightingData({
+        lightingData: {...oldLightingData, customColors},
+        devicePath: connectedDevice.path,
+      }),
+    );
+    try {
+      await enqueueContinuousHIDUpdate(
+        continuousLightingConfig(
+          continuousLightingKey(`custom-color:${idx}`),
+          connectedDevice,
+          connectionGeneration,
+          dispatch,
+        ),
+        {
+          dedupeKey: `${hue},${sat}`,
+          execute: async (reservedApi) => {
+            await reservedApi.setCustomColor(idx, hue, sat);
+            return ['lighting'];
+          },
+        },
+      );
+    } catch (error) {
+      console.warn('Continuous custom color SET failed', error);
+    }
+  };
 
-    api.setCustomColor(idx, hue, sat);
-    await api.saveLighting();
+export const completeCustomColorContinuous =
+  (idx: number): AppThunk<Promise<void>> =>
+  async () => {
+    try {
+      await completeContinuousHIDTransaction(
+        continuousLightingKey(`custom-color:${idx}`),
+      );
+    } catch (error) {
+      console.warn('Continuous custom color SAVE failed', error);
+    }
   };
 
 export const updateLightingData =
   (connectedDevice: ConnectedDevice): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    const selectedDefinition = getSelectedDefinition(state);
-    const api = getSelectedKeyboardAPI(state);
-    if (!selectedDefinition || !api) {
+    const selectedDefinition = getDefinitionForDevice(state, connectedDevice);
+    const api = new KeyboardAPI(connectedDevice.path);
+    const connectionGeneration = api.getConnectionGeneration();
+    if (!selectedDefinition) {
       return;
     }
 
@@ -169,6 +294,14 @@ export const updateLightingData =
         {res: props, ref: commandPromisesRes},
       ).res;
 
+      if (
+        !api.isConnectionGenerationCurrent(connectionGeneration) ||
+        getDefinitionForDevice(getState(), connectedDevice) !==
+          selectedDefinition
+      ) {
+        return;
+      }
+
       dispatch(
         updateLighting({
           [path]: {
@@ -179,7 +312,7 @@ export const updateLightingData =
     }
   };
 
-export const getLightingMap = (state: RootState) => state.lighting.lightingMap;
+const getLightingMap = (state: RootState) => state.lighting.lightingMap;
 
 export const getSelectedLightingData = createSelector(
   getLightingMap,

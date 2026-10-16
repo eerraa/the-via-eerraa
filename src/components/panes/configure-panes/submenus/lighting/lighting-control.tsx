@@ -10,8 +10,10 @@ import type {
 } from '@the-via/reader';
 import {ArrayColorPicker} from '../../../../inputs/color-picker';
 import {
+  completeBacklightValueContinuous,
   getSelectedLightingData,
   updateBacklightValue,
+  updateBacklightValueContinuous,
 } from 'src/store/lightingSlice';
 import {useAppSelector} from 'src/store/hooks';
 import {getSelectedDefinition} from 'src/store/definitionsSlice';
@@ -66,8 +68,16 @@ export const LightingControl = (props: AdvancedControlProps) => {
             <AccentRange
               max={meta.max}
               min={meta.min}
-              defaultValue={valArr[0]}
-              onChange={(val) => dispatch(updateBacklightValue(command, val))}
+              value={valArr[0]}
+              onChange={(val) =>
+                dispatch(updateBacklightValueContinuous(command, val))
+              }
+              onInteractionComplete={() =>
+                dispatch(completeBacklightValueContinuous(command))
+              }
+              onInteractionCancel={() =>
+                dispatch(completeBacklightValueContinuous(command))
+              }
             />
           </Detail>
         </ControlRow>
@@ -79,8 +89,17 @@ export const LightingControl = (props: AdvancedControlProps) => {
           <Detail>
             <ArrayColorPicker
               color={valArr as [number, number]}
+              label={
+                typeof labelContent === 'string' ? labelContent : undefined
+              }
               setColor={(hue, sat) =>
-                dispatch(updateBacklightValue(command, hue, sat))
+                dispatch(updateBacklightValueContinuous(command, hue, sat))
+              }
+              onInteractionComplete={() =>
+                dispatch(completeBacklightValueContinuous(command))
+              }
+              onInteractionCancel={() =>
+                dispatch(completeBacklightValueContinuous(command))
               }
             />
           </Detail>

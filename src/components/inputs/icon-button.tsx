@@ -1,12 +1,15 @@
 import styled from 'styled-components';
+import {focusRing} from './accent-button';
 
-export const IconButton = styled.button`
+const IconButton = styled.button`
   appearance: none;
   width: 40px;
   position: relative;
   display: inline-block;
   background: transparent;
   border: none;
+  outline: none;
+  ${focusRing}
   cursor: pointer;
   padding: 10px 10px;
   line-height: initial;
@@ -50,6 +53,10 @@ export const IconButton = styled.button`
   .tooltip {
     transform: translateX(-5px) scale(0.6);
     opacity: 0;
+  }
+  &:focus-visible .tooltip {
+    transform: scale(1) translateX(0px);
+    opacity: 1;
   }
 `;
 
