@@ -1,11 +1,13 @@
-import {PresentationControls} from '@react-three/drei';
+import {Html, PresentationControls} from '@react-three/drei';
 import {ThreeEvent} from '@react-three/fiber';
 import React, {useEffect, useMemo, useState} from 'react';
 import {shallowEqual} from 'react-redux';
 import {
   calculateKeyboardFrameDimensions,
   CSSVarObject,
+  KeycapMetric,
 } from 'src/utils/keyboard-rendering';
+import {useReportKeyboardFrame} from 'src/utils/keyboard-area';
 import {
   KeyboardCanvasContentProps,
   KeyboardCanvasProps,
@@ -19,11 +21,12 @@ import {a, SpringValue, useSpring} from '@react-spring/three';
 export const KeyboardCanvas: React.FC<
   KeyboardCanvasProps<ThreeEvent<MouseEvent>>
 > = (props) => {
-  const {containerDimensions, shouldHide, ...otherProps} = props;
+  const {containerDimensions, shouldHide, cornerNote, ...otherProps} = props;
   const {width, height} = useMemo(
     () => calculateKeyboardFrameDimensions(otherProps.keys),
     [otherProps.keys],
   );
+  useReportKeyboardFrame(otherProps.mode, width, height);
   const [sceneMouseOver, setSceneMouseover] = useState(false);
   const {verticalPostion, tilt} = useSpring({
     config: {tension: 35, friction: 5, mass: 0.3},
@@ -53,7 +56,7 @@ export const KeyboardCanvas: React.FC<
               CSSVarObject.keyXSpacing +
               70),
       ),
-      500 /
+      containerDimensions.height /
         ((CSSVarObject.keyHeight + CSSVarObject.keyYSpacing) * height -
           CSSVarObject.keyYSpacing +
           70),
@@ -72,6 +75,18 @@ export const KeyboardCanvas: React.FC<
         verticalPostion={verticalPostion}
         tilt={tilt}
       />
+      {cornerNote ? (
+        <Html
+          position={[
+            (width * KeycapMetric.keyXPos) / 2,
+            -(height * KeycapMetric.keyYPos) / 2 - 12,
+            0,
+          ]}
+          style={{transform: 'translateX(-100%)'}}
+        >
+          {cornerNote}
+        </Html>
+      ) : null}
     </group>
   );
 };

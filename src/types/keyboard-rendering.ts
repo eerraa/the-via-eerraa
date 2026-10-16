@@ -1,6 +1,8 @@
 import {ThreeEvent} from '@react-three/fiber';
 import {VIADefinitionV2, VIADefinitionV3, VIAKey} from '@the-via/reader';
+import type {ReactNode} from 'react';
 import {TestKeyState} from 'src/types/types';
+import type {KeyLabel} from 'src/utils/keyboard-rendering';
 import {BufferGeometry} from 'three';
 
 export enum DisplayMode {
@@ -44,6 +46,8 @@ export type KeyboardCanvasProps<T> = Omit<
 > & {
   shouldHide?: boolean;
   containerDimensions: DOMRect;
+  /** Shown just below the picture's bottom right corner. */
+  cornerNote?: ReactNode;
 };
 
 export type KeyGroupProps<T> = {
@@ -59,7 +63,7 @@ export type KeyGroupProps<T> = {
   onKeycapPointerOver?: (e: T, idx: number) => void;
 };
 
-export type KeyCoords<T> = {
+type KeyCoords<T> = {
   position: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
@@ -69,6 +73,8 @@ export type KeyCoords<T> = {
   onClick: (e: T, idx: number) => void;
   onPointerDown?: (e: T, idx: number) => void;
   onPointerOver?: (e: T, idx: number) => void;
+  /** The pointer reached the key or left it, for KEYMAP's corner to describe. */
+  onHover?: (idx: number, hovered: boolean) => void;
 };
 
 export type KeysKeys<T> = {
@@ -77,7 +83,8 @@ export type KeysKeys<T> = {
 };
 
 export type KeycapSharedProps<T> = {
-  label: any;
+  /** None until the keymap has been read. */
+  label?: KeyLabel;
   selected: boolean;
   disabled: boolean;
   keyState: number;

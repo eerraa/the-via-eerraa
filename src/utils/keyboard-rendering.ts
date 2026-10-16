@@ -10,19 +10,22 @@ import partition from 'lodash.partition';
 import {Color} from 'three';
 import {getThemeFromStore} from './device-store';
 import {
-  getLabelForByte,
-  getShortNameForKeycode,
   getCustomKeycodeIndex,
+  getKeycodeForByte,
   IKeycode,
-  isAlpha,
-  isNumpadNumber,
-  isNumpadSymbol,
-  isMultiLegend,
   isCustomKeycodeByte,
-  isArrowKey,
   isMacroKeycodeByte,
   getMacroKeycodeIndex,
 } from './key';
+import {
+  keycapLegend,
+  legendText,
+  type KeycapLegend,
+  type LegendKey,
+  type LegendModifier,
+  type LegendName,
+} from './keycap-legend';
+import {macroWithoutWaits} from './macro-api/macro-api.common';
 
 export const CSSVarObject = {
   keyWidth: 52,
@@ -422,113 +425,139 @@ export const getScale = (
   return scale;
 };
 
-const getLabelOffsets = (
-  topLabel: string,
-  bottomLabel: string,
-): [number, number] => {
-  let topLabelOffset = 0.0;
-  let bottomLabelOffset = 0.0;
-
-  if (topLabel.length == 1) {
-    if ('^*"'.split('').includes(topLabel[0])) {
-      topLabelOffset = 0.2;
-    }
-  }
-
-  if (bottomLabel.length == 1) {
-    if (',.'.split('').includes(bottomLabel[0])) {
-      bottomLabelOffset = 0.4;
-    } else if ("/\\;'[]".split('').includes(bottomLabel[0])) {
-      bottomLabelOffset = 0.3;
-    } else if ('-'.split('').includes(bottomLabel[0])) {
-      bottomLabelOffset = 0.1;
-    }
-  }
-
-  return [topLabelOffset, bottomLabelOffset];
+/** A key's legend on the keyboard, with what its tooltip and redraw need. */
+export type KeyLabel = KeycapLegend & {
+  /**
+   * What a macro key's macro types, its waits left out, or "…" until the
+   * keyboard's macros are read: only a macro key has a tooltip, and it shows
+   * this.
+   */
+  macro?: string;
+  /** Changes whenever what is drawn or shown does. */
+  key: string;
 };
 
-export const getLabel = (
+const LEGEND_MODIFIERS: LegendModifier[] = ['CTL', 'SFT', 'ALT', 'GUI'];
+
+/**
+ * A Layer-Tap or Mod-Tap key, or a modified key the keycode list has no name for,
+ * in its parts: the key a tap sends, and the layer or modifiers put on it.
+ */
+const getCombinedKey = (
   keycodeByte: number,
-  width: number,
-  macroExpressions: string[],
+  basicKeyToByte: Record<string, number>,
+  byteToKey: Record<number, string>,
+  keycodeLUT?: Record<string, {name: string; title?: string}>,
+): LegendKey | null => {
+  const within = (start: string, end: string) =>
+    keycodeByte >= basicKeyToByte[start] && keycodeByte <= basicKeyToByte[end];
+  const kind = within('_QK_LAYER_TAP', '_QK_LAYER_TAP_MAX')
+    ? 'LT'
+    : within('_QK_MOD_TAP', '_QK_MOD_TAP_MAX')
+      ? 'MT'
+      : within('_QK_MODS', '_QK_MODS_MAX')
+        ? 'MOD'
+        : null;
+  if (!kind) {
+    return null;
+  }
+  const {code, name} = getKeycodeForByte(
+    keycodeByte,
+    basicKeyToByte,
+    byteToKey,
+    keycodeLUT,
+  );
+  // "!" is Shift+1 to the keyboard, but the keycode list names it as a key.
+  if (kind === 'MOD' && name !== code) {
+    return null;
+  }
+  // The low four bits are Ctrl, Shift, Alt and GUI; the fifth picks the right hand.
+  const bits = (keycodeByte >> 8) & 0x1f;
+  return {
+    type: 'combined',
+    kind,
+    code,
+    tap: getKeycodeForByte(
+      keycodeByte & 0xff,
+      basicKeyToByte,
+      byteToKey,
+      keycodeLUT,
+    ),
+    layer: (keycodeByte >> 8) & 0xf,
+    modifiers: LEGEND_MODIFIERS.filter((_, bit) => bits & (1 << bit)),
+    right: (bits & 0x10) !== 0,
+  };
+};
+
+/** A keycode by its name, a Tap Dance or custom keycode by the keyboard's. */
+const getNamedKey = (
+  keycodeByte: number,
   selectedDefinition: VIADefinitionV2 | VIADefinitionV3 | null,
   basicKeyToByte: Record<string, number>,
   byteToKey: Record<number, string>,
   keycodeLUT?: Record<string, {name: string; title?: string}>,
-) => {
-  let label: string = '';
-  let size: number = 1.0;
-  let offset: [number, number] = [0, 0];
+): LegendName => {
+  const index = isCustomKeycodeByte(keycodeByte, basicKeyToByte)
+    ? getCustomKeycodeIndex(keycodeByte, basicKeyToByte)
+    : -1;
+  const tapdanceKeycodes =
+    (selectedDefinition as {tapdanceKeycodes?: IKeycode[]} | null)
+      ?.tapdanceKeycodes ?? [];
+  if (index >= 0 && index < tapdanceKeycodes.length) {
+    const {name, shortName} = tapdanceKeycodes[index];
+    return {code: `TD(${index})`, name, shortName};
+  }
+  const keycode = getKeycodeForByte(
+    keycodeByte,
+    basicKeyToByte,
+    byteToKey,
+    keycodeLUT,
+  );
+  const custom =
+    index < 0
+      ? undefined
+      : selectedDefinition?.customKeycodes?.[index - tapdanceKeycodes.length];
+  return custom
+    ? {code: keycode.code, name: custom.name, shortName: custom.shortName}
+    : keycode;
+};
 
-  // Full name
-  let tooltipLabel: string = '';
-  if (
-    isCustomKeycodeByte(keycodeByte, basicKeyToByte) &&
-    selectedDefinition?.customKeycodes &&
-    selectedDefinition.customKeycodes[
-      getCustomKeycodeIndex(keycodeByte, basicKeyToByte)
-    ] !== undefined
-  ) {
-    const customKeycodeIdx = getCustomKeycodeIndex(keycodeByte, basicKeyToByte);
-    label = getShortNameForKeycode(
-      selectedDefinition.customKeycodes[customKeycodeIdx] as IKeycode,
-    );
-    tooltipLabel = getShortNameForKeycode(
-      selectedDefinition.customKeycodes[customKeycodeIdx] as IKeycode,
-      700,
-    );
-  } else if (keycodeByte) {
-    label =
-      getLabelForByte(keycodeByte, width * 100, basicKeyToByte, byteToKey, keycodeLUT) ??
-      '';
-    tooltipLabel =
-      getLabelForByte(keycodeByte, 700, basicKeyToByte, byteToKey, keycodeLUT) ?? '';
-  }
-  let macroExpression: string | undefined;
-  if (isMacroKeycodeByte(keycodeByte, basicKeyToByte)) {
-    const macroKeycodeIdx = getMacroKeycodeIndex(keycodeByte, basicKeyToByte);
-    macroExpression = macroExpressions[macroKeycodeIdx];
-    tooltipLabel = macroExpression || '';
-  }
-
-  if (isAlpha(label) || isNumpadNumber(label)) {
-    return (
-      label && {
-        label: label.toUpperCase(),
-        macroExpression,
-        key: (label || '') + (macroExpression || ''),
-        size: size,
-        offset: offset,
-      }
-    );
-  } else if (isMultiLegend(label)) {
-    const [topLabel, bottomLabel] = label.split('\n');
-    return (
-      bottomLabel && {
-        topLabel,
-        bottomLabel,
-        macroExpression,
-        key: (label || '') + (macroExpression || ''),
-        size: size,
-        offset: getLabelOffsets(topLabel, bottomLabel),
-      }
-    );
-  } else {
-    if (isNumpadSymbol(label)) {
-      size = 2.0;
-    }
-    if (isArrowKey(label)) {
-      size = 1.5;
-    }
-    return {
-      label,
-      centerLabel: label,
-      tooltipLabel,
-      macroExpression,
-      key: (label || '') + (macroExpression || ''),
-      size: size,
-      offset: offset,
-    };
-  }
+/** The legend of the keycode on a key `width` units wide, by the one keycap rule. */
+export const getLabel = (
+  keycodeByte: number,
+  width: number,
+  macroExpressions: string[] | null,
+  selectedDefinition: VIADefinitionV2 | VIADefinitionV3 | null,
+  basicKeyToByte: Record<string, number>,
+  byteToKey: Record<number, string>,
+  keycodeLUT?: Record<string, {name: string; title?: string}>,
+): KeyLabel => {
+  const legend = keycapLegend(
+    getCombinedKey(keycodeByte, basicKeyToByte, byteToKey, keycodeLUT) ?? {
+      type: 'named',
+      ...getNamedKey(
+        keycodeByte,
+        selectedDefinition,
+        basicKeyToByte,
+        byteToKey,
+        keycodeLUT,
+      ),
+    },
+    width,
+  );
+  const isMacro = isMacroKeycodeByte(keycodeByte, basicKeyToByte);
+  const expression =
+    isMacro && macroExpressions
+      ? macroExpressions[getMacroKeycodeIndex(keycodeByte, basicKeyToByte)]
+      : undefined;
+  // Macros not read yet (null) are "…": pointing at the key reads them.
+  const macro =
+    isMacro && macroExpressions === null
+      ? '…'
+      : expression && macroWithoutWaits(expression);
+  return {
+    ...legend,
+    macro,
+    key: [legendText(legend), macro ?? ''].join('\n'),
+  };
 };

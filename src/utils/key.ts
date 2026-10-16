@@ -6,8 +6,6 @@ import {
   BuiltInKeycodeModule,
   VIADefinitionV3,
   VIADefinitionV2,
-  getLightingDefinition,
-  KeycodeType,
 } from '@the-via/reader';
 
 export interface IKeycode {
@@ -89,42 +87,6 @@ const qmkRGBMatrixKeycodes: IKeycode[] = [
   {name: 'RM Speed -', code: 'RM_SPDD'},
 ];
 
-// Tests if label is an alpha (including Unicode letters)
-export function isAlpha(label: string) {
-  return label.length === 1 && /\p{L}/u.test(label);
-}
-
-// Test if label is a numpad number
-export function isNumpadNumber(label: string) {
-  return /['0-9]/.test(label) && label.length === 1;
-}
-
-export function isArrowKey(label: string) {
-  return /[🠗🠕🠖🠔←↑→↓]$/.test(label);
-}
-
-export function isNumpadSymbol(label: string) {
-  const centeredSymbol = '-+.÷×'.split('');
-  return label.length === 1 && centeredSymbol.includes(label[0]);
-}
-
-// Test if label contains two explicitly separated legends, e.g. "!\n1".
-export function isMultiLegend(label: string) {
-  return /^[^\n]+\n[^\n]+$/.test(label);
-}
-
-// Tests if label is a number
-export function isNumericOrShiftedSymbol(label: string) {
-  const numbersTop = '!@#$%^&*()_+|~{}:"<>?1234567890'.split('');
-  return label.length === 1 && numbersTop.includes(label[0]);
-}
-
-// Tests if label is a number
-export function isNumericSymbol(label: string) {
-  const numbersTop = '!@#$%^&*()_+|~{}:"<>?'.split('');
-  return label.length !== 1 && numbersTop.includes(label[0]);
-}
-
 // Maps the byte value to the keycode
 export function getByteForCode(
   code: string,
@@ -190,7 +152,8 @@ function getByteForLayerCode(
           basicKeyToByte._QK_LAYER_TAP_TOGGLE_MAX,
         );
       }
-      case 'CUSTOM': {
+      case 'CUSTOM':
+      case 'TD': {
         return Math.min(
           basicKeyToByte._QK_KB + numLayer,
           basicKeyToByte._QK_KB_MAX,
@@ -329,13 +292,6 @@ export function keycodeInMaster(
   );
 }
 
-function shorten(str: string) {
-  return str
-    .split(' ')
-    .map((word) => word.slice(0, 1) + word.slice(1).replace(/[aeiou ]/gi, ''))
-    .join('');
-}
-
 export function isCustomKeycodeByte(
   byte: number,
   basicKeyToByte: Record<string, number>,
@@ -366,44 +322,30 @@ export function getMacroKeycodeIndex(
   return byte - basicKeyToByte._QK_MACRO;
 }
 
-export function getLabelForByte(
+/**
+ * The keycode a byte encodes, named as the keycode list has it, or as the host
+ * layout does when it names the key; one neither names is named by its code.
+ */
+export function getKeycodeForByte(
   byte: number,
-  size = 100,
   basicKeyToByte: Record<string, number>,
   byteToKey: Record<number, string>,
   keycodeLUT?: Record<string, {name: string; title?: string}>,
-) {
-  const keycode = getCodeForByte(byte, basicKeyToByte, byteToKey);
-  if (keycodeLUT && keycode && keycodeLUT[keycode]) {
-    const lutEntry = keycodeLUT[keycode];
-    return getShortNameForKeycode(
-      {code: keycode, name: lutEntry.name, title: lutEntry.title},
-      size,
-    );
+): IKeycode {
+  // Every macro the keyboard has, past the list's first sixteen too.
+  if (isMacroKeycodeByte(byte, basicKeyToByte)) {
+    return macroKeycode(getMacroKeycodeIndex(byte, basicKeyToByte));
   }
-  const basicKeycode = keycodesList.find(({code}) => code === keycode);
-  if (!basicKeycode) {
-    return keycode;
+  const code =
+    getCodeForByte(byte, basicKeyToByte, byteToKey) ?? `0x${byte.toString(16)}`;
+  const lutEntry = keycodeLUT?.[code];
+  if (lutEntry) {
+    // A short name abbreviates the US name, not the layout's.
+    return {code, name: lutEntry.name, title: lutEntry.title};
   }
-  return getShortNameForKeycode(basicKeycode, size);
-}
-
-export function getShortNameForKeycode(keycode: IKeycode, size = 100) {
-  const {code, name, shortName} = keycode;
-  if (size <= 150 && shortName) {
-    return shortName;
-  }
-  if (size === 100 && name.length > 5) {
-    const shortenedName = shorten(name);
-    if (!!code) {
-      const shortCode = code.replace('KC_', '').replace('_', ' ');
-      return shortenedName.length > 4 && shortCode.length < shortenedName.length
-        ? shortCode
-        : shortenedName;
-    }
-    return shortenedName;
-  }
-  return name;
+  return (
+    keycodesList.find((keycode) => keycode.code === code) ?? {code, name: code}
+  );
 }
 
 export function getOtherMenu(
@@ -483,7 +425,7 @@ function buildLayerMenu(): IKeycodeMenu {
         type: 'layer',
         layer: 0,
         title:
-          "Normally acts like MO unless it's tapped multple times which toggles layer on",
+          "Normally acts like MO unless it's tapped multiple times which toggles layer on",
       },
       {
         name: 'OSL',
@@ -534,15 +476,13 @@ function buildLayerMenu(): IKeycodeMenu {
   };
 }
 
+/** Macro `idx`, named by its number wherever it is shown. */
+function macroKeycode(idx: number): IKeycode {
+  return {name: `M${idx}`, title: `Macro ${idx}`, code: `MACRO(${idx})`};
+}
+
 function generateMacros(numMacros: number = 16): IKeycode[] {
-  let res: IKeycode[] = [];
-  for (let idx = 0; idx < numMacros; idx++) {
-    const newName = `M${idx}`;
-    const newCode = `MACRO(${idx})`;
-    const newTitle = `Macro ${idx}`;
-    res = [...res, {name: newName, title: newTitle, code: newCode}];
-  }
-  return res;
+  return Array.from({length: numMacros}, (_, idx) => macroKeycode(idx));
 }
 
 export function getKeycodes(numMacros = 16): IKeycodeMenu[] {
@@ -1188,40 +1128,4 @@ export const getQMKLightingKeycodes = (
     ...(!hasKnownLightingMenu || hasRGBLightMenu ? qmkRGBLightKeycodes : []),
     ...(!hasKnownLightingMenu || hasRGBMatrixMenu ? qmkRGBMatrixKeycodes : []),
   ];
-};
-
-export const getKeycodesForKeyboard = (
-  definition: VIADefinitionV3 | VIADefinitionV2,
-  protocol: number,
-) => {
-  // v2
-  let includeList: string[] = [];
-  if ('lighting' in definition) {
-    const {keycodes} = getLightingDefinition(definition.lighting);
-    includeList = categoriesForKeycodeModule('default').concat(
-      keycodes === KeycodeType.None
-        ? []
-        : keycodes === KeycodeType.QMK
-          ? categoriesForKeycodeModule(BuiltInKeycodeModule.QMKLighting)
-          : categoriesForKeycodeModule(BuiltInKeycodeModule.WTLighting),
-    );
-  } else {
-    const {keycodes} = definition;
-    includeList = keycodes.flatMap(categoriesForKeycodeModule);
-  }
-  return getKeycodes()
-    .flatMap((keycodeMenu) =>
-      includeList.includes(keycodeMenu.id)
-        ? keycodeMenu.id === 'qmk_lighting'
-          ? getQMKLightingKeycodes(definition, protocol)
-          : keycodeMenu.keycodes
-        : [],
-    )
-    .sort((a, b) => {
-      if (a.code <= b.code) {
-        return -1;
-      } else {
-        return 1;
-      }
-    });
 };

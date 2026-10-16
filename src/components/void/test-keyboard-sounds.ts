@@ -106,6 +106,15 @@ export const TestKeyboardSounds: React.FC<{
           }, [] as TestKeyState[]),
         ];
       }, [] as TestKeyState[][]);
+      // A note is only for a key held in the picture drawn now: once the screen
+      // draws another picture, no release would reach a note left elsewhere.
+      Object.keys(notes).forEach((index) => {
+        const [row, col] = index.split(',').map(Number);
+        if (pressedKeys[row]?.[col] !== TestKeyState.KeyDown) {
+          notes[index].noteOff();
+          delete notes[index];
+        }
+      });
     }
   }, [pressedKeys]);
 

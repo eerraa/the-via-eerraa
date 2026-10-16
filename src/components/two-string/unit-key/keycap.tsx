@@ -2,7 +2,8 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {shallowEqual} from 'react-redux';
 import {TestKeyState} from 'src/types/types';
 import {getDarkenedColor} from 'src/utils/color-math';
-import {CSSVarObject} from 'src/utils/keyboard-rendering';
+import {LEGEND_FONT, legendBaseline, legendText} from 'src/utils/keycap-legend';
+import {CSSVarObject, type KeyLabel} from 'src/utils/keyboard-rendering';
 import styled from 'styled-components';
 import {Keycap2DTooltip} from '../../inputs/tooltip';
 import {ComboKeycap} from './combo-keycap';
@@ -18,19 +19,6 @@ import {
   TwoStringKeycapProps,
   DisplayMode,
 } from 'src/types/keyboard-rendering';
-
-const getMacroData = ({
-  macroExpression,
-  label,
-}: {
-  macroExpression?: string;
-  label: string;
-}) =>
-  label && label.length > 15
-    ? label
-    : macroExpression && macroExpression.length
-    ? macroExpression
-    : null;
 
 const paintDebugLines = (canvas: HTMLCanvasElement) => {
   const context = canvas.getContext('2d');
@@ -51,7 +39,7 @@ const paintDebugLines = (canvas: HTMLCanvasElement) => {
 const paintKeycapLabel = (
   canvas: HTMLCanvasElement,
   legendColor: string,
-  label: any,
+  label: KeyLabel,
 ) => {
   const context = canvas.getContext('2d');
   if (context == null) {
@@ -65,13 +53,6 @@ const paintKeycapLabel = (
   canvas.style.height = `${canvasHeight}px`;
 
   context.scale(dpi, dpi);
-  const fontFamily =
-    'Fira Sans, Arial Rounded MT, Arial Rounded MT Bold, Arial';
-  // Margins from face edge to where text is drawn
-  const topLabelMargin = {x: 4, y: 4};
-  const bottomLabelMargin = {x: 4, y: 4};
-  const centerLabelMargin = {x: 3, y: 0};
-  const singleLabelMargin = {x: 4, y: 4};
 
   // Define a clipping path for the top face, so text is not drawn on the side.
   context.beginPath();
@@ -83,48 +64,13 @@ const paintKeycapLabel = (
   context.clip();
 
   context.fillStyle = legendColor;
-  if (label === undefined) {
-  } else if (label.topLabel && label.bottomLabel) {
-    let fontSize = 16;
-    let fontHeight = 0.75 * fontSize;
-    let topLabelOffset = label.offset[0] * fontHeight;
-    let bottomLabelOffset = label.offset[1] * fontHeight;
-    context.font = `bold ${fontSize}px ${fontFamily}`;
-    context.fillText(
-      label.topLabel,
-      topLabelMargin.x,
-      topLabelMargin.y + topLabelOffset + fontHeight,
-    );
-    context.fillText(
-      label.bottomLabel,
-      bottomLabelMargin.x,
-      canvasHeight - bottomLabelMargin.y - bottomLabelOffset,
-    );
-  } else if (label.centerLabel) {
-    let fontSize = 13 * label.size;
-    let fontHeight = 0.75 * fontSize;
-    let faceMidLeftY = canvasHeight / 2;
-    context.font = `bold ${fontSize}px ${fontFamily}`;
-    context.fillText(
-      label.label,
-      centerLabelMargin.x,
-      faceMidLeftY + 0.5 * fontHeight,
-    );
-    // return if label would have overflowed so that we know to show tooltip
-    return (
-      context.measureText(label.centerLabel).width >
-      canvasWidth - centerLabelMargin.x
-    );
-  } else if (typeof label.label === 'string') {
-    let fontSize = 22;
-    let fontHeight = 0.75 * fontSize;
-    context.font = `bold ${fontSize}px ${fontFamily}`;
-    context.fillText(
-      label.label,
-      singleLabelMargin.x,
-      singleLabelMargin.y + fontHeight,
-    );
+  // The canvas is the key's face, so each line goes where the legend puts it.
+  for (const line of label.lines) {
+    context.font = `bold ${line.size}px ${LEGEND_FONT}`;
+    context.globalAlpha = line.opacity;
+    context.fillText(line.text, line.x, legendBaseline(line, canvasHeight));
   }
+  context.globalAlpha = 1;
 };
 
 const paintKeycap = (
@@ -132,7 +78,7 @@ const paintKeycap = (
   textureWidth: number,
   textureHeight: number,
   legendColor: string,
-  label: any,
+  label: KeyLabel,
 ) => {
   const [canvasWidth, canvasHeight] = [
     CSSVarObject.keyWidth,
@@ -162,13 +108,12 @@ const paintKeycap = (
     paintDebugLines(canvas);
   }
 
-  return paintKeycapLabel(canvas, legendColor, label);
+  paintKeycapLabel(canvas, legendColor, label);
 };
 
 export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
   const {
     label,
-    scale,
     color,
     selected,
     disabled,
@@ -181,46 +126,46 @@ export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
     skipFontCheck,
     idx,
   } = props;
-  const macroData = label && getMacroData(label);
-  const [overflowsTexture, setOverflowsTexture] = useState(false);
   // Hold state for hovered and clicked events
   const [hovered, hover] = useState(false);
+  // KEYMAP's corner describes the key under the pointer, as it does a key in the
+  // keycode list.
+  const {onHover} = props;
+  useEffect(() => {
+    if (!hovered || mode !== DisplayMode.Configure || !onHover) {
+      return;
+    }
+    onHover(idx, true);
+    return () => onHover(idx, false);
+  }, [hovered, mode, idx, onHover]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const redraw = React.useCallback(() => {
+  const redraw = useCallback(() => {
     if (
       canvasRef.current &&
       color &&
       label &&
-      (document.fonts.check('bold 16px "Fira Sans"', label.label) ||
+      (document.fonts.check('bold 16px "Fira Sans"', legendText(label)) ||
         skipFontCheck)
     ) {
       // Only render label if it is available
-      const doesOverflow = paintKeycap(
+      paintKeycap(
         canvasRef.current,
         textureWidth,
         textureHeight,
         color.t,
         label,
       );
-      setOverflowsTexture(!!doesOverflow);
     }
   }, [
-    canvasRef.current,
     textureWidth,
-    label && label.key,
-    scale[0],
-    scale[1],
+    textureHeight,
+    label,
     color && color.t,
-    color && color.c,
-    shouldRotate,
-  ]);
-  useEffect(redraw, [
-    label && label.key,
     skipFontCheck,
-    color && color.c,
-    color && color.t,
   ]);
+  // Font fallback can change while the accepted keymap stays the same.
+  useEffect(redraw, [redraw]);
 
   const redrawRef = React.useRef(redraw);
   redrawRef.current = redraw;
@@ -333,8 +278,6 @@ export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
       keycapOpacity={keycapOpacity}
       keycapColor={keycapColor}
       canvasRef={canvasRef}
-      macroData={macroData}
-      overflowsTexture={overflowsTexture}
       style={{
         transform: `translate(${
           CSSVarObject.keyWidth / 2 +
@@ -408,11 +351,9 @@ export const Keycap: React.FC<TwoStringKeycapProps> = React.memo((props) => {
             <canvas ref={canvasRef} style={{}} />
           </CanvasContainer>
         </GlowContainer>
-        {(macroData || overflowsTexture) && (
+        {label?.macro && (
           <TooltipContainer $rotate={rotation[2]}>
-            <Keycap2DTooltip>
-              {macroData || (label && label.tooltipLabel)}
-            </Keycap2DTooltip>
+            <Keycap2DTooltip>{label.macro}</Keycap2DTooltip>
           </TooltipContainer>
         )}
       </KeycapContainer>

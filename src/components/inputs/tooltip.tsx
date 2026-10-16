@@ -1,6 +1,20 @@
 import {PropsWithChildren, useEffect, useMemo, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 
+// A keyboard key's tooltip is a macro key's: what the macro types, as written, in
+// at most two lines about five keys wide, cut short with an ellipsis. The Macros
+// menu shows it whole. A bubble taller than a line grows up from where a one-line
+// bubble ends, clear of the key.
+const MACRO_TEXT = {
+  width: 'max-content',
+  maxWidth: '18em',
+  overflowWrap: 'anywhere',
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 2,
+  overflow: 'hidden',
+} as const;
+
 export const Keycap2DTooltip: React.FC<PropsWithChildren> = (props) => {
   const styles = useMemo(
     () => ({
@@ -9,8 +23,8 @@ export const Keycap2DTooltip: React.FC<PropsWithChildren> = (props) => {
         left: '50%',
         transformOrigin: 'left',
         transition: 'all 0.1s ease-in-out',
-        top: 0,
-        marginTop: -40,
+        bottom: '100%',
+        marginBottom: 11,
         zIndex: 4,
         pointerEvents: 'none',
         filter: 'drop-shadow(0px 0px 1px white)',
@@ -24,11 +38,7 @@ export const Keycap2DTooltip: React.FC<PropsWithChildren> = (props) => {
           "'Fira Sans Condensed', Helvetica, Helvetica Neue, Arial, serif",
         fontSize: 16,
         fontWeight: 500,
-        whiteSpace: 'nowrap',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        textTransform: 'uppercase',
+        ...MACRO_TEXT,
         zIndex: 5,
         transform: 'translateX(-50%)',
       },
@@ -59,28 +69,29 @@ export const Keycap2DTooltip: React.FC<PropsWithChildren> = (props) => {
 export const KeycapTooltip: React.FC<any> = (props) => {
   const styles = useMemo(
     () => ({
+      // A line where a one-line bubble ends: the bubble stacks up from it.
       containerStyles: {
         display: 'flex',
-        justifyContent: 'center',
+        justifyContent: 'flex-end',
         alignItems: 'center',
         flexDirection: 'column',
-        marginTop: -800,
+        height: 0,
+        marginTop: -370,
       },
       contentStyles: {
+        flexShrink: 0,
         padding: '70px 70px',
         background: 'var(--color_accent)',
         color: 'var(--color_inside-accent)',
         borderRadius: 100,
         fontSize: 200,
         fontFamily: "'Fira Sans', Helvetica, Helvetica Neue, Arial, serif",
-        whiteSpace: 'nowrap',
         letterSpacing: 1,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
         fontWeight: 'bold',
+        ...MACRO_TEXT,
       },
       pointerStyles: {
+        flexShrink: 0,
         height: 150,
         width: 150,
         marginTop: -100,
@@ -270,7 +281,9 @@ export const IconButtonTooltip: React.FC<any> = (props) => {
 export const MenuTooltip: React.FC<any> = (props) => {
   const anchorRef = useRef<HTMLSpanElement>(null);
 
-  const [visible, setVisible] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const visible = hovered || focused;
   const [position, setPosition] = useState({
     top: 0,
     left: 0,
@@ -300,11 +313,27 @@ export const MenuTooltip: React.FC<any> = (props) => {
 
     const handleMouseEnter = () => {
       updatePosition();
-      setVisible(true);
+      setHovered(true);
     };
 
     const handleMouseLeave = () => {
-      setVisible(false);
+      setHovered(false);
+    };
+
+    // Keyboard focus on the item shows it as hover does; the focus a click
+    // leaves behind does not, or it would stay after the pointer has gone.
+    const focusTarget =
+      menuItem.closest<HTMLElement>('button, a[href]') ?? menuItem;
+
+    const handleFocusIn = () => {
+      if (focusTarget.matches(':focus-visible')) {
+        updatePosition();
+        setFocused(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setFocused(false);
     };
 
     const handleScroll = () => {
@@ -313,6 +342,8 @@ export const MenuTooltip: React.FC<any> = (props) => {
 
     menuItem.addEventListener('mouseenter', handleMouseEnter);
     menuItem.addEventListener('mouseleave', handleMouseLeave);
+    focusTarget.addEventListener('focusin', handleFocusIn);
+    focusTarget.addEventListener('focusout', handleFocusOut);
 
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', handleScroll, true);
@@ -320,6 +351,8 @@ export const MenuTooltip: React.FC<any> = (props) => {
     return () => {
       menuItem.removeEventListener('mouseenter', handleMouseEnter);
       menuItem.removeEventListener('mouseleave', handleMouseLeave);
+      focusTarget.removeEventListener('focusin', handleFocusIn);
+      focusTarget.removeEventListener('focusout', handleFocusOut);
 
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', handleScroll, true);

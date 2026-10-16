@@ -15,8 +15,6 @@ export const ComboKeycap = (props: any) => {
   const {
     normalizedRects,
     clipPath,
-    overflowsTexture,
-    macroData,
     label,
     canvasRef,
     onClick,
@@ -173,11 +171,9 @@ export const ComboKeycap = (props: any) => {
             ></TestOverlay>
           ) : null}
         </ComboKeyBoundingContainer>
-        {(props.macroData || props.overflowsTexture) && (
+        {label?.macro && (
           <TooltipContainer $rotate={props.rotation[2]}>
-            <Keycap2DTooltip>
-              {props.macroData || (props.label && props.label.tooltipLabel)}
-            </Keycap2DTooltip>
+            <Keycap2DTooltip>{label.macro}</Keycap2DTooltip>
           </TooltipContainer>
         )}
       </KeycapContainer>

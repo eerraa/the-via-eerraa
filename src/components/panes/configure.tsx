@@ -9,10 +9,10 @@ import {
   CustomFeaturesV2,
   getLightingDefinition,
   isVIADefinitionV2,
-  isVIADefinitionV3,
   VIADefinitionV2,
   VIADefinitionV3,
 } from '@the-via/reader';
+import {isEraVIADefinitionV3} from 'src/utils/era-definition';
 import {Grid, Row, IconContainer, MenuCell, ConfigureFlexCell} from './grid';
 import * as Keycode from './configure-panes/keycode';
 import * as Lighting from './configure-panes/lighting';
@@ -37,15 +37,42 @@ import {useDispatch} from 'react-redux';
 import {reloadConnectedDevices} from 'src/store/devicesThunks';
 import {getV3MenuComponents} from 'src/store/menusSlice';
 import {getIsMacroFeatureSupported} from 'src/store/macrosSlice';
-import {getConnectedDevices, getSupportedIds} from 'src/store/devicesSlice';
+import {
+  getConnectedDevices,
+  getSelectedConnectionLocked,
+  getSupportedIds,
+} from 'src/store/devicesSlice';
 import {isElectron} from 'src/utils/running-context';
 import {useAppDispatch} from 'src/store/hooks';
 import {MenuTooltip} from '../inputs/tooltip';
 import {getRenderMode, getSelectedTheme} from 'src/store/settingsSlice';
+import {
+  ConfigureRail,
+  menuKeys,
+  useConfigureMenu,
+} from 'src/utils/use-configure-place';
 import {useTranslation} from 'react-i18next';
+import {globalMenuHeight} from 'src/utils/global-menu-height';
 
 const MenuContainer = styled.div`
   padding: 15px 10px 20px 10px;
+
+  /* The rail's rows are buttons so the keyboard reaches them. Their own face is
+     cleared to look as VIA's rows do, and keyboard focus looks as hover does. */
+  > button {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: none;
+    font-family: inherit;
+    font-weight: inherit;
+    text-align: inherit;
+  }
+  > button:focus-visible {
+    color: var(--color_label-highlighted);
+  }
 `;
 
 const BadgeRow = styled.div`
@@ -65,6 +92,48 @@ const BadgeRow = styled.div`
 
   pointer-events: none;
   white-space: nowrap;
+
+  @media (max-width: 720px) {
+    position: static;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    max-width: 100%;
+
+    > div {
+      min-width: 0;
+      max-width: calc((100vw - 40px) / 2);
+    }
+    > div > button {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    > div > button > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    > div > button > svg {
+      flex: none;
+    }
+  }
+`;
+
+const KeyboardToolbar = styled.div`
+  pointer-events: all;
+
+  @media (max-width: 720px) {
+    position: absolute;
+    top: 0;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2px 10px;
+  }
 `;
 
 const Rows = [
@@ -97,7 +166,7 @@ const getRowsForKeyboard = (): typeof Rows => {
     return [];
   } else if (isVIADefinitionV2(selectedDefinition)) {
     return getRowsForKeyboardV2(selectedDefinition, showMacros, numberOfLayers);
-  } else if (isVIADefinitionV3(selectedDefinition)) {
+  } else if (isEraVIADefinitionV3(selectedDefinition)) {
     return [
       ...filterInferredRows(selectedDefinition, showMacros, numberOfLayers, [
         Keycode,
@@ -182,6 +251,7 @@ const Loader: React.FC<{
 
   const connectedDevices = useAppSelector(getConnectedDevices);
   const supportedIds = useAppSelector(getSupportedIds);
+  const connectionLocked = useAppSelector(getSelectedConnectionLocked);
   const noSupportedIds = !Object.values(supportedIds).length;
   const noConnectedDevices = !Object.values(connectedDevices).length;
   const [showButton, setShowButton] = useState<boolean>(false);
@@ -201,13 +271,21 @@ const Loader: React.FC<{
     <LoaderPane>
       {<ChippyLoader theme={theme} progress={loadProgress || null} />}
 
-      {(showButton || noConnectedDevices) && !noSupportedIds && !isElectron ? (
-        <AccentButtonLarge onClick={() => dispatch(reloadConnectedDevices())}>
+      {!connectionLocked &&
+      (showButton || noConnectedDevices) &&
+      !noSupportedIds &&
+      !isElectron ? (
+        <AccentButtonLarge
+          onClick={() => dispatch(reloadConnectedDevices({authorize: true}))}
+        >
           {t('Authorize device')}
           <FontAwesomeIcon style={{marginLeft: '10px'}} icon={faPlus} />
         </AccentButtonLarge>
       ) : (
-        <LoadingText isSearching={!selectedDefinition} />
+        <LoadingText
+          isSearching={!selectedDefinition}
+          needsReconnect={connectionLocked}
+        />
       )}
     </LoaderPane>
   );
@@ -220,7 +298,7 @@ const LoaderPane = styled(CenterPane)`
   row-gap: 50px;
   position: absolute;
   bottom: 50px;
-  top: 50px;
+  top: ${globalMenuHeight};
   left: 0;
   right: 0;
   z-index: 4;
@@ -251,10 +329,16 @@ const ConfigureGrid = () => {
   const {t} = useTranslation();
   const dispatch = useDispatch();
 
-  const [selectedRow, setRow] = useState(0);
   const KeyboardRows = getRowsForKeyboard();
+  const menus = menuKeys(KeyboardRows.map(({Title}) => Title));
+  const [shownMenu, openMenu] = useConfigureMenu(menus, Keycode.Title);
+  const selectedRow = menus.findIndex((menu) => menu === shownMenu);
   const SelectedPane = KeyboardRows[selectedRow]?.Pane;
   const selectedTitle = KeyboardRows[selectedRow]?.Title;
+  const rail = KeyboardRows.map((row, index) => ({
+    key: menus[index],
+    viaMenu: 'viaMenu' in row ? row.viaMenu : undefined,
+  }));
 
   useEffect(() => {
     if (selectedTitle !== 'Keymap') {
@@ -274,19 +358,19 @@ const ConfigureGrid = () => {
         style={{
           pointerEvents: 'none',
           position: 'absolute',
-          top: 50,
+          top: globalMenuHeight,
           left: 0,
           right: 0,
         }}
       >
-        <div style={{pointerEvents: 'all'}}>
+        <KeyboardToolbar>
           <LayerControl />
 
           <BadgeRow>
             <HostKeyboardLayoutBadge />
             <Badge />
           </BadgeRow>
-        </div>
+        </KeyboardToolbar>
       </ConfigureFlexCell>
 
       <Grid style={{pointerEvents: 'none'}}>
@@ -296,7 +380,11 @@ const ConfigureGrid = () => {
               ({Icon, Title}: {Icon: any; Title: string}, idx: number) => (
                 <Row
                   key={idx}
-                  onClick={(_) => setRow(idx)}
+                  as="button"
+                  type="button"
+                  aria-label={t(Title)}
+                  aria-pressed={selectedRow === idx}
+                  onClick={(_) => openMenu(menus[idx])}
                   $selected={selectedRow === idx}
                 >
                   <IconContainer>
@@ -309,7 +397,9 @@ const ConfigureGrid = () => {
           </MenuContainer>
         </MenuCell>
 
-        {SelectedPane && <SelectedPane />}
+        <ConfigureRail.Provider value={rail}>
+          {SelectedPane && <SelectedPane />}
+        </ConfigureRail.Provider>
       </Grid>
     </>
   );

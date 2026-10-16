@@ -1,4 +1,9 @@
+import type {VIAKey} from '@the-via/reader';
 import basicKeyToByte from './key-to-byte/default';
+import testKeyboardDefinition from './test-keyboard-definition.json';
+
+// One keycode per col of test-keyboard-definition.json. Browsers never receive
+// Sleep, so the picture has no Sleep key.
 export const matrixKeycodes = [
   // Row 0
   basicKeyToByte.KC_ESC,
@@ -17,7 +22,6 @@ export const matrixKeycodes = [
   basicKeyToByte.KC_PSCR,
   basicKeyToByte.KC_SLCK,
   basicKeyToByte.KC_PAUS,
-  basicKeyToByte.KC_SLEP,
   basicKeyToByte.KC_MUTE,
   basicKeyToByte.KC_VOLD,
   basicKeyToByte.KC_VOLU,
@@ -114,9 +118,17 @@ export const matrixKeycodes = [
   basicKeyToByte.KC_RGHT,
   basicKeyToByte.KC_P0,
   basicKeyToByte.KC_PDOT,
+  // Keys only ISO and JIS keyboards have, drawn once one of them is pressed
+  basicKeyToByte.KC_NUBS,
+  basicKeyToByte.KC_NUHS,
+  basicKeyToByte.KC_JYEN,
+  basicKeyToByte.KC_RO,
+  basicKeyToByte.KC_MHEN,
+  basicKeyToByte.KC_HENK,
+  basicKeyToByte.KC_KANA,
 ];
 
-const evtToKeyByte = {
+export const evtToKeyByte = {
   Digit1: basicKeyToByte.KC_1,
   Digit2: basicKeyToByte.KC_2,
   Digit3: basicKeyToByte.KC_3,
@@ -165,6 +177,7 @@ const evtToKeyByte = {
   Backslash: basicKeyToByte.KC_BSLS,
   Minus: basicKeyToByte.KC_MINS,
   Equal: basicKeyToByte.KC_EQL,
+  IntlBackslash: basicKeyToByte.KC_NUBS,
   IntlRo: basicKeyToByte.KC_RO,
   IntlYen: basicKeyToByte.KC_JYEN,
   AltLeft: basicKeyToByte.KC_LALT,
@@ -178,7 +191,14 @@ const evtToKeyByte = {
   OSRight: basicKeyToByte.KC_RGUI,
   ShiftLeft: basicKeyToByte.KC_LSFT,
   ShiftRight: basicKeyToByte.KC_RSFT,
-  ContextMenu: basicKeyToByte.KC_APP,
+  // The picture's Menu key is KC_MENU, so it reads "Menu" rather than "RApp".
+  ContextMenu: basicKeyToByte.KC_MENU,
+  // Korean keyboards put Han/Yeong and Hanja where right Alt and right Ctrl are.
+  Lang1: basicKeyToByte.KC_RALT,
+  Lang2: basicKeyToByte.KC_RCTL,
+  NonConvert: basicKeyToByte.KC_MHEN,
+  Convert: basicKeyToByte.KC_HENK,
+  KanaMode: basicKeyToByte.KC_KANA,
   Enter: basicKeyToByte.KC_ENT,
   Space: basicKeyToByte.KC_SPC,
   Tab: basicKeyToByte.KC_TAB,
@@ -245,15 +265,62 @@ const evtToKeyByte = {
   NumpadSubtract: basicKeyToByte.KC_PMNS,
 };
 
-export function getIndexByEvent(evt: KeyboardEvent): number {
-  const code = evt.code;
+/** The option chosen in each optionKeys group of the full-size picture. */
+export type TestLayout = number[];
+
+export const ANSI_TEST_LAYOUT: TestLayout = [0, 0, 0, 0, 0];
+
+// ISO and JIS keyboards all have the tall Enter.
+const ENTER_GROUP = 1;
+
+const optionKeys = testKeyboardDefinition.layouts.optionKeys as unknown as Record<
+  string,
+  Record<string, VIAKey[]>
+>;
+
+/** The keys the full-size picture draws; each `col` indexes matrixKeycodes. */
+export const getTestKeyboardKeys = (layout: TestLayout): VIAKey[] =>
+  (testKeyboardDefinition.layouts.keys as VIAKey[]).concat(
+    layout.flatMap((option, group) => optionKeys[group][option]),
+  );
+
+/**
+ * Where a key event lands on the full-size picture. A key only ISO or JIS
+ * keyboards have brings that layout, and col -1 means the picture has no place
+ * for the key.
+ */
+export function locateTestKey(
+  evt: Pick<KeyboardEvent, 'code' | 'key'>,
+  layout: TestLayout,
+): {col: number; layout: TestLayout} | null {
   const byte =
-    evtToKeyByte[code as keyof typeof evtToKeyByte] ||
+    evtToKeyByte[evt.code as keyof typeof evtToKeyByte] ||
     evtToKeyByte[evt.key as keyof typeof evtToKeyByte];
-  if (byte) {
-    return matrixKeycodes.indexOf(byte);
+  if (!byte) {
+    return null;
   }
-  return -1;
+  // On ISO and JIS keyboards Backslash is the key beside the tall Enter.
+  const cols = (
+    byte === basicKeyToByte.KC_BSLS ? [byte, basicKeyToByte.KC_NUHS] : [byte]
+  )
+    .map((keycode) => matrixKeycodes.indexOf(keycode))
+    .filter((col) => col >= 0);
+  const drawn = new Set(getTestKeyboardKeys(layout).map((key) => key.col));
+  const drawnCol = cols.find((col) => drawn.has(col));
+  if (drawnCol !== undefined) {
+    return {col: drawnCol, layout};
+  }
+  for (const [group, options] of Object.entries(optionKeys)) {
+    for (const [option, keys] of Object.entries(options)) {
+      if (+option && keys.some((key) => key.col === cols[0])) {
+        const next = [...layout];
+        next[+group] = +option;
+        next[ENTER_GROUP] = 1;
+        return {col: cols[0], layout: next};
+      }
+    }
+  }
+  return {col: -1, layout};
 }
 
 export function mapEvtToKeycode(evt: KeyboardEvent) {

@@ -1,5 +1,12 @@
 import React, {useMemo, useState} from 'react';
 import styled from 'styled-components';
+import {
+  BadgeContainer as Container,
+  BadgeTitle as KeyboardTitle,
+  BadgeList,
+  BadgeOption,
+  BadgeClickCover as ClickCover,
+} from '../../inputs/badge-dropdown';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faAngleDown, faPlus} from '@fortawesome/free-solid-svg-icons';
 import {HID} from '../../../shims/node-hid';
@@ -22,95 +29,13 @@ import {
   getSelectedDefinitionName,
 } from 'src/store/definitionNameSlice';
 
-const Container = styled.div`
-  position: relative;
-  font-size: 18px;
-  pointer-events: none;
-  font-weight: 400;
-  flex: 0 0 auto;
-`;
-
-const KeyboardTitle = styled.label`
-  pointer-events: all;
-  display: inline-block;
-  background: var(--color_accent);
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
-  font-size: 18px;
-  text-transform: uppercase;
-  color: var(--color_inside-accent);
-  padding: 1px 10px;
-  border: solid 1px var(--bg_control);
-  border-top: none;
-  cursor: pointer;
-  transition: all 0.1s ease-out;
-  white-space: nowrap;
-
-  &:hover {
-    filter: brightness(0.7);
-  }
-`;
-
-const KeyboardList = styled.ul<{$show: boolean}>`
-  padding: 0;
-  border: 1px solid var(--bg_control);
+const KeyboardList = styled(BadgeList)`
   width: 160px;
-  border-radius: 6px;
-  background-color: var(--bg_menu);
-  margin: 0;
-  margin-top: 5px;
-  right: 0;
-  position: absolute;
-  pointer-events: ${(props) => (props.$show ? 'all' : 'none')};
-  transition: all 0.2s ease-out;
-  z-index: 11;
-  opacity: ${(props) => (props.$show ? 1 : 0)};
   overflow: hidden;
-  transform: ${(props) => (props.$show ? 0 : `translateY(-5px)`)};
 `;
 
-const KeyboardButton = styled.button<{$selected?: boolean}>`
-  display: block;
-  outline: none;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
-  border: none;
-  background: ${(props) =>
-    props.$selected ? 'var(--bg_icon-highlighted)' : 'transparent'};
-  color: ${(props) =>
-    props.$selected
-      ? 'var(--color_icon_highlighted)'
-      : 'var(--color_label-highlighted)'};
-  cursor: pointer;
-  text-align: left;
-  font-size: 14px;
+const KeyboardButton = styled(BadgeOption)`
   text-transform: uppercase;
-  padding: 5px 10px;
-
-  &:hover {
-    border: none;
-    background: ${(props) =>
-      props.$selected ? 'var(--bg_icon-highlighted)' : 'var(--bg_control)'};
-    color: ${(props) =>
-      props.$selected
-        ? 'var(--color_control-highlighted)'
-        : 'var(--color_label-highlighted)'};
-  }
-`;
-
-const ClickCover = styled.div`
-  position: fixed;
-  z-index: 10;
-  pointer-events: all;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  opacity: 0.4;
-  background: rgba(0, 0, 0, 0.75);
 `;
 
 type ConnectedKeyboardDefinition = [
@@ -122,28 +47,22 @@ type ConnectedKeyboardDefinition = [
 const KeyboardSelectors: React.FC<{
   show: boolean;
   keyboards: ConnectedKeyboardDefinition[];
-  selectedPath: string;
+  selectedPath: string | null;
   onClickOut: () => void;
   selectKeyboard: (kb: string) => void;
+  authorizeKeyboard: () => Promise<void>;
 }> = (props) => {
   const {t} = useTranslation();
-
-  const requestAndChangeDevice = async () => {
-    const device = await HID.requestDevice();
-
-    if (device) {
-      props.selectKeyboard((device as any).__path);
-    }
-  };
 
   return (
     <>
       {props.show && <ClickCover onClick={props.onClickOut} />}
 
-      <KeyboardList $show={props.show}>
+      <KeyboardList $show={props.show} aria-hidden={!props.show}>
         {props.keyboards.map(([path, , name]) => {
           return (
             <KeyboardButton
+              tabIndex={props.show ? 0 : -1}
               $selected={path === props.selectedPath}
               key={path}
               onClick={() => props.selectKeyboard(path as string)}
@@ -154,7 +73,10 @@ const KeyboardSelectors: React.FC<{
         })}
 
         {!isElectron && (
-          <KeyboardButton onClick={requestAndChangeDevice}>
+          <KeyboardButton
+            tabIndex={props.show ? 0 : -1}
+            onClick={props.authorizeKeyboard}
+          >
             {t('Authorize New')}
             <FontAwesomeIcon icon={faPlus} style={{marginLeft: '10px'}} />
           </KeyboardButton>
@@ -164,7 +86,16 @@ const KeyboardSelectors: React.FC<{
   );
 };
 
-export const Badge = () => {
+export const Badge = ({
+  allowAuthorize = false,
+  onDeviceSelected,
+}: {
+  allowAuthorize?: boolean;
+  onDeviceSelected?: (
+    device: Pick<ConnectedDevice, 'vendorId' | 'productId'>,
+  ) => void;
+}) => {
+  const {t} = useTranslation();
   const dispatch = useAppDispatch();
   const definitions = useAppSelector(getDefinitions);
   const selectedDefinition = useAppSelector(getSelectedDefinition);
@@ -195,17 +126,45 @@ export const Badge = () => {
     [connectedDevices, definitions, getConnectedDefinitionName],
   );
 
-  if (!selectedDefinition || !selectedPath) {
+  const selectKeyboard = (path: string) => {
+    dispatch(selectConnectedDeviceByPath(path));
+    setShowList(false);
+    const device = connectedDevices[path];
+    if (device) onDeviceSelected?.(device);
+  };
+
+  const authorizeKeyboard = async () => {
+    let device;
+    try {
+      device = await HID.requestDevice();
+    } catch {
+      // Cancelling or refusing the browser chooser keeps the current page.
+      return;
+    }
+    if (device) {
+      dispatch(selectConnectedDeviceByPath((device as any).__path));
+      setShowList(false);
+      onDeviceSelected?.(device);
+    }
+  };
+
+  const hasSelection = !!selectedDefinition && !!selectedPath;
+  if (!hasSelection && !allowAuthorize) {
     return null;
   }
 
   return (
     <Container>
-      <KeyboardTitle onClick={() => setShowList(!showList)}>
-        {selectedDefinitionName}
+      <KeyboardTitle
+        as="button"
+        type="button"
+        aria-expanded={hasSelection ? showList : undefined}
+        onClick={hasSelection ? () => setShowList(!showList) : authorizeKeyboard}
+      >
+        {hasSelection ? <span>{selectedDefinitionName}</span> : t('Authorize device')}
 
         <FontAwesomeIcon
-          icon={faAngleDown}
+          icon={hasSelection ? faAngleDown : faPlus}
           style={{
             transform: showList ? 'rotate(180deg)' : '',
             transition: 'transform 0.2s ease-out',
@@ -214,16 +173,16 @@ export const Badge = () => {
         />
       </KeyboardTitle>
 
-      <KeyboardSelectors
-        show={showList}
-        selectedPath={selectedPath}
-        keyboards={connectedKeyboardDefinitions}
-        onClickOut={() => setShowList(false)}
-        selectKeyboard={(path) => {
-          dispatch(selectConnectedDeviceByPath(path));
-          setShowList(false);
-        }}
-      />
+      {hasSelection && (
+        <KeyboardSelectors
+          show={showList}
+          selectedPath={selectedPath}
+          keyboards={connectedKeyboardDefinitions}
+          onClickOut={() => setShowList(false)}
+          selectKeyboard={selectKeyboard}
+          authorizeKeyboard={authorizeKeyboard}
+        />
+      )}
     </Container>
   );
 };

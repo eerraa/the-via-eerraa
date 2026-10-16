@@ -5,7 +5,7 @@ import {useMemo} from 'react';
 import {getBasicKeyToByte} from 'src/store/definitionsSlice';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {getSelectedKey} from 'src/store/keymapSlice';
-import {getExpressions} from 'src/store/macrosSlice';
+import {getExpressionsIfRead} from 'src/store/macrosSlice';
 import {getHostKeyboardLayout, getSelectedSRGBTheme} from 'src/store/settingsSlice';
 import {keymapExtras} from 'src/utils/keymap-extras';
 import {KeyGroupProps, KeysKeys} from 'src/types/keyboard-rendering';
@@ -49,7 +49,7 @@ export const KeyGroup: React.FC<KeyGroupProps<ThreeEvent<MouseEvent>>> = (
   const keycapScene = useGLTF(glbSrc, true).scene;
   const selectedKey = useAppSelector(getSelectedKey);
   const selectedSRGBTheme = useAppSelector(getSelectedSRGBTheme);
-  const macroExpressions = useAppSelector(getExpressions);
+  const macroExpressions = useAppSelector(getExpressionsIfRead);
   const skipFontCheck = useSkipFontCheck();
   const keyColorPalette = props.keyColors
     ? getSRGBArray(props.keyColors)

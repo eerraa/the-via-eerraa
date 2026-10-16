@@ -1,28 +1,7 @@
-import {FC, useState, useEffect, useMemo} from 'react';
-import styled from 'styled-components';
-import {Button} from '../../inputs/button';
-import {KeycodeModal} from '../../inputs/custom-keycode-modal';
+import {FC, useContext, useEffect, useMemo, useState} from 'react';
 import {title, component} from '../../icons/keyboard';
 import * as EncoderPane from './encoder';
-import {
-  keycodeInMaster,
-  getByteForCode,
-  getKeycodes,
-  getOtherMenu,
-  IKeycode,
-  IKeycodeMenu,
-  categoriesForKeycodeModule,
-  getQMKLightingKeycodes,
-} from '../../../utils/key';
-import {ErrorMessage} from '../../styled';
-import {
-  KeycodeType,
-  getLightingDefinition,
-  isVIADefinitionV3,
-  isVIADefinitionV2,
-  VIADefinitionV3,
-} from '@the-via/reader';
-import {OverflowCell, SubmenuOverflowCell, SubmenuRow} from '../grid';
+import {SpanOverflowCell} from '../grid';
 import {useAppDispatch, useAppSelector} from 'src/store/hooks';
 import {
   getBasicKeyToByte,
@@ -31,102 +10,44 @@ import {
 } from 'src/store/definitionsSlice';
 import {getSelectedConnectedDevice} from 'src/store/devicesSlice';
 import {
+  getHoveredKey,
+  getNumberOfLayers,
   getSelectedKey,
   getSelectedKeymap,
+  getSelectedLayerIndex,
+  setLayer,
   updateKey as updateKeyAction,
   updateSelectedKey,
 } from 'src/store/keymapSlice';
-import {getMacroCount} from 'src/store/macrosSlice';
+import {getPaletteMacroCount} from 'src/store/macrosSlice';
+import {getSelectedCustomMenuData} from 'src/store/menusSlice';
 import {
-  disableGlobalHotKeys,
-  enableGlobalHotKeys,
-  getDisableFastRemap,
-  getHostKeyboardLayout,
-} from 'src/store/settingsSlice';
-import {keymapExtras} from 'src/utils/keymap-extras';
+  clearLtmtReturn,
+  clearMacroReturn,
+  getLtmtReturn,
+  getMacroReturn,
+  keepLtmtReturn,
+  keepMacroReturn,
+  openConfigureMenu,
+  openConfigureSubmenu,
+} from 'src/store/configurePlaceSlice';
+import {getDisableFastRemap} from 'src/store/settingsSlice';
 import {getNextKey} from 'src/utils/keyboard-rendering';
+import {getMacroKeycodeIndex, isMacroKeycodeByte} from 'src/utils/key';
+import {title as macrosTitle} from '../../icons/adjust';
 import {useTranslation} from 'react-i18next';
-const KeycodeList = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 64px);
-  grid-auto-rows: 64px;
-  justify-content: center;
-  grid-gap: 10px;
-`;
-
-const MenuContainer = styled.div`
-  padding: 15px 20px 20px 10px;
-`;
-
-const Keycode = styled(Button)<{disabled: boolean}>`
-  width: 50px;
-  height: 50px;
-  line-height: 18px;
-  border-radius: 64px;
-  font-size: 14px;
-  border: 4px solid var(--border_color_icon);
-  background: var(--bg_control);
-  color: var(--color_label-highlighted);
-  margin: 0;
-  box-shadow: none;
-  position: relative;
-  border-radius: 10px;
-  &:hover {
-    border-color: var(--color_accent);
-    transform: translate3d(0, -2px, 0);
-  }
-  ${(props: any) => props.disabled && `cursor:not-allowed;filter:opacity(50%);`}
-`;
-
-const KeycodeContent = styled.div`
-  text-overflow: ellipsis;
-  overflow: hidden;
-`;
-
-const CustomKeycode = styled(Button)`
-  width: 50px;
-  height: 50px;
-  line-height: 18px;
-  border-radius: 10px;
-  font-size: 14px;
-  border: 4px solid var(--border_color_icon);
-  background: var(--color_accent);
-  border-color: var(--color_inside_accent);
-  color: var(--color_inside_accent);
-  margin: 0;
-`;
-
-const KeycodeContainer = styled.div`
-  padding: 12px;
-  padding-bottom: 30px;
-`;
-
-const KeycodeDesc = styled.div`
-  position: fixed;
-  bottom: 0;
-  background: var(--bg_control);
-  color: var(--color_label-highlighted);
-  box-sizing: border-box;
-  transition: opacity 0.4s ease-out;
-  height: 25px;
-  width: 100%;
-  line-height: 14px;
-  padding: 5px;
-  font-size: 14px;
-  opacity: 1;
-  pointer-events: none;
-  &:empty {
-    opacity: 0;
-  }
-`;
-
-const generateKeycodeCategories = (
-  basicKeyToByte: Record<string, number>,
-  numMacros: number = 16,
-) => getKeycodes(numMacros).concat(getOtherMenu(basicKeyToByte));
-
-const maybeFilter = <M extends Function>(maybe: boolean, filter: M) =>
-  maybe ? () => true : filter;
+import {buildEnabledKeycodeMenus} from 'src/utils/keycode-menus';
+import {getExactMsFamily} from 'src/utils/era-advanced-metadata';
+import {ConfigureRail} from 'src/utils/use-configure-place';
+import {useIsEraDefinition} from 'src/utils/use-is-era-definition';
+import {
+  KeycodePalette,
+  LTMT_CATEGORY,
+  type TappingSummary,
+} from '../../inputs/keycode-palette/keycode-palette';
+import {useTapDanceBinding} from '../../inputs/keycode-palette/use-tap-dance';
+import {collectDeferredItems} from './custom/deferred-apply';
+import {deferredRowFor, dropdownChoices} from './custom/custom-control';
 
 export const Pane: FC = () => {
   const selectedKey = useAppSelector(getSelectedKey);
@@ -137,259 +58,285 @@ export const Pane: FC = () => {
       dispatch(updateSelectedKey(null));
     },
     [],
-  ); // componentWillUnmount equiv
+  );
 
-  if (selectedKey !== null && keys[selectedKey].ei !== undefined) {
+  if (selectedKey !== null && keys[selectedKey]?.ei !== undefined) {
     return <EncoderPane.Pane />;
   }
   return <KeycodePane />;
 };
 
+const TERM_COMMANDS = [
+  'id_qmk_tapping_global_term_exact',
+  'id_qmk_tapping_global_term',
+];
+const PERMISSIVE_HOLD = 'id_qmk_tapping_permissive_hold';
+const HOLD_ON_OTHER_KEY_PRESS = 'id_qmk_tapping_hold_on_other_key_press';
+const TAPPING_OPTIONS = [
+  PERMISSIVE_HOLD,
+  HOLD_ON_OTHER_KEY_PRESS,
+  'id_qmk_tapping_retro_tapping',
+];
+
+// A definition menu's sub-tabs, as its tab bar has them.
+const submenusOf = (node: {content?: unknown}): {label: string}[] =>
+  (Array.isArray(node.content) ? node.content : []).flatMap((child) =>
+    'label' in child ? [child] : submenusOf(child),
+  );
+
+/**
+ * The TAPPING line under the LT·MT choices: the keyboard's tapping term and the
+ * options it has on, read as the TAPPING menu's controls read them, and the way to
+ * the rail menu whose sub-tab holds them, found by its commands. Null while the
+ * definition has no such sub-tab or its values are not read.
+ */
+const useTappingSummary = (): TappingSummary | null => {
+  const {t} = useTranslation();
+  const dispatch = useAppDispatch();
+  const rail = useContext(ConfigureRail);
+  const menuData = useAppSelector(getSelectedCustomMenuData);
+  const device = useAppSelector(getSelectedConnectedDevice);
+  const selectedKey = useAppSelector(getSelectedKey);
+  const layer = useAppSelector(getSelectedLayerIndex);
+  const eraDefinition = useIsEraDefinition();
+  if (!device || !menuData) {
+    return null;
+  }
+  // Names as the menu shows them: an ERA definition's as it spells them.
+  const name = (label: string) => (eraDefinition ? label : t(label));
+  const exactMsFamily = getExactMsFamily(device.vendorProductId);
+  for (const {key, viaMenu} of rail) {
+    if (!viaMenu) {
+      continue;
+    }
+    for (const submenu of submenusOf(viaMenu)) {
+      const items = collectDeferredItems(submenu);
+      const item = (command: string) =>
+        items.find(({content}) => content[0] === command);
+      const term = TERM_COMMANDS.map(item).find(Boolean);
+      const options = items.filter(({content}) =>
+        TAPPING_OPTIONS.includes(content[0]),
+      );
+      if (!term || options.length !== TAPPING_OPTIONS.length) {
+        continue;
+      }
+      if ([term, ...options].some(({content}) => !menuData[content[0]])) {
+        return null;
+      }
+      const on = new Set(
+        options
+          .filter(
+            (option) =>
+              deferredRowFor(option, menuData, exactMsFamily)?.saved === true,
+          )
+          .map(({content}) => content[0]),
+      );
+      const termRow = deferredRowFor(term, menuData, exactMsFamily);
+      // The exact term is a millisecond field; the older one a list of times.
+      const choice =
+        !termRow?.bounds && term.type === 'dropdown'
+          ? dropdownChoices(term.options).find(
+              ({value}) => value === termRow?.saved,
+            )
+          : undefined;
+      const termText = termRow?.bounds
+        ? `${termRow.saved} ms`
+        : choice && name(choice.label);
+      if (!termText) {
+        return null;
+      }
+      return {
+        term: termText,
+        // The menu hides Permissive Hold while Hold on Other Key Press is on.
+        options: options
+          .filter(
+            ({content: [command]}) =>
+              on.has(command) &&
+              !(command === PERMISSIVE_HOLD && on.has(HOLD_ON_OTHER_KEY_PRESS)),
+          )
+          .map(({label, content}) => name(label ?? content[0])),
+        menu: name(submenu.label),
+        open: () => {
+          const board = device.vendorProductId;
+          dispatch(
+            keepLtmtReturn({
+              board,
+              ltmt: {
+                keymap: Title,
+                menu: key,
+                submenu: submenu.label,
+                selectedKey,
+                layer,
+              },
+            }),
+          );
+          dispatch(
+            openConfigureSubmenu({
+              board,
+              menu: viaMenu.label,
+              submenu: submenu.label,
+            }),
+          );
+          dispatch(openConfigureMenu({board, menu: key}));
+        },
+      };
+    }
+  }
+  return null;
+};
+
 export const KeycodePane: FC = () => {
   const {t} = useTranslation();
   const dispatch = useAppDispatch();
-  const macros = useAppSelector((state: any) => state.macros);
   const selectedDefinition = useAppSelector(getSelectedDefinition);
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const matrixKeycodes = useAppSelector(getSelectedKeymap);
   const selectedKey = useAppSelector(getSelectedKey);
+  const hoveredKey = useAppSelector(getHoveredKey);
+  const selectedLayer = useAppSelector(getSelectedLayerIndex);
+  const numberOfLayers = useAppSelector(getNumberOfLayers);
   const disableFastRemap = useAppSelector(getDisableFastRemap);
   const selectedKeyDefinitions = useAppSelector(getSelectedKeyDefinitions);
-  const {basicKeyToByte} = useAppSelector(getBasicKeyToByte);
-  const macroCount = useAppSelector(getMacroCount);
-  const hostKeyboardLayout = useAppSelector(getHostKeyboardLayout);
-  const keycodeLUT = keymapExtras[hostKeyboardLayout]?.keycodeLUT;
-
-  const KeycodeCategories = useMemo(
-    () =>
-      generateKeycodeCategories(basicKeyToByte, macroCount).map((category) =>
-        category.id === 'qmk_lighting' && selectedDefinition && selectedDevice
-          ? {
-              ...category,
-              keycodes: getQMKLightingKeycodes(
-                selectedDefinition,
-                selectedDevice.protocol,
-              ),
-            }
-          : category,
-      ),
-    [basicKeyToByte, macroCount, selectedDefinition, selectedDevice],
+  const {basicKeyToByte, byteToKey} = useAppSelector(getBasicKeyToByte);
+  const macroCount = useAppSelector(getPaletteMacroCount);
+  const tapDance = useTapDanceBinding(selectedDefinition as any);
+  const tapping = useTappingSummary();
+  // Back from TAPPING through "To Keymap": the key and the layer as the link left
+  // them, with the LT·MT tab open again. Leaving KEYMAP cleared the selected key,
+  // so it is set again.
+  const ltmtReturn = useAppSelector(getLtmtReturn);
+  const [restored] = useState(() => (ltmtReturn?.back ? ltmtReturn : null));
+  useEffect(() => {
+    if (restored && selectedDevice) {
+      dispatch(setLayer(restored.layer));
+      dispatch(updateSelectedKey(restored.selectedKey, selectedKeyDefinitions));
+      dispatch(clearLtmtReturn({board: selectedDevice.vendorProductId}));
+    }
+  }, []);
+  // Back from Macros: the key and the layer the Macro tab left, with the macro to
+  // focus. Sent from Macros opened another way, there is no key to take back:
+  // only the macro is focused.
+  const macroReturn = useAppSelector(getMacroReturn);
+  const [macroBack] = useState(() =>
+    macroReturn?.back ? {...macroReturn, back: macroReturn.back} : null,
   );
+  useEffect(() => {
+    if (!macroBack || !selectedDevice) {
+      return;
+    }
+    if (macroBack.layer !== null) {
+      dispatch(setLayer(macroBack.layer));
+    }
+    if (macroBack.selectedKey !== null) {
+      dispatch(
+        updateSelectedKey(macroBack.selectedKey, selectedKeyDefinitions),
+      );
+    }
+    dispatch(clearMacroReturn({board: selectedDevice.vendorProductId}));
+  }, []);
 
-  // TODO: improve typing so we can get rid of this
+  const menus = useMemo(() => {
+    if (!selectedDefinition) {
+      return [];
+    }
+    return buildEnabledKeycodeMenus({
+      definition: selectedDefinition,
+      basicKeyToByte,
+      protocol: selectedDevice?.protocol,
+      macroCount,
+    });
+  }, [selectedDefinition, basicKeyToByte, selectedDevice, macroCount]);
+
+  // The Macro tab's way to the Macros menu: the macro on the selected key opens,
+  // else the one last open there. KEYMAP keeps its key and layer for the way back.
+  const rail = useContext(ConfigureRail);
+  const macroMenu = rail.find(({key}) => key === macrosTitle)?.key;
+
   if (!selectedDefinition || !selectedDevice || !matrixKeycodes) {
     return null;
   }
 
-  const [selectedCategory, setSelectedCategory] = useState(
-    KeycodeCategories[0].id,
-  );
-  const [mouseOverDesc, setMouseOverDesc] = useState<string | null>(null);
-  const [showKeyTextInputModal, setShowKeyTextInputModal] = useState(false);
+  const board = selectedDevice.vendorProductId;
+  const macroLink = macroMenu
+    ? {
+        open: () => {
+          const value =
+            selectedKey === null ? undefined : matrixKeycodes[selectedKey];
+          dispatch(
+            keepMacroReturn({
+              board,
+              macro: {
+                keymap: Title,
+                menu: macroMenu,
+                selectedKey,
+                layer: selectedLayer,
+              },
+            }),
+          );
+          if (
+            value !== undefined &&
+            isMacroKeycodeByte(value, basicKeyToByte)
+          ) {
+            dispatch(
+              openConfigureSubmenu({
+                board,
+                menu: macrosTitle,
+                submenu: `M${getMacroKeycodeIndex(value, basicKeyToByte)}`,
+              }),
+            );
+          }
+          dispatch(openConfigureMenu({board, menu: macroMenu}));
+        },
+      }
+    : null;
 
-  const getEnabledMenus = (): IKeycodeMenu[] => {
-    if (isVIADefinitionV3(selectedDefinition)) {
-      return getEnabledMenusV3(selectedDefinition);
-    }
-    const {lighting, customKeycodes} = selectedDefinition;
-    const {keycodes} = getLightingDefinition(lighting);
-    return KeycodeCategories.filter(
-      maybeFilter(
-        keycodes === KeycodeType.QMK,
-        ({id}) => id !== 'qmk_lighting',
-      ),
-    )
-      .filter(
-        maybeFilter(keycodes === KeycodeType.WT, ({id}) => id !== 'lighting'),
-      )
-      .filter(
-        maybeFilter(
-          typeof customKeycodes !== 'undefined',
-          ({id}) => id !== 'custom',
-        ),
-      );
-  };
-  const getEnabledMenusV3 = (definition: VIADefinitionV3): IKeycodeMenu[] => {
-    const keycodes = ['default' as const, ...(definition.keycodes || [])];
-    const allowedKeycodes = keycodes.flatMap((keycodeName) =>
-      categoriesForKeycodeModule(keycodeName),
-    );
-    if ((selectedDefinition.customKeycodes || []).length !== 0) {
-      allowedKeycodes.push('custom');
-    }
-    return KeycodeCategories.filter((category) =>
-      allowedKeycodes.includes(category.id),
-    );
-  };
-
-  const renderMacroError = () => {
-    return (
-      <ErrorMessage>
-        {t(
-          'Your current firmware does not support macros. Install the latest firmware for your device.',
-        )}
-      </ErrorMessage>
-    );
-  };
-
-  const renderCategories = () => {
-    const {t} = useTranslation();
-    return (
-      <MenuContainer>
-        {getEnabledMenus().map(({id, label}) => (
-          <SubmenuRow
-            $selected={id === selectedCategory}
-            onClick={() => setSelectedCategory(id)}
-            key={id}
-          >
-            {t(label)}
-          </SubmenuRow>
-        ))}
-      </MenuContainer>
-    );
-  };
-
-  const renderKeyInputModal = () => {
-    dispatch(disableGlobalHotKeys());
-
-    return (
-      <KeycodeModal
-        defaultValue={
-          selectedKey !== null ? matrixKeycodes[selectedKey] : undefined
-        }
-        onExit={() => {
-          dispatch(enableGlobalHotKeys());
-          setShowKeyTextInputModal(false);
-        }}
-        onConfirm={(keycode) => {
-          dispatch(enableGlobalHotKeys());
-          updateKey(keycode);
-          setShowKeyTextInputModal(false);
-        }}
-      />
-    );
-  };
-
-  const updateKey = (value: number) => {
+  const updateKey = (value: number, options?: {stay?: boolean}) => {
     if (selectedKey !== null) {
       dispatch(updateKeyAction(selectedKey, value));
+      if (options?.stay) {
+        return;
+      }
       dispatch(
         updateSelectedKey(
           disableFastRemap || !selectedKeyDefinitions
             ? null
             : getNextKey(selectedKey, selectedKeyDefinitions),
+          selectedKeyDefinitions,
         ),
       );
     }
   };
 
-  const handleClick = (code: string, i: number) => {
-    if (code == 'text') {
-      setShowKeyTextInputModal(true);
-    } else {
-      return (
-        keycodeInMaster(code, basicKeyToByte) &&
-        updateKey(getByteForCode(code, basicKeyToByte))
-      );
-    }
-  };
-
-  const renderKeycode = (keycode: IKeycode, index: number) => {
-    const {code} = keycode;
-    const lutEntry = keycodeLUT && code ? keycodeLUT[code] : undefined;
-    const name = lutEntry ? lutEntry.name : keycode.name;
-    const title = lutEntry?.title ?? keycode.title;
-    return (
-      <Keycode
-        key={code}
-        disabled={!keycodeInMaster(code, basicKeyToByte) && code != 'text'}
-        onClick={() => handleClick(code, index)}
-        onMouseOver={() => setMouseOverDesc(title ? `${code}: ${title}` : code)}
-        onMouseOut={() => setMouseOverDesc(null)}
-      >
-        <KeycodeContent>{name}</KeycodeContent>
-      </Keycode>
-    );
-  };
-
-  const renderCustomKeycode = () => {
-    return (
-      <CustomKeycode
-        key="customKeycode"
-        onClick={() => selectedKey !== null && handleClick('text', 0)}
-        onMouseOver={() => setMouseOverDesc(t('Enter any QMK Keycode'))}
-        onMouseOut={() => setMouseOverDesc(null)}
-      >
-        Any
-      </CustomKeycode>
-    );
-  };
-
-  const renderSelectedCategory = (
-    keycodes: IKeycode[],
-    selectedCategory: string,
-  ) => {
-    const keycodeListItems = keycodes.map((keycode, i) =>
-      renderKeycode(keycode, i),
-    );
-    switch (selectedCategory) {
-      case 'macro': {
-        return !macros.isFeatureSupported ? (
-          renderMacroError()
-        ) : (
-          <KeycodeList>{keycodeListItems}</KeycodeList>
-        );
-      }
-      case 'special': {
-        return (
-          <KeycodeList>
-            {keycodeListItems.concat(renderCustomKeycode())}
-          </KeycodeList>
-        );
-      }
-      case 'custom': {
-        if (
-          (!isVIADefinitionV2(selectedDefinition) &&
-            !isVIADefinitionV3(selectedDefinition)) ||
-          !selectedDefinition.customKeycodes
-        ) {
-          return null;
-        }
-        return (
-          <KeycodeList>
-            {selectedDefinition.customKeycodes.map((keycode, idx) => {
-              return renderKeycode(
-                {
-                  ...keycode,
-                  code: `CUSTOM(${idx})`,
-                },
-                idx,
-              );
-            })}
-          </KeycodeList>
-        );
-      }
-      default: {
-        return <KeycodeList>{keycodeListItems}</KeycodeList>;
-      }
-    }
-  };
-
-  const selectedCategoryKeycodes = KeycodeCategories.find(
-    ({id}) => id === selectedCategory,
-  )?.keycodes as IKeycode[];
-
   return (
-    <>
-      <SubmenuOverflowCell>{renderCategories()}</SubmenuOverflowCell>
-      <OverflowCell>
-        <KeycodeContainer>
-          {renderSelectedCategory(selectedCategoryKeycodes, selectedCategory)}
-        </KeycodeContainer>
-        <KeycodeDesc>{mouseOverDesc}</KeycodeDesc>
-        {showKeyTextInputModal && renderKeyInputModal()}
-      </OverflowCell>
-    </>
+    <SpanOverflowCell>
+      <KeycodePalette
+        menus={menus}
+        basicKeyToByte={basicKeyToByte}
+        byteToKey={byteToKey}
+        target={
+          selectedKey === null
+            ? null
+            : {
+                name: t('Selected key'),
+                value: matrixKeycodes[selectedKey] ?? null,
+              }
+        }
+        onAssign={updateKey}
+        layerCount={numberOfLayers}
+        tapDance={tapDance}
+        tapping={tapping}
+        initialCategory={
+          restored ? LTMT_CATEGORY : macroBack ? 'macro' : undefined
+        }
+        initialFocusCode={
+          macroBack ? `MACRO(${macroBack.back.macro})` : undefined
+        }
+        macroLink={macroLink}
+        keyboardHover={
+          hoveredKey === null ? null : (matrixKeycodes[hoveredKey] ?? null)
+        }
+      />
+    </SpanOverflowCell>
   );
 };
 

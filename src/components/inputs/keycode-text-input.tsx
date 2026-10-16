@@ -46,7 +46,7 @@ type State = {
   lastDefault: number;
 };
 
-export class KeycodeTextInput extends React.Component<Props, State> {
+class KeycodeTextInput extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
     const {defaultValue, basicKeyToByte, byteToKey} = props;

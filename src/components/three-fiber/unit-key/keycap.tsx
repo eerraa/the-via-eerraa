@@ -9,21 +9,10 @@ import {
   ThreeFiberKeycapProps,
 } from 'src/types/keyboard-rendering';
 import {TestKeyState} from 'src/types/types';
+import {faceSize, LEGEND_FONT, legendBaseline} from 'src/utils/keycap-legend';
+import type {KeyLabel} from 'src/utils/keyboard-rendering';
 import * as THREE from 'three';
 import {KeycapTooltip} from '../../inputs/tooltip';
-
-const getMacroData = ({
-  macroExpression,
-  label,
-}: {
-  macroExpression?: string;
-  label: string;
-}) =>
-  label && label.length > 15
-    ? label
-    : macroExpression && macroExpression.length
-    ? macroExpression
-    : null;
 
 const paintEncoder = (
   canvas: HTMLCanvasElement,
@@ -133,18 +122,12 @@ const paintKeycapLabel = (
   canvas: HTMLCanvasElement,
   rect: Rect,
   legendColor: string,
-  label: any,
+  label: KeyLabel,
 ) => {
   const context = canvas.getContext('2d');
   if (context == null) {
     return;
   }
-  const fontFamily =
-    'Fira Sans, Arial Rounded MT, Arial Rounded MT Bold, Arial';
-  // Margins from face edge to where text is drawn
-  const margin = {x: 0.015, y: 0.02};
-  const centerLabelMargin = {x: 0.01, y: -0.01};
-  const singleLabelMargin = {x: 0.01, y: 0.02};
 
   // Define a clipping path for the top face, so text is not drawn on the side.
   context.beginPath();
@@ -156,50 +139,22 @@ const paintKeycapLabel = (
   context.clip();
 
   context.fillStyle = legendColor;
-  if (label === undefined) {
-  } else if (label.topLabel && label.bottomLabel) {
-    let fontSize = 52;
-    let fontHeightTU = (0.75 * fontSize) / canvas.height;
-    let topLabelOffset = label.offset[0] * fontHeightTU;
-    let bottomLabelOffset = label.offset[1] * fontHeightTU;
-    context.font = `bold ${fontSize}px ${fontFamily}`;
+  // The legend is laid out on the 2D keyboard's 1u face; it is drawn here at the
+  // size this keyboard's 1u face has, so every key's legend has one scale.
+  const left = rect.bl.x * canvas.width;
+  const top = (1 - rect.tr.y) * canvas.height;
+  // The face's height in the 2D keyboard's px, which lines are measured in.
+  const height = ((rect.tr.y - rect.bl.y) * canvas.height) / LEGEND_SCALE;
+  for (const line of label.lines) {
+    context.font = `bold ${line.size * LEGEND_SCALE}px ${LEGEND_FONT}`;
+    context.globalAlpha = line.opacity;
     context.fillText(
-      label.topLabel,
-      (rect.bl.x + margin.x) * canvas.width,
-      (1 - (rect.tr.y - fontHeightTU - margin.y - topLabelOffset)) *
-        canvas.height,
-    );
-    context.fillText(
-      label.bottomLabel,
-      (rect.bl.x + margin.x) * canvas.width,
-      (1 - (rect.bl.y + margin.y + bottomLabelOffset)) * canvas.height,
-    );
-  } else if (label.centerLabel) {
-    let fontSize = 37.5 * label.size;
-    let fontHeightTU = (0.75 * fontSize) / canvas.height;
-    let faceMidLeftY = (rect.tr.y + rect.bl.y) / 2;
-    context.font = `bold ${fontSize}px ${fontFamily}`;
-    context.fillText(
-      label.label,
-      (rect.bl.x + centerLabelMargin.x) * canvas.width,
-      (1 - (faceMidLeftY - 0.5 * fontHeightTU - centerLabelMargin.y)) *
-        canvas.height,
-    );
-    // return if label would have overflowed so that we know to show tooltip
-    return (
-      context.measureText(label.centerLabel).width >
-      (rect.tr.x - (rect.bl.x + centerLabelMargin.x)) * canvas.width
-    );
-  } else if (typeof label.label === 'string') {
-    let fontSize = 75;
-    let fontHeightTU = (0.75 * fontSize) / canvas.height;
-    context.font = `bold ${fontSize}px ${fontFamily}`;
-    context.fillText(
-      label.label,
-      (rect.bl.x + singleLabelMargin.x) * canvas.width,
-      (1 - (rect.tr.y - fontHeightTU - singleLabelMargin.y)) * canvas.height,
+      line.text,
+      left + line.x * LEGEND_SCALE,
+      top + legendBaseline(line, height) * LEGEND_SCALE,
     );
   }
+  context.globalAlpha = 1;
 };
 
 // coordinates of corners of keycap and top face in texture coordinates (UVs)
@@ -261,6 +216,14 @@ const calculateTextureRects = (
   return {keycapRect, faceRect};
 };
 
+// A 1u key's texture is this many px across.
+const TEXTURE_SIZE = 512;
+// The 3D face of a 1u key against the 2D one: the scale every legend is drawn at.
+const LEGEND_SCALE = (() => {
+  const {faceRect} = calculateTextureRects(1, 1, 1, 1, 0);
+  return ((faceRect.tr.x - faceRect.bl.x) * TEXTURE_SIZE) / faceSize(1).width;
+})();
+
 const paintKeycap = (
   canvas: HTMLCanvasElement,
   [widthMultiplier, heightMultiplier]: [number, number],
@@ -268,7 +231,7 @@ const paintKeycap = (
   textureHeight: number,
   bgColor: string,
   legendColor: string,
-  label: any,
+  label: KeyLabel | undefined,
   textureOffsetX: number,
 ) => {
   const textureRects: TextureRects = calculateTextureRects(
@@ -279,9 +242,8 @@ const paintKeycap = (
     textureOffsetX,
   );
 
-  const canvasSize = 512;
-  canvas.width = canvasSize * widthMultiplier;
-  canvas.height = canvasSize * heightMultiplier;
+  canvas.width = TEXTURE_SIZE * widthMultiplier;
+  canvas.height = TEXTURE_SIZE * heightMultiplier;
 
   const context = canvas.getContext('2d');
   if (context == null) {
@@ -300,7 +262,9 @@ const paintKeycap = (
     paintDebugLines(canvas, textureRects.keycapRect, textureRects.faceRect);
   }
 
-  return paintKeycapLabel(canvas, textureRects.faceRect, legendColor, label);
+  if (label) {
+    paintKeycapLabel(canvas, textureRects.faceRect, legendColor, label);
+  }
 };
 
 export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
@@ -324,10 +288,18 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
     idx,
   } = props;
   const ref = useRef<any>();
-  const macroData = label && getMacroData(label);
-  const [overflowsTexture, setOverflowsTexture] = useState(false);
   // Hold state for hovered and clicked events
   const [hovered, hover] = useState(false);
+  // KEYMAP's corner describes the key under the pointer, as it does a key in the
+  // keycode list.
+  const {onHover} = props;
+  useEffect(() => {
+    if (!hovered || mode !== DisplayMode.Configure || !onHover) {
+      return;
+    }
+    onHover(idx, true);
+    return () => onHover(idx, false);
+  }, [hovered, mode, idx, onHover]);
   const textureRef = useRef<THREE.CanvasTexture>();
   const canvasRef = useRef(document.createElement('canvas'));
   const redraw = React.useCallback(() => {
@@ -335,7 +307,7 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
       if (shouldRotate) {
         paintEncoder(canvasRef.current, [scale[0], scale[1]], color.c, color.t);
       } else {
-        const doesOverflow = paintKeycap(
+        paintKeycap(
           canvasRef.current,
           [scale[0], scale[1]],
           textureWidth,
@@ -345,7 +317,6 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
           label,
           textureOffsetX,
         );
-        setOverflowsTexture(!!doesOverflow);
       }
       textureRef.current!.needsUpdate = true;
     }
@@ -383,6 +354,17 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
     pressedState === KeycapState.Pressed
       ? [zDown, rotation[2]]
       : [zUp, rotation[2] + Math.PI * Number(shouldRotate)];
+  const keyboardHover = mode === DisplayMode.Configure && hovered && !selected;
+  const hoverGlow = useSpring({
+    config: {duration: 500},
+    from: {brightness: keyboardHover ? 0.75 : 1},
+    to: {brightness: keyboardHover ? 1.25 : 1},
+    reset: keyboardHover,
+    immediate: !keyboardHover,
+  });
+  const hoverColor = hoverGlow.brightness.to((brightness) =>
+    new THREE.Color('lightgrey').multiplyScalar(brightness).getStyle(),
+  );
   const wasPressed = keyState === TestKeyState.KeyUp;
   const keycapColor =
     DisplayMode.Test === mode
@@ -396,8 +378,8 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
       : 'lightgrey';
 
   const {z, b, rotateZ, tooltipScale} = useSpring({
-    config: {duration: 100},
-    z: keycapZ,
+    config: {duration: mode === DisplayMode.Configure ? 200 : 100},
+    z: keyboardHover ? zDown - 8 : keycapZ,
     b: keycapColor,
     rotateZ: rotationZ,
     tooltipScale: !hovered ? 0 : 1,
@@ -455,7 +437,10 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
         onPointerOut={meshOnPointerOut}
         geometry={keycapGeometry}
       >
-        <AniMeshMaterial attach="material" color={selected ? glow.y : b}>
+        <AniMeshMaterial
+          attach="material"
+          color={selected ? glow.y : mode === DisplayMode.Configure ? hoverColor : b}
+        >
           <canvasTexture
             ref={textureRef as any}
             attach="map"
@@ -463,7 +448,9 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
           />
         </AniMeshMaterial>
       </animated.mesh>
-      {(macroData || overflowsTexture) && (
+      {/* Only a macro key has a tooltip, its macro, and only while it is under
+          the pointer: one per key would be redrawn every frame. */}
+      {hovered && label?.macro && (
         <React.Suspense fallback={null}>
           <animated.group
             position={props.position}
@@ -476,9 +463,7 @@ export const Keycap: React.FC<ThreeFiberKeycapProps> = React.memo((props) => {
                 pointerEvents: 'none',
               }}
             >
-              <KeycapTooltip>
-                {macroData || (label && label.tooltipLabel)}
-              </KeycapTooltip>
+              <KeycapTooltip>{label.macro}</KeycapTooltip>
             </Html>
           </animated.group>
         </React.Suspense>

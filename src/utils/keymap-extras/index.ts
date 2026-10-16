@@ -63,7 +63,7 @@ import workman_zxcvm from './keymap_workman_zxcvm';
 
 export type KeycodeLUT = Record<string, {name: string; title?: string; alias?: string}>;
 
-export interface KeymapExtra {
+interface KeymapExtra {
   label: string;
   prefix: string;
   sendstring: string;
@@ -570,5 +570,3 @@ export const keymapExtras: Record<string, KeymapExtra> = {
     keycodeLUT: workman_zxcvm,
   },
 };
-
-export const DEFAULT_HOST_KEYBOARD_LAYOUT = 'keymap_us';

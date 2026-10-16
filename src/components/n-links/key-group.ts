@@ -1,13 +1,14 @@
 import {getBoundingBox, Result, VIAKey} from '@the-via/reader';
 import {useAppDispatch} from 'src/store/hooks';
 import {updateSelectedKey} from 'src/store/keymapSlice';
+import {hoverKeyboardKey} from 'src/store/stateSyncThunks';
 import {
   KeycapSharedProps,
   KeyGroupProps,
   KeysKeys,
 } from 'src/types/keyboard-rendering';
 import {getByteToKey} from 'src/utils/key';
-import {getBasicKeyDict} from 'src/utils/key-to-byte/dictionary-store';
+import type {KeycodeDictionary} from 'src/utils/connection-profile';
 import {
   calculatePointPosition,
   getKeyboardRowPartitions,
@@ -36,6 +37,7 @@ export function getKeycapSharedProps<T>(
     onClick,
     onPointerDown,
     onPointerOver,
+    onHover,
   } = keysKeys.coords[i];
   const isEncoder = k['ei'] !== undefined;
   return {
@@ -50,6 +52,7 @@ export function getKeycapSharedProps<T>(
     shouldRotate: isEncoder,
     onPointerDown: onPointerDown,
     onPointerOver: onPointerOver,
+    onHover,
     keyState: props.pressedKeys ? props.pressedKeys[i] : -1,
     disabled: !props.selectable,
     selected: i === selectedKeyIndex,
@@ -69,8 +72,8 @@ const getKeysKeysIndices =
 
 export function getLabels<T>(
   props: KeyGroupProps<T>,
-  macroExpressions: string[],
-  basicKeyToByte: ReturnType<typeof getBasicKeyDict>,
+  macroExpressions: string[] | null,
+  basicKeyToByte: KeycodeDictionary,
   byteToKey: ReturnType<typeof getByteToKey>,
   keycodeLUT?: Record<string, {name: string; title?: string}>,
 ) {
@@ -142,10 +145,13 @@ export function getKeysKeys<T>(
         idx: i,
         onClick: (evt: any, idx: number) => {
           evt.stopPropagation();
-          dispatch(updateSelectedKey(idx));
+          dispatch(updateSelectedKey(idx, keys));
         },
         onPointerDown: props.onKeycapPointerDown,
         onPointerOver: props.onKeycapPointerOver,
+        onHover: (idx: number, hovered: boolean) => {
+          dispatch(hoverKeyboardKey(idx, hovered));
+        },
       };
     }),
   };
