@@ -43,8 +43,8 @@ const defaultStoreData = {
       tapEnterAtEOMEnabled: false,
     },
     testKeyboardSoundsSettings: {
-      isEnabled: true,
-      volume: 100,
+      isEnabled: false,
+      volume: 50,
       waveform: 'sine' as const,
       mode: TestKeyboardSoundsMode.WickiHayden,
       transpose: 0,
@@ -52,8 +52,39 @@ const defaultStoreData = {
   },
 };
 
+const TEST_KEYBOARD_SOUNDS_VERSION = 2;
+
+/**
+ * Key sounds used to start on at full volume, and the store saved that default
+ * along with any other setting. Saved sounds still exactly at it move to the
+ * quiet default once; sounds anyone changed stay as they are.
+ */
+export const migrateTestKeyboardSounds = (settings: Settings): Settings => {
+  if (settings.testKeyboardSoundsVersion) {
+    return settings;
+  }
+  const sounds = settings.testKeyboardSoundsSettings;
+  const untouched =
+    sounds.isEnabled === true &&
+    sounds.volume === 100 &&
+    sounds.waveform === 'sine' &&
+    sounds.mode === TestKeyboardSoundsMode.WickiHayden &&
+    sounds.transpose === 0;
+  return {
+    ...settings,
+    testKeyboardSoundsSettings: untouched
+      ? {...defaultStoreData.settings.testKeyboardSoundsSettings}
+      : sounds,
+    testKeyboardSoundsVersion: TEST_KEYBOARD_SOUNDS_VERSION,
+  };
+};
+
 function initDeviceStore() {
   deviceStore = new Store(defaultStoreData);
+  const settings = deviceStore.get('settings');
+  if (!settings.testKeyboardSoundsVersion) {
+    deviceStore.set('settings', migrateTestKeyboardSounds(settings));
+  }
 }
 
 initDeviceStore();
@@ -115,17 +146,22 @@ export async function syncStore(): Promise<DefinitionIndex> {
   return currentDefinitionIndex;
 }
 
-export const getMissingDefinition = async <
-  K extends keyof DefinitionVersionMap,
->(
-  device: AuthorizedDevice,
-  version: K,
-): Promise<[DefinitionVersionMap[K], K]> => {
-  const vpid = getVendorProductId(device.vendorId, device.productId);
-  const url = `/definitions/${version}/${vpid}.json`;
+const fetchDefinitionJson = async <K extends keyof DefinitionVersionMap>(
+  url: string,
+): Promise<DefinitionVersionMap[K] | null> => {
   const response = await fetch(url);
-  const json: DefinitionVersionMap[K] = await response.json();
-  let definitions = deviceStore.get('definitions');
+  if (!response.ok) {
+    return null;
+  }
+  return (await response.json()) as DefinitionVersionMap[K];
+};
+
+const cacheOfficialDefinition = <K extends keyof DefinitionVersionMap>(
+  vpid: number,
+  version: K,
+  json: DefinitionVersionMap[K],
+) => {
+  const definitions = deviceStore.get('definitions');
   const newDefinitions = {
     ...definitions,
     [vpid]: {
@@ -133,21 +169,27 @@ export const getMissingDefinition = async <
       [version]: json,
     },
   };
+  deviceStore.set('definitions', newDefinitions);
+};
 
-  try {
-    deviceStore.set('definitions', newDefinitions);
-  } catch (err) {
-    // This is likely due to running out of space, so we clear it
-    localStorage.clear();
-    initDeviceStore();
-    definitions = deviceStore.get('definitions');
-    deviceStore.set('definitions', {
-      ...definitions,
-      [vpid]: {
-        ...definitions[vpid],
-        [version]: json,
-      },
-    });
+export const fetchBundledDefinition = async <
+  K extends keyof DefinitionVersionMap,
+>(
+  device: AuthorizedDevice,
+  version: K,
+  source: 'official' | 'era',
+): Promise<[DefinitionVersionMap[K], K] | null> => {
+  const vpid = getVendorProductId(device.vendorId, device.productId);
+  const url =
+    source === 'era'
+      ? `/definitions/era/${version}/${vpid}.json`
+      : `/definitions/${version}/${vpid}.json`;
+  const json = await fetchDefinitionJson<K>(url);
+  if (!json) {
+    return null;
+  }
+  if (source === 'official') {
+    cacheOfficialDefinition(vpid, version, json);
   }
   return [json, version];
 };
@@ -164,14 +206,6 @@ export const getThemeFromStore = (): ThemeDefinition =>
 
 export const getThemeModeFromStore = (): 'dark' | 'light' => {
   return deviceStore.get('settings')?.themeMode;
-};
-
-export const getShowSliderValuesModeFromStore = (): 'Slider & Show Value' | 'Slider & Input Field' | 'Slider Only' => {
-  return deviceStore.get('settings')?.ShowSliderValuesMode;
-};
-
-export const getRenderModeFromStore = (): '3D' | '2D' => {
-  return deviceStore.get('settings')?.renderMode;
 };
 
 export const getThemeNameFromStore = () => {

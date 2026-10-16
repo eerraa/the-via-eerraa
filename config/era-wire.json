@@ -1,0 +1,693 @@
+{
+  "schemaVersion": 1,
+  "via": {
+    "protocolVersion": "0x000D",
+    "keycodesVersion": "0x00000008",
+    "official": {
+      "commands": {
+        "id_get_protocol_version": "0x01",
+        "id_get_keyboard_value": "0x02",
+        "id_set_keyboard_value": "0x03",
+        "id_dynamic_keymap_get_keycode": "0x04",
+        "id_dynamic_keymap_set_keycode": "0x05",
+        "id_dynamic_keymap_reset": "0x06",
+        "id_custom_set_value": "0x07",
+        "id_custom_get_value": "0x08",
+        "id_custom_save": "0x09",
+        "id_eeprom_reset": "0x0A",
+        "id_bootloader_jump": "0x0B",
+        "id_dynamic_keymap_macro_get_count": "0x0C",
+        "id_dynamic_keymap_macro_get_buffer_size": "0x0D",
+        "id_dynamic_keymap_macro_get_buffer": "0x0E",
+        "id_dynamic_keymap_macro_set_buffer": "0x0F",
+        "id_dynamic_keymap_macro_reset": "0x10",
+        "id_dynamic_keymap_get_layer_count": "0x11",
+        "id_dynamic_keymap_get_buffer": "0x12",
+        "id_dynamic_keymap_set_buffer": "0x13",
+        "id_dynamic_keymap_get_encoder": "0x14",
+        "id_dynamic_keymap_set_encoder": "0x15",
+        "id_unhandled": "0xFF"
+      },
+      "keyboardValues": {
+        "id_uptime": "0x01",
+        "id_layout_options": "0x02",
+        "id_switch_matrix_state": "0x03",
+        "id_firmware_version": "0x04",
+        "id_device_indication": "0x05",
+        "id_keycodes_version": "0x06"
+      },
+      "channels": {
+        "id_custom_channel": "0x00",
+        "id_qmk_backlight_channel": "0x01",
+        "id_qmk_rgblight_channel": "0x02",
+        "id_qmk_rgb_matrix_channel": "0x03",
+        "id_qmk_audio_channel": "0x04",
+        "id_qmk_led_matrix_channel": "0x05"
+      }
+    }
+  },
+  "era": {
+    "reserved": {
+      "keyboardValues": [{"min": "0x80", "max": "0xFF"}],
+      "channels.eerraa": [{"min": "0x08", "max": "0x1F"}],
+      "channels.h7s": [{"min": "0x08", "max": "0x1F"}],
+      "values.version.eerraa": [{"min": "0x01", "max": "0x01"}],
+      "values.version.h7s": [{"min": "0x01", "max": "0x05"}],
+      "values.system": [{"min": "0x01", "max": "0x0F"}, {"min": "0x40", "max": "0x42"}],
+      "values.socd": [{"min": "0x01", "max": "0x04"}],
+      "values.kkuk": [{"min": "0x01", "max": "0x04"}],
+      "values.mousekey": [{"min": "0x01", "max": "0x0E"}],
+      "values.debounce": [{"min": "0x01", "max": "0x04"}],
+      "values.tapping": [{"min": "0x01", "max": "0x05"}],
+      "values.keyboard.eerraa": [{"min": "0x00", "max": "0x7F"}],
+      "values.keyboard.tomak": [{"min": "0x00", "max": "0x04"}],
+      "values.keyboard.odessey": [{"min": "0x01", "max": "0x04"}],
+      "values.keyboard.riley": [{"min": "0x0D", "max": "0x17"}],
+      "values.keyboard.backlight": [{"min": "0x00", "max": "0x03"}],
+      "values.keyboard.h7s": [{"min": "0x01", "max": "0x06"}],
+      "values.tapdance.h7s": [{"min": "0x01", "max": "0x48"}],
+      "values.usbPolling.h7s": [{"min": "0x01", "max": "0x04"}],
+      "values.rgbSleep.h7s": [{"min": "0x01", "max": "0x03"}],
+      "values.rgblight.h7s": [{"min": "0x05", "max": "0x05"}]
+    },
+    "groups": {
+      "STATE_SYNC_SELECTORS": {
+        "namespace": "keyboardValues", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "CURRENT": {"value": "0x80", "status": "current"},
+          "LEGACY": {"value": "0x06", "status": "legacy", "note": "Shipped EERRAA and H7S VIA protocol <= 12 firmware uses this State Sync selector. It must not be reused; protocol 13 assigns it to official id_keycodes_version."}
+        }
+      },
+      "STATE_SYNC": {
+        "namespace": "stateSync.version", "users": ["app", "eerraa", "h7s"],
+        "entries": {"ENVELOPE_VERSION": {"value": "0x01", "status": "current"}}
+      },
+      "STATE_SYNC_STATUS": {
+        "namespace": "stateSync.status", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "OK": {"value": "0x00", "status": "current"},
+          "UNSUPPORTED_VERSION": {"value": "0x01", "status": "current"},
+          "INVALID": {"value": "0x02", "status": "current"}
+        }
+      },
+      "STATE_SYNC_DOMAINS": {
+        "namespace": "stateSync.domain", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "KEYMAP": {"value": "0x01", "status": "current"},
+          "MACRO": {"value": "0x02", "status": "current"},
+          "CONFIG": {"value": "0x04", "status": "current"},
+          "MASK_INITIAL": {"value": "0x07", "status": "current"}
+        }
+      },
+      "CHANNELS_EERRAA": {
+        "namespace": "channels.eerraa", "users": ["app", "eerraa"],
+        "entries": {
+          "VERSION": {"value": "0x08", "status": "current"},
+          "SYSTEM": {"value": "0x09", "status": "current"},
+          "SOCD_LR": {"value": "0x0A", "status": "current"},
+          "SOCD_UD": {"value": "0x0B", "status": "current"},
+          "KKUK": {"value": "0x0C", "status": "current"},
+          "MOUSEKEY": {"value": "0x0D", "status": "current"},
+          "DEBOUNCE": {"value": "0x0E", "status": "current"},
+          "TAPPING": {"value": "0x0F", "status": "current"}
+        }
+      },
+      "CHANNELS_H7S": {
+        "namespace": "channels.h7s", "users": ["app", "h7s"],
+        "entries": {
+          "VERSION": {"value": "0x08", "status": "current"},
+          "SYSTEM": {"value": "0x09", "status": "current"},
+          "SOCD_LR": {"value": "0x0A", "status": "current"},
+          "SOCD_UD": {"value": "0x0B", "status": "current"},
+          "KKUK": {"value": "0x0C", "status": "current"},
+          "USB_POLLING": {"value": "0x0D", "status": "current"},
+          "DEBOUNCE": {"value": "0x0E", "status": "current"},
+          "TAPPING": {"value": "0x0F", "status": "current"},
+          "TAPDANCE": {"value": "0x10", "status": "current"},
+          "MOUSEKEY": {"value": "0x11", "status": "current"},
+          "RGB_SLEEP": {"value": "0x12", "status": "current"}
+        }
+      },
+      "VERSION_EERRAA": {
+        "namespace": "values.version.eerraa", "users": ["app", "eerraa"],
+        "entries": {"ASCII": {"value": "0x01", "status": "current"}}
+      },
+      "VERSION_H7S": {
+        "namespace": "values.version.h7s", "users": ["app", "h7s"],
+        "entries": {
+          "YEAR": {"value": "0x01", "status": "current"},
+          "MONTH": {"value": "0x02", "status": "current"},
+          "DAY": {"value": "0x03", "status": "current"},
+          "REVISION": {"value": "0x04", "status": "current"},
+          "ASCII": {"value": "0x05", "status": "current"}
+        }
+      },
+      "SYSTEM": {
+        "namespace": "values.system", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "BOOTLOADER": {"value": "0x01", "status": "current"},
+          "EEPROM_RESET_0": {"value": "0x02", "status": "current"},
+          "EEPROM_RESET_1": {"value": "0x03", "status": "current"},
+          "EEPROM_RESET_DONE": {"value": "0x04", "status": "current"}
+        }
+      },
+      "SYSTEM_EERRAA": {
+        "namespace": "values.system", "users": ["app", "eerraa"],
+        "entries": {
+          "EEPROM_SYNC": {"value": "0x05", "status": "current"},
+          "INPUT_SYNC": {"value": "0x06", "status": "current"},
+          "RGB_SYNC": {"value": "0x07", "status": "current"},
+          "LINK_LEVEL": {"value": "0x08", "status": "current"},
+          "LINK_APPLY": {"value": "0x09", "status": "current"},
+          "RGB_SLEEP_PRESET": {"value": "0x0A", "status": "current"},
+          "RGB_SLEEP_EXACT_SECONDS": {"value": "0x0B", "status": "current"},
+          "RGB_SLEEP_ENABLE": {"value": "0x0C", "status": "current"},
+          "BACKLIGHT_SLEEP_ENABLE": {"value": "0x0D", "status": "current"},
+          "BACKLIGHT_SLEEP_PRESET": {"value": "0x0E", "status": "current"},
+          "BACKLIGHT_SLEEP_EXACT_SECONDS": {"value": "0x0F", "status": "current"},
+          "LINK_RUNTIME": {"value": "0x40", "status": "current"},
+          "LINK_STORED": {"value": "0x41", "status": "current"},
+          "LINK_RESULT": {"value": "0x42", "status": "current"}
+        }
+      },
+      "SOCD": {
+        "namespace": "values.socd", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "ENABLE": {"value": "0x01", "status": "current"},
+          "KEYCODE_0": {"value": "0x02", "status": "current"},
+          "KEYCODE_1": {"value": "0x03", "status": "current"},
+          "MODE": {"value": "0x04", "status": "current"}
+        }
+      },
+      "SOCD_MODES": {
+        "namespace": "socd.mode", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "LAST_INPUT": {"value": "0x01", "status": "current"},
+          "NEUTRAL": {"value": "0x02", "status": "current"},
+          "FIRST_INPUT": {"value": "0x03", "status": "current"},
+          "KEY_0_PRIORITY": {"value": "0x04", "status": "current"},
+          "KEY_1_PRIORITY": {"value": "0x05", "status": "current"}
+        }
+      },
+      "KKUK": {
+        "namespace": "values.kkuk", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "ENABLE": {"value": "0x01", "status": "current"},
+          "DELAY": {"value": "0x02", "status": "current"},
+          "REPEAT": {"value": "0x03", "status": "current"}
+        }
+      },
+      "KKUK_EERRAA": {
+        "namespace": "values.kkuk", "users": ["app", "eerraa"],
+        "entries": {"MODE": {"value": "0x04", "status": "current"}}
+      },
+      "KKUK_MODES": {
+        "namespace": "kkuk.mode", "users": ["app", "eerraa"],
+        "entries": {"REPORT_PULSE": {"value": "0x01", "status": "current"}}
+      },
+      "MOUSEKEY": {
+        "namespace": "values.mousekey", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "CURSOR_MIN_SPEED": {"value": "0x01", "status": "current"},
+          "CURSOR_MAX_SPEED": {"value": "0x02", "status": "current"},
+          "CURSOR_ACCELERATION": {"value": "0x03", "status": "current"},
+          "CURSOR_INTERVAL": {"value": "0x04", "status": "current"},
+          "WHEEL_INTERVAL": {"value": "0x05", "status": "current"},
+          "WHEEL_ACCELERATION": {"value": "0x06", "status": "current"},
+          "PRECISION": {"value": "0x07", "status": "current"},
+          "CURSOR_START_EXACT": {"value": "0x08", "status": "current"},
+          "CURSOR_TARGET_EXACT": {"value": "0x09", "status": "current"},
+          "CURSOR_RAMP_EXACT": {"value": "0x0A", "status": "current"},
+          "CURSOR_INTERVAL_EXACT": {"value": "0x0B", "status": "current"},
+          "WHEEL_INTERVAL_EXACT": {"value": "0x0C", "status": "current"},
+          "WHEEL_TARGET_EXACT": {"value": "0x0D", "status": "current"},
+          "WHEEL_RAMP_EXACT": {"value": "0x0E", "status": "current"}
+        }
+      },
+      "MOUSEKEY_CAPABILITY": {
+        "namespace": "mousekey.marker", "users": ["app", "eerraa", "h7s"],
+        "entries": {"MARKER": {"value": "0xE4", "status": "current"}}
+      },
+      "MOUSEKEY_VERSION": {
+        "namespace": "mousekey.version", "users": ["app", "eerraa", "h7s"],
+        "entries": {"PRECISION": {"value": "0x01", "status": "current"}}
+      },
+      "MOUSEKEY_WHEEL_ACCELERATION_LEVELS": {
+        "namespace": "mousekey.wheelAcceleration", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "OFF": {"value": "0x00", "status": "current"},
+          "MILD": {"value": "0x01", "status": "current"},
+          "STRONG": {"value": "0x02", "status": "current"}
+        }
+      },
+      "DEBOUNCE": {
+        "namespace": "values.debounce", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "MODE": {"value": "0x01", "status": "current"},
+          "TIME_SINGLE": {"value": "0x02", "status": "current"},
+          "TIME_PRE": {"value": "0x03", "status": "current"},
+          "TIME_POST": {"value": "0x04", "status": "current"}
+        }
+      },
+      "TAPPING": {
+        "namespace": "values.tapping", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "GLOBAL_TERM": {"value": "0x01", "status": "current"},
+          "PERMISSIVE_HOLD": {"value": "0x02", "status": "current"},
+          "HOLD_ON_OTHER_KEY_PRESS": {"value": "0x03", "status": "current"},
+          "RETRO_TAPPING": {"value": "0x04", "status": "current"},
+          "GLOBAL_TERM_EXACT": {"value": "0x05", "status": "current"}
+        }
+      },
+      "DEBOUNCE_MODES": {
+        "namespace": "debounce.mode", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "BALANCED": {"value": "0x00", "status": "current"},
+          "FAST": {"value": "0x01", "status": "current"},
+          "ADVANCED": {"value": "0x02", "status": "current"}
+        }
+      },
+      "LINK_LEVELS": {
+        "namespace": "link.level", "users": ["app", "eerraa"],
+        "entries": {
+          "HIGH": {"value": "0x00", "status": "current"},
+          "MEDIUM": {"value": "0x01", "status": "current"},
+          "LOW": {"value": "0x02", "status": "current"}
+        }
+      },
+      "KEYBOARD_EERRAA": {
+        "namespace": "values.keyboard.eerraa", "users": ["app", "eerraa"],
+        "entries": {
+          "NKRO_ENABLE": {"value": "0x05", "status": "current"},
+          "INDICATOR_ENABLE": {"value": "0x06", "status": "current"},
+          "INDICATOR_1_SOURCE": {"value": "0x07", "status": "current"},
+          "INDICATOR_1_BRIGHTNESS": {"value": "0x08", "status": "current"},
+          "INDICATOR_1_COLOR": {"value": "0x09", "status": "current"},
+          "INDICATOR_2_SOURCE": {"value": "0x0A", "status": "current"},
+          "INDICATOR_2_BRIGHTNESS": {"value": "0x0B", "status": "current"},
+          "INDICATOR_2_COLOR": {"value": "0x0C", "status": "current"}
+        }
+      },
+      "BACKLIGHT": {
+        "namespace": "values.keyboard.backlight", "users": ["app", "eerraa"],
+        "entries": {
+          "BRIGHTNESS": {"value": "0x00", "status": "current"},
+          "EFFECT": {"value": "0x01", "status": "current"},
+          "BREATHING_PERIOD": {"value": "0x02", "status": "current"},
+          "PULSE_SPEED": {"value": "0x03", "status": "current"}
+        }
+      },
+      "BACKLIGHT_EFFECTS": {
+        "namespace": "backlight.effect", "users": ["app", "eerraa"],
+        "entries": {
+          "STEADY": {"value": "0x00", "status": "current"},
+          "BREATHING": {"value": "0x01", "status": "current"},
+          "PULSE_OFF_PRESS": {"value": "0x02", "status": "current"},
+          "PULSE_ON_PRESS": {"value": "0x03", "status": "current"},
+          "PULSE_OFF_PRESS_HOLD": {"value": "0x04", "status": "current"},
+          "PULSE_ON_PRESS_HOLD": {"value": "0x05", "status": "current"}
+        }
+      },
+      "TOMAK": {
+        "namespace": "values.keyboard.tomak", "users": ["app", "eerraa"],
+        "entries": {
+          "INDICATOR_TOGGLE": {"value": "0x00", "status": "current"},
+          "INDICATOR_OVERRIDE": {"value": "0x01", "status": "current"},
+          "INDICATOR_BRIGHTNESS": {"value": "0x02", "status": "current"},
+          "INDICATOR_COLOR": {"value": "0x03", "status": "current"},
+          "BADGE_ONLY": {"value": "0x04", "status": "current"}
+        }
+      },
+      "ODESSEY": {
+        "namespace": "values.keyboard.odessey", "users": ["app", "eerraa"],
+        "entries": {
+          "INDICATOR_SELECT": {"value": "0x01", "status": "current"},
+          "INDICATOR_BRIGHTNESS": {"value": "0x02", "status": "current"},
+          "INDICATOR_COLOR": {"value": "0x03", "status": "current"},
+          "VELOCIKEY_ENABLE": {"value": "0x04", "status": "current"}
+        }
+      },
+      "RILEY": {
+        "namespace": "values.keyboard.riley", "users": ["app", "eerraa"],
+        "entries": {
+          "INDICATOR_1_MODE": {"value": "0x0D", "status": "current"},
+          "INDICATOR_1_BRIGHTNESS": {"value": "0x0E", "status": "current"},
+          "INDICATOR_1_COLOR": {"value": "0x0F", "status": "current"},
+          "INDICATOR_2_MODE": {"value": "0x10", "status": "current"},
+          "INDICATOR_2_BRIGHTNESS": {"value": "0x11", "status": "current"},
+          "INDICATOR_2_COLOR": {"value": "0x12", "status": "current"},
+          "INDICATOR_3_MODE": {"value": "0x13", "status": "current"},
+          "INDICATOR_3_BRIGHTNESS": {"value": "0x14", "status": "current"},
+          "INDICATOR_3_COLOR": {"value": "0x15", "status": "current"},
+          "INDICATOR_ONLY": {"value": "0x16", "status": "current"},
+          "VELOCIKEY_ENABLE": {"value": "0x17", "status": "current"}
+        }
+      },
+      "INDICATORS_H7S": {
+        "namespace": "values.keyboard.h7s", "users": ["app", "h7s"],
+        "entries": {
+          "INDICATOR_1_SELECT": {"value": "0x01", "status": "current"},
+          "INDICATOR_1_BRIGHTNESS": {"value": "0x02", "status": "current"},
+          "INDICATOR_1_COLOR": {"value": "0x03", "status": "current"},
+          "INDICATOR_2_SELECT": {"value": "0x04", "status": "current"},
+          "INDICATOR_2_BRIGHTNESS": {"value": "0x05", "status": "current"},
+          "INDICATOR_2_COLOR": {"value": "0x06", "status": "current"}
+        }
+      },
+      "INDICATOR_SOURCES": {
+        "namespace": "indicator.source", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "OFF": {"value": "0x00", "status": "current"},
+          "CAPS_LOCK": {"value": "0x01", "status": "current"},
+          "SCROLL_LOCK": {"value": "0x02", "status": "current"},
+          "NUM_LOCK": {"value": "0x03", "status": "current"}
+        }
+      },
+      "USB_POLLING_H7S": {
+        "namespace": "values.usbPolling.h7s", "users": ["app", "h7s"],
+        "entries": {
+          "BOOTMODE_SELECT": {"value": "0x01", "status": "current"},
+          "BOOTMODE_APPLY": {"value": "0x02", "status": "current"},
+          "MONITOR_TOGGLE": {"value": "0x03", "status": "retired", "note": "H7S pre-V260823R2 USB instability monitor toggle. It must not be reused; current H7S firmware leaves it reserved and unhandled."},
+          "CURRENT": {"value": "0x04", "status": "current"}
+        }
+      },
+      "RGB_SLEEP_H7S": {
+        "namespace": "values.rgbSleep.h7s", "users": ["app", "h7s"],
+        "entries": {
+          "TIMEOUT": {"value": "0x01", "status": "current"},
+          "TIMEOUT_EXACT": {"value": "0x02", "status": "current"},
+          "ENABLE": {"value": "0x03", "status": "current"}
+        }
+      },
+      "RGBLIGHT_H7S": {
+        "namespace": "values.rgblight.h7s", "users": ["app", "h7s"],
+        "entries": {"VELOCIKEY": {"value": "0x05", "status": "current"}}
+      },
+      "TAPDANCE_EERRAA": {
+        "namespace": "values.keyboard.eerraa", "users": ["app", "eerraa"],
+        "entries": {
+          "TAP_1": {"value": "0x20", "status": "current"},
+          "HOLD_1": {"value": "0x21", "status": "current"},
+          "DOUBLE_TAP_1": {"value": "0x22", "status": "current"},
+          "TAP_HOLD_1": {"value": "0x23", "status": "current"},
+          "TERM_1": {"value": "0x24", "status": "current"},
+          "TAP_2": {"value": "0x25", "status": "current"},
+          "HOLD_2": {"value": "0x26", "status": "current"},
+          "DOUBLE_TAP_2": {"value": "0x27", "status": "current"},
+          "TAP_HOLD_2": {"value": "0x28", "status": "current"},
+          "TERM_2": {"value": "0x29", "status": "current"},
+          "TAP_3": {"value": "0x2A", "status": "current"},
+          "HOLD_3": {"value": "0x2B", "status": "current"},
+          "DOUBLE_TAP_3": {"value": "0x2C", "status": "current"},
+          "TAP_HOLD_3": {"value": "0x2D", "status": "current"},
+          "TERM_3": {"value": "0x2E", "status": "current"},
+          "TAP_4": {"value": "0x2F", "status": "current"},
+          "HOLD_4": {"value": "0x30", "status": "current"},
+          "DOUBLE_TAP_4": {"value": "0x31", "status": "current"},
+          "TAP_HOLD_4": {"value": "0x32", "status": "current"},
+          "TERM_4": {"value": "0x33", "status": "current"},
+          "TAP_5": {"value": "0x34", "status": "current"},
+          "HOLD_5": {"value": "0x35", "status": "current"},
+          "DOUBLE_TAP_5": {"value": "0x36", "status": "current"},
+          "TAP_HOLD_5": {"value": "0x37", "status": "current"},
+          "TERM_5": {"value": "0x38", "status": "current"},
+          "TAP_6": {"value": "0x39", "status": "current"},
+          "HOLD_6": {"value": "0x3A", "status": "current"},
+          "DOUBLE_TAP_6": {"value": "0x3B", "status": "current"},
+          "TAP_HOLD_6": {"value": "0x3C", "status": "current"},
+          "TERM_6": {"value": "0x3D", "status": "current"},
+          "TAP_7": {"value": "0x3E", "status": "current"},
+          "HOLD_7": {"value": "0x3F", "status": "current"},
+          "DOUBLE_TAP_7": {"value": "0x40", "status": "current"},
+          "TAP_HOLD_7": {"value": "0x41", "status": "current"},
+          "TERM_7": {"value": "0x42", "status": "current"},
+          "TAP_8": {"value": "0x43", "status": "current"},
+          "HOLD_8": {"value": "0x44", "status": "current"},
+          "DOUBLE_TAP_8": {"value": "0x45", "status": "current"},
+          "TAP_HOLD_8": {"value": "0x46", "status": "current"},
+          "TERM_8": {"value": "0x47", "status": "current"},
+          "TERM_EXACT_1": {"value": "0x48", "status": "current"},
+          "TERM_EXACT_2": {"value": "0x49", "status": "current"},
+          "TERM_EXACT_3": {"value": "0x4A", "status": "current"},
+          "TERM_EXACT_4": {"value": "0x4B", "status": "current"},
+          "TERM_EXACT_5": {"value": "0x4C", "status": "current"},
+          "TERM_EXACT_6": {"value": "0x4D", "status": "current"},
+          "TERM_EXACT_7": {"value": "0x4E", "status": "current"},
+          "TERM_EXACT_8": {"value": "0x4F", "status": "current"},
+          "MODE_1": {"value": "0x50", "status": "current"},
+          "MODE_2": {"value": "0x51", "status": "current"},
+          "MODE_3": {"value": "0x52", "status": "current"},
+          "MODE_4": {"value": "0x53", "status": "current"},
+          "MODE_5": {"value": "0x54", "status": "current"},
+          "MODE_6": {"value": "0x55", "status": "current"},
+          "MODE_7": {"value": "0x56", "status": "current"},
+          "MODE_8": {"value": "0x57", "status": "current"},
+          "HOLD_TERM_1": {"value": "0x58", "status": "current"},
+          "HOLD_TERM_2": {"value": "0x59", "status": "current"},
+          "HOLD_TERM_3": {"value": "0x5A", "status": "current"},
+          "HOLD_TERM_4": {"value": "0x5B", "status": "current"},
+          "HOLD_TERM_5": {"value": "0x5C", "status": "current"},
+          "HOLD_TERM_6": {"value": "0x5D", "status": "current"},
+          "HOLD_TERM_7": {"value": "0x5E", "status": "current"},
+          "HOLD_TERM_8": {"value": "0x5F", "status": "current"},
+          "HOLD_OTHER_1": {"value": "0x60", "status": "current"},
+          "HOLD_OTHER_2": {"value": "0x61", "status": "current"},
+          "HOLD_OTHER_3": {"value": "0x62", "status": "current"},
+          "HOLD_OTHER_4": {"value": "0x63", "status": "current"},
+          "HOLD_OTHER_5": {"value": "0x64", "status": "current"},
+          "HOLD_OTHER_6": {"value": "0x65", "status": "current"},
+          "HOLD_OTHER_7": {"value": "0x66", "status": "current"},
+          "HOLD_OTHER_8": {"value": "0x67", "status": "current"}
+        }
+      },
+      "TAPDANCE_H7S": {
+        "namespace": "values.tapdance.h7s", "users": ["app", "h7s"],
+        "entries": {
+          "TAP_1": {"value": "0x01", "status": "current"},
+          "HOLD_1": {"value": "0x02", "status": "current"},
+          "DOUBLE_TAP_1": {"value": "0x03", "status": "current"},
+          "TAP_HOLD_1": {"value": "0x04", "status": "current"},
+          "TERM_1": {"value": "0x05", "status": "current"},
+          "TAP_2": {"value": "0x06", "status": "current"},
+          "HOLD_2": {"value": "0x07", "status": "current"},
+          "DOUBLE_TAP_2": {"value": "0x08", "status": "current"},
+          "TAP_HOLD_2": {"value": "0x09", "status": "current"},
+          "TERM_2": {"value": "0x0A", "status": "current"},
+          "TAP_3": {"value": "0x0B", "status": "current"},
+          "HOLD_3": {"value": "0x0C", "status": "current"},
+          "DOUBLE_TAP_3": {"value": "0x0D", "status": "current"},
+          "TAP_HOLD_3": {"value": "0x0E", "status": "current"},
+          "TERM_3": {"value": "0x0F", "status": "current"},
+          "TAP_4": {"value": "0x10", "status": "current"},
+          "HOLD_4": {"value": "0x11", "status": "current"},
+          "DOUBLE_TAP_4": {"value": "0x12", "status": "current"},
+          "TAP_HOLD_4": {"value": "0x13", "status": "current"},
+          "TERM_4": {"value": "0x14", "status": "current"},
+          "TAP_5": {"value": "0x15", "status": "current"},
+          "HOLD_5": {"value": "0x16", "status": "current"},
+          "DOUBLE_TAP_5": {"value": "0x17", "status": "current"},
+          "TAP_HOLD_5": {"value": "0x18", "status": "current"},
+          "TERM_5": {"value": "0x19", "status": "current"},
+          "TAP_6": {"value": "0x1A", "status": "current"},
+          "HOLD_6": {"value": "0x1B", "status": "current"},
+          "DOUBLE_TAP_6": {"value": "0x1C", "status": "current"},
+          "TAP_HOLD_6": {"value": "0x1D", "status": "current"},
+          "TERM_6": {"value": "0x1E", "status": "current"},
+          "TAP_7": {"value": "0x1F", "status": "current"},
+          "HOLD_7": {"value": "0x20", "status": "current"},
+          "DOUBLE_TAP_7": {"value": "0x21", "status": "current"},
+          "TAP_HOLD_7": {"value": "0x22", "status": "current"},
+          "TERM_7": {"value": "0x23", "status": "current"},
+          "TAP_8": {"value": "0x24", "status": "current"},
+          "HOLD_8": {"value": "0x25", "status": "current"},
+          "DOUBLE_TAP_8": {"value": "0x26", "status": "current"},
+          "TAP_HOLD_8": {"value": "0x27", "status": "current"},
+          "TERM_8": {"value": "0x28", "status": "current"},
+          "TERM_EXACT_1": {"value": "0x29", "status": "current"},
+          "TERM_EXACT_2": {"value": "0x2A", "status": "current"},
+          "TERM_EXACT_3": {"value": "0x2B", "status": "current"},
+          "TERM_EXACT_4": {"value": "0x2C", "status": "current"},
+          "TERM_EXACT_5": {"value": "0x2D", "status": "current"},
+          "TERM_EXACT_6": {"value": "0x2E", "status": "current"},
+          "TERM_EXACT_7": {"value": "0x2F", "status": "current"},
+          "TERM_EXACT_8": {"value": "0x30", "status": "current"},
+          "MODE_1": {"value": "0x31", "status": "current"},
+          "MODE_2": {"value": "0x32", "status": "current"},
+          "MODE_3": {"value": "0x33", "status": "current"},
+          "MODE_4": {"value": "0x34", "status": "current"},
+          "MODE_5": {"value": "0x35", "status": "current"},
+          "MODE_6": {"value": "0x36", "status": "current"},
+          "MODE_7": {"value": "0x37", "status": "current"},
+          "MODE_8": {"value": "0x38", "status": "current"},
+          "HOLD_TERM_1": {"value": "0x39", "status": "current"},
+          "HOLD_TERM_2": {"value": "0x3A", "status": "current"},
+          "HOLD_TERM_3": {"value": "0x3B", "status": "current"},
+          "HOLD_TERM_4": {"value": "0x3C", "status": "current"},
+          "HOLD_TERM_5": {"value": "0x3D", "status": "current"},
+          "HOLD_TERM_6": {"value": "0x3E", "status": "current"},
+          "HOLD_TERM_7": {"value": "0x3F", "status": "current"},
+          "HOLD_TERM_8": {"value": "0x40", "status": "current"},
+          "HOLD_OTHER_1": {"value": "0x41", "status": "current"},
+          "HOLD_OTHER_2": {"value": "0x42", "status": "current"},
+          "HOLD_OTHER_3": {"value": "0x43", "status": "current"},
+          "HOLD_OTHER_4": {"value": "0x44", "status": "current"},
+          "HOLD_OTHER_5": {"value": "0x45", "status": "current"},
+          "HOLD_OTHER_6": {"value": "0x46", "status": "current"},
+          "HOLD_OTHER_7": {"value": "0x47", "status": "current"},
+          "HOLD_OTHER_8": {"value": "0x48", "status": "current"}
+        }
+      },
+      "TAPDANCE_MARKERS": {
+        "namespace": "tapdance.marker", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "MODE": {"value": "0xD2", "status": "current"},
+          "TIMING": {"value": "0xD3", "status": "current"}
+        }
+      },
+      "TAPDANCE_MODES": {
+        "namespace": "tapdance.mode", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "LEGACY": {"value": "0x00", "status": "current"},
+          "AFTER_DECISION": {"value": "0x01", "status": "current"},
+          "ON_PRESS": {"value": "0x02", "status": "current"}
+        }
+      },
+      "TAPDANCE_HOLD_OTHER": {
+        "namespace": "tapdance.holdOther", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "DISABLED": {"value": "0x00", "status": "current"},
+          "ENABLED": {"value": "0x01", "status": "current"}
+        }
+      },
+      "UI_SYNC": {
+        "namespace": "commands", "users": ["app"],
+        "entries": {"REQUEST": {"value": "0x16", "status": "legacy", "note": "The app's shipped v1 Custom Menu invalidation protocol remains decodable for older firmware; current EERRAA and H7S State Sync does not emit it. It must not be reused."}}
+      },
+      "UI_SYNC_VERSION": {
+        "namespace": "uiSync.version", "users": ["app"],
+        "entries": {"ENVELOPE": {"value": "0x01", "status": "current"}}
+      },
+      "UI_SYNC_TYPES": {
+        "namespace": "uiSync.type", "users": ["app"],
+        "entries": {
+          "CUSTOM_MENU_ALL": {"value": "0x00", "status": "current"},
+          "CUSTOM_MENU_COMMANDS": {"value": "0x01", "status": "current"},
+          "CUSTOM_MENU_COMMAND_IDS": {"value": "0x02", "status": "current"}
+        }
+      },
+      "USB_DIAGNOSTICS_SELECTORS": {
+        "namespace": "keyboardValues", "users": ["app", "h7s"],
+        "entries": {"RETIRED": {"value": "0x07", "status": "retired", "note": "Historical H7S USB diagnostics v1 firmware uses this selector. Current H7S reserves it and returns id_unhandled; the app retains historical parsers only. It must not be reused."}}
+      },
+      "USB_DIAGNOSTICS": {
+        "namespace": "usbDiagnostics.version", "users": ["app", "h7s"],
+        "entries": {"PROTOCOL_VERSION": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1 protocol; must not be reused."}}
+      },
+      "USB_DIAGNOSTICS_OPERATIONS": {
+        "namespace": "usbDiagnostics.operation", "users": ["app", "h7s"],
+        "entries": {
+          "CAPABILITIES": {"value": "0x00", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "SNAPSHOT": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "START": {"value": "0x10", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "STOP": {"value": "0x11", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "CLEAR": {"value": "0x12", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}
+        }
+      },
+      "USB_DIAGNOSTICS_STATUS": {
+        "namespace": "usbDiagnostics.status", "users": ["app", "h7s"],
+        "entries": {
+          "OK": {"value": "0x00", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "UNSUPPORTED_VERSION": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "INVALID": {"value": "0x02", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "BUSY": {"value": "0x03", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "NO_SESSION": {"value": "0x04", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "STALE_SNAPSHOT": {"value": "0x05", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}
+        }
+      },
+      "USB_DIAGNOSTICS_CAPS": {
+        "namespace": "usbDiagnostics.capability", "users": ["app", "h7s"],
+        "entries": {
+          "REPORT_TIMING": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "HISTOGRAM": {"value": "0x02", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "FIRMWARE_TIMING": {"value": "0x04", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "EVENT_TIMELINE": {"value": "0x08", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "BOOT_COUNTERS": {"value": "0x10", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "REQUIRED": {"value": "0x1F", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}
+        }
+      },
+      "USB_DIAGNOSTICS_LIMITS": {
+        "namespace": "usbDiagnostics.histogramSize", "users": ["app", "h7s"],
+        "entries": {"HISTOGRAM_BUCKETS": {"value": "0x08", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}}
+      },
+      "USB_DIAGNOSTICS_TIMELINE": {
+        "namespace": "usbDiagnostics.timelineSize", "users": ["app", "h7s"],
+        "entries": {"CAPACITY": {"value": "0x08", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}}
+      },
+      "USB_DIAGNOSTICS_CHUNKS": {
+        "namespace": "usbDiagnostics.chunkCount", "users": ["app", "h7s"],
+        "entries": {
+          "BASE": {"value": "0x08", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "MAX": {"value": "0x0C", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}
+        }
+      },
+      "USB_DIAGNOSTICS_DURATIONS": {
+        "namespace": "usbDiagnostics.duration", "users": ["app", "h7s"],
+        "entries": {
+          "SHORT": {"value": "0x0A", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "MEDIUM": {"value": "0x1E", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "LONG": {"value": "0x3C", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}
+        }
+      },
+      "USB_DIAGNOSTICS_DURATION_MASK": {
+        "namespace": "usbDiagnostics.durationMask", "users": ["app", "h7s"],
+        "entries": {"ALL": {"value": "0x07", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}}
+      },
+      "USB_DIAGNOSTICS_STATES": {
+        "namespace": "usbDiagnostics.state", "users": ["app", "h7s"],
+        "entries": {
+          "IDLE": {"value": "0x00", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "RUNNING": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "COMPLETE": {"value": "0x02", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."},
+          "STOPPED": {"value": "0x03", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}
+        }
+      },
+      "USB_DIAGNOSTICS_FORMAT": {
+        "namespace": "usbDiagnostics.endianness", "users": ["app", "h7s"],
+        "entries": {"BIG_ENDIAN": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}}
+      },
+      "USB_DIAGNOSTICS_TIME_UNIT": {
+        "namespace": "usbDiagnostics.timeUnit", "users": ["app", "h7s"],
+        "entries": {"MICROSECONDS": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1; must not be reused."}}
+      },
+      "USB_DIAGNOSTICS_EVENT_TYPES": {
+        "namespace": "usbDiagnostics.event", "users": ["app", "h7s"],
+        "entries": {
+          "FIRST": {"value": "0x01", "status": "retired", "note": "Historical H7S USB diagnostics v1 event lower bound; must not be reused."},
+          "LAST": {"value": "0x06", "status": "retired", "note": "Historical H7S USB diagnostics v1 event upper bound; must not be reused."}
+        }
+      },
+      "USB_POLLING_MODES": {
+        "namespace": "usbPolling.mode", "users": ["app", "h7s"],
+        "entries": {
+          "FS_1K": {"value": "0x00", "status": "current"},
+          "HS_2K": {"value": "0x01", "status": "current"},
+          "HS_4K": {"value": "0x02", "status": "current"},
+          "HS_8K": {"value": "0x03", "status": "current"}
+        }
+      },
+      "USB_SPEEDS": {
+        "namespace": "usb.speed", "users": ["app", "h7s"],
+        "entries": {
+          "UNKNOWN": {"value": "0x00", "status": "current"},
+          "FULL": {"value": "0x01", "status": "current"},
+          "HIGH": {"value": "0x02", "status": "current"}
+        }
+      },
+      "VIA_REPORT": {
+        "namespace": "via.reportSize", "users": ["app", "eerraa", "h7s"],
+        "entries": {"SIZE": {"value": "0x20", "status": "current"}}
+      }
+    }
+  }
+}

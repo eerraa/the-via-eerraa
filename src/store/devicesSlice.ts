@@ -14,44 +14,86 @@ import type {RootState} from './index';
 
 type DevicesState = {
   selectedDevicePath: string | null;
+  selectedConnectionGeneration: number | null;
+  selectedConnectionNeedsReload: boolean;
+  selectedConnectionLocked: boolean;
+  selectionGeneration: number;
   readyDevicePath: string | null;
   connectedDevicePaths: ConnectedDevices;
   unresolvedDefinitionDevicePaths: AuthorizedDevices;
   invalidProtocolDevicePaths: Record<string, Device>;
   supportedIds: VendorProductIdMap;
-  forceAuthorize: boolean;
 };
 
 const initialState: DevicesState = {
   selectedDevicePath: null,
+  selectedConnectionGeneration: null,
+  selectedConnectionNeedsReload: false,
+  selectedConnectionLocked: false,
+  selectionGeneration: 0,
   readyDevicePath: null,
   connectedDevicePaths: {},
   unresolvedDefinitionDevicePaths: {},
   invalidProtocolDevicePaths: {},
   supportedIds: {},
-  forceAuthorize: false,
 };
 
 const deviceSlice = createSlice({
   name: 'devices',
   initialState,
   reducers: {
-    // TODO: change to just pass the device path instead of the whole device
-    selectDevice: (state, action: PayloadAction<ConnectedDevice | null>) => {
+    selectDevice: (
+      state,
+      action: PayloadAction<{
+        device: ConnectedDevice | null;
+        connectionGeneration: number | null;
+      }>,
+    ) => {
       state.readyDevicePath = null;
-      if (!action.payload) {
+      state.selectionGeneration += 1;
+      state.selectedConnectionGeneration = action.payload.connectionGeneration;
+      state.selectedConnectionNeedsReload = false;
+      state.selectedConnectionLocked = false;
+      if (!action.payload.device) {
         state.selectedDevicePath = null;
       } else {
-        state.selectedDevicePath = action.payload.path;
+        state.selectedDevicePath = action.payload.device.path;
       }
     },
-    markDeviceReady: (state, action: PayloadAction<string>) => {
-      if (state.selectedDevicePath === action.payload) {
-        state.readyDevicePath = action.payload;
+    invalidateDeviceConnection: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        connectionGeneration: number;
+        locked: boolean;
+      }>,
+    ) => {
+      const {devicePath, connectionGeneration, locked} = action.payload;
+      if (state.selectedDevicePath === devicePath) {
+        state.readyDevicePath = null;
+        state.selectedConnectionGeneration = connectionGeneration;
+        state.selectedConnectionNeedsReload = true;
+        state.selectedConnectionLocked = locked;
+        state.selectionGeneration += 1;
       }
     },
-    setForceAuthorize: (state, action: PayloadAction<boolean>) => {
-      state.forceAuthorize = action.payload;
+    markDeviceReady: (
+      state,
+      action: PayloadAction<{
+        devicePath: string;
+        connectionGeneration: number;
+        selectionGeneration: number;
+      }>,
+    ) => {
+      const {devicePath, connectionGeneration, selectionGeneration} =
+        action.payload;
+      if (
+        state.selectedDevicePath === devicePath &&
+        state.selectedConnectionGeneration === connectionGeneration &&
+        state.selectionGeneration === selectionGeneration
+      ) {
+        state.readyDevicePath = devicePath;
+      }
     },
     updateConnectedDevices: (
       state,
@@ -82,6 +124,10 @@ const deviceSlice = createSlice({
     },
     clearAllDevices: (state) => {
       state.selectedDevicePath = null;
+      state.selectedConnectionGeneration = null;
+      state.selectedConnectionNeedsReload = false;
+      state.selectedConnectionLocked = false;
+      state.selectionGeneration += 1;
       state.readyDevicePath = null;
       state.connectedDevicePaths = {};
       state.unresolvedDefinitionDevicePaths = {};
@@ -108,6 +154,7 @@ export const {
   clearAllDevices,
   selectDevice,
   markDeviceReady,
+  invalidateDeviceConnection,
   updateConnectedDevices,
   updateUnresolvedDefinitionDevices,
   dismissUnresolvedDefinitionDevice,
@@ -115,22 +162,19 @@ export const {
   dismissInvalidProtocolDevice,
   updateSupportedIds,
   ensureSupportedIds,
-  setForceAuthorize,
 } = deviceSlice.actions;
 
 export default deviceSlice.reducer;
 
-export const getForceAuthorize = (state: RootState) =>
-  state.devices.forceAuthorize;
 export const getConnectedDevices = (state: RootState) =>
   state.devices.connectedDevicePaths;
-export const getUnresolvedDefinitionDevices = (state: RootState) =>
+const getUnresolvedDefinitionDevices = (state: RootState) =>
   state.devices.unresolvedDefinitionDevicePaths;
 export const getUnresolvedDefinitionDeviceWarning = createSelector(
   getUnresolvedDefinitionDevices,
   (devices) => Object.values(devices)[0],
 );
-export const getInvalidProtocolDevices = (state: RootState) =>
+const getInvalidProtocolDevices = (state: RootState) =>
   state.devices.invalidProtocolDevicePaths;
 export const getInvalidProtocolDeviceWarning = createSelector(
   getInvalidProtocolDevices,
@@ -138,6 +182,25 @@ export const getInvalidProtocolDeviceWarning = createSelector(
 );
 export const getSelectedDevicePath = (state: RootState) =>
   state.devices.selectedDevicePath;
+export const getSelectedConnectionGeneration = (state: RootState) =>
+  state.devices.selectedConnectionGeneration;
+export const getSelectedConnectionNeedsReload = (state: RootState) =>
+  state.devices.selectedConnectionNeedsReload;
+// A timed-out or failed request locks the connection until the keyboard is
+// physically reconnected (ADR 0001); nothing the app sends can unlock it.
+export const getSelectedConnectionLocked = (state: RootState) =>
+  state.devices.selectedConnectionLocked;
+export const getSelectionGeneration = (state: RootState) =>
+  state.devices.selectionGeneration;
+export const isSelectedDeviceOperationCurrent = (
+  state: RootState,
+  devicePath: string,
+  connectionGeneration: number,
+  selectionGeneration: number,
+) =>
+  state.devices.selectedDevicePath === devicePath &&
+  state.devices.selectedConnectionGeneration === connectionGeneration &&
+  state.devices.selectionGeneration === selectionGeneration;
 export const getIsSelectedDeviceReady = (state: RootState) =>
   state.devices.selectedDevicePath !== null &&
   state.devices.readyDevicePath === state.devices.selectedDevicePath;

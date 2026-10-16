@@ -15,7 +15,7 @@ export const logCommand = (
   entryLog.push({kbAddr, request, response, ts: Date.now()});
 };
 
-export const getLog = ((window as any).__getLogs = () => {
+const getLog = ((window as any).__getLogs = () => {
   return entryLog;
 });
 

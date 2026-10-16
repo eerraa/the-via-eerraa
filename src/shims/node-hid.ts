@@ -4,18 +4,127 @@ import type {
   WebVIADevice,
 } from '../types/types';
 
-var lastWriteTimestamp = Date.now();
-// This is a bit cray
-const globalBuffer: {
-  [path: string]: {currTime: number; message: Uint8Array}[];
-} = {};
-const eventWaitBuffer: {
-  [path: string]: ((a: Uint8Array) => void)[];
-} = {};
-type InputReportHandler = (message: Uint8Array) => boolean;
-const inputReportHandlers: {
-  [path: string]: InputReportHandler[];
-} = {};
+const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
+const DEFAULT_LIFECYCLE_CONFIRMATION_MS = 100;
+const MAX_DIAGNOSTIC_REPORTS = 32;
+
+export type ResponseMatcher = (message: Uint8Array) => boolean;
+export type HIDPathReservationOwner = object | symbol;
+export type HIDExchangeOptions = {
+  timeoutBehavior?: 'poison-generation' | 'preserve-generation';
+  responseTimeoutMs?: number;
+  reservationOwner?: HIDPathReservationOwner;
+  expectedGeneration?: number;
+};
+type UnsolicitedReportHandler = {
+  generation: number;
+  matches: ResponseMatcher;
+  handle: (message: Uint8Array) => void;
+};
+type PendingResponse = {
+  generation: number;
+  matches: ResponseMatcher;
+  resolve: (message: Uint8Array) => void;
+  reject: (error: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+type DiagnosticReport = {
+  generation: number;
+  receivedAt: number;
+  message: Uint8Array;
+};
+type CommandQueueEntry = {
+  run: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+};
+type ActivePathReservation = {
+  generation: number;
+  owner: HIDPathReservationOwner;
+  cancel: (error: Error) => void;
+};
+type TransportState = {
+  path: string;
+  device: HIDDevice;
+  generation: number;
+  poisoned: boolean;
+  disconnected: boolean;
+  hasOpened: boolean;
+  openPromise?: Promise<void>;
+  listener?: (event: HIDInputReportEvent) => void;
+  listenerGeneration?: number;
+  handlers: UnsolicitedReportHandler[];
+  pending?: PendingResponse;
+  commandQueue: CommandQueueEntry[];
+  isFlushing: boolean;
+  activeReservation?: ActivePathReservation;
+  activeCancel?: (error: Error) => void;
+  lastWriteTimestamp: number;
+  diagnostics: DiagnosticReport[];
+};
+type HIDTransportGenerationChange = {
+  path: string;
+  generation: number;
+  reason: string;
+  poisoned: boolean;
+};
+
+class HIDTransportError extends Error {}
+export class HIDTransportTimeoutError extends HIDTransportError {}
+export class HIDTransportGenerationError extends HIDTransportError {}
+export class HIDTransportInvalidReportError extends HIDTransportError {}
+class HIDTransportLifecycleCancellationError extends HIDTransportGenerationError {
+  readonly path: string;
+  readonly generation: number;
+  readonly reason: string;
+  readonly originalError?: Error;
+
+  constructor(
+    path: string,
+    generation: number,
+    reason: string,
+    originalError?: Error,
+  ) {
+    super(`HID transport ${path} ${reason}`);
+    this.name = 'HIDTransportLifecycleCancellationError';
+    this.path = path;
+    this.generation = generation;
+    this.reason = reason;
+    this.originalError = originalError;
+  }
+}
+
+class HIDTransportDeviceIOError extends HIDTransportError {
+  readonly path: string;
+  readonly generation: number;
+  readonly operation: 'open' | 'write';
+  readonly originalError: Error;
+
+  constructor(
+    path: string,
+    generation: number,
+    operation: 'open' | 'write',
+    originalError: Error,
+  ) {
+    super(originalError.message);
+    this.name = 'HIDTransportDeviceIOError';
+    this.path = path;
+    this.generation = generation;
+    this.operation = operation;
+    this.originalError = originalError;
+    this.stack = originalError.stack ?? this.stack;
+  }
+}
+
+const transportStates = new Map<string, TransportState>();
+const generationChangeListeners = new Set<
+  (change: HIDTransportGenerationChange) => void
+>();
+let responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS;
+let lifecycleConfirmationMs = DEFAULT_LIFECYCLE_CONFIRMATION_MS;
+let now = () => Date.now();
+let lifecycleNavigator: HID | undefined;
+
 const filterHIDDevices = (devices: HIDDevice[]) =>
   devices.filter((device) =>
     device.collections?.some(
@@ -37,16 +146,288 @@ export const isQMKConsoleDevice = (device: HIDDevice) =>
   ) ?? false;
 
 const getVIAPathIdentifier = () =>
-  (self.crypto && self.crypto.randomUUID && self.crypto.randomUUID()) ||
-  `via-path:${Math.random()}`;
+  globalThis.crypto?.randomUUID?.() || `via-path:${Math.random()}`;
+
+const isByte = (value: number) =>
+  Number.isInteger(value) && value >= 0 && value <= 0xff;
+
+const makeTransportError = (path: string, reason: string) =>
+  new HIDTransportGenerationError(`HID transport ${path} ${reason}`);
+
+const makeLifecycleCancellationError = (
+  state: TransportState,
+  reason: string,
+  originalError?: Error,
+) =>
+  new HIDTransportLifecycleCancellationError(
+    state.path,
+    state.generation,
+    reason,
+    originalError,
+  );
+
+const makeDeviceIOError = (
+  state: TransportState,
+  generation: number,
+  operation: 'open' | 'write',
+  error: unknown,
+) =>
+  new HIDTransportDeviceIOError(
+    state.path,
+    generation,
+    operation,
+    error instanceof Error ? error : new Error(String(error)),
+  );
+
+export const isHIDTransportLifecycleCancellationError = (
+  error: unknown,
+): error is HIDTransportLifecycleCancellationError =>
+  error instanceof HIDTransportLifecycleCancellationError;
+
+export const isHIDTransportDeviceIOError = (error: unknown) =>
+  error instanceof HIDTransportDeviceIOError;
+
+const isWebHIDDeviceConnected = async (
+  device: HIDDevice,
+): Promise<boolean | undefined> => {
+  if (typeof navigator === 'undefined' || !navigator.hid) {
+    return undefined;
+  }
+  try {
+    const devices = await navigator.hid.getDevices();
+    return devices.includes(device);
+  } catch {
+    // A failed connectivity probe cannot prove disappearance. Keep the
+    // original transport failure user-visible rather than hiding it.
+    return undefined;
+  }
+};
+
+const waitForWebHIDDisconnect = async (
+  device: HIDDevice,
+  timeoutMs: number,
+): Promise<boolean> => {
+  if (typeof navigator === 'undefined' || !navigator.hid || timeoutMs <= 0) {
+    return false;
+  }
+  const hid = navigator.hid;
+  return new Promise<boolean>((resolve) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const finish = (disconnected: boolean) => {
+      hid.removeEventListener('disconnect', onDisconnect);
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      resolve(disconnected);
+    };
+    const onDisconnect = (event: HIDConnectionEvent) => {
+      if (event.device === device) {
+        finish(true);
+      }
+    };
+    hid.addEventListener('disconnect', onDisconnect);
+    timeoutId = setTimeout(() => finish(false), timeoutMs);
+  });
+};
+
+const removeInputListener = (state: TransportState) => {
+  if (state.listener) {
+    state.device.removeEventListener('inputreport', state.listener);
+    state.listener = undefined;
+    state.listenerGeneration = undefined;
+  }
+};
+
+const rejectTransportWork = (state: TransportState, error: Error) => {
+  if (state.pending) {
+    const pending = state.pending;
+    state.pending = undefined;
+    clearTimeout(pending.timeoutId);
+    pending.reject(error);
+  }
+  state.activeReservation?.cancel(error);
+  state.activeReservation = undefined;
+  state.activeCancel?.(error);
+  state.activeCancel = undefined;
+  state.commandQueue.splice(0).forEach((entry) => entry.reject(error));
+};
+
+const replaceGeneration = (
+  state: TransportState,
+  reason: string,
+  options: {poisoned: boolean; disconnected: boolean},
+  error = makeTransportError(state.path, reason),
+) => {
+  removeInputListener(state);
+  rejectTransportWork(state, error);
+  state.handlers = [];
+  state.generation += 1;
+  state.poisoned = options.poisoned;
+  state.disconnected = options.disconnected;
+  state.openPromise = undefined;
+  state.lastWriteTimestamp = 0;
+  state.diagnostics = [];
+  generationChangeListeners.forEach((listener) => {
+    try {
+      listener({
+        path: state.path,
+        generation: state.generation,
+        reason,
+        poisoned: state.poisoned,
+      });
+    } catch (listenerError) {
+      console.warn('HID generation listener failed', listenerError);
+    }
+  });
+};
+
+const recordDiagnostic = (state: TransportState, message: Uint8Array) => {
+  state.diagnostics.push({
+    generation: state.generation,
+    receivedAt: now(),
+    message: message.slice(),
+  });
+  if (state.diagnostics.length > MAX_DIAGNOSTIC_REPORTS) {
+    state.diagnostics.splice(
+      0,
+      state.diagnostics.length - MAX_DIAGNOSTIC_REPORTS,
+    );
+  }
+};
+
+const safelyMatches = (matcher: ResponseMatcher, message: Uint8Array) => {
+  try {
+    return matcher(message);
+  } catch (error) {
+    console.warn('Input report matcher failed', error);
+    return false;
+  }
+};
+
+const routeInputReport = (
+  state: TransportState,
+  listenerGeneration: number,
+  event: HIDInputReportEvent,
+) => {
+  if (
+    state.generation !== listenerGeneration ||
+    state.listenerGeneration !== listenerGeneration ||
+    state.poisoned ||
+    state.disconnected
+  ) {
+    return;
+  }
+
+  const message = new Uint8Array(
+    event.data.buffer,
+    event.data.byteOffset,
+    event.data.byteLength,
+  ).slice();
+
+  const handler = state.handlers.find(
+    (candidate) =>
+      candidate.generation === listenerGeneration &&
+      safelyMatches(candidate.matches, message),
+  );
+  if (handler) {
+    try {
+      handler.handle(message);
+    } catch (error) {
+      console.warn('Input report handler failed', error);
+    }
+    return;
+  }
+
+  const pending = state.pending;
+  if (
+    pending &&
+    pending.generation === listenerGeneration &&
+    safelyMatches(pending.matches, message)
+  ) {
+    state.pending = undefined;
+    clearTimeout(pending.timeoutId);
+    pending.resolve(message);
+    return;
+  }
+
+  recordDiagnostic(state, message);
+};
+
+const installInputListener = (state: TransportState, generation: number) => {
+  if (
+    state.listener &&
+    state.listenerGeneration === generation &&
+    state.device.opened
+  ) {
+    return;
+  }
+
+  removeInputListener(state);
+  const listener = (event: HIDInputReportEvent) =>
+    routeInputReport(state, generation, event);
+  state.listener = listener;
+  state.listenerGeneration = generation;
+  state.device.addEventListener('inputreport', listener);
+};
+
+const createTransportState = (
+  path: string,
+  device: HIDDevice,
+): TransportState => ({
+  path,
+  device,
+  generation: 1,
+  poisoned: false,
+  disconnected: false,
+  hasOpened: device.opened,
+  handlers: [],
+  commandQueue: [],
+  isFlushing: false,
+  lastWriteTimestamp: 0,
+  diagnostics: [],
+});
+
+const bindTransportDevice = (path: string, device: HIDDevice) => {
+  const existing = transportStates.get(path);
+  if (!existing) {
+    const state = createTransportState(path, device);
+    transportStates.set(path, state);
+    if (device.opened) {
+      installInputListener(state, state.generation);
+    }
+    return state;
+  }
+
+  if (existing.device !== device) {
+    replaceGeneration(
+      existing,
+      'was replaced',
+      {
+        poisoned: false,
+        disconnected: false,
+      },
+      makeLifecycleCancellationError(existing, 'was replaced'),
+    );
+    existing.device = device;
+    existing.hasOpened = device.opened;
+  } else if (existing.disconnected) {
+    replaceGeneration(existing, 'reconnected', {
+      poisoned: false,
+      disconnected: false,
+    });
+  }
+
+  if (device.opened && !existing.poisoned) {
+    installInputListener(existing, existing.generation);
+  }
+  return existing;
+};
 
 const tagDevice = (device: HIDDevice): WebVIADevice => {
-  // This is super important in order to have a stable way to identify the same device
-  // that was already scanned. It's a bit hacky but https://github.com/WICG/webhid/issues/7
-  // ¯\_(ツ)_/¯
+  // WebHID has no stable physical path, so retain VIA's per-object identifier.
   const path = (device as any).__path || getVIAPathIdentifier();
   (device as any).__path = path;
-  const HIDDevice = {
+  const hidDevice = {
     _device: device,
     usage: 0x61,
     usagePage: 0xff60,
@@ -56,20 +437,102 @@ const tagDevice = (device: HIDDevice): WebVIADevice => {
     path,
     productName: device.productName,
   };
-  return (ExtendedHID._cache[path] = HIDDevice);
+  ExtendedHID._cache[path] = hidDevice;
+  bindTransportDevice(path, device);
+  return hidDevice;
 };
 
-// Attempt to forget device
-export const tryForgetDevice = (device: ConnectedDevice | AuthorizedDevice) => {
-  const cachedDevice = ExtendedHID._cache[device.path];
-  if (cachedDevice) {
-    return cachedDevice._device.forget();
+const handleConnect = ({device}: HIDConnectionEvent) => {
+  if (filterHIDDevices([device]).length) {
+    tagDevice(device);
+  }
+};
+
+const handleDisconnect = ({device}: HIDConnectionEvent) => {
+  const path = (device as any).__path as string | undefined;
+  const state = path ? transportStates.get(path) : undefined;
+  if (!state || state.device !== device || state.disconnected) {
+    return;
+  }
+  replaceGeneration(
+    state,
+    'disconnected',
+    {
+      poisoned: false,
+      disconnected: true,
+    },
+    makeLifecycleCancellationError(state, 'was disconnected'),
+  );
+};
+
+const ensureLifecycleListeners = () => {
+  if (typeof navigator === 'undefined' || !navigator.hid) {
+    return;
+  }
+  if (lifecycleNavigator === navigator.hid) {
+    return;
+  }
+  lifecycleNavigator?.removeEventListener('connect', handleConnect);
+  lifecycleNavigator?.removeEventListener('disconnect', handleDisconnect);
+  lifecycleNavigator = navigator.hid;
+  lifecycleNavigator.addEventListener('connect', handleConnect);
+  lifecycleNavigator.addEventListener('disconnect', handleDisconnect);
+};
+
+const enqueueTransportTask = <T>(
+  state: TransportState,
+  run: () => Promise<T>,
+): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    if (state.poisoned) {
+      reject(makeTransportError(state.path, 'is poisoned'));
+      return;
+    }
+    if (state.disconnected) {
+      reject(makeLifecycleCancellationError(state, 'is disconnected'));
+      return;
+    }
+    state.commandQueue.push({
+      run,
+      resolve: (value) => resolve(value as T),
+      reject,
+    });
+    void flushTransportQueue(state);
+  });
+
+const flushTransportQueue = async (state: TransportState) => {
+  if (state.isFlushing) {
+    return;
+  }
+  state.isFlushing = true;
+  try {
+    while (state.commandQueue.length) {
+      const entry = state.commandQueue.shift() as CommandQueueEntry;
+      if (state.poisoned || state.disconnected) {
+        entry.reject(
+          state.disconnected
+            ? makeLifecycleCancellationError(state, 'is disconnected')
+            : makeTransportError(state.path, 'is unavailable'),
+        );
+        continue;
+      }
+      try {
+        entry.resolve(await entry.run());
+      } catch (error) {
+        entry.reject(
+          error instanceof Error ? error : new HIDTransportError(String(error)),
+        );
+      }
+    }
+  } finally {
+    state.isFlushing = false;
   }
 };
 
 const ExtendedHID = {
   _cache: {} as {[key: string]: WebVIADevice},
   requestDevice: async () => {
+    ensureLifecycleListeners();
     const requestedDevice = await navigator.hid.requestDevice({
       filters: [
         {
@@ -84,147 +547,544 @@ const ExtendedHID = {
     return viaDevices[0];
   },
   getFilteredDevices: async () => {
+    ensureLifecycleListeners();
     try {
-      const hidDevices = filterHIDDevices(await navigator.hid.getDevices());
-      return hidDevices;
+      return filterHIDDevices(await navigator.hid.getDevices());
     } catch (e) {
       return [];
     }
   },
   devices: async (requestAuthorize = false) => {
-    let devices = await ExtendedHID.getFilteredDevices();
-    // TODO: This is a hack to avoid spamming the requestDevices popup
-    if (devices.length === 0 || requestAuthorize) {
+    // Only a click may ask for the browser's device chooser; without one the
+    // browser refuses it. Every other scan lists the keyboards the browser
+    // already allows, which is how a restarted keyboard is found again.
+    if (requestAuthorize) {
       try {
         await ExtendedHID.requestDevice();
       } catch (e) {
-        // The request seems to fail when the last authorized device is disconnected.
-        return [];
+        // A refused chooser leaves the allowed keyboards listed.
       }
-      devices = await ExtendedHID.getFilteredDevices();
     }
+    const devices = await ExtendedHID.getFilteredDevices();
+    // Enumeration and host close/open cannot cancel a delayed firmware reply.
+    // Keep a timed-out legacy session poisoned until device reconnect: a new
+    // JS generation cannot distinguish identical, untagged VIA responses.
     return devices.map(tagDevice);
   },
   HID: class HID {
-    _hidDevice?: WebVIADevice;
-    interface: number = -1;
-    vendorId: number = -1;
-    productId: number = -1;
-    productName: string = '';
-    path: string = '';
-    openPromise: Promise<void> = Promise.resolve();
-    constructor(path: string) {
-      this._hidDevice = ExtendedHID._cache[path];
-      // TODO: seperate open attempt from constructor as it's async
-      // Attempt to connect to the device
+    _hidDevice: WebVIADevice;
+    interface: number;
+    vendorId: number;
+    productId: number;
+    productName: string;
+    path: string;
+    openPromise: Promise<void>;
 
-      if (this._hidDevice) {
-        this.vendorId = this._hidDevice.vendorId;
-        this.productId = this._hidDevice.productId;
-        this.path = this._hidDevice.path;
-        this.interface = this._hidDevice.interface;
-        this.productName = this._hidDevice.productName;
-        globalBuffer[this.path] = globalBuffer[this.path] || [];
-        eventWaitBuffer[this.path] = eventWaitBuffer[this.path] || [];
-        inputReportHandlers[this.path] = inputReportHandlers[this.path] || [];
-        if (!this._hidDevice._device.opened) {
-          this.open();
-        }
-      } else {
+    constructor(path: string) {
+      const hidDevice = ExtendedHID._cache[path];
+      if (!hidDevice) {
         throw new Error('Missing hid device in cache');
       }
+      this._hidDevice = hidDevice;
+      this.vendorId = hidDevice.vendorId;
+      this.productId = hidDevice.productId;
+      this.path = hidDevice.path;
+      this.interface = hidDevice.interface;
+      this.productName = hidDevice.productName;
+      bindTransportDevice(path, hidDevice._device);
+      this.openPromise = this.open();
     }
-    async open() {
-      if (this._hidDevice && !this._hidDevice._device.opened) {
-        this.openPromise = this._hidDevice._device.open();
-        this.setupListeners();
-        await this.openPromise;
+
+    private get state() {
+      const state = transportStates.get(this.path);
+      if (!state) {
+        throw new HIDTransportGenerationError(
+          `HID transport ${this.path} does not exist`,
+        );
       }
-      return Promise.resolve();
+      return state;
     }
-    // Should we unsubscribe at some point of time
-    setupListeners() {
-      if (this._hidDevice) {
-        this._hidDevice._device.addEventListener('inputreport', (e) => {
-          const message = new Uint8Array(e.data.buffer);
-          const wasHandled = inputReportHandlers[this.path].some((handler) =>
-            handler(message),
-          );
-          if (wasHandled) {
-            return;
-          }
-          if (eventWaitBuffer[this.path].length !== 0) {
-            // It should be impossible to have a handler in the buffer
-            // that has a ts that happened after the current message
-            // came in
-            (eventWaitBuffer[this.path].shift() as any)(
-              message,
-            );
-          } else {
-            globalBuffer[this.path].push({
-              currTime: Date.now(),
-              message,
-            });
-          }
+
+    async open() {
+      let state = this.state;
+      if (state.poisoned) {
+        throw makeTransportError(state.path, 'is poisoned');
+      }
+      if (state.disconnected) {
+        throw makeLifecycleCancellationError(state, 'is disconnected');
+      }
+      if (state.device.opened) {
+        state.hasOpened = true;
+        installInputListener(state, state.generation);
+        return;
+      }
+      if (state.openPromise) {
+        return state.openPromise;
+      }
+      if (state.hasOpened) {
+        replaceGeneration(state, 'was reopened', {
+          poisoned: false,
+          disconnected: false,
         });
+        state = this.state;
+      }
+
+      const generation = state.generation;
+      const openPromise = (async () => {
+        try {
+          await state.device.open();
+        } catch (error) {
+          throw makeDeviceIOError(state, generation, 'open', error);
+        }
+        if (
+          state.generation !== generation ||
+          state.poisoned ||
+          state.disconnected
+        ) {
+          throw makeTransportError(state.path, 'changed while opening');
+        }
+        state.hasOpened = true;
+        installInputListener(state, generation);
+      })();
+      state.openPromise = openPromise;
+      try {
+        await openPromise;
+      } finally {
+        if (state.openPromise === openPromise) {
+          state.openPromise = undefined;
+        }
       }
     }
 
-    addInputReportHandler(handler: InputReportHandler) {
-      inputReportHandlers[this.path] = inputReportHandlers[this.path] || [];
-      inputReportHandlers[this.path].push(handler);
+    getConnectionGeneration() {
+      return this.state.generation;
+    }
+
+    isConnectionGenerationCurrent(generation: number) {
+      const state = this.state;
+      return (
+        state.generation === generation &&
+        !state.poisoned &&
+        !state.disconnected
+      );
+    }
+
+    isConnectionLocked() {
+      return this.state.poisoned;
+    }
+
+    async classifyLifecycleCancellation(
+      error: unknown,
+      expectedGeneration: number,
+    ): Promise<HIDTransportLifecycleCancellationError | undefined> {
+      if (isHIDTransportLifecycleCancellationError(error)) {
+        return error;
+      }
+      if (
+        !(error instanceof HIDTransportDeviceIOError) ||
+        error.path !== this.path ||
+        error.generation !== expectedGeneration
+      ) {
+        return undefined;
+      }
+
+      const state = this.state;
+      if (state.disconnected) {
+        return makeLifecycleCancellationError(
+          state,
+          `device disappeared during ${error.operation}`,
+          error.originalError,
+        );
+      }
+
+      const connected = await isWebHIDDeviceConnected(this._hidDevice._device);
+      if (connected !== false) {
+        return undefined;
+      }
+
+      const cancellation = new HIDTransportLifecycleCancellationError(
+        this.path,
+        expectedGeneration,
+        `device disappeared during ${error.operation}`,
+        error.originalError,
+      );
+      if (state.device === this._hidDevice._device && !state.disconnected) {
+        // The failed request has already retired its generation. Once WebHID's
+        // connected-device set proves the physical device is gone, reclassify
+        // the quarantine state instead of rotating the generation a second time.
+        state.poisoned = false;
+        state.disconnected = true;
+      }
+      return cancellation;
+    }
+
+    async confirmLifecycleCancellation(
+      error: unknown,
+      expectedGeneration: number,
+    ): Promise<HIDTransportLifecycleCancellationError | undefined> {
+      const immediate = await this.classifyLifecycleCancellation(
+        error,
+        expectedGeneration,
+      );
+      if (immediate || !isHIDTransportDeviceIOError(error)) {
+        return immediate;
+      }
+
+      await waitForWebHIDDisconnect(
+        this._hidDevice._device,
+        lifecycleConfirmationMs,
+      );
+      return this.classifyLifecycleCancellation(error, expectedGeneration);
+    }
+
+    addInputReportHandler(
+      matches: ResponseMatcher,
+      handle: (message: Uint8Array) => void,
+    ) {
+      const state = this.state;
+      const registration = {
+        generation: state.generation,
+        matches,
+        handle,
+      };
+      state.handlers.push(registration);
       return () => {
-        inputReportHandlers[this.path] = inputReportHandlers[this.path].filter(
-          (registeredHandler) => registeredHandler !== handler,
+        state.handlers = state.handlers.filter(
+          (candidate) => candidate !== registration,
         );
       };
     }
 
-    read(fn: (err?: Error, data?: ArrayBuffer) => void) {
-      this.fastForwardGlobalBuffer(lastWriteTimestamp);
-      if (globalBuffer[this.path].length > 0) {
-        // this should be a noop normally
-        fn(undefined, globalBuffer[this.path].shift()?.message as any);
-      } else {
-        eventWaitBuffer[this.path].push((data) => fn(undefined, data));
+    async exchange(
+      report: number[],
+      matches: ResponseMatcher,
+      options?: HIDExchangeOptions,
+    ): Promise<Uint8Array> {
+      const state = this.state;
+      // new Uint8Array would send 300 as 44: the keyboard's reply would never
+      // match the request, and the timeout would then poison the connection.
+      const payload = report.slice(1);
+      const invalidByte = payload.findIndex((value) => !isByte(value));
+      if (invalidByte !== -1) {
+        throw new HIDTransportInvalidReportError(
+          `HID transport ${state.path} refused a report: byte ${invalidByte} is ${payload[invalidByte]}, not 0-255`,
+        );
       }
-    }
-
-    readP = promisify((arg: any) => this.read(arg));
-
-    // The idea is discard any messages that have happened before the time a command was issued
-    // since time-travel is not possible yet...
-    fastForwardGlobalBuffer(time: number) {
-      let messagesLeft = globalBuffer[this.path].length;
-      while (messagesLeft) {
-        messagesLeft--;
-        // message in buffer happened before requested time
-        if (globalBuffer[this.path][0].currTime < time) {
-          globalBuffer[this.path].shift();
-        } else {
-          break;
+      const run = async () => {
+        const expectedGeneration = options?.expectedGeneration;
+        if (
+          expectedGeneration !== undefined &&
+          !this.isConnectionGenerationCurrent(expectedGeneration)
+        ) {
+          throw makeTransportError(state.path, 'changed before request');
         }
+        await this.open();
+        const generation = expectedGeneration ?? state.generation;
+        if (!this.isConnectionGenerationCurrent(generation)) {
+          throw makeTransportError(state.path, 'changed before write');
+        }
+        if (state.pending) {
+          throw new HIDTransportError(
+            `HID transport ${state.path} already has a pending response`,
+          );
+        }
+
+        const responsePromise = new Promise<Uint8Array>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            if (
+              state.pending?.generation !== generation ||
+              state.generation !== generation
+            ) {
+              return;
+            }
+            const error = new HIDTransportTimeoutError(
+              `HID response timed out for ${state.path}`,
+            );
+            if (options?.timeoutBehavior === 'preserve-generation') {
+              const pending = state.pending;
+              state.pending = undefined;
+              pending?.reject(error);
+              return;
+            }
+            replaceGeneration(
+              state,
+              'timed out',
+              {
+                poisoned: true,
+                disconnected: false,
+              },
+              error,
+            );
+          }, options?.responseTimeoutMs ?? responseTimeoutMs);
+          state.pending = {generation, matches, resolve, reject, timeoutId};
+        });
+        void responsePromise.catch(() => undefined);
+
+        try {
+          const data = new Uint8Array(report.slice(1));
+          state.lastWriteTimestamp = now();
+          const sendFailure = state.device.sendReport(0, data).then(
+            () => new Promise<never>(() => undefined),
+            (error) => {
+              const writeError = makeDeviceIOError(
+                state,
+                generation,
+                'write',
+                error,
+              );
+              if (state.generation === generation && !state.poisoned) {
+                replaceGeneration(
+                  state,
+                  'failed during write',
+                  {poisoned: true, disconnected: false},
+                  writeError,
+                );
+              }
+              throw writeError;
+            },
+          );
+          return await Promise.race([responsePromise, sendFailure]);
+        } catch (error) {
+          const preservesTimedOutGeneration =
+            options?.timeoutBehavior === 'preserve-generation' &&
+            error instanceof HIDTransportTimeoutError;
+          if (
+            !preservesTimedOutGeneration &&
+            state.generation === generation &&
+            !state.poisoned
+          ) {
+            replaceGeneration(
+              state,
+              'failed during request',
+              {
+                poisoned: true,
+                disconnected: false,
+              },
+              error instanceof Error
+                ? error
+                : new HIDTransportError(String(error)),
+            );
+          }
+          throw error;
+        }
+      };
+
+      if (options?.reservationOwner !== undefined) {
+        const reservation = state.activeReservation;
+        if (
+          !reservation ||
+          reservation.owner !== options.reservationOwner ||
+          reservation.generation !== options.expectedGeneration ||
+          !this.isConnectionGenerationCurrent(reservation.generation)
+        ) {
+          throw makeTransportError(state.path, 'has no matching reservation');
+        }
+        return run();
       }
+      return enqueueTransportTask(state, run);
     }
 
-    async write(arr: number[]) {
-      await this.openPromise;
-      if (this._hidDevice && !this._hidDevice._device.opened) {
-        await this.open();
+    async withPathReservation<T>(
+      expectedGeneration: number,
+      owner: HIDPathReservationOwner,
+      callback: () => Promise<T>,
+    ): Promise<T> {
+      const state = this.state;
+      const active = state.activeReservation;
+      if (
+        active?.owner === owner &&
+        active.generation === expectedGeneration &&
+        this.isConnectionGenerationCurrent(expectedGeneration)
+      ) {
+        return callback();
       }
-      const data = new Uint8Array(arr.slice(1));
-      lastWriteTimestamp = Date.now();
-      await this._hidDevice?._device.sendReport(0, data);
+      return enqueueTransportTask(state, async () => {
+        if (!this.isConnectionGenerationCurrent(expectedGeneration)) {
+          throw makeTransportError(state.path, 'changed before reservation');
+        }
+        if (state.activeReservation) {
+          throw new HIDTransportError(
+            `HID transport ${state.path} already has an active reservation`,
+          );
+        }
+
+        let rejectCancellation: (error: Error) => void = () => undefined;
+        const cancellation = new Promise<never>((_, reject) => {
+          rejectCancellation = reject;
+        });
+        const reservation: ActivePathReservation = {
+          generation: expectedGeneration,
+          owner,
+          cancel: rejectCancellation,
+        };
+        state.activeReservation = reservation;
+        try {
+          return await Promise.race([callback(), cancellation]);
+        } finally {
+          if (state.activeReservation === reservation) {
+            state.activeReservation = undefined;
+          }
+        }
+      });
+    }
+
+    async enqueueDelay(
+      time: number,
+      options?: Pick<
+        HIDExchangeOptions,
+        'reservationOwner' | 'expectedGeneration'
+      >,
+    ) {
+      const state = this.state;
+      const run = () =>
+        new Promise<void>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            state.activeCancel = undefined;
+            resolve();
+          }, time);
+          state.activeCancel = (error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          };
+        });
+      if (options?.reservationOwner !== undefined) {
+        const reservation = state.activeReservation;
+        if (
+          !reservation ||
+          reservation.owner !== options.reservationOwner ||
+          reservation.generation !== options.expectedGeneration ||
+          !this.isConnectionGenerationCurrent(reservation.generation)
+        ) {
+          throw makeTransportError(state.path, 'has no matching reservation');
+        }
+        return run();
+      }
+      return enqueueTransportTask(state, run);
+    }
+
+    isCommandQueueIdle() {
+      const state = this.state;
+      return !state.isFlushing && state.commandQueue.length === 0;
+    }
+
+    async waitForCommandQueueIdle() {
+      if (!this.isCommandQueueIdle()) {
+        await this.enqueueDelay(0);
+      }
     }
   },
 };
 
-const promisify = (cb: Function) => () => {
-  return new Promise((res, rej) => {
-    cb((e: any, d: any) => {
-      if (e) rej(e);
-      else res(d);
-    });
-  });
+export const tryForgetDevice = async (
+  device: ConnectedDevice | AuthorizedDevice,
+) => {
+  const cachedDevice = ExtendedHID._cache[device.path];
+  if (!cachedDevice) {
+    return;
+  }
+  try {
+    await cachedDevice._device.forget();
+  } finally {
+    const state = transportStates.get(device.path);
+    if (state) {
+      replaceGeneration(
+        state,
+        'was forgotten',
+        {
+          poisoned: false,
+          disconnected: true,
+        },
+        makeLifecycleCancellationError(state, 'was forgotten'),
+      );
+    }
+    delete ExtendedHID._cache[device.path];
+  }
 };
+
+export const configureHIDTransport = (options: {
+  responseTimeoutMs?: number;
+  lifecycleConfirmationMs?: number;
+  now?: () => number;
+}) => {
+  if (options.responseTimeoutMs !== undefined) {
+    responseTimeoutMs = options.responseTimeoutMs;
+  }
+  if (options.lifecycleConfirmationMs !== undefined) {
+    lifecycleConfirmationMs = options.lifecycleConfirmationMs;
+  }
+  if (options.now) {
+    now = options.now;
+  }
+};
+
+export const addHIDTransportGenerationListener = (
+  listener: (change: HIDTransportGenerationChange) => void,
+) => {
+  generationChangeListeners.add(listener);
+  return () => generationChangeListeners.delete(listener);
+};
+
+export const getHIDTransportDebugState = (path: string) => {
+  const state = transportStates.get(path);
+  return (
+    state && {
+      generation: state.generation,
+      poisoned: state.poisoned,
+      disconnected: state.disconnected,
+      listenerInstalled: Boolean(state.listener),
+      listenerGeneration: state.listenerGeneration,
+      handlerCount: state.handlers.length,
+      hasPendingResponse: Boolean(state.pending),
+      commandQueueDepth: state.commandQueue.length,
+      isFlushing: state.isFlushing,
+      hasActiveReservation: Boolean(state.activeReservation),
+      reservationGeneration: state.activeReservation?.generation,
+      lastWriteTimestamp: state.lastWriteTimestamp,
+      diagnosticCount: state.diagnostics.length,
+      diagnostics: state.diagnostics.map((report) => ({
+        ...report,
+        message: report.message.slice(),
+      })),
+    }
+  );
+};
+
+export const registerHIDDeviceForTesting = (
+  path: string,
+  device: HIDDevice,
+) => {
+  (device as any).__path = path;
+  return tagDevice(device);
+};
+
+export const disconnectHIDDeviceForTesting = (path: string) => {
+  const state = transportStates.get(path);
+  if (state && !state.disconnected) {
+    replaceGeneration(
+      state,
+      'disconnected',
+      {
+        poisoned: false,
+        disconnected: true,
+      },
+      makeLifecycleCancellationError(state, 'was disconnected'),
+    );
+  }
+};
+
+export const resetHIDTransportForTesting = () => {
+  transportStates.forEach((state) => {
+    removeInputListener(state);
+    rejectTransportWork(state, makeTransportError(state.path, 'was reset'));
+  });
+  transportStates.clear();
+  generationChangeListeners.clear();
+  Object.keys(ExtendedHID._cache).forEach(
+    (path) => delete ExtendedHID._cache[path],
+  );
+  responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS;
+  lifecycleConfirmationMs = DEFAULT_LIFECYCLE_CONFIRMATION_MS;
+  now = () => Date.now();
+};
+
 export const HID = ExtendedHID;
