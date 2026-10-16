@@ -17,10 +17,7 @@ export type RawKeycodeSequenceItem = [
 
 export type RawKeycodeSequence = RawKeycodeSequenceItem[];
 
-export type GroupedKeycodeSequenceItem = [
-  GroupedKeycodeSequenceAction,
-  string[],
-];
+type GroupedKeycodeSequenceItem = [GroupedKeycodeSequenceAction, string[]];
 
 export type OptimizedKeycodeSequenceItem =
   | RawKeycodeSequenceItem

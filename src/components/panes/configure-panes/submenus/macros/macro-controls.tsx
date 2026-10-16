@@ -3,11 +3,9 @@ import {
   faCompress,
   faExpand,
   faMagicWandSparkles,
-  faSave,
   faSquare,
   faStopwatch,
   faTrash,
-  faUndo,
 } from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {
@@ -44,10 +42,7 @@ export const MacroEditControls: React.FC<{
   isRecording: boolean;
   optimizeRecording: boolean;
   recordDelays: boolean;
-  hasUnsavedChanges?: boolean;
-  undoChanges(): void;
-  deleteMacro(): void;
-  saveChanges(): void;
+  clearMacro(): void;
   toggleOptimizeRecording(): void;
   toggleRecordDelays(): void;
   toggleFullscreen(): void;
@@ -59,15 +54,12 @@ export const MacroEditControls: React.FC<{
   isFullscreen,
   isRecording,
   recordingToggleChange,
-  hasUnsavedChanges,
-  undoChanges,
-  saveChanges,
   recordDelays,
   toggleRecordDelays,
   optimizeRecording,
   toggleOptimizeRecording,
   isEmpty,
-  deleteMacro,
+  clearMacro,
   toggleFullscreen,
   isDelaySupported,
 }) => {
@@ -77,7 +69,6 @@ export const MacroEditControls: React.FC<{
       onClick={() => {
         recordingToggleChange(!isRecording);
       }}
-      disabled={!isFullscreen}
     >
       <FontAwesomeIcon
         size={'sm'}
@@ -85,61 +76,24 @@ export const MacroEditControls: React.FC<{
         icon={isRecording ? faSquare : faCircle}
       />
       <IconButtonTooltip>
-        {isFullscreen
-          ? isRecording
-            ? t('Stop Recording')
-            : t('Record Keystrokes')
-          : t('Can only record when fullscreen')}
+        {isRecording ? t('Stop Recording') : t('Record Keystrokes')}
       </IconButtonTooltip>
     </IconButtonContainer>
   );
   return (
     <MacroEditControlsContainer>
-      {hasUnsavedChanges ? (
-        <>
-          {!isRecording ? (
-            <>
-              <MacroControlGroupContainer>
-                <IconButtonContainer
-                  disabled={!hasUnsavedChanges || isRecording}
-                  onClick={undoChanges}
-                >
-                  <FontAwesomeIcon
-                    size={'sm'}
-                    color="var(--color_label)"
-                    icon={faUndo}
-                  />
-                  <IconButtonTooltip>Undo Changes</IconButtonTooltip>
-                </IconButtonContainer>
-                <IconButtonContainer
-                  disabled={!hasUnsavedChanges || isRecording}
-                  onClick={() => saveChanges()}
-                >
-                  <FontAwesomeIcon
-                    size={'sm'}
-                    color="var(--color_label)"
-                    icon={faSave}
-                  />
-                  <IconButtonTooltip>Save Changes</IconButtonTooltip>
-                </IconButtonContainer>
-              </MacroControlGroupContainer>
-              <MacroControlGroupDivider />
-            </>
-          ) : null}
-        </>
-      ) : !isEmpty ? (
+      {!isEmpty ? (
         <>
           <MacroControlGroupContainer>
-            <IconButtonContainer
-              disabled={hasUnsavedChanges || isRecording}
-              onClick={deleteMacro}
-            >
+            <IconButtonContainer disabled={isRecording} onClick={clearMacro}>
               <FontAwesomeIcon
                 size={'sm'}
                 color="var(--color_label)"
                 icon={faTrash}
               />
-              <IconButtonTooltip>Delete Macro</IconButtonTooltip>
+              <IconButtonTooltip>
+                {t('Clear', {context: 'key'})}
+              </IconButtonTooltip>
             </IconButtonContainer>
           </MacroControlGroupContainer>
           <MacroControlGroupDivider />

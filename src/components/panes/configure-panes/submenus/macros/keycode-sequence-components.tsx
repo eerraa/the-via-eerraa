@@ -7,7 +7,9 @@ import {
   OptimizedKeycodeSequenceItem,
   RawKeycodeSequenceAction,
 } from 'src/utils/macro-api/types';
+import {MAX_MACRO_DELAY_MS} from 'src/utils/macro-api/macro-api.common';
 import styled from 'styled-components';
+import {focusRing} from 'src/components/inputs/accent-button';
 
 const CharacterStreamContainer = styled.div`
   border: 2px solid var(--bg_control);
@@ -46,7 +48,7 @@ const KeycodeSequenceLabel = styled.div`
   position: relative;
   margin: 15px 0px;
 `;
-export const KeycodeDownLabel = styled(KeycodeSequenceLabel)`
+const KeycodeDownLabel = styled(KeycodeSequenceLabel)`
   &::after {
     border-style: solid;
     border-color: transparent;
@@ -67,7 +69,11 @@ export const SequenceLabelSeparator = styled.div`
   border: 1px solid var(--color_accent);
 `;
 
-export const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
+const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   border-color: var(--border_color_cell);
   background: var(--bg_menu);
   white-space: pre-wrap;
@@ -75,11 +81,16 @@ export const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
   letter-spacing: 2px;
 `;
 
-export const KeycodePressLabel = styled(KeycodeSequenceLabel)`
+const KeycodePressLabel = styled(KeycodeSequenceLabel)`
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   border-color: var(--color_accent);
 `;
 
-export const KeycodeUpLabel = styled(KeycodeSequenceLabel)`
+const KeycodeUpLabel = styled(KeycodeSequenceLabel)`
   &::after {
     content: '';
     border-style: solid;
@@ -119,7 +130,7 @@ export const KeycodeSequenceWait = styled.div`
 `;
 export const NumberInput = styled.input.attrs({
   type: 'number',
-  placeholder: 'XXXXX',
+  placeholder: 'XXXX',
 })`
   appearance: none;
   background: none;
@@ -135,6 +146,7 @@ export const NumberInput = styled.input.attrs({
   &:focus {
     color: var(--color_accent);
   }
+  ${focusRing}
   &::-webkit-inner-spin-button {
     appearance: none;
     display: none;
@@ -151,15 +163,16 @@ export const WaitInput: React.FC<{
   value: number | string;
   index: number;
   updateValue: (id: number, wait: number) => void;
+  disabled?: boolean;
 }> = (props) => {
   const inputRef = useRef(null);
   const onBeforeInput = (evt: InputEvent) => {
-    if (!evt.data || !/^\d$/.test(evt.data)) {
+    if (!evt.data || !/^\d+$/.test(evt.data)) {
       evt.preventDefault();
     }
   };
   const onChange = (evt: ChangeEvent<HTMLInputElement>) => {
-    if (+evt.target.value > 0 && +evt.target.value < 100000) {
+    if (Number.isInteger(+evt.target.value) && +evt.target.value > 0 && +evt.target.value <= MAX_MACRO_DELAY_MS) {
       // Update external value
       props.updateValue(props.index, +evt.target.value);
     }
@@ -172,6 +185,7 @@ export const WaitInput: React.FC<{
         onBeforeInput={onBeforeInput as any}
         value={props.value}
         onChange={onChange}
+        disabled={props.disabled}
       />
       ms
     </KeycodeSequenceWait>
