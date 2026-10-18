@@ -672,9 +672,7 @@ export const MacroRecorder: React.FC<{
     <>
       <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified || isRecording}
         $isRecording={isRecording} tabIndex={0} aria-label={t('Macros')}>
-        {shortenedPreview ? (
-          <PreviewNote>{t('Showing recent inputs while recording')}</PreviewNote>
-        ) : !isRecording && previewStart > 0 ? (
+        {!isRecording && previewStart > 0 ? (
           <PreviewNote>{t('Showing recent inputs; Script shows all of them')}</PreviewNote>
         ) : null}
         {sequence.length ? (

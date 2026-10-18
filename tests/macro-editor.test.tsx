@@ -787,6 +787,32 @@ describe('editing and saving macros', () => {
 });
 
 describe('recording macros', () => {
+  test('recording tooltips require mouse hover and stay dismissed after stop', async () => {
+    const {store} = await connect('macro-record-hover');
+    const root = await render(store);
+    const recordButton = () => clickable(root, faCircle);
+    expect(recordButton().props['aria-label']).toBe('키 입력 녹화');
+    expect(textOf(root)).not.toContain('키 입력 녹화');
+    act(() => recordButton().props.onMouseEnter());
+    expect(textOf(root)).toContain('키 입력 녹화');
+    act(() => recordButton().props.onMouseLeave());
+    expect(textOf(root)).not.toContain('키 입력 녹화');
+    await pressRecord(root);
+    const stopButton = () => clickable(root, faSquare);
+    expect(stopButton().props['aria-label']).toBe('녹화 중지');
+    expect(textOf(root)).not.toContain('녹화 중지');
+    act(() => stopButton().props.onMouseEnter());
+    expect(textOf(root)).toContain('녹화 중지');
+    tap('KeyA');
+    act(() => stopButton().props.onClick());
+    expect(recordButton().props['aria-label']).toBe('키 입력 녹화');
+    expect(textOf(root)).not.toContain('키 입력 녹화');
+    act(() => recordButton().props.onMouseEnter());
+    expect(textOf(root)).toContain('키 입력 녹화');
+    act(() => recordButton().props.onMouseLeave());
+    expect(textOf(root)).not.toContain('키 입력 녹화');
+  });
+
   test('a pending fullscreen request cannot start twice or survive a slot switch', async () => {
     for (const switchSlot of [false, true]) {
       const path = `macro-pending-${switchSlot}`;

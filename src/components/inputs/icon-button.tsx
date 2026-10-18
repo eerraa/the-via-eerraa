@@ -10,6 +10,9 @@ const IconButton = styled.button`
   border: none;
   outline: none;
   ${focusRing}
+  &:focus-visible {
+    z-index: 1;
+  }
   cursor: pointer;
   padding: 10px 10px;
   line-height: initial;

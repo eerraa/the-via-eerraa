@@ -241,12 +241,12 @@
             "ERA_EEPROM_RESET_KEY": "0x45524109UL"
           },
           "note": {
-            "ko": "매트릭스 GPIO 복귀 확인과 128/64 타이밍 적용",
-            "en": "Matrix GPIO recovery checks with 128/64 timing",
-            "ja": "マトリクスGPIO復帰確認と128/64タイミングを適用",
-            "zh": "应用矩阵GPIO恢复检查与128/64时序",
-            "es": "Comprobación de recuperación GPIO de matriz con tiempos 128/64",
-            "de": "GPIO-Erholungsprüfung der Matrix mit 128/64-Timing"
+            "ko": "매트릭스 테스트 정상화 및 입력 안정성 개선",
+            "en": "Fixed matrix testing and improved input stability",
+            "ja": "マトリクステストの修正と入力の安定性向上",
+            "zh": "修复矩阵测试并提高输入稳定性",
+            "es": "Corrección de la prueba de matriz y mejora de la estabilidad de entrada",
+            "de": "Matrixtest korrigiert und Eingabestabilität verbessert"
           }
         }
       },

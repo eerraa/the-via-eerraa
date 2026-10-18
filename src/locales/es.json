@@ -1,7 +1,6 @@
 {
   "Use one key after + or -": "Usa una sola tecla después de + o -",
   "Showing recent inputs; Script shows all of them": "Se muestran las entradas recientes; el script las muestra todas",
-  "Showing recent inputs while recording": "Durante la grabación se muestran las entradas recientes",
   "Time to reach the target speed. Zero keeps the starting speed.": "Tiempo para alcanzar la velocidad objetivo. Cero mantiene la velocidad inicial.",
   "Movement per report. The computer also controls pointer and scroll speed.": "Movimiento por informe. El ordenador también controla la velocidad del puntero y del desplazamiento.",
   "Time between repeated reports. Shorter intervals send movement more often.": "Tiempo entre informes repetidos. Los intervalos más cortos envían movimiento con mayor frecuencia.",

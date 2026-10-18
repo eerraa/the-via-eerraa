@@ -15,6 +15,7 @@ import {
 import {IconButtonTooltip} from 'src/components/inputs/tooltip';
 import styled from 'styled-components';
 import {useTranslation} from 'react-i18next';
+import {useState} from 'react';
 
 const MacroEditControlsContainer = styled.div`
   background: var(--bg_menu);
@@ -64,9 +65,15 @@ export const MacroEditControls: React.FC<{
   isDelaySupported,
 }) => {
   const {t} = useTranslation();
+  const [recordHovered, setRecordHovered] = useState(false);
+  const recordLabel = isRecording ? t('Stop Recording') : t('Record Keystrokes');
   const recordComponent = (
     <IconButtonContainer
+      aria-label={recordLabel}
+      onMouseEnter={() => setRecordHovered(true)}
+      onMouseLeave={() => setRecordHovered(false)}
       onClick={() => {
+        setRecordHovered(false);
         recordingToggleChange(!isRecording);
       }}
     >
@@ -75,9 +82,7 @@ export const MacroEditControls: React.FC<{
         color={'var(--color_label)'}
         icon={isRecording ? faSquare : faCircle}
       />
-      <IconButtonTooltip>
-        {isRecording ? t('Stop Recording') : t('Record Keystrokes')}
-      </IconButtonTooltip>
+      {recordHovered && <IconButtonTooltip>{recordLabel}</IconButtonTooltip>}
     </IconButtonContainer>
   );
   return (
