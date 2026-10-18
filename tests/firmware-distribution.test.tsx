@@ -626,7 +626,10 @@ test('version comparison makes an update claim only when every possible maker su
   ] as const) {
     const partial = cloneSource();
     for (const release of partial.versions) {
-      if (unpublished || release.version === '261015R1') {
+      if (
+        unpublished ||
+        compareEraFirmwareVersions('261005R1', release.version) === -1
+      ) {
         for (const maker of withheld) delete release.files[maker].n86;
       }
     }
