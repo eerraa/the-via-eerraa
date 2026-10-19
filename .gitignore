@@ -1,8 +1,6 @@
-.DS_STORE
-.env
-.snowpack
-build
-node_modules
-public/definitions
-dist
-dist-ssr
+# Local tool state, including component-local directories.
+.mixdog/
+
+# Local worktrees and user-directed handover storage.
+/the-via-eerraa-worktrees/
+/the-via-eerraa-handover/

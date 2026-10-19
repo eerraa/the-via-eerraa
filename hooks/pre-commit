@@ -1,0 +1,11 @@
+#!/bin/sh
+# Validate exactly the staged tree, including the root entry.
+set -eu
+ROOT=$(git rev-parse --show-toplevel)
+GIT_DIR=$(git rev-parse --absolute-git-dir)
+SNAPSHOT=$(mktemp -d "$GIT_DIR/via-doc-check.XXXXXX")
+trap 'rm -rf "$SNAPSHOT"' EXIT INT TERM
+git -C "$ROOT" diff --cached --check
+git -C "$ROOT" checkout-index --all --prefix="$SNAPSHOT/"
+cd "$SNAPSHOT/the-via-eerraa"
+bun test tests/docs-contract.test.ts

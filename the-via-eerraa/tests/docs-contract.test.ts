@@ -13,6 +13,27 @@ const readJSON = (relative: string) => JSON.parse(read(relative));
 
 const MAP = read('docs/MAP.md');
 const AGENTS = read('AGENTS.md');
+const gitRoot = path.resolve(repoRoot, '..');
+const rootAgents = readFileSync(path.join(gitRoot, 'AGENTS.md'), 'utf8');
+
+const missingRootLinks = (
+  body: string,
+  present: (target: string) => boolean,
+) => [...body.matchAll(/\]\(([^)#]+)(?:#[^)]*)?\)/g)]
+  .map((match) => match[1])
+  .filter((target) => !/^https?:/.test(target) && !present(target));
+
+describe('Git-root entry routing', () => {
+  test('root links resolve from the Git root', () => {
+    expect(missingRootLinks(rootAgents, (target) =>
+      existsSync(path.resolve(gitRoot, target)))).toEqual([]);
+  });
+  test('a missing or component-relative root link is rejected', () => {
+    expect(missingRootLinks('[app](the-via-eerraa/AGENTS.md)', () => true)).toEqual([]);
+    expect(missingRootLinks('[bad](docs/missing.md)', () => false)).toEqual(['docs/missing.md']);
+    expect(missingRootLinks('[spec](https://example.com/spec.md)', () => false)).toEqual([]);
+  });
+});
 
 type ManifestEntry = {
   id: string;

@@ -4,7 +4,9 @@ Genre: manual
 Canonical for: Cloudflare Pages release procedure, deploy authority, SPA rewrite
 requirements, and response-header requirements
 
-The executable deploy path is `.github/workflows/deploy-to-cloudflare.yml`.
+The executable deployment entry is `../.github/workflows/deploy-to-cloudflare.yml`,
+relative to the app component (the workflow is at the Git root).
+Local checks and Git hooks do not require GitHub Actions.
 Current route definitions live in `src/utils/pane-config.ts`,
 `src/components/panes/errors.tsx` and `src/utils/firmware-route.ts`; host
 rewrites and headers live in `public/_redirects`, `public/404.html`, and
@@ -13,10 +15,13 @@ that are not useful to duplicate from those files.
 
 ## 1. Deployment path and authority
 
-Cloudflare Pages Direct Upload from
-`.github/workflows/deploy-to-cloudflare.yml` is the only deployment path.
-Pushes to `main` are production candidates. Manual runs on another branch are
-preview deployments because the workflow passes the current branch to Pages.
+Cloudflare Pages Direct Upload remains the hosting model. The existing GitHub
+repository, Pages project and usekb.cc domain are retained. The root workflow
+deploys only `refs/heads/main`, on push or explicit dispatch. Dispatching from
+TOMAK, LM20 or preparation branches is skipped, not deployed as production.
+Installation, build and artifact verification run in the app component;
+Wrangler uploads that component's dist directory. Approval of local changes
+does not authorize pushing main or running the deployment.
 
 Do not also connect Cloudflare Pages Git integration to this repository. It
 would create a second deploy path for the same commit and can race the
@@ -31,9 +36,8 @@ configuration is operator-owned:
 | `CLOUDFLARE_API_TOKEN` | GitHub Actions secret | token with Cloudflare Pages edit permission |
 | `CLOUDFLARE_ACCOUNT_ID` | GitHub Actions secret | Cloudflare account id |
 
-The Pages production branch must be `main`. The workflow creates a missing
-project with that production branch before upload; the workflow itself owns the
-exact command.
+The existing Pages production branch must be `main`. The workflow uploads to
+the configured existing project; it does not create projects or change domains.
 
 The public alias currently used by this fork is
 <https://the-via.pages.dev>. Creating or renaming the Pages project, changing
@@ -53,7 +57,7 @@ recommends DNS Only when a custom domain serves incorrectly while
 
 ## 2. Release and rollback procedure
 
-A release candidate is built from the repository root with:
+A release candidate is built from the app component directory with:
 
 ```powershell
 bun install --frozen-lockfile
@@ -64,13 +68,13 @@ Before upload, the workflow's `Verify build output` step must pass. That step
 owns the exact required files, generated-definition count checks, and Pages
 file-count ceiling; do not duplicate those inventories here.
 
-For a production release, merge or push the intended commit to `main` and
-let the workflow perform the Direct Upload. A release that changes firmware
+For a production release, validate and approve the intended main commit before
+push or dispatch. The main-only workflow performs Direct Upload. A release that changes firmware
 wire behavior or identity also needs the paired compatibility review routed by
 `docs/MAP.md` §8; an app build does not prove cross-repository compatibility.
 
 Cloudflare Pages deployment history is the host rollback mechanism. A source
-rollback is a normal `git revert` on `main` followed by the ordinary deploy
+rollback is a normal `git revert` on `main` followed by the approved workflow deployment
 path; do not force-push `main`.
 
 Clearing `CLOUDFLARE_PROJECT_NAME` stops later workflow deploys but does not

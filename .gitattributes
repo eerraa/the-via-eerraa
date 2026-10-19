@@ -1,4 +1,3 @@
-# Cloudflare Pages and Netlify parse these deployment files line by line.
-# core.autocrlf must not turn them into CRLF in a Windows worktree.
-/public/_redirects text eol=lf
-/public/_headers text eol=lf
+* text=auto
+*.md text eol=lf
+hooks/pre-commit text eol=lf

@@ -204,8 +204,8 @@ session start.
 
 | Path | Role |
 | --- | --- |
-| `D:\Engineering\qmk_firmware_eerraa` | QMK firmware (RP2040 + ATmega32U4). `keyboards/era/` |
-| `D:\Engineering\eerraa-qmk-h7s-fw` | H7S firmware (main) |
+| `D:\Engineering\qmk_firmware_eerraa` | QMK Git root; firmware component `qmk_firmware_eerraa/` |
+| `D:\Engineering\eerraa-qmk-h7s` | H7S Git root; firmware component `eerraa-qmk-h7s-fw/` |
 
 - Opening an H7S repository: read **that** `AGENTS.md` first and follow it.
 - Keep the app as cwd for app work. Treat a missing peer repository as
