@@ -193,12 +193,13 @@ const readDomainCandidate = async (
   state: RootState,
   generation: number,
   api: KeyboardAPI,
+  current: () => boolean,
 ): Promise<DomainCandidate | null> => {
   if (domain === 'keymap') {
     return readKeymapStateSyncCandidate(device, state, generation, api);
   }
   if (domain === 'macro') {
-    return readMacrosStateSyncCandidate(device, state, generation, api);
+    return readMacrosStateSyncCandidate(device, state, generation, api, current);
   }
 
   const layoutCandidate = await readLayoutOptionsStateSyncCandidate(
@@ -292,11 +293,21 @@ const refreshDomain = async (
     return 'abort';
   }
   for (let attempt = 0; attempt < ERA_STATE_SYNC_REFRESH_RETRIES; attempt++) {
+    const mutationEpoch = getPathSyncState(getState(), device.path)?.[domain].mutationEpoch;
+    if (mutationEpoch === undefined) return 'abort';
+    const contextCurrent = () =>
+      isSelectedContextCurrent(
+        getState, api, generation, selectionGeneration, definitionIdentity, requireReady,
+      );
+    const current = () => contextCurrent() &&
+      getPathSyncState(getState(), device.path)?.[domain].mutationEpoch === mutationEpoch;
     try {
       const result = await api.withPathReservation(
         generation,
         transportOwner,
         async (reservedApi): Promise<RefreshResult | 'retry'> => {
+          if (!contextCurrent()) return 'abort';
+          if (!current()) return 'retry';
           if (
             getDefinitionSyncIdentity(getState(), device) !== definitionIdentity ||
             !isSelectedContextCurrent(
@@ -328,7 +339,8 @@ const refreshDomain = async (
           if (!startSync || startSync.generation !== generation) {
             return 'abort';
           }
-          const mutationEpoch = startSync[domain].mutationEpoch;
+          if (!contextCurrent()) return 'abort';
+          if (!current()) return 'retry';
           dispatch(
             setDomainStatus({
               path: device.path,
@@ -347,6 +359,7 @@ const refreshDomain = async (
               getState(),
               generation,
               reservedApi,
+              current,
             );
           } catch (error) {
             if (
@@ -375,6 +388,8 @@ const refreshDomain = async (
             );
             return 'failed';
           }
+          if (!contextCurrent()) return 'abort';
+          if (!current()) return 'retry';
           if (
             candidate === null ||
             !isSelectedContextCurrent(

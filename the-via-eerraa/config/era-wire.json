@@ -71,6 +71,31 @@
       "values.rgblight.h7s": [{"min": "0x05", "max": "0x05"}]
     },
     "groups": {
+      "MACRO_REPLACE": {
+        "namespace": "macroReplace.operation", "users": ["app", "eerraa"],
+        "entries": {
+          "CAPABILITIES": {"value": "0x01", "status": "current"},
+          "BEGIN": {"value": "0x02", "status": "current"},
+          "DATA": {"value": "0x03", "status": "current"},
+          "COMMIT": {"value": "0x04", "status": "current"},
+          "ABORT": {"value": "0x05", "status": "current"},
+          "STATUS": {"value": "0x06", "status": "current"}
+        }
+      },
+      "MACRO_REPLACE_VERSION": {
+        "namespace": "macroReplace.version", "users": ["app", "eerraa"],
+        "entries": {"CURRENT": {"value": "0x01", "status": "current"}}
+      },
+      "MACRO_REPLACE_RESULT": {
+        "namespace": "macroReplace.result", "users": ["app", "eerraa"],
+        "entries": {
+          "OK": {"value": "0x00", "status": "current"},
+          "BUSY": {"value": "0x01", "status": "current"},
+          "INVALID": {"value": "0x02", "status": "current"},
+          "IO_ERROR": {"value": "0x03", "status": "current"},
+          "STALE": {"value": "0x04", "status": "current"}
+        }
+      },
       "STATE_SYNC_SELECTORS": {
         "namespace": "keyboardValues", "users": ["app", "eerraa", "h7s"],
         "entries": {
@@ -109,7 +134,8 @@
           "KKUK": {"value": "0x0C", "status": "current"},
           "MOUSEKEY": {"value": "0x0D", "status": "current"},
           "DEBOUNCE": {"value": "0x0E", "status": "current"},
-          "TAPPING": {"value": "0x0F", "status": "current"}
+          "TAPPING": {"value": "0x0F", "status": "current"},
+          "MACRO_REPLACE": {"value": "0x10", "status": "current"}
         }
       },
       "CHANNELS_H7S": {

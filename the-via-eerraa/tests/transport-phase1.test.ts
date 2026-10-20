@@ -235,6 +235,8 @@ type MacroHarnessOptions = {
   onVerificationRead?: () => void;
 };
 
+import {ERA_WIRE} from '../src/utils/era-wire.generated';
+
 const attachMacroHarness = (
   device: FakeHIDDevice,
   options: MacroHarnessOptions,
@@ -252,6 +254,12 @@ const attachMacroHarness = (
   device.onSend = (data) => {
     if (data[0] === 0x0d) {
       device.emit(payload(0x0d, (options.size >> 8) & 0xff, options.size & 0xff));
+      return;
+    }
+    if (data[0] === 0x08 && data[1] === ERA_WIRE.CHANNELS_EERRAA.MACRO_REPLACE) {
+      const unsupported = data.slice();
+      unsupported[0] = 0xff;
+      device.emit(unsupported);
       return;
     }
     if (data[0] === 0x10) {
@@ -1221,6 +1229,72 @@ describe('protocol probe lifecycle classification', () => {
 });
 
 describe('exact macro buffer transactions', () => {
+  test.each(['matching', 'foreign', 'missing', 'open', 'abort-failed', 'write-failed', 'disconnect'] as const)(
+    'nonce COMMIT timeout with %s STATUS uses real HID generation and echo boundaries',
+    async status => {
+      configureHIDTransport({responseTimeoutMs: 15});
+      const {device, hid} = await connectFake(`era-commit-${status}`);
+      const generation = hid.getConnectionGeneration();
+      let length = 0, crc: number[] = [], lateCommit: Uint8Array | undefined;
+      device.onSend = data => {
+        const op = data[2];
+        if (op === ERA_WIRE.MACRO_REPLACE.CAPABILITIES) {
+          const reply = data.slice();
+          reply.set([1, 17, 0x3f, 0xff, 69, 77, 82, 49], 3);
+          device.emit(reply);
+          return;
+        }
+        const reply = data.slice();
+        reply[31] = 0;
+        if (op === ERA_WIRE.MACRO_REPLACE.BEGIN) {
+          length = (data[11] << 8) | data[12];
+          crc = Array.from(data.slice(13, 17));
+        }
+        if (op === ERA_WIRE.MACRO_REPLACE.COMMIT || op === ERA_WIRE.MACRO_REPLACE.STATUS) {
+          reply.set(crc, 24); reply[28] = length >>> 8; reply[29] = length & 0xff; reply[30] = 2;
+        }
+        if (op === ERA_WIRE.MACRO_REPLACE.COMMIT) {
+          if (status === 'write-failed') throw new Error('COMMIT write failed');
+          if (status === 'disconnect') {
+            disconnectHIDDeviceForTesting(`era-commit-${status}`);
+            return;
+          }
+          lateCommit = reply;
+          return; // Durable write, answer lost until STATUS is outstanding.
+        }
+        if (op === ERA_WIRE.MACRO_REPLACE.STATUS) {
+          device.emit(lateCommit!); // Wrong operation must not satisfy STATUS.
+          if (status === 'missing') return;
+          if (status === 'foreign') reply[3] ^= 1;
+          if (status === 'open' || status === 'abort-failed') reply[30] = 1;
+        }
+        if (op === ERA_WIRE.MACRO_REPLACE.ABORT && status === 'abort-failed') reply[31] = 2;
+        device.emit(reply);
+      };
+      const saved = new KeyboardAPI(`era-commit-${status}`).setMacroBytes([65, 0]);
+      if (status === 'matching') {
+        await saved;
+        expect(hid.getConnectionGeneration()).toBe(generation);
+        expect(getHIDTransportDebugState(`era-commit-${status}`)?.poisoned).toBe(false);
+        expect(getAppErrors(appStore.getState())).toEqual([]);
+      } else {
+        await expect(saved).rejects.toBeDefined();
+        if (status === 'open' || status === 'abort-failed') {
+          expect(hid.getConnectionGeneration()).toBe(generation);
+          expect(getHIDTransportDebugState(`era-commit-${status}`)?.poisoned).toBe(false);
+        } else {
+          expect(hid.getConnectionGeneration()).toBeGreaterThan(generation);
+        }
+        if (status === 'foreign' || status === 'missing' || status === 'write-failed')
+          expect(getHIDTransportDebugState(`era-commit-${status}`)?.poisoned).toBe(true);
+      }
+      const operations = status === 'write-failed' || status === 'disconnect' ?
+        [1, 2, 3, 4] : status === 'open' || status === 'abort-failed' ?
+          [1, 2, 3, 4, 6, 5] : [1, 2, 3, 4, 6];
+      expect(device.sentReports.map(({data}) => data[2])).toEqual(operations);
+    },
+  );
+
   test('writes RESET, FF, bounded payload chunks, zero, then an exact marker GET', async () => {
     const {device} = await connectFake('macro-transcript');
     const harness = attachMacroHarness(device, {size: 31});
@@ -1229,7 +1303,7 @@ describe('exact macro buffer transactions', () => {
     await new KeyboardAPI('macro-transcript').setMacroBytes(data);
 
     expect(device.sentReports.map(({data: reportData}) => reportData[0])).toEqual([
-      0x0d, 0x10, 0x0f, 0x0f, 0x0f, 0x0f, 0x0e,
+      0x08, 0x0d, 0x10, 0x0f, 0x0f, 0x0f, 0x0f, 0x0e,
     ]);
     const writes = device.sentReports
       .filter(({data: reportData}) => reportData[0] === 0x0f)
@@ -1253,7 +1327,7 @@ describe('exact macro buffer transactions', () => {
     await expect(
       new KeyboardAPI('macro-size-zero').setMacroBytes([]),
     ).rejects.toThrow('completion marker');
-    expect(invalid.sentReports.map(({data}) => data[0])).toEqual([0x0d]);
+    expect(invalid.sentReports.map(({data}) => data[0])).toEqual([0x08, 0x0d]);
 
     const {device: boundary} = await connectFake('macro-size-one');
     const harness = attachMacroHarness(boundary, {size: 1});
@@ -1275,7 +1349,7 @@ describe('exact macro buffer transactions', () => {
     await expect(
       new KeyboardAPI('macro-capacity').setMacroBytes([1, 2, 3, 4]),
     ).rejects.toThrow('payload capacity (3)');
-    expect(device.sentReports.map(({data}) => data[0])).toEqual([0x0d]);
+    expect(device.sentReports.map(({data}) => data[0])).toEqual([0x08, 0x0d]);
   });
 
   // The transport would refuse such a value only in the payload, after RESET had
@@ -1348,7 +1422,7 @@ describe('exact macro buffer transactions', () => {
       new KeyboardAPI('macro-fail-closer').setMacroBytes([65, 0]),
     ).rejects.toThrow('closer failed');
     const commands = device.sentReports.map(({data}) => data[0]);
-    expect(commands).toEqual([0x0d, 0x10, 0x0f, 0x0f, 0x0f]);
+    expect(commands).toEqual([0x08, 0x0d, 0x10, 0x0f, 0x0f, 0x0f]);
     expect(
       device.sentReports.filter(
         ({data}) => data[0] === 0x0f && data[4] === 0,

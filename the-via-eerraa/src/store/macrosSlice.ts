@@ -196,6 +196,7 @@ export const readMacrosStateSyncCandidate = async (
   state: RootState,
   connectionGeneration: number,
   reservedApi?: KeyboardAPI,
+  current: () => boolean = () => true,
 ): Promise<StateSyncMacroCandidate | null> => {
   const api = reservedApi ?? new KeyboardAPI(connectedDevice.path);
   if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
@@ -212,12 +213,15 @@ export const readMacrosStateSyncCandidate = async (
 
   const keycodesVersion = getKeycodesVersionMap(state)[connectedDevice.path];
   const macroApi = getMacroAPI(connectedDevice.protocol, keycodesVersion, api);
-  const ast = await macroApi.readRawKeycodeSequences();
-  const macroBufferSize = await api.getMacroBufferSize();
+  const bytes = await api.getMacroBytes(current);
+  if (bytes === null) return null;
   const macroCount = await api.getMacroCount();
-  if (!api.isConnectionGenerationCurrent(connectionGeneration)) {
+  if (!current() || !api.isConnectionGenerationCurrent(connectionGeneration)) {
     return null;
   }
+  if (macroCount === 0) throw Error('Macros are disabled');
+  const ast = macroApi.macroBytesToRawKeycodeSequences(bytes, macroCount);
+  const macroBufferSize = bytes.length + 1;
   return {
     ast,
     macroBufferSize,

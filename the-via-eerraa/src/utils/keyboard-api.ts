@@ -12,6 +12,7 @@ import {
 } from 'src/store/errorsSlice';
 import {KeyboardValue} from './keyboard-values';
 import {ERA_WIRE} from './era-wire.generated';
+import {tryEraMacroReplace} from './macro-api/era-macro-replace';
 import {parseUISyncRequest, type UISyncRequest} from './ui-sync';
 import {
   HIDTransportTimeoutError,
@@ -588,9 +589,13 @@ export class KeyboardAPI {
 
   // From protocol: id_dynamic_keymap_macro_get_buffer <offset> <size> ^<data>
   // offset is 16bit. size is 8bit.
-  async getMacroBytes(): Promise<number[]> {
+  async getMacroBytes(): Promise<number[]>;
+  async getMacroBytes(current: () => boolean): Promise<number[] | null>;
+  async getMacroBytes(current: () => boolean = () => true): Promise<number[] | null> {
     return this.withAutomaticPathReservation(async (api) => {
+      if (!current()) return null;
       const macroBufferSize = await api.getMacroBufferSize();
+      if (!current()) return null;
       if (macroBufferSize < 1) {
         throw new Error('Macro buffer must contain a completion marker');
       }
@@ -602,6 +607,9 @@ export class KeyboardAPI {
           macroBufferSize - offset,
         );
         logicalBytes.push(...(await api.getMacroBuffer(offset, size)));
+        // Finish the current exchange; never cancel a HID response or retain
+        // partial bytes from a snapshot invalidated by a foreground mutation.
+        if (!current()) return null;
         offset += size;
       }
       if (logicalBytes.length !== macroBufferSize) {
@@ -650,6 +658,22 @@ export class KeyboardAPI {
       );
     }
     return this.withAutomaticPathReservation(async (api) => {
+      const replaced = await tryEraMacroReplace({
+        probe: () => api.getOptionalCustomMenuValue([
+          ERA_WIRE.CHANNELS_EERRAA.MACRO_REPLACE, ERA_WIRE.MACRO_REPLACE.CAPABILITIES,
+        ]),
+        // Only this versioned nonce+operation echo can distinguish a late
+        // COMMIT answer from STATUS. Generic VIA timeouts still retire the
+        // generation; write failures/disconnects do too.
+        set: (bytes) => api.hidCommand(APICommand.CUSTOM_MENU_SET_VALUE, bytes,
+          undefined, bytes[1] === ERA_WIRE.MACRO_REPLACE.COMMIT ?
+            {timeoutBehavior: 'preserve-generation'} : undefined),
+        get: (bytes) => api.hidCommand(APICommand.CUSTOM_MENU_GET_VALUE, bytes),
+      }, data);
+      if (replaced) return;
+
+      // Only legacy VIA needs its independent buffer-size query. ERA's
+      // capability already validates payload capacity before BEGIN.
       const macroBufferSize = await api.getMacroBufferSize();
       if (macroBufferSize < 1) {
         throw new Error('Macro buffer must contain a completion marker');
@@ -660,7 +684,6 @@ export class KeyboardAPI {
           `Macro size (${data.length}) exceeds payload capacity (${payloadCapacity})`,
         );
       }
-
       const markerOffset = macroBufferSize - 1;
 
       // RESET is a standalone mutation. A failed RESET/opener/payload must never
@@ -764,6 +787,10 @@ export class KeyboardAPI {
         throw lifecycleCancellation;
       }
       const error = e instanceof Error ? e : new Error(String(e));
+      // A nonce-scoped caller owns the bounded follow-up STATUS decision.
+      // Do not report a recoverable intermediate timeout as a failed save.
+      if (error instanceof HIDTransportTimeoutError &&
+          options?.timeoutBehavior === 'preserve-generation') throw error;
       const deviceInfo = extractDeviceInfo(this.getHID());
       if (isHIDTransportDeviceIOError(error)) {
         if (!deferredTransportErrorLogs.has(error)) {

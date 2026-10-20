@@ -360,6 +360,8 @@ const installEraDefinition = (
     } as any),
   );
 
+import {ERA_WIRE} from '../src/utils/era-wire.generated';
+
 class FakeStateSyncFirmware {
   revisions = {keymap: 1, macro: 1, config: 1};
   keymapValue = 1;
@@ -373,6 +375,7 @@ class FakeStateSyncFirmware {
   stateSyncReads = 0;
   keymapReads = 0;
   macroBufferReads = 0;
+  macroBufferSize = 3;
   layoutReads = 0;
   menuReads = 0;
   encoderReads = 0;
@@ -416,6 +419,12 @@ class FakeStateSyncFirmware {
   ) {}
 
   onSend = (data: Uint8Array) => {
+    if (data[0] === 0x08 && data[1] === ERA_WIRE.CHANNELS_EERRAA.MACRO_REPLACE) {
+      const unsupported = data.slice();
+      unsupported[0] = 0xff;
+      this.device.emit(unsupported);
+      return;
+    }
     if (data[0] === 0x01) {
       this.device.emit(payload(0x01, 0x00, this.protocol));
       return;
@@ -560,7 +569,7 @@ class FakeStateSyncFirmware {
     }
     if (data[0] === 0x0d) {
       // One payload byte, its macro terminator, and the final completion marker.
-      this.device.emit(payload(0x0d, 0x00, 0x03));
+      this.device.emit(payload(0x0d, this.macroBufferSize >>> 8, this.macroBufferSize & 0xff));
       return;
     }
     if (data[0] === 0x10) {
@@ -598,7 +607,8 @@ class FakeStateSyncFirmware {
         return;
       }
       const offset = (data[1] << 8) | data[2];
-      const logicalBytes = [this.macroText.charCodeAt(0), 0, 0];
+      const logicalBytes = Array(this.macroBufferSize).fill(0);
+      logicalBytes[0] = this.macroText.charCodeAt(0);
       const bytes = logicalBytes.slice(offset, offset + data[3]);
       if (
         this.macroClosed &&
@@ -2158,7 +2168,7 @@ describe('layout files and Tap Dance values', () => {
     expect(commands).toContain(0x13);
     expect(
       commands.filter((command) => [0x07, 0x08, 0x09].includes(command)),
-    ).toEqual([]);
+    ).toEqual([0x08]); // Read-only ERA replacement capability; no Tap Dance I/O.
     expect(firmware.menuReads).toBe(0);
   });
 
@@ -3573,6 +3583,38 @@ describe('State Sync freshness coordinator regressions', () => {
       mutationEpoch: 1,
       acceptedRevision: firmware.revisions.macro,
     });
+  });
+
+  test('invalidated bulk macro read yields after the outstanding reply, then restarts behind foreground', async () => {
+    const {store, connected, firmware, generation} =
+      await prepareSelectedStateSyncDevice('macro-obsolete-bulk');
+    const dispatch = store.dispatch as any;
+    await dispatch(probeStateSyncForDevice(connected));
+    firmware.macroBufferSize = 60;
+    firmware.holdNextMacroBuffer = true;
+    dispatch(setDomainStatus({path: connected.path, generation, domain: 'macro', status: 'dirty'}));
+    dispatch(setConfigureVisible(true));
+    const polling = dispatch(pollStateSync());
+    await waitUntil(() => firmware.heldMacroBufferRequest !== undefined, 800);
+    dispatch(beginForegroundMutation({path: connected.path, generation, domains: ['macro']}));
+    const reportBoundary = firmware.device.sentReports.length;
+    let readsAtForeground = -1;
+    const readsBefore = firmware.macroBufferReads;
+    const api = new KeyboardAPI(connected.path);
+    const foreground = api.withPathReservation(generation, Symbol('foreground'), async reserved => {
+      readsAtForeground = firmware.macroBufferReads;
+      firmware.macroText = 'B';
+      firmware.revisions.macro++;
+      await reserved.getMacroCount();
+    });
+    firmware.releaseHeldMacroBuffer();
+    await Promise.all([polling, foreground]);
+    expect(readsAtForeground).toBe(readsBefore);
+    const offsets = firmware.device.sentReports.slice(reportBoundary)
+      .filter(({data}) => data[0] === 0x0e)
+      .map(({data}) => (data[1] << 8) | data[2]);
+    expect(offsets).toEqual([0, 28, 56]);
+    expect(getExpressions(store.getState() as any)).toEqual(['B']);
   });
 
   test('standalone macro RESET advances the epoch without writing a marker', async () => {

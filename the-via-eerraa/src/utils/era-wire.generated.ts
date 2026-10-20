@@ -1,5 +1,5 @@
 // GENERATED — do not edit. Source: the-via-eerraa/config/era-wire.json; generator: the-via-eerraa/scripts/generate-era-wire.ts; command: bun run era-wire:generate; contract: the-via-eerraa/docs/adr/0005-era-wire-registry.md
-export const ERA_WIRE_REGISTRY_SHA256 = '246c6bf68bd7264098506ff4e3e35f37fa5d43fff8591f209f665dcf02b45b64';
+export const ERA_WIRE_REGISTRY_SHA256 = '086c746e84924ef3ac44a1f2cb8a40107e032feb12ea6930e9599a58d1ca4ea6';
 export const ERA_WIRE_VIA_PROTOCOL_VERSION = 0x000D;
 export const ERA_WIRE_VIA_KEYCODES_VERSION = 0x00000008;
 export const VIA_COMMANDS = {
@@ -43,6 +43,24 @@ export const VIA_CHANNELS = {
   id_qmk_led_matrix_channel: 0x05,
 } as const;
 export const ERA_WIRE = {
+  MACRO_REPLACE: {
+    CAPABILITIES: 0x01,
+    BEGIN: 0x02,
+    DATA: 0x03,
+    COMMIT: 0x04,
+    ABORT: 0x05,
+    STATUS: 0x06,
+  },
+  MACRO_REPLACE_VERSION: {
+    CURRENT: 0x01,
+  },
+  MACRO_REPLACE_RESULT: {
+    OK: 0x00,
+    BUSY: 0x01,
+    INVALID: 0x02,
+    IO_ERROR: 0x03,
+    STALE: 0x04,
+  },
   STATE_SYNC_SELECTORS: {
     CURRENT: 0x80,
     // legacy: Shipped EERRAA and H7S VIA protocol <= 12 firmware uses this State Sync selector. It must not be reused; protocol 13 assigns it to official id_keycodes_version.
@@ -71,6 +89,7 @@ export const ERA_WIRE = {
     MOUSEKEY: 0x0D,
     DEBOUNCE: 0x0E,
     TAPPING: 0x0F,
+    MACRO_REPLACE: 0x10,
   },
   CHANNELS_H7S: {
     VERSION: 0x08,

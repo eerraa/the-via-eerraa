@@ -26,6 +26,7 @@ import {
 import ko from '../src/locales/ko.json';
 import type {ConnectedDevice} from '../src/types/types';
 import type {KeyboardAPI} from '../src/utils/keyboard-api';
+import {ERA_WIRE as W} from '../src/utils/era-wire.generated';
 
 const originalWarn = console.warn;
 console.warn = () => undefined;
@@ -140,6 +141,11 @@ class MacroKeyboard {
   commands: number[] = [];
   buffer: number[];
   refuseReset = false;
+  eraReplace = false;
+  eraOperations: number[] = [];
+  private replacement: number[] = [];
+  private replacementCRC: number[] = [];
+  private replacementLength = 0;
   constructor(
     size: number,
     contents: number[],
@@ -172,7 +178,31 @@ class MacroKeyboard {
     const offset = (request[1] << 8) | request[2];
     const size = request[3];
     this.commands.push(command);
-    if (command === 0x0c) reply[1] = this.macroCount;
+    if (this.eraReplace && request[1] === W.CHANNELS_EERRAA.MACRO_REPLACE &&
+        (command === 7 || command === 8)) {
+      const op = request[2];
+      if (op === W.MACRO_REPLACE.CAPABILITIES) {
+        reply.splice(3, 8, 1, 17, (this.buffer.length - 1) >>> 8,
+          (this.buffer.length - 1) & 0xff, 69, 77, 82, 49);
+      } else {
+        this.eraOperations.push(op);
+        if (op === W.MACRO_REPLACE.BEGIN) {
+          this.replacement = [];
+          this.replacementLength = (request[11] << 8) | request[12];
+          this.replacementCRC = request.slice(13, 17);
+        } else if (op === W.MACRO_REPLACE.DATA) {
+          this.replacement.push(...request.slice(14, 14 + request[13]));
+        } else if (op === W.MACRO_REPLACE.COMMIT) {
+          this.buffer.fill(0);
+          this.buffer.splice(0, this.replacement.length, ...this.replacement);
+          reply.splice(24, 4, ...this.replacementCRC);
+          reply[28] = this.replacementLength >>> 8;
+          reply[29] = this.replacementLength & 0xff;
+          reply[30] = 2;
+        }
+      }
+      reply[31] = W.MACRO_REPLACE_RESULT.OK;
+    } else if (command === 0x0c) reply[1] = this.macroCount;
     else if (command === 0x0d) {
       reply[1] = this.buffer.length >> 8;
       reply[2] = this.buffer.length & 0xff;
@@ -594,6 +624,24 @@ describe('editing and saving macros', () => {
     type(root, 'fixed ');
     expect(applyButton(root).props.disabled).toBe(false);
     expect(alerts(root)).toEqual([]);
+  });
+
+  test('supported ERA Apply uses KeyboardAPI and real HID echo matching without RESET', async () => {
+    const {store, keyboard} = await connect('macro-era-endpoint');
+    keyboard.eraReplace = true;
+    const root = await render(store);
+    openScript(root);
+    type(root, 'dir\n');
+    await clickApply(root);
+    expect(keyboard.buffer.slice(0, 6)).toEqual([100, 105, 114, 10, 0, 0]);
+    expect(keyboard.eraOperations).toEqual([
+      W.MACRO_REPLACE.BEGIN, W.MACRO_REPLACE.DATA, W.MACRO_REPLACE.COMMIT,
+    ]);
+    expect(keyboard.commands).not.toContain(0x10);
+    expect(keyboard.commands).not.toContain(0x0d);
+    expect(keyboard.commands).not.toContain(0x0f);
+    expect(macros.getExpressions(store.getState() as any)[0]).toBe('dir\n');
+    expect(applyButton(root).props.disabled).toBe(true);
   });
 
   test('saves canonical expressions and trailing Enter, then has nothing left to apply', async () => {
