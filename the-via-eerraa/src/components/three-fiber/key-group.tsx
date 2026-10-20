@@ -57,7 +57,6 @@ export const KeyGroup: React.FC<KeyGroupProps<ThreeEvent<MouseEvent>>> = (
   const {basicKeyToByte, byteToKey} = useAppSelector(getBasicKeyToByte);
   const hostKeyboardLayout = useAppSelector(getHostKeyboardLayout);
   const keycodeLUT = keymapExtras[hostKeyboardLayout]?.keycodeLUT;
-  const macros = useAppSelector((state) => state.macros);
   const {keys, selectedKey: externalSelectedKey} = props;
   const selectedKeyIndex =
     externalSelectedKey === undefined ? selectedKey : externalSelectedKey;
@@ -71,7 +70,15 @@ export const KeyGroup: React.FC<KeyGroupProps<ThreeEvent<MouseEvent>>> = (
   ]);
   const labels = useMemo(() => {
     return getLabels(props, macroExpressions, basicKeyToByte, byteToKey, keycodeLUT);
-  }, [keys, props.matrixKeycodes, macros, props.definition, keycodeLUT]);
+  }, [
+    keys,
+    props.matrixKeycodes,
+    macroExpressions,
+    props.definition,
+    basicKeyToByte,
+    byteToKey,
+    keycodeLUT,
+  ]);
   const {width, height} = calculateKeyboardFrameDimensions(keys);
   const elems = useMemo(() => {
     return props.keys.map((k, i) => {
