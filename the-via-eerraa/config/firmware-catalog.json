@@ -414,6 +414,51 @@
           }
         }
       }
+    },
+    {
+      "version": "261021R1",
+      "families": {
+        "qmk": {
+          "storageKey": {
+            "QMK_BUILDDATE": "2024-04-23-11:29:54",
+            "ERA_EEPROM_RESET_KEY": "0x45524109UL"
+          },
+          "note": {
+            "ko": "스플릿 동기화·매크로 저장 안정성 개선 및 Odessey60S 키맵 좌표 보정",
+            "en": "Improved split sync and macro save stability, and fixed Odessey60S keymap mapping",
+            "ja": "分割同期とマクロ保存の安定性向上、および Odessey60S キーマップ座標の修正",
+            "zh": "改进分体同步与宏保存稳定性，并修正 Odessey60S 键位映射",
+            "es": "Mejora de la estabilidad de sincronización dividida y guardado de macros, y corrección del mapeo de Odessey60S",
+            "de": "Stabilität von Split-Synchronisierung und Makrospeicherung verbessert sowie Odessey60S-Tastenzuordnung korrigiert"
+          }
+        }
+      },
+      "files": {
+        "sirind": {
+          "tomak-tkl": {
+            "url": "/firmware-files/261021R1/sirind/TOMAK-TKL-V261021R1.zip",
+            "size": 152553,
+            "sha256": "1ddfcc7d5cd25749039ff8df7ea670943e3026c6fb6677f460505d5b27d75a9d"
+          },
+          "tomak79s": {
+            "url": "/firmware-files/261021R1/sirind/TOMAK79S-V261021R1.zip",
+            "size": 147935,
+            "sha256": "dc6879718e2c3108a73c36505ce3adc2178081fbacd1ae7a891fb491f7c19a04"
+          },
+          "tomak79h": {
+            "url": "/firmware-files/261021R1/sirind/TOMAK79H-V261021R1.zip",
+            "size": 147748,
+            "sha256": "f93cd6480f2ab9d2e3ded7798294f285c66f573f314a4c659aca8bf1c26ddcf2"
+          }
+        },
+        "newone": {
+          "newone-odessey60s": {
+            "url": "/firmware-files/261021R1/newone/ODESSEY60S-V261021R1.zip",
+            "size": 75649,
+            "sha256": "f1259315b0af80c6ab285d40a80488018eb09b66e5af176888ec922a157ab725"
+          }
+        }
+      }
     }
   ]
 }

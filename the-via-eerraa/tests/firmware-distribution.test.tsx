@@ -108,6 +108,12 @@ const dataFor = (catalog = source): FirmwareData => ({
 });
 const committed = dataFor();
 const latest = committed.catalog.versions!.at(-1)!.version;
+const latestFor = (makerId: string, boardId: string) =>
+  committed.catalog.makers
+    .find(({id}) => id === makerId)!
+    .boards.find(({board}) => board === boardId)!.file!.version;
+const a1Latest = latestFor('classicd', 'classicd-a1');
+const n86Latest = latestFor('linworks', 'n86');
 const cloneSource = () => structuredClone(source);
 const usbId = (id: string, legacy = false) => {
   const entry = manifest.definitions.find((entry) => entry.id === id)!;
@@ -452,10 +458,12 @@ test('release gates reject broken historical metadata, bytes and identities', as
   }
   const root = mkdtempSync(path.join(os.tmpdir(), 'era-release-gate-'));
   const value = cloneSource();
-  value.versions = value.versions.map((release) => ({
-    ...release,
-    files: {sirind: {divine: release.files.sirind.divine}},
-  }));
+  value.versions = value.versions
+    .filter((release) => release.files.sirind?.divine)
+    .map((release) => ({
+      ...release,
+      files: {sirind: {divine: release.files.sirind.divine}},
+    }));
   try {
     for (const release of value.versions) {
       const file = release.files.sirind.divine;
@@ -491,10 +499,12 @@ test('deleting a defective release and its files restores the previous download 
       ...maker,
       boards: maker.boards.filter(({board}) => board === 'classicd-a1'),
     }));
-  value.versions = value.versions.map((release) => ({
-    ...release,
-    files: {classicd: {'classicd-a1': release.files.classicd['classicd-a1']}},
-  }));
+  value.versions = value.versions
+    .filter((release) => release.files.classicd?.['classicd-a1'])
+    .map((release) => ({
+      ...release,
+      files: {classicd: {'classicd-a1': release.files.classicd['classicd-a1']}},
+    }));
   const writeCatalog = () =>
     writeFileSync(
       path.join(root, 'config/firmware-catalog.json'),
@@ -608,16 +618,17 @@ test('version comparison makes an update claim only when every possible maker su
   const shared = {...usbId('n86', true), version: '250101R1'};
   expect(getFirmwareUpdateStatus(committed, shared)).toMatchObject({
     kind: 'choose-maker',
-    update: {version: latest},
+    update: {version: n86Latest},
   });
   const mixed = cloneSource();
-  delete mixed.versions.at(-1)!.files.linworks.n86;
+  delete mixed.versions.findLast((release) => release.files.linworks?.n86)!.files
+    .linworks.n86;
   expect(getFirmwareUpdateStatus(dataFor(mixed), shared)).toMatchObject({
     kind: 'choose-maker',
     update: {version: null},
   });
   expect(
-    getFirmwareUpdateStatus(dataFor(mixed), {...shared, version: latest}),
+    getFirmwareUpdateStatus(dataFor(mixed), {...shared, version: n86Latest}),
   ).not.toHaveProperty('update');
   for (const [withheld, unpublished] of [
     [['linworks', 'keynetix'], false],
@@ -630,7 +641,7 @@ test('version comparison makes an update claim only when every possible maker su
         unpublished ||
         compareEraFirmwareVersions('261005R1', release.version) === -1
       ) {
-        for (const maker of withheld) delete release.files[maker].n86;
+        for (const maker of withheld) delete release.files[maker]?.n86;
       }
     }
     const status = getFirmwareUpdateStatus(dataFor(partial), {
@@ -677,12 +688,12 @@ test('VERSION and header actions lead to the available download or ordinary make
       '250101R1',
       committed,
       '/firmware/classicd/classicd-a1',
-      `New version ${latest}`,
+      `New version ${a1Latest}`,
       true,
     ],
     [
       usbId('classicd-a1'),
-      latest,
+      a1Latest,
       committed,
       '/firmware/classicd/classicd-a1',
       'Up to date',
@@ -693,7 +704,7 @@ test('VERSION and header actions lead to the available download or ordinary make
       'bad',
       committed,
       '/firmware/classicd/classicd-a1',
-      `Latest ${latest}`,
+      `Latest ${a1Latest}`,
       false,
     ],
     [
@@ -701,12 +712,12 @@ test('VERSION and header actions lead to the available download or ordinary make
       '250101R1',
       committed,
       '/firmware',
-      `Latest ${latest}`,
+      `Latest ${n86Latest}`,
       true,
     ],
     [
       usbId('classicd-a1'),
-      latest,
+      a1Latest,
       dataFor({...source, versions: []}),
       null,
       'Not published',
@@ -767,10 +778,10 @@ test('a connected keyboard’s page names it once, its VERSION leading into the 
     expect(named(outdated)).toBe(1);
     expect(outdated).toContain('data-firmware-connected="true"');
     expect(outdated).toContain('Current 250101R1 →');
-    const current = renderPage(route, committed, device, latest);
+    const current = renderPage(route, committed, device, a1Latest);
     expect(named(current)).toBe(1);
     expect(current).toContain('>Current<');
-    expect(current).not.toContain(`Current ${latest}`);
+    expect(current).not.toContain(`Current ${a1Latest}`);
     // A VERSION that makes no claim marks the keyboard but shows no version.
     const unclaimed = renderPage(route, committed, device, 'bad');
     expect(unclaimed).toContain('data-firmware-connected="true"');
