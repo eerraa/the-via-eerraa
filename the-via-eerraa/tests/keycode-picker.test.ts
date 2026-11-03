@@ -4,6 +4,7 @@ import {
   composeLayerTap,
   composeModTap,
   composeModifiers,
+  correctTypedKeycode,
   formatKeycodeHex,
   formatKeycodeLabel,
   getComposeBaseKeycodes,
@@ -309,5 +310,48 @@ describe('tapdance keycode category', () => {
       },
     ];
     expect(menusWithTapDanceKeycodes(menus)).toEqual(menus);
+  });
+});
+
+// A code typed in a search box is read as it was meant: what typing slips leave
+// out or swap is put right, never which key the code names, and text that does
+// not read as a function's code, or not yet, stays as typed, in capitals.
+describe('typing slips in a typed code', () => {
+  test.each([
+    ['LM(2,MOD_LALT', 'LM(2,MOD_LALT)'],
+    ['LM 2,MOD_LALT', 'LM(2,MOD_LALT)'],
+    ['lm 2 alt', 'LM(2,MOD_LALT)'],
+    ['lm2 mod_lalt', 'LM(2,MOD_LALT)'],
+    ['LM(L2,KC_LALT)', 'LM(2,MOD_LALT)'],
+    ['LM(2,MOD_LALT))', 'LM(2,MOD_LALT)'],
+    ['LM[2;MOD-LALT]', 'LM(2,MOD_LALT)'],
+    ['ＬＭ（２，ＭＯＤ＿ＬＡＬＴ）', 'LM(2,MOD_LALT)'],
+    ['ㅣㅡ(2,ㅡㅐㅇ_ㅣ밋', 'LM(2,MOD_LALT)'],
+    ['lt 1 spc', 'LT(1,KC_SPC)'],
+    ['MT(ctrl+shift, esc)', 'MT(MOD_LCTL|MOD_LSFT,KC_ESC)'],
+    ['mt(rctrl\\ralt,a', 'MT(MOD_RCTL|MOD_RALT,KC_A)'],
+    // A modifier's name in MT's place for modifiers is no function of its own.
+    ['MT(LALT A)', 'MT(MOD_LALT,KC_A)'],
+    ['MT LCTL KC_ESC', 'MT(MOD_LCTL,KC_ESC)'],
+    ['LCTL(LSFT(A', 'LCTL(LSFT(KC_A))'],
+    ['lctl lsft a', 'LCTL(LSFT(KC_A))'],
+    ['osm(lsft', 'OSM(MOD_LSFT)'],
+    ['td0', 'TD(0)'],
+    ['kc-a', 'KC_A'],
+  ])('%s reads as %s', (typed, code) => {
+    expect(correctTypedKeycode(typed, v13BasicKeyToByte)).toBe(code);
+  });
+
+  test.each([
+    ['0x5044', '0X5044'],
+    ['space', 'SPACE'],
+    // A one-letter name takes no space for a bracket, and DO is no layer.
+    ['a b', 'A B'],
+    ['to do', 'TO DO'],
+    ['LM(2', 'LM(2'],
+    ['LM(2,MOD_L', 'LM(2,MOD_L'],
+    ['FOO(1)', 'FOO(1)'],
+  ])('%s stays as typed', (typed, text) => {
+    expect(correctTypedKeycode(typed, v13BasicKeyToByte)).toBe(text);
   });
 });

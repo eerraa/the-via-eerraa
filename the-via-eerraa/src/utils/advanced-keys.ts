@@ -51,7 +51,7 @@ const modCodes = {
   QK_RGUI: 0x1800,
 };
 
-const modMasks = {
+export const modMasks = {
   MOD_LCTL: 0x0001,
   MOD_LSFT: 0x0002,
   MOD_LALT: 0x0004,
@@ -79,7 +79,7 @@ const topLevelMacroToValue = {
   MACRO: '_QK_MACRO', // MACRO(n)
 };
 
-const modifierKeyToValue = {
+export const modifierKeyToValue = {
   LCTL: modCodes.QK_LCTL,
   C: modCodes.QK_LCTL,
   LSFT: modCodes.QK_LSFT,
@@ -153,12 +153,19 @@ const topLevelValueToMacro = (
 // Everything else can use the KC mods
 // This is some brute forcey stuff, but it works.
 // If it returns 0, it means validation failed
+// A code as the decoder reads it: its name, then what its brackets hold, each
+// trimmed, so "LM (2, MOD_RALT)" is LM of "2, MOD_RALT".
+const codeParts = (inputString: string) =>
+  inputString
+    .toUpperCase()
+    .split(/\(|\)/)
+    .map((part) => part.trim());
+
 export const advancedStringToKeycode = (
   inputString: string,
   basicKeyToByte: Record<string, number>,
 ): number => {
-  const upperString = inputString.toUpperCase();
-  const parts = upperString.split(/\(|\)/).map((part) => part.trim());
+  const parts = codeParts(inputString);
   if (Object.keys(topLevelMacroToValue).includes(parts[0])) {
     if (parts.length !== 3 || parts[2] !== '') {
       return 0;
@@ -239,6 +246,52 @@ export const advancedKeycodeToString = (
       humanReadable = null;
   }
   return humanReadable;
+};
+
+// Which parameter of MT(mod, kc), OSM(mod) and LM(layer, mod) holds its MOD_ masks.
+const modParameterAt: Record<string, number> = {MT: 0, OSM: 0, LM: 1};
+
+/**
+ * Why a code as typed would be written as something else for its modifiers, or
+ * null. A key's modifiers share one hand bit, so left- and right-hand ones
+ * together would all be written on the right; and before protocol 11 an LM has
+ * four mod bits and no hand, so a right-hand one would be written as its
+ * left-hand twin. A code the decoder does not read has no such reason.
+ */
+export const typedModifierProblem = (
+  inputString: string,
+  basicKeyToByte: Record<string, number>,
+): 'left-hand-only' | 'mixed-hands' | null => {
+  if (advancedStringToKeycode(inputString, basicKeyToByte) === 0) {
+    return null;
+  }
+  // The modifiers as the decoder read them: MOD_ masks joined by | in MT, OSM
+  // and LM, or modifier names nested around a key, as in LCTL(RALT(KC_A)).
+  const parts = codeParts(inputString);
+  const at = modParameterAt[parts[0]];
+  const masks = at === undefined ? null : parts[1].split(',')[at].split('|');
+  const rightHand = masks
+    ? masks.map(
+        (mask) => (modMasks[mask.trim() as keyof typeof modMasks] & 0x10) !== 0,
+      )
+    : parts
+        .filter((part) => modifierKeyToValue.hasOwnProperty(part))
+        .map(
+          (name) =>
+            (modifierKeyToValue[name as keyof typeof modifierKeyToValue] &
+              modCodes.QK_RMODS_MIN) !==
+            0,
+        );
+  if (
+    parts[0] === 'LM' &&
+    rightHand.includes(true) &&
+    !(basicKeyToByte._QK_LAYER_MOD_MASK & 0x10)
+  ) {
+    return 'left-hand-only';
+  }
+  return rightHand.includes(true) && rightHand.includes(false)
+    ? 'mixed-hands'
+    : null;
 };
 
 const modValueToString = (modMask: number): string => {
