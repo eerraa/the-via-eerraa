@@ -98,7 +98,8 @@ const Group = styled.div`
 `;
 
 const PopTitle = styled.div`
-  font-size: 16px;
+  font-size: 20px;
+  font-weight: 400;
   color: ${strong};
 `;
 
@@ -119,7 +120,7 @@ const Chip = styled(ToggleButton)`
 
 const PopNote = styled.p`
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.45;
   color: ${muted};
 `;
@@ -176,7 +177,7 @@ export const TappingFooter = styled.div`
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 10px;
-  font-size: 15px;
+  font-size: 16px;
   color: ${muted};
 
   > strong {
@@ -185,7 +186,6 @@ export const TappingFooter = styled.div`
   }
   > ${TextAction} {
     padding: 0 4px;
-    font-size: 15px;
   }
 `;
 

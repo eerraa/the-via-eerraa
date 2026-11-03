@@ -183,7 +183,6 @@ const LinkLine = styled.div`
 
   > ${TextAction} {
     padding-left: 0;
-    font-size: 15px;
   }
 `;
 
@@ -1109,9 +1108,7 @@ export const KeycodePalette = ({
   } else {
     grid = buildCategorySections(shownMenu, layout).map((section) => (
       <Section key={section.id}>
-        {section.label ? (
-          <SectionLabel>{t(section.label)}</SectionLabel>
-        ) : null}
+        <SectionLabel>{t(section.label)}</SectionLabel>
         {section.rows.map((row, rowIndex) =>
           renderRow(row, rowIndex),
         )}

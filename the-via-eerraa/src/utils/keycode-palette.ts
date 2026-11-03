@@ -43,7 +43,7 @@ export type PaletteItem = PaletteKey | PaletteGap | PaletteAny;
 
 type PaletteSection = {
   id: string;
-  /** English source text for t(); empty when the category name says enough. */
+  /** English source text for t(). */
   label: string;
   rows: PaletteItem[][];
 };
@@ -524,6 +524,14 @@ const ANY_SECTION: PaletteSection = {
   ],
 };
 
+// A category with no groups names its keys over them, as the grouped ones name
+// each group, so no category opens on keys without a name.
+const KEYS_LABELS: Record<string, string> = {
+  macro: 'Macro keys',
+  custom: 'Custom keys',
+  tapdance: 'Tap Dance keys',
+};
+
 export const buildCategorySections = (
   menu: IKeycodeMenu,
   layout?: KeycodeLUT,
@@ -539,7 +547,7 @@ export const buildCategorySections = (
   return [
     {
       id: menu.id,
-      label: '',
+      label: KEYS_LABELS[menu.id] ?? menu.label,
       rows: [
         menu.keycodes
           .filter((keycode) => keycode.code !== 'text')

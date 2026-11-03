@@ -83,7 +83,7 @@ const Head = styled.div`
   }
   p {
     margin: 0;
-    font-size: 15px;
+    font-size: 16px;
     color: ${muted};
   }
 `;
@@ -276,9 +276,7 @@ export const TapKeyPicker = ({
             ? []
             : [
                 <Section key={section.id}>
-                  {section.label ? (
-                    <SectionLabel>{t(section.label)}</SectionLabel>
-                  ) : null}
+                  <SectionLabel>{t(section.label)}</SectionLabel>
                   {rows.map((row, rowIndex) => renderRow(row, rowIndex))}
                 </Section>,
               ];

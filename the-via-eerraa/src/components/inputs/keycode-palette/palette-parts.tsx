@@ -155,8 +155,8 @@ export const CloseAction = styled(TextAction)`
 
 /**
  * The way back to the menu a link came from, at the start of the rows it sits
- * above: "To Keymap". It reads at VIA's 20px menu text, as the way there
- * does.
+ * above: "To Keymap". It reads at the size of the links that lead there, such as
+ * "TAPPING settings", so the way there and the way back look alike.
  */
 export const BackRow = styled.div`
   display: flex;
@@ -166,10 +166,6 @@ export const BackRow = styled.div`
   width: 100%;
   max-width: 960px;
   margin: 6px 0 2px;
-
-  > ${TextAction} {
-    font-size: 20px;
-  }
 `;
 
 export const Panel = styled.section`
@@ -203,13 +199,16 @@ export const Spacer = styled.div`
   flex-grow: 1;
 `;
 
+// The palette's type steps: its tabs and titles at VIA's 20px menu text, the names
+// of groups and rows at 18px, and the text and help under them at 16px.
 export const SectionLabel = styled.div`
-  font-size: 15px;
+  font-size: 18px;
+  font-weight: 400;
   color: ${muted};
 `;
 
 export const Hint = styled.span`
-  font-size: 15px;
+  font-size: 16px;
   color: ${muted};
 `;
 

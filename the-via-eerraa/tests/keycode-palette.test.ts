@@ -102,6 +102,22 @@ describe('keycode palette layout', () => {
     }
   });
 
+  // A category without groups, such as Macro, still opens on keys under a name,
+  // as every other category does.
+  test('every category names the keys it opens on', () => {
+    for (const menu of getKeycodes()) {
+      expect({
+        id: menu.id,
+        unnamed: buildCategorySections(menu).filter((section) => !section.label)
+          .length,
+      }).toEqual({id: menu.id, unnamed: 0});
+    }
+    const macro = getKeycodes().find((menu) => menu.id === 'macro')!;
+    expect(buildCategorySections(macro).map((section) => section.label)).toEqual(
+      ['Macro keys'],
+    );
+  });
+
   // A layer key is offered only for a layer the keyboard has: one key per layer under
   // each function, and the Fn keys whose layers are all there.
   const layerMenu = getKeycodes().find((menu) => menu.id === 'layers')!;
