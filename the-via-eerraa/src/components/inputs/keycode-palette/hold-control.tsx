@@ -6,6 +6,8 @@ import {
   COMPOSE_MODIFIERS,
   buildComposeResult,
   decodeComposedKeycode,
+  isModifierKey,
+  layerModModifier,
   legendModifier,
   tapLegend,
   type ComposeKind,
@@ -25,11 +27,17 @@ import {
   strong,
 } from './palette-parts';
 import {ConfigureStatusMessage} from '../../panes/configure-panes/status-message';
+import {ExplainRow, useExplainDisclosure} from '../explain';
+import {
+  HelpBody,
+  HelpContent,
+} from '../../panes/configure-panes/custom/help-content';
 
 // An LT·MT key is not a key of its own here but a hold put on a key: the selected
 // key, or the Tap Dance action being filled, keeps the key a tap sends and takes a
 // layer or modifiers for holding it. A modifier combo, which sends the key with
-// modifiers, goes on the key the same way.
+// modifiers, goes on the key the same way, and so does a Layer-Mod on a modifier
+// key, which holds its modifier with the layer.
 
 /** A key as the hold reads it: the key a tap sends and what is put on it. */
 type HeldKey = {
@@ -73,7 +81,7 @@ const heldValue = (
     : buildComposeResult(kind, tap, layer, modifiers, basicKeyToByte, right)
         .value;
 
-// The LT·MT tab, listed down the column as the palette's other tabs list their
+// The LT·MT·LM tab, listed down the column as the palette's other tabs list their
 // keys: what holding the key does, with how a tap is told from a hold, then the
 // modifiers sent with it.
 const Sheet = styled.div`
@@ -116,6 +124,52 @@ const PopNote = styled.p`
   color: ${muted};
 `;
 
+// A row's name with the ⓘ that opens what the row does under it, in the paragraphs
+// and column a Configure menu's help opens in: the rows carry no other explanation.
+const RowName = ({
+  name,
+  help,
+  title = false,
+}: {
+  name: string;
+  /** Catalog keys of the help's paragraphs. */
+  help: readonly string[];
+  /** The name is a group's title, not a row's label. */
+  title?: boolean;
+}) => {
+  const {t} = useTranslation();
+  const {toggle, bodyProps} = useExplainDisclosure(
+    t('What this means: {{name}}', {name}),
+  );
+  return (
+    <ExplainRow>
+      {title ? <PopTitle>{name}</PopTitle> : <SectionLabel>{name}</SectionLabel>}
+      {toggle}
+      <HelpBody {...bodyProps}>
+        <HelpContent content={{detail: help}} />
+      </HelpBody>
+    </ExplainRow>
+  );
+};
+
+// Each row's help: what it does, then an example or what else to know.
+const LT_HELP = [
+  'Tapped, it sends the key; held, it turns only the layer on, with no modifier held.',
+  'A key put in from the list keeps the hold.',
+];
+const LM_HELP = [
+  'Held, it turns the layer on with this modifier held.',
+  'For example, with layer 2 on Alt and F4 where 4 is on layer 2, Alt+4 sends Alt+F4.',
+];
+const MT_HELP = [
+  'Tapped, it sends the key; held, it holds the modifiers picked.',
+  'Modifiers picked together are held together, and a key put in from the list keeps the hold.',
+];
+const COMBO_HELP = [
+  'Each press sends the key with the modifiers picked held.',
+  'For example, Ctrl picked on C sends Ctrl+C.',
+];
+
 /** How the keyboard tells a tap from a hold, under the hold's choices. */
 export const TappingFooter = styled.div`
   display: flex;
@@ -139,10 +193,12 @@ type Hold = Omit<HeldKey, 'tap'>;
 const NO_HOLD: Hold = {kind: null, layer: 0, modifiers: [], right: false};
 
 /**
- * A key's LT·MT tab: a layer or modifiers while the key is held, and modifiers
- * sent with it, each a row of toggles. A layer is one of its row; modifiers add
- * up. Pressed again, what is on comes off, and with the last of it off the key is
- * on its own again. Where no hold can go, it says why instead.
+ * A key's LT·MT·LM tab: a layer or modifiers while the key is held, and modifiers
+ * sent with it, each a row of toggles whose name opens what the row does. A
+ * modifier key also has a Layer-Mod row: the layer with its own modifier held;
+ * any other key asks for one in its place. A layer is one of its row; modifiers
+ * add up. Pressed again, what is on comes off, and with the last of it off the key
+ * is on its own again. Where no hold can go, it says why instead.
  */
 export const HoldChoices = ({
   held,
@@ -181,6 +237,7 @@ export const HoldChoices = ({
   }
   const key = held;
   const kind = key.kind;
+  const keyName = tapLegend(key.tap.name) || key.tap.code;
   // The row offers the layers above the base one that the keyboard has. A key
   // holding a layer outside it, layer 0 or one past the keyboard's, gets a lit
   // choice for it that takes the hold off.
@@ -188,10 +245,8 @@ export const HoldChoices = ({
     {length: Math.max(0, Math.min(16, layerCount) - 1)},
     (_, index) => index + 1,
   );
-  const layers =
-    kind === 'LT' && !row.includes(key.layer)
-      ? [...row, key.layer].sort((a, b) => a - b)
-      : row;
+  // Only a modifier key can be a Layer-Mod, which holds its own modifier.
+  const layerMod = layerModModifier(key.tap.code, basicKeyToByte);
   // Modifiers add up within their kind, on the hand they are on; the last one off
   // leaves the key alone, and modifiers put on afresh are left-hand.
   const toggled = (as: 'MT' | 'MOD', modifier: ComposeModifier): Hold => {
@@ -225,6 +280,34 @@ export const HoldChoices = ({
       </Chip>
     );
   };
+  // A row of layers, Layer-Tap's or Layer-Mod's: one is on at a time.
+  const layerRow = (
+    as: 'LT' | 'LM',
+    label: string,
+    help: readonly string[],
+    hold: (layer: number) => Hold,
+  ) => {
+    const layers =
+      kind === as && !row.includes(key.layer)
+        ? [...row, key.layer].sort((a, b) => a - b)
+        : row;
+    return layers.length ? (
+      <Section>
+        <RowName name={label} help={help} />
+        <PopRow role="group" aria-label={label}>
+          {layers.map((layer) => {
+            const on = kind === as && key.layer === layer;
+            return choice(
+              `${as}-${layer}`,
+              String(layer),
+              on ? NO_HOLD : hold(layer),
+              on,
+            );
+          })}
+        </PopRow>
+      </Section>
+    ) : null;
+  };
 
   // The title says which key is held, for a screen reader too: it names the
   // rows of the hold as a group.
@@ -233,30 +316,40 @@ export const HoldChoices = ({
       {holds ? (
         <Group role="group" aria-labelledby={holdTitle}>
           <PopTitle id={holdTitle}>
-            {t('While {{key}} is held', {
-              key: tapLegend(key.tap.name) || key.tap.code,
-            })}
+            {t('While {{key}} is held', {key: keyName})}
           </PopTitle>
-          {layers.length ? (
-            <Section>
-              <SectionLabel>{t('Layer-Tap (LT)')}</SectionLabel>
-              <PopRow role="group" aria-label={t('Layer-Tap (LT)')}>
-                {layers.map((layer) => {
-                  const on = kind === 'LT' && key.layer === layer;
-                  return choice(
-                    `layer-${layer}`,
-                    String(layer),
-                    on
-                      ? NO_HOLD
-                      : {kind: 'LT', layer, modifiers: [], right: false},
-                    on,
-                  );
-                })}
-              </PopRow>
-            </Section>
-          ) : null}
+          {layerRow('LT', t('Layer-Tap (LT)'), LT_HELP, (layer) => ({
+            kind: 'LT',
+            layer,
+            modifiers: [],
+            right: false,
+          }))}
+          {layerMod
+            ? layerRow('LM', t('Layer-Mod (LM)'), LM_HELP, (layer) => ({
+                kind: 'LM',
+                layer,
+                modifiers: [layerMod.modifier],
+                right: layerMod.right,
+              }))
+            : row.length > 0 && (
+                // Any other key asks for a key with a modifier on it in the row's
+                // place, and a right-hand modifier key where the protocol's LM has
+                // no hand asks for a left-hand one.
+                <Section>
+                  <RowName name={t('Layer-Mod (LM)')} help={LM_HELP} />
+                  <PopNote>
+                    {isModifierKey(key.tap.code)
+                      ? t(
+                          'Select a key on the keyboard mapped to a left-hand modifier (Ctrl, Shift, Alt or Win)',
+                        )
+                      : t(
+                          'Select a key on the keyboard mapped to a modifier (Ctrl, Shift, Alt or Win)',
+                        )}
+                  </PopNote>
+                </Section>
+              )}
           <Section>
-            <SectionLabel>{t('Mod-Tap (MT)')}</SectionLabel>
+            <RowName name={t('Mod-Tap (MT)')} help={MT_HELP} />
             <PopRow role="group" aria-label={t('Mod-Tap (MT)')}>
               {COMPOSE_MODIFIERS.map((modifier) =>
                 choice(
@@ -270,17 +363,12 @@ export const HoldChoices = ({
                 ),
               )}
             </PopRow>
-            <PopNote>
-              {t(
-                'Modifiers picked together are held together. A key put in from the list keeps the hold.',
-              )}
-            </PopNote>
           </Section>
           {footer}
         </Group>
       ) : null}
       <Section>
-        <PopTitle>{t('Modifier combo')}</PopTitle>
+        <RowName title name={t('Modifier combo')} help={COMBO_HELP} />
         <PopRow role="group" aria-label={t('Modifier combo')}>
           {COMPOSE_MODIFIERS.map((modifier) =>
             choice(
@@ -294,7 +382,6 @@ export const HoldChoices = ({
             ),
           )}
         </PopRow>
-        <PopNote>{t('Sends the key with modifiers held')}</PopNote>
       </Section>
     </Sheet>
   );

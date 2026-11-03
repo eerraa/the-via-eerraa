@@ -20,6 +20,8 @@ export const HelpBody = styled.div`
   font-size: 16px;
   line-height: 1.65;
   overflow-wrap: anywhere;
+  /* The page turns text selection off; opened help stays text to select. */
+  user-select: text;
 
   &[hidden] {
     display: none;

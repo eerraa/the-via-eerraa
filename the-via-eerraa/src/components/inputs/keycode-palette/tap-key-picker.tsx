@@ -16,26 +16,31 @@ import {
   buildCategorySections,
   searchPalette,
   type PaletteItem,
+  type PaletteKey,
 } from 'src/utils/keycode-palette';
 import {
   CloseAction,
+  Cue,
   Hint,
   SearchField,
   Section,
   SectionLabel,
+  TAB_CUE_INSET,
   Tab,
   TabRow,
   hairline,
   muted,
   strong,
+  type SearchCue,
 } from './palette-parts';
 
 // The key of a Tap Dance action, or of a keycode setting, is chosen in a window
 // over the whole app, so what it is chosen for stays as it is. The window offers
 // the keys `isAllowed` lets through in the palette's own categories
 // and layout, and leaves out a category left without one: for a tap key, only the
-// keys a tap can send. A pick takes the key and closes the window; Esc, Close or a
-// click beside it close it with nothing changed.
+// keys a tap can send. Its search takes a keycode as typed, as KEYMAP's does. A
+// pick takes the key and closes the window; Esc, Close or a click beside it close
+// it with nothing changed.
 
 const LTMT_TAB = 'ltmt';
 
@@ -114,6 +119,8 @@ export const TapKeyPicker = ({
   title,
   subtitle,
   searchLabel,
+  searchRef,
+  typed,
   isAllowed,
   renderRow,
   returnFocus,
@@ -131,6 +138,16 @@ export const TapKeyPicker = ({
   subtitle?: string;
   /** The search box's name for a screen reader: what it searches. */
   searchLabel: string;
+  /** The search box, which the Any key sends focus to. */
+  searchRef: RefObject<SearchCue>;
+  /**
+   * The search as a keycode typed, as KEYMAP reads it: the line offering it over
+   * the keys found, or nothing, and Enter putting it in. `clear` empties the box.
+   */
+  typed: {
+    offer: (query: string, found: PaletteKey[], clear: () => void) => ReactNode;
+    enter: (query: string, clear: () => void) => void;
+  };
   /** Whether the window offers the key. */
   isAllowed: (keycode: IKeycode) => boolean;
   /** A row of keys as the palette draws it, where a pick sets the key. */
@@ -140,8 +157,11 @@ export const TapKeyPicker = ({
   onClose: () => void;
   /** Over the tabs, what the keys are picked for; it takes focus as it opens. */
   head?: ReactNode;
-  /** The hold tab: its name, its choices, and the category it goes before (last without it). */
-  ltmt?: {label: string; content: ReactNode; before: string};
+  /**
+   * The hold tab: its name, its choices, the category it goes before (last without
+   * it), and whether the value it opens on has a hold the tab shows.
+   */
+  ltmt?: {label: ReactNode; content: ReactNode; before: string; cue?: boolean};
   /** Room for the Tap Dance editor on one line. */
   wide?: boolean;
 }) => {
@@ -150,9 +170,12 @@ export const TapKeyPicker = ({
   const layerRef = useRef<HTMLDivElement>(null);
   const shownTab = useRef<HTMLButtonElement>(null);
   const categories = menus.filter((menu) => menu.keycodes.some(isAllowed));
-  // The hold tab goes where KEYMAP has LT·MT: before Tap Dance. A Tap Dance
+  // The hold tab goes where KEYMAP has LT·MT·LM: before Tap Dance. A Tap Dance
   // action's window names it Modifiers, the only choices it offers there.
-  const tabs = categories.map((menu) => ({id: menu.id, label: t(menu.label)}));
+  const tabs: {id: string; label: ReactNode}[] = categories.map((menu) => ({
+    id: menu.id,
+    label: t(menu.label),
+  }));
   if (ltmt) {
     const at = tabs.findIndex((tab) => tab.id === ltmt.before);
     tabs.splice(at < 0 ? tabs.length : at, 0, {
@@ -164,6 +187,10 @@ export const TapKeyPicker = ({
   const [category, setCategory] = useState(tabs[0]?.id);
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
+  const clear = () => setQuery('');
+  // Opened on a value with a hold on it, the hold tab draws the ring KEYMAP's
+  // draws as a key with one is selected, once, as the window opens.
+  const [cued] = useState(() => !!ltmt?.cue);
 
   // While it is open the rest of the page is inert, a keycode dock it was opened
   // from too. Focus starts on the category shown and goes back to the place it was
@@ -210,19 +237,28 @@ export const TapKeyPicker = ({
         keys: keys.filter((key) => isAllowed(key.keycode)),
       }))
       .filter(({keys}) => keys.length > 0);
-    body =
-      hits.length === 0 ? (
-        <Hint style={{padding: '24px 0'}}>{t('No matches')}</Hint>
-      ) : (
-        hits.map(({menu, keys}) => (
-          <Section key={menu.id}>
-            <SectionLabel>
-              {t(menu.label).toUpperCase()} · {keys.length}
-            </SectionLabel>
-            {renderRow(keys, 0)}
-          </Section>
-        ))
-      );
+    const offer = typed.offer(
+      trimmed,
+      hits.flatMap(({keys}) => keys),
+      clear,
+    );
+    body = (
+      <>
+        {offer}
+        {hits.length === 0 && !offer ? (
+          <Hint style={{padding: '24px 0'}}>{t('No matches')}</Hint>
+        ) : (
+          hits.map(({menu, keys}) => (
+            <Section key={menu.id}>
+              <SectionLabel>
+                {t(menu.label).toUpperCase()} · {keys.length}
+              </SectionLabel>
+              {renderRow(keys, 0)}
+            </Section>
+          ))
+        )}
+      </>
+    );
   } else if (ltmt && category === LTMT_TAB) {
     body = ltmt.content;
   } else {
@@ -232,10 +268,10 @@ export const TapKeyPicker = ({
           const rows = section.rows
             .map((row) =>
               row.filter(
-                (item) => item.kind === 'gap' || isAllowed(item.keycode),
+                (item) => item.kind !== 'key' || isAllowed(item.keycode),
               ),
             )
-            .filter((row) => row.some((item) => item.kind === 'key'));
+            .filter((row) => row.some((item) => item.kind !== 'gap'));
           return rows.length === 0
             ? []
             : [
@@ -290,21 +326,40 @@ export const TapKeyPicker = ({
                   type="button"
                   $selected={selected}
                   aria-pressed={selected}
+                  style={
+                    tab.id === LTMT_TAB ? {position: 'relative'} : undefined
+                  }
                   onClick={() => {
                     setCategory(tab.id);
                     setQuery('');
                   }}
                 >
-                  {tab.label}
+                  {tab.id === LTMT_TAB && cued ? (
+                    <>
+                      {tab.label}
+                      <Cue $inset={TAB_CUE_INSET} aria-hidden="true" />
+                    </>
+                  ) : (
+                    tab.label
+                  )}
                 </Tab>
               );
             })}
           </TabRow>
           <SearchField
+            ref={searchRef}
             aria-label={searchLabel}
-            placeholder={t('Search keycodes')}
+            placeholder={t('Search or enter a keycode')}
+            title={t(
+              'You can also type a QMK code such as LT(1,KC_SPC) or a hex value such as 0x412C.',
+            )}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                typed.enter(trimmed, clear);
+              }
+            }}
           />
         </Bar>
         <Body>{body}</Body>

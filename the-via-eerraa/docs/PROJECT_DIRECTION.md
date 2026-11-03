@@ -224,9 +224,24 @@ client editing support, not the firmware-owned execution, storage, or shipped
 Custom Value ABI. Other features retain the official-VIA compatibility rule.
 
 KEYMAP and every V3 `keycode` control use one keycode palette: KEYMAP shows it
-under the keyboard, a `keycode` control opens it as a bottom dock. Search, clear,
-modifiers, layers, Mod-Tap, Layer-Tap, and the QMK/hex code input remain
-available. Unknown 16-bit values are preserved rather than silently rewritten.
+under the keyboard, a `keycode` control opens it in a window over the page.
+Search, clear, modifiers, layers, Mod-Tap, Layer-Tap, Layer-Mod, and the QMK/hex
+code input remain available. The code input is the search box itself, in KEYMAP
+and in every window of keys, the Tap Dance action window included, with one
+parser and the same eligibility checks. The Special category starts with stock
+VIA's Any keycap: it opens no window of its own but moves focus to that search
+box, which is cued only as focus arrives and is neither renamed nor kept
+highlighted. Unknown 16-bit values are preserved rather than silently rewritten.
+A typed code whose modifiers mix left and right hands is refused with the
+reason, since a key's modifiers share one hand bit and would all be written on
+the right. Typing slips are put right before a typed code is read, only in how
+it is written, never in which key it names: a bracket left open, a space for a
+bracket or a comma, MOD_ or KC_ left off, a modifier key or word for its mask, a
+layer written L2, neighbouring keys for brackets and separators, and what a CJK
+input method or the Korean one left on types. The box offering the code shows it
+as it will go in. An LT, MT or LM code keeps one box while it is typed: in
+KEYMAP the box its names bring up, leading to the LT·MT·LM tab, stays until the
+code reads, and the code keeps it even where a key found is it.
 
 The palette serves every keyboard, not only ERA ones. It keeps VIA's
 select-a-key-then-pick flow and draws keycaps in the keyboard theme, so it is a
@@ -240,14 +255,34 @@ or "…" until the keyboard's macros are read, which pointing at a macro key
 starts; KEYMAP's palette names the key under the pointer, on the keyboard or in
 the palette, in its corner.
 
-An LT·MT key (Layer-Tap, Mod-Tap or a modifier combination) begins only after
-the user opens the LT·MT tab that follows the categories; while its builder is
-open no category is selected, and choosing one closes it. The builder takes the
+An LT·MT key (Layer-Tap, Mod-Tap, Layer-Mod or a modifier combination) begins
+only after the user opens the LT·MT·LM tab that follows the categories; while its
+builder is open no category is selected, and choosing one closes it. The builder takes the
 body alone: its tap key is chosen in a window over the app, and a search typed
 while it is open fills the tap key from any category. A key picked for it becomes
 its operand instead of reassigning the keyboard key, and nothing is placed until
 the user puts the result in. Layer-Tap, Mod-Tap and modifier combinations require
-an encodable 8-bit keycode, regardless of its category. Under the builder KEYMAP
+an encodable 8-bit keycode, regardless of its category. A Layer-Mod row appears
+only while the key is a single Ctrl, Shift, Alt or GUI key of either hand: it
+offers the Layer-Tap layers, makes `LM(layer, MOD_<that key>)` on the key's hand,
+and pressed again leaves the plain modifier key. Before VIA protocol 11 an LM
+keeps four mod bits and no hand, so only a left-hand key gets the row there
+rather than be written as its left-hand twin, and a right-hand LM typed as a code
+is refused, saying the keyboard takes only left-hand modifiers. Any other key,
+and such a
+right-hand key, gets in the row's place only a line asking for a key mapped to a
+modifier, a left-hand one for the latter. The rows carry no other text: the
+Layer-Tap, Layer-Mod, Mod-Tap and modifier-combination names each open what the
+row does, as a Configure menu's help opens, telling Layer-Tap, which turns on
+only the layer, from Layer-Mod, which turns it on with the modifier held; their
+keycaps differ as well. A single-modifier Layer-Mod reads back
+into the builder; one of several modifiers is entered only as a code and is
+preserved and shown as its code. A Tap Dance action gets no Layer-Mod row, as it
+gets no Layer-Tap or Mod-Tap. A key picked
+from the list keeps an LT or MT hold, so a newly selected KEYMAP key with a
+Layer-Tap, Mod-Tap or single-modifier Layer-Mod, and a keycode window opened on
+such a value, cue the tab with the Any key's ring only as it arrives; the tab is
+not kept highlighted. Under the builder KEYMAP
 shows the keyboard's TAPPING settings with a link to the Configure menu that holds
 them, found by its commands; that sub-tab then leads back to the builder with the
 selected key, layer and draft as they were. The palette shows the categories the

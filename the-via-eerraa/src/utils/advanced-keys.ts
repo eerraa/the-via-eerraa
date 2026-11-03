@@ -248,6 +248,24 @@ export const advancedKeycodeToString = (
   return humanReadable;
 };
 
+/**
+ * An LM(layer, mod) keycode's layer and MOD_ bits, as the protocol packs them: its
+ * fifth bit picks the right hand where the mask has room for it. Null for any
+ * other keycode.
+ */
+export const layerModParts = (
+  keycode: number,
+  basicKeyToByte: Record<string, number>,
+): {layer: number; mods: number} | null => {
+  const base = basicKeyToByte._QK_LAYER_MOD;
+  if (!(keycode >= base && keycode <= basicKeyToByte._QK_LAYER_MOD_MAX)) {
+    return null;
+  }
+  const mask = basicKeyToByte._QK_LAYER_MOD_MASK;
+  const offset = keycode - base;
+  return {layer: offset >> Math.log2(mask + 1), mods: offset & mask};
+};
+
 // Which parameter of MT(mod, kc), OSM(mod) and LM(layer, mod) holds its MOD_ masks.
 const modParameterAt: Record<string, number> = {MT: 0, OSM: 0, LM: 1};
 

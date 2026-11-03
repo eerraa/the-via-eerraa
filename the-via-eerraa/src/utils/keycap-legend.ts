@@ -39,9 +39,13 @@ export type LegendKey =
   | ({type: 'named'} & LegendName)
   | {
       type: 'combined';
-      /** Layer-Tap, Mod-Tap, or a key sent with modifiers held. */
-      kind: 'LT' | 'MT' | 'MOD';
+      /**
+       * Layer-Tap, Mod-Tap, a key sent with modifiers held, or a Layer-Mod: a layer
+       * held with the modifier of the modifier key it is on.
+       */
+      kind: 'LT' | 'MT' | 'MOD' | 'LM';
       code: string;
+      /** The key a tap sends; a Layer-Mod's is the modifier key it is on. */
       tap: LegendName;
       layer: number;
       modifiers: LegendModifier[];
@@ -459,18 +463,24 @@ const smallRoom = (size: number) => CAP * size + SMALL_GAP;
  * at the top left, a pair at the top and bottom, and a word, an arrow or a symbol
  * in the middle. A hold, the modifiers of a combo, KP, a layer function and a
  * lighting key's system are set small: a combo's modifiers at the top, the others
- * at the bottom, and the name keeps clear of them.
+ * at the bottom, and the name keeps clear of them. A Layer-Mod reads as its
+ * modifier held with its layer, as a combo reads as its modifiers with its key:
+ * Alt+ over L2, where a Layer-Tap on the same Alt key is LAlt over a small L2.
  */
 export const keycapLegend = (key: LegendKey, width = 1): KeycapLegend => {
   const room = faceSize(width).width - MARGIN - RIGHT_MARGIN;
   if (key.type === 'combined') {
     const wordings = wordingsOf(key.tap, true);
-    if (key.kind === 'MOD') {
+    if (key.kind === 'MOD' || key.kind === 'LM') {
       const {text, size} = heldLabel(key.modifiers, key.right, '+', room);
       const held = topLine(text, size, undefined, SMALL_OPACITY);
-      const tap = setLegend(wordings, room, TWO_LINES_UNDER_SMALL);
+      const main = setLegend(
+        key.kind === 'LM' ? [`L${key.layer}`] : wordings,
+        room,
+        TWO_LINES_UNDER_SMALL,
+      );
       return {
-        lines: [held, ...set(tap, {above: smallRoom(size), under: held})],
+        lines: [held, ...set(main, {above: smallRoom(size), under: held})],
       };
     }
     const tap = setLegend(wordings, room, TWO_LINES_OVER_SMALL);

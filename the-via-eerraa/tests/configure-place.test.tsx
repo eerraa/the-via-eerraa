@@ -673,10 +673,10 @@ describe('Configure opens where it was left', () => {
   });
 });
 
-// KEYMAP's LT·MT tab puts a hold on the selected key, says how the keyboard tells
-// a tap from a hold and links to the TAPPING settings; from there "To Keymap" goes
-// back to the key with the tab open.
-describe('LT·MT and TAPPING', () => {
+// KEYMAP's LT·MT·LM tab puts a hold on the selected key, says how the keyboard
+// tells a tap from a hold and links to the TAPPING settings; from there "To Keymap"
+// goes back to the key with the tab open.
+describe('LT·MT·LM and TAPPING', () => {
   // KEYMAP with layer 1 of two shown and the keyboard's one key, B there, selected.
   const openKeymap = async () => {
     const store = await openEraKeyboard();
@@ -756,7 +756,7 @@ describe('LT·MT and TAPPING', () => {
 
   // Under the hold, the tapping term and the options that are on, read as the
   // TAPPING menu reads them; with any of them not read, no line at all.
-  test('the LT·MT tab names the TAPPING settings, and its link opens them with a way back', async () => {
+  test('the LT·MT·LM tab names the TAPPING settings, and its link opens them with a way back', async () => {
     const store = await openKeymap();
     const readTapping = (data: object) =>
       act(async () => {
@@ -768,7 +768,7 @@ describe('LT·MT and TAPPING', () => {
         );
       });
     expect(tappingLine()).toEqual([]);
-    await click(button('LT·MT'));
+    await click(button('LT·MT·LM'));
     expect(rows().map((row) => row.props['aria-label'])).toEqual(ROWS);
     // Permissive Hold and Retro Tapping are on; Hold on Other Key Press is off.
     expect(tappingLine()).toEqual([
@@ -796,9 +796,9 @@ describe('LT·MT and TAPPING', () => {
     expect(wayBack()).toBe(1);
   });
 
-  test('a hold goes on the key itself, and "To Keymap" goes back to the key, the layer and the LT·MT tab', async () => {
+  test('a hold goes on the key itself, and "To Keymap" goes back to the key, the layer and the LT·MT·LM tab', async () => {
     const store = await openKeymap();
-    await click(button('LT·MT'));
+    await click(button('LT·MT·LM'));
     expect(pressed()).toEqual([]);
     await press(store, 'Mod-Tap (MT)', 'Shift');
     // MT(MOD_LSFT, KC_B) is written on the key, which stays selected.
@@ -812,7 +812,7 @@ describe('LT·MT and TAPPING', () => {
     expect(openMenu()).toEqual(['Keymap']);
     expect(store.getState().keymap.selectedKey).toBe(0);
     expect(store.getState().keymap.selectedLayerIndex).toBe(1);
-    expect(button('LT·MT').props['aria-pressed']).toBe(true);
+    expect(button('LT·MT·LM').props['aria-pressed']).toBe(true);
     expect(pressed()).toEqual(['Mod-Tap (MT): Shift']);
     // Used once: TAPPING opened again from the rail has no way back.
     expect(store.getState().configurePlace[VPID].ltmt).toBeUndefined();
@@ -823,7 +823,7 @@ describe('LT·MT and TAPPING', () => {
 
   test('another menu or another keyboard ends the way back', async () => {
     const store = await openKeymap();
-    await click(button('LT·MT'));
+    await click(button('LT·MT·LM'));
     await click(button('TAPPING settings'));
     await click(menu('SYSTEM'));
     await click(menu('FEATURE'));
@@ -832,7 +832,7 @@ describe('LT·MT and TAPPING', () => {
 
     // KEYMAP from the rail opens on its keys, with no key selected.
     await click(menu('Keymap'));
-    expect(button('LT·MT').props['aria-pressed']).toBe(false);
+    expect(button('LT·MT·LM').props['aria-pressed']).toBe(false);
     await act(async () => {
       store.dispatch(
         keymap.updateSelectedKey(
@@ -841,7 +841,7 @@ describe('LT·MT and TAPPING', () => {
         ),
       );
     });
-    await click(button('LT·MT'));
+    await click(button('LT·MT·LM'));
     await click(button('TAPPING settings'));
     expect(wayBack()).toBe(1);
     await load(store, board(PATH));

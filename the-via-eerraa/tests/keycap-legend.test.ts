@@ -32,7 +32,7 @@ const named = (code: string, name: string, shortName?: string): LegendKey => ({
 });
 
 const combined = (
-  kind: 'LT' | 'MT' | 'MOD',
+  kind: 'LT' | 'MT' | 'MOD' | 'LM',
   code: string,
   tap: LegendName,
   {
@@ -301,6 +301,42 @@ describe('a keycap legend', () => {
     ).toBe('Ctrl+A');
   });
 
+  // LT(2,KC_LALT) holds layer 2 without Alt, LM(2,MOD_LALT) with it: on the same
+  // Alt key the two read apart, the Layer-Mod as its modifier held with its layer.
+  test('a Layer-Mod is its modifier held over its layer, apart from a Layer-Tap on the same key', () => {
+    const alt = {code: 'KC_LALT', name: 'Left Alt', shortName: 'LAlt'};
+    const layerMod = keycapLegend(
+      combined('LM', 'LM(2,MOD_LALT)', alt, {layer: 2, modifiers: ['ALT']}),
+    );
+    const layerTap = keycapLegend(
+      combined('LT', 'LT(2,KC_LALT)', alt, {layer: 2}),
+    );
+    expect(drawn(layerMod)).toEqual([
+      'Alt+ 11px x4 top 12.25 small',
+      'L2 13px x4 middle 11',
+    ]);
+    expect(drawn(layerTap)).toEqual([
+      'LAlt 13px x4 middle -1.25',
+      'L2 11px x4 bottom 4 small',
+    ]);
+    expect([legendText(layerMod), legendText(layerTap)]).toEqual([
+      'Alt+L2',
+      'LAlt L2',
+    ]);
+    // Every modifier key of either hand, at every layer, fits a 1u face.
+    for (const modifier of ['CTL', 'SFT', 'ALT', 'GUI'] as const) {
+      for (const right of [false, true]) {
+        for (let layer = 0; layer < 16; layer++) {
+          const legend = keycapLegend(
+            combined('LM', 'LM', alt, {layer, modifiers: [modifier], right}),
+          );
+          expectWhole(`LM ${layer} ${right ? 'R' : ''}${modifier}`, legend);
+          expectClear(`LM ${layer} ${right ? 'R' : ''}${modifier}`, legend);
+        }
+      }
+    }
+  });
+
   test('held modifiers shorten only as far as the face needs', () => {
     const held = (
       kind: 'MT' | 'MOD',
@@ -440,6 +476,12 @@ describe('a keycap legend', () => {
       'C(KC_A)': 'Ctrl+A',
       'MT(MOD_LCTL|MOD_LSFT,KC_A)': 'A Ctl+Sft',
       RM_TOGG: 'Toggle RM',
+      // A Layer-Mod of one modifier is its modifier held with its layer, unlike a
+      // Layer-Tap on that modifier key; one of several modifiers is its code.
+      'LM(2,MOD_LALT)': 'Alt+L2',
+      'LM(1,MOD_RGUI)': 'RWin+L1',
+      'LT(2,KC_LALT)': 'LAlt L2',
+      'LM(2,MOD_LCTL|MOD_LSFT)': 'LM(2,MOD_LCTL | MOD_LSFT)',
     };
     for (const [code, text] of Object.entries(shown)) {
       const value = selectKeycodeFromMenuCode(code, v13BasicKeyToByte)!;

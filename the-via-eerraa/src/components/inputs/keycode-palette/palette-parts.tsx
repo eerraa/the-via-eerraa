@@ -1,5 +1,11 @@
-import styled, {css} from 'styled-components';
-import type {InputHTMLAttributes} from 'react';
+import styled, {css, keyframes} from 'styled-components';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+} from 'react';
 import {AccentButton} from '../accent-button';
 import {DIRTY_DOT_GAP} from '../dirty-dot';
 
@@ -81,6 +87,22 @@ export const tabStyles = css<{$selected: boolean}>`
 
 export const Tab = styled.button<{$selected: boolean}>`
   ${tabStyles}
+`;
+
+// The LT·MT·LM tab's name is the longest of the Korean tabs, in Latin capitals.
+// Beside Hangul, capitals of the same size look smaller and about 2px higher, since
+// Hangul fills the em and reaches below the baseline. There the name takes Fira
+// Sans's condensed cut, drawn taller and lower, so it stands near the height of
+// the names beside it, centred on their line, and narrower than it would be. The
+// Chinese tabs already centre on it, beside a Latin TAP DANCE, and the Japanese
+// are near it, so they keep the plain name.
+export const HoldTabName = styled.span`
+  &:lang(ko) {
+    display: inline-block;
+    font-family: 'Fira Sans Condensed', 'Fira Sans', Helvetica, Helvetica Neue,
+      Arial, serif;
+    transform: translateY(2.25px) scaleY(1.15);
+  }
 `;
 
 /** A category's group of keys under its label, in the palette and the tap key window. */
@@ -197,6 +219,7 @@ export const Code = styled.code`
 `;
 
 const SearchLabel = styled.label`
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -240,26 +263,74 @@ const SearchWidth = styled.span`
   }
 `;
 
+// The box is not marked while it waits: only focus sent to it by the Any key draws
+// a ring around it, which fades as focus arrives. The LT·MT·LM tab draws the same
+// ring as a key with a hold on it is selected.
+const fade = keyframes`
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+`;
+
+/** The ring that fades as it arrives, `$inset` from the edges of what it marks. */
+export const Cue = styled.span<{$inset?: string}>`
+  position: absolute;
+  inset: ${(props) => props.$inset ?? '-2px -10px'};
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px ${accent};
+  opacity: 0;
+  pointer-events: none;
+  animation: ${fade} 1.2s ease-out;
+`;
+
+/** A tab's ring: around its name, as tall as the search box's. */
+export const TAB_CUE_INSET = 'calc(50% - 20px) 0';
+
+/** The search box as the Any key reaches it: it takes focus, with the cue. */
+export type SearchCue = {cue: () => void};
+
 /** The search box. It also takes a keycode as typed, which its placeholder says. */
-export const SearchField = (props: InputHTMLAttributes<HTMLInputElement>) => (
-  <SearchLabel>
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-    <SearchWidth>
-      <span aria-hidden="true">{props.placeholder}</span>
-      <input type="search" {...props} />
-    </SearchWidth>
-  </SearchLabel>
-);
+export const SearchField = forwardRef<
+  SearchCue,
+  InputHTMLAttributes<HTMLInputElement>
+>((props, ref) => {
+  const input = useRef<HTMLInputElement>(null);
+  // Each cue draws the ring afresh.
+  const [cues, setCues] = useState(0);
+  useImperativeHandle(
+    ref,
+    () => ({
+      cue: () => {
+        input.current?.focus();
+        setCues((count) => count + 1);
+      },
+    }),
+    [],
+  );
+  return (
+    <SearchLabel>
+      {cues ? <Cue key={cues} aria-hidden="true" /> : null}
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="M20 20l-3.5-3.5" />
+      </svg>
+      <SearchWidth>
+        <span aria-hidden="true">{props.placeholder}</span>
+        <input type="search" ref={input} {...props} />
+      </SearchWidth>
+    </SearchLabel>
+  );
+});

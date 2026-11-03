@@ -15,12 +15,15 @@ import {
   getHostKeyboardLayout,
 } from 'src/store/settingsSlice';
 import type {IKeycode, IKeycodeMenu} from 'src/utils/key';
+import {typedModifierProblem} from 'src/utils/advanced-keys';
 import {keymapExtras} from 'src/utils/keymap-extras';
 import {
+  correctTypedKeycode,
   formatKeycodeHex,
   formatKeycodeLabel,
   parseKeycodeInput,
   selectKeycodeFromMenuCode,
+  typedAsAscii,
 } from 'src/utils/keycode-picker';
 import {
   KEYCODE_DISABLED_MESSAGES,
@@ -58,12 +61,15 @@ import {
 import {
   Announcement,
   Code,
+  Cue,
   Hint,
+  HoldTabName,
   Panel,
   SearchField,
   Section,
   SectionLabel,
   Spacer,
+  TAB_CUE_INSET,
   Tab,
   TabRow,
   TextAction,
@@ -73,6 +79,7 @@ import {
   muted,
   strong,
   surface,
+  type SearchCue,
 } from './palette-parts';
 import {HoldChoices, TappingFooter, readHeldKey} from './hold-control';
 import {TapKeyPicker} from './tap-key-picker';
@@ -89,7 +96,7 @@ import type {TapDanceBinding} from './use-tap-dance';
 
 const TAP_DANCE_CATEGORY = 'tapdance';
 const MACRO_CATEGORY = 'macro';
-/** KEYMAP's LT·MT tab, before Tap Dance: not a menu of keys but a key's hold. */
+/** KEYMAP's LT·MT·LM tab, before Tap Dance: not a menu of keys but a key's hold. */
 export const LTMT_CATEGORY = 'ltmt';
 
 const Root = styled.div`
@@ -169,7 +176,7 @@ const KeyRow = styled.div`
 `;
 
 // The way from the Macro tab to the Macros menu, under its keys: one quiet word
-// button, as the LT·MT tab's "TAPPING settings" reads.
+// button, as the LT·MT·LM tab's "TAPPING settings" reads.
 const LinkLine = styled.div`
   display: flex;
   margin-top: -8px;
@@ -250,6 +257,11 @@ type KeycodePaletteProps = {
   byteToKey: Record<number, string>;
   /** Null when nothing is selected yet; picks then only explain that. */
   target: PaletteTarget | null;
+  /**
+   * KEYMAP only: which keyboard key the target is, its layer and position, so a
+   * newly selected key with a hold on it can show where the hold is.
+   */
+  selection?: string | null;
   /** `stay` keeps the target where it is instead of moving on (fast remap). */
   onAssign: (value: number, options?: {stay?: boolean}) => void;
   layerCount: number;
@@ -288,6 +300,7 @@ export const KeycodePalette = ({
   basicKeyToByte,
   byteToKey,
   target,
+  selection = null,
   onAssign,
   layerCount,
   tapDance = null,
@@ -313,6 +326,10 @@ export const KeycodePalette = ({
   // A Tap Dance is edited in one window with its keys; focus goes back to the
   // control it was opened from.
   const editorReturn = useRef<HTMLElement | null>(null);
+  // The search boxes the Any key sends focus to: KEYMAP's, and that of a window of
+  // keys over it, which has its own.
+  const keymapSearch = useRef<SearchCue>(null);
+  const windowSearch = useRef<SearchCue>(null);
   // A key put in a Tap Dance action moves on to the next action, as a key put on
   // the keyboard moves on to the next key, unless fast remap is off.
   const disableFastRemap = useAppSelector(getDisableFastRemap);
@@ -686,6 +703,29 @@ export const KeycodePalette = ({
     editingIndex,
   ]);
 
+  // A target with a hold the LT·MT·LM tab lights, a Layer-Tap, Mod-Tap or
+  // Layer-Mod, shows where that hold is: the tab draws the ring the Any key draws
+  // around the search box, as a KEYMAP key with one is selected, unless the tab is
+  // open already, and as a window of keys opens on a value with one. A key put in
+  // from the list keeps an LT or MT hold, and that tab is where it comes off.
+  const targetHold = readHeldKey(
+    target?.value ?? null,
+    index,
+    basicKeyToByte,
+  )?.kind;
+  const cueHold =
+    targetHold === 'LT' || targetHold === 'MT' || targetHold === 'LM';
+  const [holdCue, setHoldCue] = useState(0);
+  useEffect(() => {
+    if (
+      selection !== null &&
+      cueHold &&
+      !(category === LTMT_CATEGORY && !trimmedQuery)
+    ) {
+      setHoldCue((count) => count + 1);
+    }
+  }, [selection]);
+
   // ------------------------------------------------------------ rendering
   // `afterPick` follows a pick that took, as the tap key window closes on one.
   const renderKey = (key: PaletteKey, afterPick?: () => void) => {
@@ -730,6 +770,22 @@ export const KeycodePalette = ({
             aria-hidden="true"
             style={{width: keyWidth(item.units), flexShrink: 0}}
           />
+        ) : item.kind === 'any' ? (
+          // Stock VIA's Any opens a window to type a keycode in. The search box
+          // here takes any keycode itself, so Any sends focus to it: KEYMAP's, or
+          // that of the window the keys are in. Any is no keycode, so the corner
+          // keeps to the selected key.
+          <Keycap
+            key="any"
+            legend={item.legend}
+            width={keyWidth(1)}
+            colors={colors.mod}
+            ariaLabel={t('Any: enter a keycode in the search box')}
+            onPick={() =>
+              (popup || editing ? windowSearch : keymapSearch).current?.cue()
+            }
+            onHover={() => setHover(null)}
+          />
         ) : (
           renderKey(item, afterPick)
         ),
@@ -743,44 +799,215 @@ export const KeycodePalette = ({
     ? searchPalette(offered, trimmedQuery, layout)
     : [];
   // A search that reads as a keycode ("LT(1,KC_SPC)", "0x412C") can be put in as
-  // typed. It is offered first, unless a key found by the search already is it.
-  const typedValue =
-    trimmedQuery && looksLikeKeycode(trimmedQuery)
-      ? parseKeycodeInput(trimmedQuery, basicKeyToByte)
+  // typed, in KEYMAP's box and in a window's alike: Enter puts it in, and a box
+  // offering it comes first, unless a key the search found already is it. Put in,
+  // it leaves the search box empty. What typing slips leave out or swap is put
+  // right before it is read (correctTypedKeycode), and the box shows the code as
+  // it goes in.
+  // A code whose modifiers would be written other than typed (left and right
+  // together, or a right-hand LM before protocol 11, which keeps no hand) is
+  // offered refused, with the reason.
+  const typedCode = (text: string) =>
+    correctTypedKeycode(text, basicKeyToByte);
+  const refusalOf = (code: string) =>
+    typedModifierProblem(code, basicKeyToByte);
+  const typedOf = (text: string) => {
+    const code = typedCode(text);
+    return looksLikeKeycode(code) && !refusalOf(code)
+      ? parseKeycodeInput(code, basicKeyToByte)
       : null;
-  const typedCode =
-    typedValue !== null &&
-    !hits.some(({keys}) =>
-      keys.some(
-        (key) =>
-          selectKeycodeFromMenuCode(key.keycode.code, basicKeyToByte) ===
-          typedValue,
-      ),
-    )
-      ? typedValue
-      : null;
-  const typedDisabledReason = pickerDisabledReason(typedCode);
-  const putTyped = (value: number | null) => {
+  };
+  const putTyped = (value: number | null, clear: () => void) => {
     if (pickValue(value)) {
-      setQuery('');
+      clear();
+    }
+  };
+  const enterTyped = (text: string, clear: () => void) => {
+    if (canPut) {
+      putTyped(typedOf(text), clear);
     }
   };
 
-  // Asked for by name, LT·MT comes first in the results: the way to its tab.
+  // Asked for by name, LT·MT·LM comes first in the results: the way to its tab. A
+  // name typed with the Korean input method still on counts as well: ㅣㅡ is LM.
   const squash = (text: string) => text.toLowerCase().replace(/[\s-]+/g, '');
-  const ltmtAsked = [
+  const holdNames = [
     'lt',
     'mt',
+    'lm',
     'lt·mt',
+    'lt·mt·lm',
     'layertap',
     'modtap',
+    'layermod',
     'hold',
     t('Layer-Tap'),
     t('Mod-Tap'),
+    t('Layer-Mod'),
     t('Hold'),
-  ]
-    .map(squash)
-    .includes(squash(trimmedQuery));
+  ].map(squash);
+  const asksForHold = (text: string) =>
+    [text, typedAsAscii(text)].some((words) =>
+      holdNames.includes(squash(words)),
+    );
+
+  // One box offers a typed code and the way to LT·MT·LM alike: a name over a
+  // line of detail, what stands in the way, and the button that acts on it. Its
+  // lines keep one height in every font, so the box does not move as a code
+  // typed into it starts to read.
+  const typedLine = (
+    name: ReactNode,
+    detail: ReactNode,
+    why: string,
+    action: ReactNode,
+  ) => (
+    <>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3,
+          lineHeight: '22px',
+        }}
+      >
+        {name}
+        {detail}
+      </div>
+      {why ? <Hint>{why}</Hint> : null}
+      <Spacer />
+      {action}
+    </>
+  );
+  // A line laid unseen under the one shown, `room`, keeps the box as tall as that
+  // line makes it: where the way to LT·MT·LM wraps its explanation, the code it
+  // turns into does not shrink the box.
+  const typedRow = {
+    gridArea: '1 / 1',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 14,
+  } as const;
+  const typedBox = (label: string, line: ReactNode, room?: ReactNode) => (
+    <Panel aria-label={label} style={{display: 'grid'}}>
+      <div style={typedRow}>{line}</div>
+      {room ? (
+        <div aria-hidden="true" style={{...typedRow, visibility: 'hidden'}}>
+          {room}
+        </div>
+      ) : null}
+    </Panel>
+  );
+
+  // An LT, MT or LM code keeps one box from its name to its last letter. Where a
+  // way to the LT·MT·LM tab is given (`openHold`, KEYMAP's), the box shows it for
+  // the tab's names and while such a code does not read yet; once it reads, the
+  // code takes the box, which it keeps even where a key found is it.
+  const typedOffer = (
+    text: string,
+    found: PaletteKey[],
+    clear: () => void,
+    openHold?: () => void,
+  ): ReactNode => {
+    const code = typedCode(text);
+    const refused = refusalOf(code);
+    const value = typedOf(text);
+    const hold = /^(LT|MT|LM)(?![A-Z_])/.test(code);
+    // The way to the LT·MT·LM tab. The tab's name reads as the tab and its button
+    // write it, not as code.
+    const holdLine = (button: ReactNode) =>
+      typedLine(
+        <span style={{fontSize: 17, fontWeight: 400, color: strong}}>
+          {t('LT·MT·LM')}
+        </span>,
+        <Hint>
+          {t(
+            'A Layer-Tap (LT) or Mod-Tap (MT) is a hold put on the selected key; a Layer-Mod (LM) is one put on a modifier key.',
+          )}
+        </Hint>,
+        '',
+        button,
+      );
+    if (
+      openHold &&
+      (asksForHold(text) || (hold && value === null && !refused))
+    ) {
+      return typedBox(
+        t('LT·MT·LM'),
+        // One word, as the links to TAPPING and Macros settings end; the box's
+        // name says where it goes, and a screen reader hears both.
+        holdLine(
+          <PrimaryAccentButton
+            type="button"
+            aria-label={t('{{menu}} settings', {menu: t('LT·MT·LM')})}
+            onClick={openHold}
+          >
+            {t('Settings')}
+          </PrimaryAccentButton>,
+        ),
+      );
+    }
+    if (
+      !refused &&
+      (value === null ||
+        (!hold &&
+          found.some(
+            (key) =>
+              selectKeycodeFromMenuCode(key.keycode.code, basicKeyToByte) ===
+              value,
+          )))
+    ) {
+      return null;
+    }
+    const reason = value === null ? null : pickerDisabledReason(value);
+    const why =
+      refused === 'left-hand-only'
+        ? t('This keyboard takes only left-hand modifiers.')
+        : refused === 'mixed-hands'
+          ? t('The modifiers on a key must be all left-hand or all right-hand.')
+          : reason
+            ? reasonLabel(reason)
+            : '';
+    const label =
+      value === null
+        ? code
+        : formatKeycodeLabel(value, basicKeyToByte, byteToKey);
+    const name = value === null ? '' : legendOf(value).name;
+    return typedBox(
+      t('QMK code or hex'),
+      typedLine(
+        <Code style={{fontSize: 17, color: strong}}>{label}</Code>,
+        value === null ? null : (
+          <Code style={{color: muted}}>
+            {name && name !== label
+              ? `${name} · ${formatKeycodeHex(value)}`
+              : formatKeycodeHex(value)}
+          </Code>
+        ),
+        why,
+        <PrimaryAccentButton
+          type="button"
+          disabled={!!why || !canPut}
+          aria-disabled={!!why || !canPut || undefined}
+          title={
+            why ||
+            (!canPut ? t('Select a key on the keyboard first') : undefined)
+          }
+          onClick={() => putTyped(value, clear)}
+        >
+          {t('Put in')}
+        </PrimaryAccentButton>,
+      ),
+      // An LT, MT or LM code keeps the room the way to the tab took before it.
+      openHold && hold
+        ? holdLine(
+            <PrimaryAccentButton type="button">
+              {t('Settings')}
+            </PrimaryAccentButton>,
+          )
+        : null,
+    );
+  };
+  const clearQuery = () => setQuery('');
 
   // How the keyboard tells a tap from a hold, at the foot of the LT·MT choices,
   // with the way to the menu that changes it.
@@ -816,77 +1043,19 @@ export const KeycodePalette = ({
 
   let grid: ReactNode;
   if (trimmedQuery) {
-    const typedLabel =
-      typedCode === null
-        ? ''
-        : formatKeycodeLabel(typedCode, basicKeyToByte, byteToKey);
-    const typedName = typedCode === null ? '' : legendOf(typedCode).name;
+    const offer = typedOffer(
+      trimmedQuery,
+      hits.flatMap(({keys}) => keys),
+      clearQuery,
+      () => {
+        setQuery('');
+        setCategory(LTMT_CATEGORY);
+      },
+    );
     grid = (
       <>
-        {ltmtAsked ? (
-          <Section>
-            <SectionLabel>{t('LT·MT')}</SectionLabel>
-            <Panel
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 14,
-                padding: '10px 14px',
-              }}
-            >
-              <span style={{fontSize: 17}}>
-                {t(
-                  'A Layer-Tap (LT) or Mod-Tap (MT) is a hold put on the selected key.',
-                )}
-              </span>
-              <Spacer />
-              <PrimaryAccentButton
-                type="button"
-                onClick={() => {
-                  setQuery('');
-                  setCategory(LTMT_CATEGORY);
-                }}
-              >
-                {t('Open LT·MT')}
-              </PrimaryAccentButton>
-            </Panel>
-          </Section>
-        ) : null}
-        {typedCode !== null ? (
-          <Panel
-            aria-label={t('QMK code or hex')}
-            style={{flexDirection: 'row', alignItems: 'center', gap: 14}}
-          >
-            <div style={{display: 'flex', flexDirection: 'column', gap: 3}}>
-              <Code style={{fontSize: 17, color: strong}}>{typedLabel}</Code>
-              <Code style={{color: muted}}>
-                {typedName && typedName !== typedLabel
-                  ? `${typedName} · ${formatKeycodeHex(typedCode)}`
-                  : formatKeycodeHex(typedCode)}
-              </Code>
-            </div>
-            {typedDisabledReason ? (
-              <Hint>{reasonLabel(typedDisabledReason)}</Hint>
-            ) : null}
-            <Spacer />
-            <PrimaryAccentButton
-              type="button"
-              disabled={!!typedDisabledReason || !canPut}
-              aria-disabled={!!typedDisabledReason || !canPut || undefined}
-              title={
-                typedDisabledReason
-                  ? reasonLabel(typedDisabledReason)
-                  : !canPut
-                    ? t('Select a key on the keyboard first')
-                    : undefined
-              }
-              onClick={() => putTyped(typedCode)}
-            >
-              {t('Put in')}
-            </PrimaryAccentButton>
-          </Panel>
-        ) : null}
-        {hits.length === 0 && typedCode === null && !ltmtAsked ? (
+        {offer}
+        {hits.length === 0 && !offer ? (
           <Hint style={{padding: '24px 0'}}>{t('No matches')}</Hint>
         ) : (
           hits.map(({menu, keys}) => (
@@ -967,13 +1136,13 @@ export const KeycodePalette = ({
 
   // Every enabled category stays available. Eligibility belongs to each key. A Tap
   // Dance being edited belongs to its tab, and choosing a category closes the
-  // editor as well. LT·MT is a tab of its own, before Tap Dance: the other way a
-  // key does one thing tapped and another held.
+  // editor as well. LT·MT·LM is a tab of its own, before Tap Dance: the other way
+  // a key does one thing tapped and another held.
   const tabs = menus.map((menu) => ({id: menu.id, label: t(menu.label)}));
   const tapDanceAt = tabs.findIndex((tab) => tab.id === TAP_DANCE_CATEGORY);
   tabs.splice(tapDanceAt < 0 ? tabs.length : tapDanceAt, 0, {
     id: LTMT_CATEGORY,
-    label: t('LT·MT'),
+    label: t('LT·MT·LM'),
   });
   const categoryTabs = (
     <HeaderTabs $height={64} role="group" aria-label={t('Keycode categories')}>
@@ -988,9 +1157,19 @@ export const KeycodePalette = ({
             type="button"
             $selected={selected}
             aria-pressed={selected}
+            style={
+              tab.id === LTMT_CATEGORY ? {position: 'relative'} : undefined
+            }
             onClick={() => selectCategory(tab.id)}
           >
-            {tab.label}
+            {tab.id === LTMT_CATEGORY ? (
+              <HoldTabName>{tab.label}</HoldTabName>
+            ) : (
+              tab.label
+            )}
+            {tab.id === LTMT_CATEGORY && holdCue ? (
+              <Cue key={holdCue} $inset={TAB_CUE_INSET} aria-hidden="true" />
+            ) : null}
             {tab.id === TAP_DANCE_CATEGORY && tapDancePending ? (
               <DirtyDot aria-hidden="true" />
             ) : null}
@@ -1002,6 +1181,7 @@ export const KeycodePalette = ({
 
   const search = (
     <SearchField
+      ref={keymapSearch}
       aria-label={t('Search keycodes')}
       placeholder={t('Search or enter a keycode')}
       title={t(
@@ -1012,8 +1192,8 @@ export const KeycodePalette = ({
       onKeyDown={(event) => {
         // Enter puts in whatever reads as a keycode, even a code the results also
         // show; only the Put in row keeps to codes they do not have.
-        if (event.key === 'Enter' && canPut) {
-          putTyped(typedValue);
+        if (event.key === 'Enter') {
+          enterTyped(trimmedQuery, clearQuery);
         }
       }}
     />
@@ -1088,14 +1268,17 @@ export const KeycodePalette = ({
         layout={layout}
         title={popup.title}
         searchLabel={t('Search keycodes')}
+        searchRef={windowSearch}
+        typed={{offer: typedOffer, enter: enterTyped}}
         isAllowed={() => true}
         renderRow={(row, rowIndex) => renderRow(row, rowIndex)}
         returnFocus={popup.returnFocus}
         onClose={popup.onClose}
         ltmt={{
-          label: t('LT·MT'),
+          label: <HoldTabName>{t('LT·MT·LM')}</HoldTabName>,
           content: ltmtChoices,
           before: TAP_DANCE_CATEGORY,
+          cue: cueHold,
         }}
       />
     );
@@ -1129,6 +1312,8 @@ export const KeycodePalette = ({
               layout={layout}
               title={t('Edit {{name}}', {name: view.slot.name})}
               searchLabel={t('Search keycodes')}
+              searchRef={windowSearch}
+              typed={{offer: typedOffer, enter: enterTyped}}
               isAllowed={() => true}
               renderRow={(row, rowIndex) => renderRow(row, rowIndex)}
               returnFocus={editorReturn}

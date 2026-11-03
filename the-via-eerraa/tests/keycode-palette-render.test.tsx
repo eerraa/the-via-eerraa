@@ -23,6 +23,7 @@ import {
 } from 'react-test-renderer';
 import {getByteToKey, getKeycodes} from '../src/utils/key';
 import v13BasicKeyToByte from '../src/utils/key-to-byte/v13';
+import v10BasicKeyToByte from '../src/utils/key-to-byte/v10';
 import {
   buildEnabledKeycodeMenus,
   menusWithTapDanceKeycodes,
@@ -334,9 +335,14 @@ const corner = (root: ReactTestInstance) =>
 const hover = (root: ReactTestInstance, label: string) =>
   act(() => button(root, label).props.onMouseEnter());
 
-// The LT·MT tab's rows of choices, each a group a screen reader names: by their
+// The LT·MT·LM tab's rows of choices, each a group a screen reader names: by their
 // English names unless others are given.
-const LTMT_ROWS = ['Layer-Tap (LT)', 'Mod-Tap (MT)', 'Modifier combo'];
+const LTMT_ROWS = [
+  'Layer-Tap (LT)',
+  'Layer-Mod (LM)',
+  'Mod-Tap (MT)',
+  'Modifier combo',
+];
 const ltmtRows = (root: ReactTestInstance, names = LTMT_ROWS) =>
   root.findAll(
     (node) =>
@@ -373,6 +379,25 @@ const holdName = (root: ReactTestInstance) => {
     ),
   );
 };
+// A row's help: the ⓘ beside its name, named for the row, and the paragraphs it
+// opens.
+const rowHelp = (root: ReactTestInstance, row: string) => {
+  const toggle = button(root, `What this means: ${row}`);
+  const body = root.find(
+    (node) =>
+      typeof node.type === 'string' &&
+      node.props.id === toggle.props['aria-controls'],
+  );
+  return {
+    open: toggle.props['aria-expanded'] === true && !body.props.hidden,
+    paragraphs: body.findAll((node) => node.type === 'span').map(textOf),
+  };
+};
+// The tab's lines of its own, outside its rows and their help.
+const notes = (root: ReactTestInstance) =>
+  grid(root)
+    .findAll((node) => node.type === 'p')
+    .map(textOf);
 
 // A Tap Dance is edited in a window over the page, its editor above the keys.
 const dialogs = (root: ReactTestInstance) =>
@@ -609,7 +634,7 @@ describe('the palette', () => {
     const html = markup({menus: menusOf(stock)});
     expect(html).not.toContain('Tap Dance');
     expect(html).not.toMatch(/TD\d/);
-    expect(html).toContain('>LT·MT</button>');
+    expect(html).toContain('>LT·MT·LM</span></button>');
     expect(menusOf(definition).map((menu) => menu.id)).toContain('tapdance');
   });
 
@@ -638,7 +663,7 @@ describe('the palette', () => {
   });
 
   // What the palette draws itself reads in the app's language, as the tabs beside
-  // it do, and a search finds LT·MT by its names in that language.
+  // it do, and a search finds LT·MT·LM by its names in that language.
   test('reads in the app’s language', async () => {
     const ko = i18n.createInstance();
     await ko.init({
@@ -674,14 +699,19 @@ describe('the palette', () => {
       buttons(root, (node) => node.props['aria-label'] === 'TD0 동작 편집')
         .length,
     ).toBe(1);
-    for (const words of ['레이어 탭', '모드탭']) {
+    for (const words of ['레이어 탭', '모드탭', '레이어 모드']) {
       type(root, words);
       expect({
         words,
-        found: buttons(root, (node) => textOf(node) === 'LT·MT 열기').length,
+        found: buttons(
+          root,
+          (node) =>
+            node.props['aria-label'] === 'LT·MT·LM 설정' &&
+            textOf(node) === '설정',
+        ).length,
       }).toEqual({words, found: 1});
     }
-    click(button(root, 'LT·MT 열기'));
+    click(button(root, 'LT·MT·LM 설정'));
     expect(holdName(root)).toBe('A 키를 누르고 있으면');
     const rows = ['레이어 탭 (LT)', '모드 탭 (MT)', '수식 키 조합'];
     expect(ltmtRows(root, rows).map((row) => row.props['aria-label'])).toEqual(
@@ -730,6 +760,12 @@ describe('picking and putting in', () => {
       ['blank', LT1_A, typed('KC_NO'), 0],
       ['pass-through', LT1_A, typed('KC_TRNS'), 1],
       ['another hold', LT1_A, typed('LT(2,KC_D)'), 0x4207],
+      [
+        'a Layer-Mod of several modifiers, which only typing makes',
+        0x04,
+        typed('LM(2,MOD_LCTL|MOD_LSFT)'),
+        0x5043,
+      ],
     ];
     for (const [what, value, how, put, hold] of cases) {
       const {root, puts} = mountPalette({target: {...SELECTED, value}});
@@ -762,9 +798,9 @@ describe('picking and putting in', () => {
     enter(root);
     expect(puts).toEqual([{value: 0x4204, stay: false}]);
 
-    // The LT·MT tab says why in place of its choices: blank sends nothing for a
+    // The LT·MT·LM tab says why in place of its choices: blank sends nothing for a
     // tap, and a layer key is no tap key.
-    click(tab(root, 'LT·MT'));
+    click(tab(root, 'LT·MT·LM'));
     for (const [value, says] of [
       [null, SELECT],
       [0x00, 'Choose a tap key first'],
@@ -782,14 +818,14 @@ describe('picking and putting in', () => {
     expect(puts.at(-1)).toEqual({value: 0x4104, stay: true});
   });
 
-  // LT·MT is a tab of its own, which a search by name leads to. Every choice is a
-  // toggle that writes the selected key at once and keeps it selected: a layer is
+  // LT·MT·LM is a tab of its own, which a search by name leads to. Every choice is
+  // a toggle that writes the selected key at once and keeps it selected: a layer is
   // one of its row and modifiers add up within theirs, a choice in another row
   // takes the place of what was on, and pressed again what is on comes off.
-  test('LT·MT puts a layer or modifiers on the selected key, and a second press takes each off', () => {
+  test('LT·MT·LM puts a layer or modifiers on the selected key, and a second press takes each off', () => {
     const {root, puts, update} = mountPalette();
     type(root, 'mod-tap');
-    click(button(root, 'Open LT·MT'));
+    click(button(root, 'LT·MT·LM settings'));
     expect(search(root).props.value).toBe('');
     expect(holdName(root)).toBe('While A is held');
     const press = (row: string, label: string) => {
@@ -865,6 +901,345 @@ describe('picking and putting in', () => {
     // Another category brings the keys back.
     click(tab(root, 'Layers'));
     expect(ltmtRows(root).length).toBe(0);
+  });
+
+  // On a modifier key LT·MT·LM also has a Layer-Mod row: Layer-Tap's layers, each
+  // turning its layer on with the key's own modifier held, on its hand, where a
+  // Layer-Tap turns on only the layer, as the row's help says. Any other key asks
+  // in the row's place for a key with a modifier on it. A Layer-Mod of several
+  // modifiers is typed, not built: no hold goes on it, and it stays as it is.
+  test('a modifier key also takes a Layer-Mod: its layer with that modifier held, on its hand', () => {
+    const {root, puts, update} = mountPalette({
+      target: {...SELECTED, value: 0xe2},
+    });
+    // Asked for by name, LM leads to LT·MT·LM as LT and MT do.
+    for (const words of ['lm', 'Layer-Mod']) {
+      type(root, words);
+      expect({
+        words,
+        found: buttons(
+          root,
+          (node) => node.props['aria-label'] === 'LT·MT·LM settings',
+        ).length,
+      }).toEqual({words, found: 1});
+    }
+    click(button(root, 'LT·MT·LM settings'));
+    expect(holdName(root)).toBe('While Left Alt is held');
+    expect(ltmtRows(root).map((row) => row.props['aria-label'])).toEqual(
+      LTMT_ROWS,
+    );
+    expect(
+      ltmtRows(root, ['Layer-Mod (LM)'])[0]
+        .findAll((node) => node.type === 'button')
+        .map(textOf),
+    ).toEqual(['1', '2', '3']);
+    // The rows carry no lines of their own: each name opens what its row does, as
+    // a Configure menu's help opens, folded until it is asked for.
+    const LM_HELP = [
+      'Held, it turns the layer on with this modifier held.',
+      'For example, with layer 2 on Alt and F4 where 4 is on layer 2, Alt+4 sends Alt+F4.',
+    ];
+    expect(notes(root)).toEqual([]);
+    expect(LTMT_ROWS.map((row) => rowHelp(root, row).open)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    click(button(root, 'What this means: Layer-Mod (LM)'));
+    expect(rowHelp(root, 'Layer-Mod (LM)')).toEqual({
+      open: true,
+      paragraphs: LM_HELP,
+    });
+    const press = (row: string, label: string) => {
+      click(ltmtChoice(root, row, label));
+      // The keyboard takes the key.
+      update({target: {...SELECTED, value: puts.at(-1)!.value}});
+      return ltmtPressed(root);
+    };
+    expect(press('Layer-Tap (LT)', '2')).toEqual(['Layer-Tap (LT): 2']);
+    expect(press('Layer-Mod (LM)', '2')).toEqual(['Layer-Mod (LM): 2']);
+    expect(press('Layer-Mod (LM)', '3')).toEqual(['Layer-Mod (LM): 3']);
+    expect(press('Layer-Mod (LM)', '3')).toEqual([]);
+    // LT(2,KC_LALT), LM(2,MOD_LALT), LM(3,MOD_LALT), then Left Alt alone.
+    expect(puts).toEqual(
+      [0x42e2, 0x5044, 0x5064, 0xe2].map((value) => ({value, stay: true})),
+    );
+
+    // Right Alt holds the right-hand Alt and reads back as it was put. LM(0,
+    // MOD_LALT) holds layer 0, which the row leaves out: it gets a lit choice of
+    // its own, which leaves Left Alt alone.
+    update({target: {...SELECTED, value: 0xe6}});
+    expect(press('Layer-Mod (LM)', '1')).toEqual(['Layer-Mod (LM): 1']);
+    expect(puts.at(-1)).toEqual({value: 0x5034, stay: true});
+    expect(holdName(root)).toBe('While Right Alt is held');
+    update({target: {...SELECTED, value: 0x5004}});
+    expect(ltmtPressed(root)).toEqual(['Layer-Mod (LM): 0']);
+    click(ltmtChoice(root, 'Layer-Mod (LM)', '0'));
+    expect(puts.at(-1)).toEqual({value: 0xe2, stay: true});
+
+    // A key that is no modifier has no Layer-Mod row; in its place, under the
+    // row's name and help, the tab asks for a key with a modifier on it.
+    update({target: SELECTED});
+    expect(ltmtRows(root).map((row) => row.props['aria-label'])).toEqual([
+      'Layer-Tap (LT)',
+      'Mod-Tap (MT)',
+      'Modifier combo',
+    ]);
+    expect(rowHelp(root, 'Layer-Mod (LM)').paragraphs).toEqual(LM_HELP);
+    expect(notes(root)).toEqual([
+      'Select a key on the keyboard mapped to a modifier (Ctrl, Shift, Alt or Win)',
+    ]);
+    // LM(2,MOD_LCTL|MOD_LSFT) takes no hold: the tab says why, nothing is put,
+    // and the corner names it by its code.
+    const count = puts.length;
+    update({target: {...SELECTED, value: 0x5043}});
+    expect(statuses(root)).toEqual(['LT·MT tap keys must be basic keycodes.']);
+    expect(ltmtRows(root).length).toBe(0);
+    expect(puts.length).toBe(count);
+    expect(corner(root)).toEqual(['LM(2,MOD_LCTL | MOD_LSFT)', '0x5043']);
+
+    // Before protocol 11 an LM has no hand, so Right Alt gets no row there, and
+    // the tab asks for a left-hand modifier.
+    const old = mount(
+      palette({
+        basicKeyToByte: v10BasicKeyToByte,
+        byteToKey: getByteToKey(v10BasicKeyToByte),
+        target: {...SELECTED, value: 0xe6},
+      }),
+    );
+    click(tab(old, 'LT·MT·LM'));
+    expect(holdName(old)).toBe('While Right Alt is held');
+    expect(ltmtRows(old).map((row) => row.props['aria-label'])).toEqual([
+      'Layer-Tap (LT)',
+      'Mod-Tap (MT)',
+      'Modifier combo',
+    ]);
+    expect(notes(old)).toEqual([
+      'Select a key on the keyboard mapped to a left-hand modifier (Ctrl, Shift, Alt or Win)',
+    ]);
+  });
+
+  // Before protocol 11 an LM keeps no hand: a right-hand one typed, however it is
+  // spaced or mixed with left-hand modifiers, is offered as the code it reads as,
+  // with the reason, and goes in neither by its button nor by Enter, where QMK
+  // would write its left-hand twin; a left-hand one goes in as typed.
+  test('before protocol 11 a typed right-hand Layer-Mod is refused with the reason', () => {
+    const {root, puts} = mountPalette({
+      basicKeyToByte: v10BasicKeyToByte,
+      byteToKey: getByteToKey(v10BasicKeyToByte),
+    });
+    const offer = () =>
+      root.find(
+        (node) =>
+          node.type === 'section' &&
+          node.props['aria-label'] === 'QMK code or hex',
+      );
+    for (const [typed, code] of [
+      ['LM(2,MOD_RALT)', 'LM(2,MOD_RALT)'],
+      ['LM (2, MOD_RALT)', 'LM(2,MOD_RALT)'],
+      ['lm(2,mod_lctl | mod_ralt)', 'LM(2,MOD_LCTL|MOD_RALT)'],
+    ]) {
+      type(root, typed);
+      expect({
+        typed,
+        shown: textOf(offer()).includes(code),
+        why: textOf(offer()).includes(
+          'This keyboard takes only left-hand modifiers.',
+        ),
+        off: button(offer(), 'Put in').props.disabled,
+      }).toEqual({typed, shown: true, why: true, off: true});
+      enter(root);
+      expect({typed, puts}).toEqual({typed, puts: []});
+    }
+    type(root, 'LM(2,MOD_LALT)');
+    enter(root);
+    expect(puts).toEqual([{value: 0x5924, stay: false}]);
+  });
+
+  // A key's modifiers share one hand bit, so left- and right-hand ones typed
+  // together would all be written on the right: whichever code names them, it is
+  // offered with the reason and goes in neither by its button nor by Enter, and
+  // modifiers of one hand go in as typed. A code the decoder does not read has
+  // no modifiers to tell apart, so it gets no such reason.
+  test('a typed code mixing left- and right-hand modifiers is refused with the reason', () => {
+    const {root, puts} = mountPalette();
+    const offer = () =>
+      root.find(
+        (node) =>
+          node.type === 'section' &&
+          node.props['aria-label'] === 'QMK code or hex',
+      );
+    for (const [typed, code] of [
+      ['MT(MOD_LCTL|MOD_RALT,KC_A)', 'MT(MOD_LCTL|MOD_RALT,KC_A)'],
+      ['osm(mod_lsft | mod_rctl)', 'OSM(MOD_LSFT|MOD_RCTL)'],
+      ['LM(2,MOD_LCTL|MOD_RALT)', 'LM(2,MOD_LCTL|MOD_RALT)'],
+      ['lctl(ralt(a', 'LCTL(RALT(KC_A))'],
+    ]) {
+      type(root, typed);
+      expect({
+        typed,
+        shown: textOf(offer()).includes(code),
+        why: textOf(offer()).includes(
+          'The modifiers on a key must be all left-hand or all right-hand.',
+        ),
+        off: button(offer(), 'Put in').props.disabled,
+      }).toEqual({typed, shown: true, why: true, off: true});
+      enter(root);
+      expect({typed, puts}).toEqual({typed, puts: []});
+    }
+    for (const typed of [
+      'MT(MOD_LCTL|MOD_RALT,KC_NOTREAL)',
+      'LCTL(RALT(KC_NOTREAL))',
+    ]) {
+      type(root, typed);
+      expect({
+        typed,
+        offered: root.findAll(
+          (node) =>
+            node.type === 'section' &&
+            node.props['aria-label'] === 'QMK code or hex',
+        ).length,
+      }).toEqual({typed, offered: 0});
+    }
+    type(root, 'MT(MOD_RCTL|MOD_RALT,KC_A)');
+    enter(root);
+    expect(puts).toEqual([{value: 0x3504, stay: false}]);
+  });
+
+  // A code typed with slips goes in as meant: a bracket left open, a space for a
+  // bracket or a comma, MOD_ or KC_ left off, the Korean input method left on. An
+  // LT, MT or LM code keeps one box from its name to its last letter: the box the
+  // tab's names bring up, with the way to LT·MT·LM, stays while the code does not
+  // read, and the code takes it once it does, even where a key found is it.
+  test('a code typed with slips goes in as meant, in one box from its name on', () => {
+    const {root, puts} = mountPalette();
+    const box = () => {
+      const boxes = root.findAll(
+        (node) =>
+          node.type === 'section' &&
+          ['LT·MT·LM', 'QMK code or hex'].includes(node.props['aria-label']),
+      );
+      expect(boxes.length).toBe(1);
+      return boxes[0];
+    };
+    type(root, 'LM');
+    const first = box();
+    for (const typed of ['LM(', 'LM(2', 'LM 2', 'LM(2,MOD_L']) {
+      type(root, typed);
+      expect({
+        typed,
+        same: box() === first,
+        label: box().props['aria-label'],
+        open: buttons(
+          box(),
+          (node) => node.props['aria-label'] === 'LT·MT·LM settings',
+        ).length,
+        none: textOf(grid(root)).includes('No matches'),
+      }).toEqual({typed, same: true, label: 'LT·MT·LM', open: 1, none: false});
+    }
+    // The code shows in the box, which keeps, unseen, the room the explanation
+    // took, so a wrapped explanation does not leave it shorter.
+    type(root, 'LM(2,MOD_LALT');
+    expect({
+      same: box() === first,
+      label: box().props['aria-label'],
+      text: spoken(box()),
+      room: textOf(box()).includes(
+        'A Layer-Tap (LT) or Mod-Tap (MT) is a hold put on the selected key',
+      ),
+    }).toEqual({
+      same: true,
+      label: 'QMK code or hex',
+      text: 'LM(2,MOD_LALT)0x5044Put in',
+      room: true,
+    });
+
+    for (const [typed, value] of [
+      ['LM(2,MOD_LALT', 0x5044],
+      ['LM 2,MOD_LALT', 0x5044],
+      ['lm(2, lalt)', 0x5044],
+      ['ㅣㅡ(2,ㅡㅐㅇ_ㅣ밋', 0x5044],
+      ['lt 1 a', 0x4104],
+      ['MT(ctrl,esc', 0x2129],
+    ] as const) {
+      type(root, typed);
+      enter(root);
+      expect({typed, put: puts.at(-1)}).toEqual({
+        typed,
+        put: {value, stay: false},
+      });
+    }
+
+    // LT(1,KC_SPC) is a key the search finds as well, and the box stays.
+    type(root, 'LT(1,KC_SPC)');
+    expect({
+      label: box().props['aria-label'],
+      found: buttons(
+        grid(root),
+        (node) => node.props['aria-label'] === 'Hold = Layer 1, Tap = Space',
+      ).length,
+    }).toEqual({label: 'QMK code or hex', found: 1});
+  });
+
+  // A key with a hold on it is put in from the list as what a tap sends, the hold
+  // kept, so it shows where the hold is as it is selected: the LT·MT·LM tab draws
+  // the ring Any draws around the search box, afresh for each key selected with a
+  // hold the tab lights, and not while the tab is open.
+  test('a newly selected key with a hold on it rings the LT·MT·LM tab', () => {
+    const ring = (root: ReactTestInstance) =>
+      tab(root, 'LT·MT·LM').findAll(
+        (node) => node.type === 'span' && node.props['aria-hidden'] === 'true',
+      );
+    const {root, update} = mountPalette({selection: '0:0'});
+    expect(ring(root).length).toBe(0);
+    // LT(1,KC_A).
+    update({selection: '0:1', target: {...SELECTED, value: 0x4104}});
+    const [lt] = ring(root);
+    expect(ring(root).length).toBe(1);
+    // A pick on the same key keeps the ring as it was.
+    update({target: {...SELECTED, value: 0x4105}});
+    expect(ring(root)[0] === lt).toBe(true);
+    // MT(MOD_LCTL,KC_A), then LM(2,MOD_LALT) on another layer: each draws it afresh.
+    update({selection: '0:2', target: {...SELECTED, value: 0x2104}});
+    const [mt] = ring(root);
+    expect(mt === lt).toBe(false);
+    update({selection: '1:2', target: {...SELECTED, value: 0x5044}});
+    const [lm] = ring(root);
+    expect(lm === mt).toBe(false);
+    // A plain key, a modifier combo and a Layer-Mod of several modifiers the tab
+    // cannot light leave it be, and so does a key selected with the tab open.
+    for (const [selection, value] of [
+      ['0:3', 0x04],
+      ['0:4', 0x0104],
+      ['0:5', 0x5043],
+    ] as const) {
+      update({selection, target: {...SELECTED, value}});
+      expect({selection, same: ring(root)[0] === lm}).toEqual({
+        selection,
+        same: true,
+      });
+    }
+    click(tab(root, 'LT·MT·LM'));
+    update({selection: '0:6', target: {...SELECTED, value: 0x4104}});
+    expect(ring(root)[0] === lm).toBe(true);
+
+    // A keycode setting's window opened on a value with a hold rings its tab once.
+    const window = (value: number) =>
+      windowOf(
+        mount(
+          palette({
+            target: {name: 'Keycode', value},
+            popup: {
+              title: 'Keycode',
+              onClose: () => undefined,
+              returnFocus: {current: null},
+            },
+          }),
+        ),
+      );
+    expect(ring(window(0x04)).length).toBe(0);
+    expect(ring(window(0x4104)).length).toBe(1);
   });
 
   // The corner describes the key under the pointer only while it is there: the
@@ -2385,6 +2760,104 @@ describe('keyboard focus', () => {
       await shut(root);
       expect({way, closed: focused?.name}).toEqual({way, closed: 'Edit TD1'});
     }
+  });
+});
+
+// Stock VIA's Any is the first key of Special. It opens nothing of its own: focus
+// goes to the search box the keys are under, KEYMAP's or a window's, which takes a
+// keycode as typed, and nothing is put until one is.
+describe('the Any key', () => {
+  const special = getKeycodes().find((menu) => menu.id === 'special')!;
+  const ANY = 'Any: enter a keycode in the search box';
+  const made: Focusable[] = [];
+  const mountWithFocus = (
+    props: Props,
+    onAssign: Props['onAssign'] = () => undefined,
+  ) => {
+    made.length = 0;
+    return mount(palette({menus: [...baseMenus, special], ...props}, onAssign), {
+      createNodeMock: (element) => {
+        const node: Focusable = {
+          name: element.props['aria-label'] ?? '',
+          focus: () => {
+            focused = node;
+          },
+        };
+        made.push(node);
+        return node;
+      },
+    });
+  };
+  // The search box made last: a window's, once one is open over KEYMAP.
+  const searchBox = () =>
+    made.filter((node) => node.name === 'Search keycodes').at(-1);
+
+  test('in KEYMAP it comes first in Special and sends focus to the search box', () => {
+    const puts: number[] = [];
+    const root = mountWithFocus({}, (value) => puts.push(value));
+    click(tab(root, 'Special'));
+    const [first] = buttons(
+      grid(root),
+      (node) => typeof node.props['aria-label'] === 'string',
+    );
+    expect([
+      first.props['aria-label'],
+      textOf(first.findAll((node) => node.type === 'span')[0]),
+    ]).toEqual([ANY, 'Any']);
+    click(button(root, ANY));
+    expect(focused === searchBox()).toBe(true);
+    expect(puts).toEqual([]);
+    type(root, 'LM(2,MOD_LALT)');
+    enter(root);
+    expect(puts).toEqual([0x5044]);
+  });
+
+  test('in a keycode setting’s window it sends focus to the window’s search box, which takes a code as typed', () => {
+    const puts: number[] = [];
+    const root = mountWithFocus(
+      {
+        target: {name: 'Keycode', value: 0xe2},
+        popup: {
+          title: 'Keycode',
+          onClose: () => undefined,
+          returnFocus: {current: null},
+        },
+      },
+      (value) => puts.push(value),
+    );
+    // Its LT·MT·LM tab has the Layer-Mod row for a modifier key, as KEYMAP's has.
+    click(tab(windowOf(root), 'LT·MT·LM'));
+    expect(ltmtRows(root).map((row) => row.props['aria-label'])).toEqual(
+      LTMT_ROWS,
+    );
+    click(tab(windowOf(root), 'Special'));
+    click(button(windowOf(root), ANY));
+    expect(focused === searchBox()).toBe(true);
+    expect(search(windowOf(root)).props.placeholder).toBe(
+      'Search or enter a keycode',
+    );
+    type(windowOf(root), 'LM(1,MOD_RALT)');
+    click(button(windowOf(root), 'Put in'));
+    expect(puts).toEqual([0x5034]);
+  });
+
+  test('in a Tap Dance action’s window it sends focus to that window’s search box, and the window has no Layer-Mod row', () => {
+    const root = mountWithFocus({tapDance: tapDance()});
+    click(tab(root, 'Tap Dance'));
+    click(button(root, 'Edit TD0'));
+    // On Hold holds Left Ctrl, yet its Modifiers tab has the combo row alone.
+    click(slotButton(root, 'On Hold'));
+    click(tab(windowOf(root), 'Modifiers'));
+    expect(ltmtRows(root).map((row) => row.props['aria-label'])).toEqual([
+      'Modifier combo',
+    ]);
+    click(tab(windowOf(root), 'Special'));
+    click(button(windowOf(root), ANY));
+    expect(focused === searchBox()).toBe(true);
+    type(windowOf(root), 'LM(1,MOD_LALT)');
+    click(button(windowOf(root), 'Put in'));
+    expect(textOf(slotButton(root, 'On Hold'))).toBe('Alt+L1On Hold');
+    expect(search(windowOf(root)).props.value).toBe('');
   });
 });
 

@@ -11,8 +11,10 @@ import {
   composeModifiers,
   formatKeycodeLabel,
   keycodeMatchesQuery,
+  parseKeycodeInput,
   selectKeycodeFromMenuCode,
 } from './keycode-picker';
+import {layerModParts} from './advanced-keys';
 import {getTapDanceKeycodes, type EraTapDanceKeycode} from './era-definition';
 import type {KeycodeDisabledReason} from './keycode-eligibility';
 import {ERA_WIRE} from './era-wire.generated';
@@ -34,7 +36,10 @@ export type PaletteKey = {
 
 type PaletteGap = {kind: 'gap'; units: number};
 
-export type PaletteItem = PaletteKey | PaletteGap;
+/** Stock VIA's Any key: it leads to the search box, which takes any keycode. */
+type PaletteAny = {kind: 'any'; legend: KeycapLegend};
+
+export type PaletteItem = PaletteKey | PaletteGap | PaletteAny;
 
 type PaletteSection = {
   id: string;
@@ -503,6 +508,22 @@ const buildGroupedSections = (
   return sections;
 };
 
+// Stock VIA ends Special with Any, where a keycode is typed in. Here it starts the
+// category, where its users look for it first, under the name of what it takes,
+// and leads to the search box.
+const ANY_SECTION: PaletteSection = {
+  id: 'special-any',
+  label: 'QMK code or hex',
+  rows: [
+    [
+      {
+        kind: 'any',
+        legend: keycapLegend({type: 'named', code: 'ANY', name: 'Any'}),
+      },
+    ],
+  ],
+};
+
 export const buildCategorySections = (
   menu: IKeycodeMenu,
   layout?: KeycodeLUT,
@@ -512,7 +533,8 @@ export const buildCategorySections = (
   }
   const groups = CATEGORY_GROUPS[menu.id];
   if (groups) {
-    return buildGroupedSections(menu, groups, layout);
+    const sections = buildGroupedSections(menu, groups, layout);
+    return menu.id === 'special' ? [ANY_SECTION, ...sections] : sections;
   }
   return [
     {
@@ -708,7 +730,7 @@ export const keycodeTitleText = (title: string, t: TFunction): string => {
 
 // ---------------------------------------------------------------- Combined keys
 
-const COMPOSE_KINDS = ['LT', 'MT', 'MOD'] as const;
+const COMPOSE_KINDS = ['LT', 'MT', 'MOD', 'LM'] as const;
 export type ComposeKind = (typeof COMPOSE_KINDS)[number];
 export const COMPOSE_MODIFIERS = ['LCTL', 'LSFT', 'LALT', 'LGUI'] as const;
 export type ComposeModifier = (typeof COMPOSE_MODIFIERS)[number];
@@ -716,6 +738,29 @@ export type ComposeModifier = (typeof COMPOSE_MODIFIERS)[number];
 /** A modifier as the keycap legend names it: LCTL is CTL, held on either hand. */
 export const legendModifier = (modifier: ComposeModifier) =>
   modifier.slice(1) as LegendModifier;
+
+// A modifier key holds the one modifier it is named for: KC_RALT holds MOD_RALT.
+const MODIFIER_KEY = /^KC_([LR])(CTL|SFT|ALT|GUI)$/;
+
+/** Whether the key is one modifier key, Ctrl, Shift, Alt or GUI of either hand. */
+export const isModifierKey = (code: string) => MODIFIER_KEY.test(code);
+
+/**
+ * The modifier a Layer-Mod on this key holds: a modifier key's own, on its hand.
+ * Null for any other key, and for a right-hand one where the protocol's LM has no
+ * hand: before protocol 11 it keeps four mod bits.
+ */
+export const layerModModifier = (
+  code: string,
+  basicKeyToByte: Record<string, number>,
+): {modifier: ComposeModifier; right: boolean} | null => {
+  const key = MODIFIER_KEY.exec(code);
+  const right = key?.[1] === 'R';
+  if (!key || (right && !(basicKeyToByte._QK_LAYER_MOD_MASK & 0x10))) {
+    return null;
+  }
+  return {modifier: `L${key[2]}` as ComposeModifier, right};
+};
 
 /** The part of a Basic legend a tap sends: "1" of "!\n1", all of "Esc". */
 export const tapLegend = (name: string) =>
@@ -744,6 +789,7 @@ export const buildComposeResult = (
   const named = ordered.map((modifier) =>
     right ? modifier.replace(/^L/, 'R') : modifier,
   );
+  const mods = named.map((modifier) => `MOD_${modifier}`).join('|');
   const base = tap?.code ?? 'kc';
   if (kind === 'LT') {
     return {
@@ -751,8 +797,18 @@ export const buildComposeResult = (
       code: `LT(${layer},${base})`,
     };
   }
+  // A Layer-Mod takes no tap key: its key is the modifier key it is on, whose
+  // modifier it holds with the layer.
+  if (kind === 'LM') {
+    return {
+      value:
+        tap && ordered.length
+          ? parseKeycodeInput(`LM(${layer},${mods})`, basicKeyToByte)
+          : null,
+      code: `LM(${layer},${mods || 'mods'})`,
+    };
+  }
   if (kind === 'MT') {
-    const mods = named.map((modifier) => `MOD_${modifier}`).join('|');
     return {
       value:
         tap && ordered.length
@@ -773,9 +829,10 @@ export const buildComposeResult = (
   };
 };
 
-/** A Layer-Tap, Mod-Tap or modified key's parts, as the builder takes them. */
+/** An LT·MT key's parts, as the builder takes them: Layer-Mod's too. */
 type ComposedKeycode = {
   kind: ComposeKind;
+  /** The key a tap sends; a Layer-Mod's is the modifier key it is on. */
   tap: IKeycode;
   layer: number;
   modifiers: ComposeModifier[];
@@ -797,6 +854,20 @@ export const decodeComposedKeycode = (
     modifiers: COMPOSE_MODIFIERS.filter((_, bit) => bits & (1 << bit)),
     right: (bits & 0x10) !== 0,
   });
+  // A Layer-Mod of one modifier is on the modifier key that holds it. One of
+  // several has no key to be on and stays its code.
+  const layerMod = layerModParts(value, basicKeyToByte);
+  if (layerMod) {
+    const mods = held(layerMod.mods);
+    const [modifier] = mods.modifiers;
+    const key =
+      mods.modifiers.length === 1
+        ? index.get(
+            basicKeyToByte[`KC_${mods.right ? 'R' : 'L'}${modifier.slice(1)}`],
+          )
+        : undefined;
+    return key ? {kind: 'LM', tap: key, layer: layerMod.layer, ...mods} : null;
+  }
   if (!tap) {
     return null;
   }

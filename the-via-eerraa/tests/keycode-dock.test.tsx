@@ -219,7 +219,7 @@ describe('a keycode setting’s key window', () => {
       [
         'an LT·MT choice',
         (dialog) => {
-          click(button(dialog, 'LT·MT'));
+          click(button(dialog, 'LT·MT·LM'));
           click(
             dialogs()[0]
               .find(

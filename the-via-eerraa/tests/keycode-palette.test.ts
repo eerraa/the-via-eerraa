@@ -10,14 +10,17 @@ import {
 import {selectKeycodeFromMenuCode} from '../src/utils/keycode-picker';
 import {keymapExtras} from '../src/utils/keymap-extras';
 import {readFileSync} from 'node:fs';
+import v10BasicKeyToByte from '../src/utils/key-to-byte/v10';
 import {
   buildBasicSections,
   buildCategorySections,
   buildComposeResult,
   buildKeycodeIndex,
   CATEGORY_GROUPS,
+  decodeComposedKeycode,
   describeKeycodeValue,
   editedTapDanceChanges,
+  layerModModifier,
   looksLikeKeycode,
   getTapDanceSlots,
   menuForLayerCount,
@@ -53,6 +56,28 @@ describe('keycode palette layout', () => {
     expect(new Set(placed).size).toBe(placed.length);
     // Nothing fell through to the catch-all: the layout covers today's Basic menu.
     expect(sections.map((section) => section.id)).not.toContain('other');
+  });
+
+  // Stock VIA's Any key, where its users look for it: first in Special, and in no
+  // other category.
+  test('Special starts with the Any key, and no other category has one', () => {
+    const anyKeys = (id: string) =>
+      buildCategorySections(getKeycodes().find((menu) => menu.id === id)!)
+        .flatMap((section) => section.rows.flat())
+        .flatMap((item) => (item.kind === 'any' ? [item] : []));
+    const [first] = buildCategorySections(
+      getKeycodes().find((menu) => menu.id === 'special')!,
+    );
+    expect(first.rows.flat().map((item) => item.kind)).toEqual(['any']);
+    expect(anyKeys('special').map(({legend}) => legendText(legend))).toEqual([
+      'Any',
+    ]);
+    for (const {id} of getKeycodes()) {
+      expect({id, any: anyKeys(id).length}).toEqual({
+        id,
+        any: id === 'special' ? 1 : 0,
+      });
+    }
   });
 
   // The other long categories read as labelled groups, not one wall of keys.
@@ -432,6 +457,76 @@ describe('combined keys', () => {
     expect(
       buildComposeResult('LT', null, 2, [], v13BasicKeyToByte),
     ).toMatchObject({value: null, code: 'LT(2,kc)'});
+  });
+
+  // LM(layer, mod) packs the layer over five mod bits from protocol 11: LM(2,
+  // MOD_LALT) is 0x5044. A Layer-Mod goes on the modifier key whose modifier it
+  // holds, on that key's hand, and reads back as that key with its layer.
+  test('a Layer-Mod holds the modifier of the modifier key it is on, on its hand', () => {
+    const key = (code: string) =>
+      basicMenu.keycodes.find((keycode) => keycode.code === code)!;
+    const index = buildKeycodeIndex(getKeycodes(), v13BasicKeyToByte);
+    const byteToKey = getByteToKey(v13BasicKeyToByte);
+    expect(
+      buildComposeResult('LM', key('KC_LALT'), 2, ['LALT'], v13BasicKeyToByte),
+    ).toEqual({value: 0x5044, code: 'LM(2,MOD_LALT)'});
+    expect(
+      buildComposeResult(
+        'LM',
+        key('KC_RALT'),
+        1,
+        ['LALT'],
+        v13BasicKeyToByte,
+        true,
+      ),
+    ).toEqual({value: 0x5034, code: 'LM(1,MOD_RALT)'});
+    expect(decodeComposedKeycode(0x5044, index, v13BasicKeyToByte)).toEqual({
+      kind: 'LM',
+      tap: key('KC_LALT'),
+      layer: 2,
+      modifiers: ['LALT'],
+      right: false,
+    });
+    expect(decodeComposedKeycode(0x5034, index, v13BasicKeyToByte)).toEqual({
+      kind: 'LM',
+      tap: key('KC_RALT'),
+      layer: 1,
+      modifiers: ['LALT'],
+      right: true,
+    });
+    // Ctrl and Shift together have no one key to be on: the value stays its code.
+    expect(decodeComposedKeycode(0x5043, index, v13BasicKeyToByte)).toBe(null);
+    const describe = (value: number) => {
+      const {legend, ...named} = describeKeycodeValue(
+        value,
+        index,
+        v13BasicKeyToByte,
+        byteToKey,
+      );
+      return {...named, legend: legendText(legend)};
+    };
+    expect(describe(0x5044)).toEqual({
+      legend: 'Alt+L2',
+      name: 'LM(2,MOD_LALT)',
+      title: '',
+      code: 'LM(2,MOD_LALT)',
+    });
+    expect(describe(0x5043)).toMatchObject({
+      legend: 'LM(2,MOD_LCTL | MOD_LSFT)',
+      code: 'LM(2,MOD_LCTL | MOD_LSFT)',
+    });
+    // Only a modifier key takes one; before protocol 11 an LM keeps four mod
+    // bits and no hand, so a right-hand key takes none there.
+    expect(layerModModifier('KC_RGUI', v13BasicKeyToByte)).toEqual({
+      modifier: 'LGUI',
+      right: true,
+    });
+    expect(layerModModifier('KC_A', v13BasicKeyToByte)).toBe(null);
+    expect(layerModModifier('KC_LSFT', v10BasicKeyToByte)).toEqual({
+      modifier: 'LSFT',
+      right: false,
+    });
+    expect(layerModModifier('KC_RSFT', v10BasicKeyToByte)).toBe(null);
   });
 });
 

@@ -321,6 +321,9 @@ export const KeycodePane: FC = () => {
                 value: matrixKeycodes[selectedKey] ?? null,
               }
         }
+        selection={
+          selectedKey === null ? null : `${selectedLayer}:${selectedKey}`
+        }
         onAssign={updateKey}
         layerCount={numberOfLayers}
         tapDance={tapDance}

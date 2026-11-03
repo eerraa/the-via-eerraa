@@ -8,6 +8,7 @@ import {
 } from '@the-via/reader';
 import partition from 'lodash.partition';
 import {Color} from 'three';
+import {layerModParts} from './advanced-keys';
 import {getThemeFromStore} from './device-store';
 import {
   getCustomKeycodeIndex,
@@ -441,7 +442,9 @@ const LEGEND_MODIFIERS: LegendModifier[] = ['CTL', 'SFT', 'ALT', 'GUI'];
 
 /**
  * A Layer-Tap or Mod-Tap key, or a modified key the keycode list has no name for,
- * in its parts: the key a tap sends, and the layer or modifiers put on it.
+ * in its parts: the key a tap sends, and the layer or modifiers put on it. A
+ * Layer-Mod of one modifier is the modifier key that holds it, with its layer;
+ * one of several modifiers is drawn as its code.
  */
 const getCombinedKey = (
   keycodeByte: number,
@@ -449,6 +452,34 @@ const getCombinedKey = (
   byteToKey: Record<number, string>,
   keycodeLUT?: Record<string, {name: string; title?: string}>,
 ): LegendKey | null => {
+  const layerMod = layerModParts(keycodeByte, basicKeyToByte);
+  if (layerMod) {
+    const modifiers = LEGEND_MODIFIERS.filter(
+      (_, bit) => layerMod.mods & (1 << bit),
+    );
+    const right = (layerMod.mods & 0x10) !== 0;
+    return modifiers.length === 1
+      ? {
+          type: 'combined',
+          kind: 'LM',
+          code: getKeycodeForByte(
+            keycodeByte,
+            basicKeyToByte,
+            byteToKey,
+            keycodeLUT,
+          ).code,
+          tap: getKeycodeForByte(
+            basicKeyToByte[`KC_${right ? 'R' : 'L'}${modifiers[0]}`],
+            basicKeyToByte,
+            byteToKey,
+            keycodeLUT,
+          ),
+          layer: layerMod.layer,
+          modifiers,
+          right,
+        }
+      : null;
+  }
   const within = (start: string, end: string) =>
     keycodeByte >= basicKeyToByte[start] && keycodeByte <= basicKeyToByte[end];
   const kind = within('_QK_LAYER_TAP', '_QK_LAYER_TAP_MAX')
