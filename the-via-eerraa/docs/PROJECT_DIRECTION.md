@@ -74,10 +74,11 @@ VID/PID, command addresses, layout, and TD slot identity still require
 release-time compatibility review when app and firmware change together. The
 app manifest records only custom path, identity, split pair, and independent
 runtime capabilities. It must not grow cross-repository provenance fields
-(`tests/era-definition.test.ts`). Normal app build and PR CI read the installed
-official snapshot, ERA custom source, and managed external source; they do not
-fetch GitHub or inspect firmware repositories and do not emit remote-verifier
-provenance (`era_definition_sources.json` is forbidden).
+(`tests/era-definition.test.ts`). The app build, whether run locally or by the
+deploy workflow, reads the installed official snapshot, ERA custom source, and
+managed external source; it does not fetch GitHub or inspect firmware
+repositories and does not emit remote-verifier provenance
+(`era_definition_sources.json` is forbidden).
 
 Managed external V3 paths use `era-definitions/external/v3/*/*.json`, with the
 directory naming the maintainer and the filename holding `<vid>-<pid>`. The

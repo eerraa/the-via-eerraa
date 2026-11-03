@@ -45,12 +45,24 @@ bun x tsc --noEmit
 bun run build
 ```
 
-개발 완료 조건은 1절 표에서 해당 작업 행의 Verify 열이 전부다. 타입 경계를 바꾸면
-`bun x tsc --noEmit`을 더하고, `bun run build`는 공개 배포 행에서만 요구한다. 문서만
-고쳤으면 `bun test tests/docs-contract.test.ts`가 기본이며, 문서 검사기나 제품 계약을
-바꿨으면 그 행의 Verify를 더한다. 실기기 검증은 완료 조건이 아니고, 사용자가 기준을
-정하면 그 기준이 완료 조건이다. 로컬 명령은
-`package.json`이 소유한다. 컴포넌트 `.github/workflows/`는 참조용이며, 배포만 Git 루트 workflow가 main에서 실행한다.
+개발 완료 조건은 1절 표에서 해당 작업 행의 Verify 열에 아래 추가 조건을 더한 것이며,
+그 밖의 검사는 요구하지 않는다.
+
+- 타입 경계를 바꾸면 `bun x tsc --noEmit`을 더한다. `bun test`는 타입을 검사하지 않아
+  바뀐 타입을 쓰는 다른 파일의 오류를 인접 테스트가 잡지 못하기 때문이다.
+- 문서 검사기나 제품 계약을 바꿨으면 그 행의 Verify를 더한다. 문서 검사는 바뀐
+  검사기나 계약이 지키는 동작까지 확인하지 못하기 때문이다.
+- 문서만 고쳤으면 `bun test tests/docs-contract.test.ts`로 충분하다. 문서 변경이 깨뜨릴 수
+  있는 경로·링크·스크립트 이름·라우팅을 이 검사가 확인하고, commit hook도 같은 검사를
+  실행하기 때문이다.
+- `bun run build`는 공개 배포 행에서만 요구한다. 배포 산출물은 main push 때 배포
+  workflow가 같은 빌드와 `Verify build output`으로 다시 만들고 판정하기 때문이다.
+- 실기기 검증은 완료 조건이 아니다. 결과가 연결된 장치와 펌웨어 상태에 달려 있어
+  저장소의 검사로 재현할 수 없기 때문이다. 사용자가 기준을 정하면 그 기준이 완료 조건이다.
+
+로컬 명령은 `package.json`이 소유한다. GitHub는 Git 루트(`../.github/workflows/`)의
+workflow만 실행하므로 컴포넌트 `.github/workflows/`는 실행되지 않는 upstream 참조이고,
+실제로 실행되는 workflow는 main push 때의 Git 루트 배포뿐이다.
 
 앱을 띄운 채로 넘길 때는 loopback Vite를 남기고 `http://127.0.0.1:5173`이 응답하는지
 확인한다: `bun run dev -- --host 127.0.0.1`.

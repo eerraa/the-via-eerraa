@@ -145,9 +145,12 @@ bun x tsc --noEmit
 bun run build            # typecheck:scripts → build:kbs → tsc → vite build
 ```
 
-- **PR CI runs `bun run build` and `bun run test:p1`.** `test:transport` and
-  `bun x tsc --noEmit` are local gates.
-  (`.github/workflows/pr-build.yml`)
+- **Pull requests have no CI; all five commands are local gates.** GitHub runs
+  workflows only from the Git root (`../.github/workflows/`), so the upstream
+  `.github/workflows/pr-build.yml` kept in this component never executes. The
+  only executed workflow is the Git root deploy workflow, which on a push to
+  `main` runs `bun run build` and its `Verify build output` step before upload
+  (`docs/DEPLOYMENT.md`).
 - `tsc` inside `bun run build` uses `noEmit: true` in `tsconfig.json`, so it is
   also the typecheck.
 - `bun run dev` rebuilds definitions before Vite. Do not treat a successful app
@@ -217,7 +220,7 @@ does not promote an unchecked peer side to verified.
 | Surface | Owner → counterpart | Verification in this repository | Still unverified here |
 | --- | --- | --- | --- |
 | Official VIA V3 registry | `the-via/keyboards` → bundled stock `/definitions/v3` | `scripts/build-keyboards.ts` plus deploy `Verify build output` | Firmware-local official-client JSON and publication on the official site |
-| Firmware-local official-client JSON | peer repository `*-VIA.json` → official `usevia.app` | Explicit release-audit paths through `scripts/validate-external-v3.ts` check V3 parse/schema/transform | Ordinary CI does not pass arbitrary peer paths; runtime firmware behavior is not proved |
+| Firmware-local official-client JSON | peer repository `*-VIA.json` → official `usevia.app` | Explicit release-audit paths through `scripts/validate-external-v3.ts` check V3 parse/schema/transform | Local gates and the deploy build do not pass arbitrary peer paths; runtime firmware behavior is not proved |
 | ERA custom definition | `era-definitions/custom/v3` + `config/era-definitions.manifest.json` → app custom menu + matching firmware Custom Value handlers | `tests/era-definition.test.ts` checks local identity, menu support, addresses, and opt-in | Matching peer handlers, storage, and identity require paired firmware review |
 | Coordinated wire | [ADR 0001](adr/0001-state-sync-protocol.md) / [ADR 0002](adr/0002-h7s-usb-diagnostics.md) + app encoders → peer firmware handlers | `tests/era-state-sync.test.ts`, `tests/state-sync-transport.test.ts`, `tests/era-usb-diagnostics.test.ts` | Peer revision, on-device transcript, and HIL remain separate evidence |
 
