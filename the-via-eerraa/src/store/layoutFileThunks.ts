@@ -2,8 +2,7 @@ import type {VIADefinitionV2, VIADefinitionV3} from '@the-via/reader';
 import type {ConnectedDevice} from '../types/types';
 import type {AppThunk, RootState} from './index';
 import {KeyboardAPI} from '../utils/keyboard-api';
-import {getByteForCode, getCodeForByte} from '../utils/key';
-import deprecatedKeycodes from '../utils/key-to-byte/deprecated-keycodes';
+import {getCodeForByte} from '../utils/key';
 import {collectDefinitionKeys} from '../utils/via-definition-keys';
 import {normalizeLayoutMacros} from '../utils/layout-macros';
 import {loadEraAdvancedMetadata} from '../utils/era-advanced-metadata';
@@ -13,8 +12,10 @@ import {requireConnectionProtocol} from '../utils/connection-profile';
 import {getSelectedKeycodesVersion} from './firmwareSlice';
 import {
   planLayoutImport,
+  readLayoutCode,
   saveTapDance,
   type LayoutImportError,
+  type LayoutPlace,
   type TapDanceTarget,
   type ViaSaveFile,
 } from '../utils/layout-import';
@@ -56,7 +57,22 @@ export type LayoutFileImportError =
   | 'invalid-data'
   | 'write-failed';
 
-type LayoutFileImportResult = {ok: true} | {error: LayoutFileImportError};
+/**
+ * A keycode the file names that went in as something else: where, by layer and
+ * matrix position for a key, the file's name, and the name of what went in.
+ */
+export type LayoutFileChange = {
+  place:
+    | Exclude<LayoutPlace, {key: number}>
+    | {layer: number; row: number; col: number};
+  code: string;
+  loaded: string;
+};
+
+/** Loaded; `changed` lists what went in other than the file has it, if anything did. */
+type LayoutFileImportResult =
+  | {ok: true; changed?: LayoutFileChange[]}
+  | {error: LayoutFileImportError};
 
 // Selected-state selectors must never be combined with a different keyboard's
 // identity or HID reads. Pin both selection and connection across every await.
@@ -267,6 +283,7 @@ export const importLayoutFile =
       keycodesVersion: getSelectedKeycodesVersion(state),
     });
     const importKeycodes = profile.layoutImportKeycodes ?? {};
+    const read = (code: string) => readLayoutCode(code, importKeycodes);
     let plan: ReturnType<typeof planLayoutImport>;
     try {
       plan = planLayoutImport(
@@ -277,11 +294,11 @@ export const importLayoutFile =
           macroCount: getKnownMacroCount(state),
           tapDance: tapDanceTarget(state, device),
         },
-        (code) =>
-          getByteForCode(`${deprecatedKeycodes[code] ?? code}`, importKeycodes),
+        (code) => read(code).value,
+        (code) => read(code).asWritten,
       );
     } catch (error) {
-      // A key name this keyboard's keycode set cannot resolve.
+      // Data no layout file holds, such as a layer that is not a list of names.
       console.warn('Reading layout failed', error);
       return {error: 'invalid-data'};
     }
@@ -294,5 +311,24 @@ export const importLayoutFile =
       console.warn('Loading layout failed', error);
       return {error: 'write-failed'};
     }
-    return {ok: true};
+    if (plan.changed.length === 0) {
+      return {ok: true};
+    }
+    const toCode = codeNamer(state);
+    const {cols} = definition.matrix;
+    return {
+      ok: true,
+      changed: plan.changed.map(({place, code, value}) => ({
+        place:
+          'key' in place
+            ? {
+                layer: place.layer,
+                row: Math.floor(place.key / cols),
+                col: place.key % cols,
+              }
+            : place,
+        code,
+        loaded: toCode(value),
+      })),
+    };
   };

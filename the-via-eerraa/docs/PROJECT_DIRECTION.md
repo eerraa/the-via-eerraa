@@ -241,7 +241,11 @@ layer written L2, neighbouring keys for brackets and separators, and what a CJK
 input method or the Korean one left on types. The box offering the code shows it
 as it will go in. An LT, MT or LM code keeps one box while it is typed: in
 KEYMAP the box its names bring up, leading to the LT·MT·LM tab, stays until the
-code reads, and the code keeps it even where a key found is it.
+code reads, and the code keeps it even where a key found is it. A layout file's
+keycodes are read by the same parser, without these corrections. One that cannot
+load as written loads as official VIA loads it and the rest of the file still
+loads; the load then names it by layer and matrix position, encoder turn or Tap
+Dance action, with what went in instead, so that key can be set again.
 
 The palette serves every keyboard, not only ERA ones. It keeps VIA's
 select-a-key-then-pick flow and draws keycaps in the keyboard theme, so it is a

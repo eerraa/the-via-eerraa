@@ -8,6 +8,7 @@ import {
   layoutFileName,
   getLayoutImportKeycodes,
   planLayoutImport,
+  readLayoutCode,
   saveTapDance,
   type TapDanceTarget,
   type ViaSaveFile,
@@ -55,7 +56,7 @@ const CODES: Record<string, number> = {
   KC_ESC: 0x0029,
   KC_LCTL: 0x00e0,
 };
-// Like getByteForCode, a name the keyboard does not know throws.
+// A small keycode set; a name outside it throws, as data no file holds does.
 const toByte = (code: string) => {
   const byte = CODES[code];
   if (byte === undefined) {
@@ -133,6 +134,99 @@ describe('legacy lighting in saved layouts', () => {
         delays: true,
         keycodeToByte: (code) => codes[code],
       })).toEqual({type: 'unknown-keys', keys: [name]});
+    });
+  });
+});
+
+// A file loads what it can as written, read as a typed code is; the rest goes in
+// as VIA always loaded it, so the load still finishes, and the plan names each
+// such keycode with where it goes, so those keys can be set again.
+describe('keycodes that do not load as written', () => {
+  const readWith = (keycodes: Record<string, number>) => {
+    const read = (code: string) => readLayoutCode(code, keycodes);
+    return [
+      (code: string) => read(code).value,
+      (code: string) => read(code).asWritten,
+    ] as const;
+  };
+
+  test('load as VIA loaded them, each named with where it goes', () => {
+    const keycodes = getLayoutImportKeycodes(12, getBasicKeyDict(12));
+    const plan = planLayoutImport(
+      file({
+        layers: [
+          ['KC_A', 'KC_NOPE', 'MO(32)'],
+          ['MT(MOD_LCTL|MOD_RALT,KC_A)', '0x7e40', 'LCTL(MO(1))'],
+        ],
+        encoders: [[['KC_VOLD', 'KC_FOO'], ['KC_TRNS', 'KC_TRNS']]],
+      }),
+      keyboard(),
+      ...readWith(keycodes),
+    );
+    const held = keycodes._QK_MOMENTARY;
+    expect(plan).toMatchObject({
+      // A value VIA saves only in hex loads as it was saved.
+      keymap: [
+        [0x0004, 0x0000, keycodes._QK_MOMENTARY_MAX],
+        [0x3504, 0x7e40, held + 1],
+      ],
+      encoders: {0: [[keycodes.KC_VOLD, 0x0000], [0x0001, 0x0001]]},
+      changed: [
+        {place: {layer: 0, key: 1}, code: 'KC_NOPE', value: 0x0000},
+        {
+          place: {layer: 0, key: 2},
+          code: 'MO(32)',
+          value: keycodes._QK_MOMENTARY_MAX,
+        },
+        {
+          place: {layer: 1, key: 0},
+          code: 'MT(MOD_LCTL|MOD_RALT,KC_A)',
+          value: 0x3504,
+        },
+        {place: {layer: 1, key: 2}, code: 'LCTL(MO(1))', value: held + 1},
+        {
+          place: {layer: 0, encoder: 0, clockwise: true},
+          code: 'KC_FOO',
+          value: 0x0000,
+        },
+      ],
+    });
+  });
+
+  // A cell holds whatever JSON the file has: one that is no name loads blank, as
+  // in official VIA, and is named by the text it reads as, which can be shown.
+  test('a cell that is not a name loads blank and is named as text', () => {
+    const plan = planLayoutImport(
+      file({
+        layers: [['KC_A', {code: 'KC_B'}, null] as unknown as string[]],
+      }),
+      keyboard(1),
+      ...readWith(getLayoutImportKeycodes(12, getBasicKeyDict(12))),
+    );
+    expect(plan).toMatchObject({
+      keymap: [[0x0004, 0x0000, 0x0000]],
+      changed: [
+        {place: {layer: 0, key: 1}, code: '[object Object]', value: 0x0000},
+        {place: {layer: 0, key: 2}, code: 'null', value: 0x0000},
+      ],
+    });
+  });
+
+  // Before protocol 11 an LM keeps no hand: a right-hand one goes in as its
+  // left-hand twin, as QMK writes it, and is named.
+  test('before protocol 11 a right-hand Layer-Mod loads as its left-hand twin', () => {
+    const keycodes = getLayoutImportKeycodes(10, getBasicKeyDict(10));
+    expect(
+      planLayoutImport(
+        file({layers: [['LM(2,MOD_RALT)', 'LM(2,MOD_LALT)', 'KC_A']]}),
+        keyboard(1),
+        ...readWith(keycodes),
+      ),
+    ).toMatchObject({
+      keymap: [[0x5924, 0x5924, 0x0004]],
+      changed: [
+        {place: {layer: 0, key: 0}, code: 'LM(2,MOD_RALT)', value: 0x5924},
+      ],
     });
   });
 });
@@ -486,6 +580,26 @@ describe('Tap Dance in the layout file', () => {
     ).toEqual([]);
     expect(tapDanceWrites('not a list')).toEqual([]);
     expect(tapDanceWrites([null, 7])).toEqual([]);
+  });
+
+  test('names an action that does not load as written', () => {
+    const read = (code: string) =>
+      readLayoutCode(code, getLayoutImportKeycodes(12, getBasicKeyDict(12)));
+    const plan = planLayoutImport(
+      file({
+        tapDance: [
+          {tap: 'KC_NOPE', hold: 'KC_LCTL', dtap: 'KC_NO', thold: 'KC_NO', term: 200},
+        ],
+      }),
+      keyboard(2, {tapDance: target()}),
+      (code) => read(code).value,
+      (code) => read(code).asWritten,
+    );
+    expect(plan).toMatchObject({
+      changed: [
+        {place: {tapDance: 0, role: 'tap'}, code: 'KC_NOPE', value: 0x0000},
+      ],
+    });
   });
 
   test('an official VIA file, or a keyboard without Tap Dance, changes no Tap Dance', () => {

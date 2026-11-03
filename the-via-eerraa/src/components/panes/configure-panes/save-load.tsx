@@ -23,8 +23,10 @@ import {
   canExportLayoutFile,
   exportLayoutFile,
   importLayoutFile,
+  type LayoutFileChange,
   type LayoutFileImportError,
 } from 'src/store/layoutFileThunks';
+import {ROLE_LABEL} from '../../inputs/keycode-palette/tap-dance-panels';
 
 const SaveLoadPane = styled(CenterPane)`
   height: 100%;
@@ -51,6 +53,32 @@ const LiveRegion = styled.div`
   align-items: center;
 `;
 
+// A load that went in other than the file has it says so, then names each such
+// keycode: where it is, the file's name for it and what went in instead, so
+// those keys can be set again. The names can be copied.
+const ChangedKeys = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: text;
+
+  > ul {
+    margin: 0 0 8px;
+    padding: 0;
+    max-height: 240px;
+    overflow: auto;
+    font-size: 16px;
+    color: var(--color_label);
+  }
+  li {
+    padding: 2px 0;
+  }
+  code {
+    font-family: 'Fira Mono', monospace;
+    font-size: 15px;
+  }
+`;
+
 // What the keyboard needs for a file is gathered by the save and load operations
 // themselves (src/store/layoutFileThunks.ts); this pane only picks the file.
 export const Pane: FC = () => {
@@ -61,6 +89,7 @@ export const Pane: FC = () => {
   const selectedDevice = useAppSelector(getSelectedConnectedDevice);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [changed, setChanged] = useState<LayoutFileChange[]>([]);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -74,6 +103,7 @@ export const Pane: FC = () => {
     setAttempt((count) => count + 1);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setChanged([]);
     setSaved(false);
     const notReady = t(
       'Could not save layout: the keyboard has not finished loading.',
@@ -119,6 +149,7 @@ export const Pane: FC = () => {
     setAttempt((count) => count + 1);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setChanged([]);
     setSaved(false);
     const reader = new FileReader();
 
@@ -168,11 +199,32 @@ export const Pane: FC = () => {
         return;
       }
 
-      setSuccessMessage(t('Successfully updated layout!'));
+      if (result.changed) {
+        setChanged(result.changed);
+      } else {
+        setSuccessMessage(t('Successfully updated layout!'));
+      }
     };
 
     reader.readAsBinaryString(file);
   };
+
+  const layerOf = (layer: number) => t('Layer {{layer}}', {layer});
+  const placeOf = ({place}: LayoutFileChange) =>
+    'row' in place
+      ? [
+          layerOf(place.layer),
+          t('row {{row}}, column {{col}}', {row: place.row, col: place.col}),
+        ]
+      : 'encoder' in place
+        ? [
+            layerOf(place.layer),
+            t('Encoder {{encoder}}', {encoder: place.encoder}),
+            place.clockwise
+              ? t('Rotate Clockwise')
+              : t('Rotate Counterclockwise'),
+          ]
+        : [`TD${place.tapDance}`, t(ROLE_LABEL[place.role])];
 
   return (
     <TabbedCell>
@@ -203,6 +255,24 @@ export const Pane: FC = () => {
           <LiveRegion role="alert">
             {errorMessage ? (
               <ErrorMessage key={attempt}>{errorMessage}</ErrorMessage>
+            ) : null}
+            {changed.length > 0 ? (
+              <ChangedKeys key={attempt}>
+                <ErrorMessage>
+                  {t(
+                    'Loaded, but these keys did not load as the file has them. Set them again.',
+                  )}
+                </ErrorMessage>
+                <ul>
+                  {changed.map((change, index) => (
+                    <li key={index}>
+                      {placeOf(change).join(' · ')}: <code>{change.code}</code>
+                      {' → '}
+                      <code>{change.loaded}</code>
+                    </li>
+                  ))}
+                </ul>
+              </ChangedKeys>
             ) : null}
           </LiveRegion>
           <LiveRegion role="status">

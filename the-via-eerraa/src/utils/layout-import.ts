@@ -1,5 +1,8 @@
+import {typedModifierProblem} from './advanced-keys';
 import {isSameEraBoard} from './era-advanced-metadata';
 import {ERA_WIRE} from './era-wire.generated';
+import {getByteForCode} from './key';
+import deprecatedKeycodes from './key-to-byte/deprecated-keycodes';
 import {
   isTapDanceHoldOther,
   isTapDanceMode,
@@ -11,6 +14,7 @@ import {
   type TapDanceSlot,
   type TapDanceWrite,
 } from './keycode-palette';
+import {parseKeycodeInput} from './keycode-picker';
 
 /** One Tap Dance slot as a layout file keeps it: keycode names and the term in ms. */
 type SavedTapDance = Record<TapDanceActionRole, string> & {term?: number; mode?: number; holdTerm?: number; holdOnOther?: number};
@@ -35,6 +39,36 @@ export const isViaSaveFile = (obj: any): obj is ViaSaveFile =>
 export {getLayoutImportKeycodes} from './connection-profile';
 
 /**
+ * A layout file's keycode name, read as KEYMAP's search box reads a typed code,
+ * so what goes in as typed loads as written. A name it cannot read so loads as
+ * VIA always loaded it, blank where VIA could not read it either, which keeps the
+ * rest of the file loading, and is marked so the key can be named after the load.
+ */
+export const readLayoutCode = (
+  code: string,
+  keycodes: Record<string, number>,
+): {value: number; asWritten: boolean} => {
+  const name = `${(deprecatedKeycodes as Record<string, string>)[code] ?? code}`;
+  const named = keycodes[name];
+  if (named !== undefined) {
+    return {value: named, asWritten: true};
+  }
+  const typed = typedModifierProblem(name, keycodes)
+    ? null
+    : parseKeycodeInput(name, keycodes);
+  if (typed !== null) {
+    return {value: typed, asWritten: true};
+  }
+  let value = keycodes.KC_NO ?? 0;
+  try {
+    value = getByteForCode(name, keycodes);
+  } catch {
+    // Stays blank.
+  }
+  return {value, asWritten: false};
+};
+
+/**
  * The name a save offers: the board and the day, so saving again does not take
  * the name of an older backup.
  */
@@ -55,12 +89,23 @@ export type LayoutImportError =
   | 'tap-dance-mode-unsupported'
   | 'tap-dance-invalid';
 
+/** Where a layout file names a keycode: a key by its switch, an encoder turn, or a Tap Dance action. */
+export type LayoutPlace =
+  | {layer: number; key: number}
+  | {layer: number; encoder: number; clockwise: boolean}
+  | {tapDance: number; role: TapDanceActionRole};
+
+/** A keycode the file names that did not load as written, and what loaded instead. */
+export type LayoutCodeChange = {place: LayoutPlace; code: string; value: number};
+
 type LayoutImport = {
   keymap: number[][];
   macros?: string[];
   encoders?: Record<number, [number, number][]>;
   /** Tap Dance values that differ from the keyboard's, in slot order. */
   customValues: TapDanceWrite[];
+  /** What loads other than the file has it, in the order the file names it. */
+  changed: LayoutCodeChange[];
 };
 
 /** The keyboard's Tap Dance, as the KEYMAP editor reads it. */
@@ -129,6 +174,7 @@ const planSavedTapDance = (
   saved: unknown,
   {slots, read, termBounds}: TapDanceTarget,
   toByte: (code: string) => number,
+  note: (code: string, value: number, place: LayoutPlace) => void,
 ): TapDanceWrite[] => {
   if (!Array.isArray(saved)) {
     return [];
@@ -139,6 +185,7 @@ const planSavedTapDance = (
       return [];
     }
     const actions = {} as TapDanceDraft['actions'];
+    const codes = {} as Record<TapDanceActionRole, string>;
     for (const role of TAP_DANCE_ACTION_ROLES) {
       const code = entry[role];
       if (typeof code !== 'string') {
@@ -149,6 +196,7 @@ const planSavedTapDance = (
       } catch {
         return [];
       }
+      codes[role] = code;
     }
     const bounds = termBounds(slot);
     const current = read(slot);
@@ -164,10 +212,16 @@ const planSavedTapDance = (
     };
     const mode = current?.mode !== undefined
       ? (entry.mode ?? ERA_WIRE.TAPDANCE_MODES.LEGACY) : undefined;
-    return planTapDanceWrites(slot, {actions, term, mode, ...(current?.holdTerm !== undefined ? {
+    const writes = planTapDanceWrites(slot, {actions, term, mode, ...(current?.holdTerm !== undefined ? {
       holdTerm: String(entry.holdTerm ?? 0),
       holdOnOther: entry.holdOnOther ?? ERA_WIRE.TAPDANCE_HOLD_OTHER.DISABLED,
-    } : {})}, known, bounds) ?? [];
+    } : {})}, known, bounds);
+    if (writes) {
+      for (const role of TAP_DANCE_ACTION_ROLES) {
+        note(codes[role], actions[role], {tapDance: slot.index, role});
+      }
+    }
+    return writes ?? [];
   });
 };
 
@@ -183,11 +237,16 @@ const planSavedTapDance = (
  * Keys are stored per switch position, so they load whatever layout option is
  * showing: a key that option hides is still written, and shows once the option
  * that has it is chosen.
+ *
+ * A keycode that does not load as written (`asWritten`) does not stop the rest:
+ * it loads as `toByte` reads it, and the plan names it with where it goes, so
+ * the key can be set again.
  */
 export const planLayoutImport = (
   file: ViaSaveFile,
   target: Target,
   toByte: (code: string) => number,
+  asWritten: (code: string) => boolean = () => true,
 ): {error: LayoutImportError} | LayoutImport => {
   if (
     file.vendorProductId !== target.vendorProductId &&
@@ -263,8 +322,28 @@ export const planLayoutImport = (
     }
   })) return {error: 'tap-dance-invalid'};
 
+  const changed: LayoutCodeChange[] = [];
+  // A cell holds whatever JSON the file has. It is read as text, as official VIA
+  // reads it, and named by that text, so whatever it holds can be shown.
+  const note = (code: string, value: number, place: LayoutPlace) => {
+    if (!asWritten(code)) {
+      changed.push({place, code: `${code}`, value});
+    }
+  };
+  keymap.slice(0, layerCount).forEach((values, layer) =>
+    values.forEach((value, key) =>
+      note(file.layers[layer][key], value, {layer, key}),
+    ),
+  );
+  encoders?.forEach((encoder, id) =>
+    encoder.slice(0, layerCount).forEach(([ccw, cw], layer) => {
+      const [ccwCode, cwCode] = file.encoders![id][layer];
+      note(ccwCode, ccw, {layer, encoder: id, clockwise: false});
+      note(cwCode, cw, {layer, encoder: id, clockwise: true});
+    }),
+  );
   const customValues = target.tapDance
-    ? planSavedTapDance(file.tapDance, target.tapDance, toByte)
+    ? planSavedTapDance(file.tapDance, target.tapDance, toByte, note)
     : [];
   if (customValues.length > 0 && !target.tapDance?.available) {
     return {error: 'keyboard-not-ready'};
@@ -279,5 +358,6 @@ export const planLayoutImport = (
         encoders.map((encoder, id) => [id, encoder.slice(0, layerCount)]),
       ),
     customValues,
+    changed,
   };
 };

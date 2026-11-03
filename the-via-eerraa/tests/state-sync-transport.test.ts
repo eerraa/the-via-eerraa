@@ -1789,6 +1789,27 @@ describe('layout files on an ordinary VIA keyboard', () => {
     expect(firmware.stateSyncReads).toBe(0);
   });
 
+  // A name this keyboard cannot load as written does not stop the load: the
+  // result names it by layer and matrix position, with what went in instead.
+  test('loads a file with a name it does not know, and names that key', async () => {
+    const {dispatch, connected} = await prepareOrdinary('ordinary-layout-unknown');
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(
+      await dispatch(
+        importLayoutFile(connected, {...saved.file, layers: [['KC_NOPE']]}),
+      ),
+    ).toEqual({
+      ok: true,
+      changed: [
+        {
+          place: {layer: 0, row: 0, col: 0},
+          code: 'KC_NOPE',
+          loaded: 'KC_NO',
+        },
+      ],
+    });
+  });
+
   test('takes only its own identity', async () => {
     const {dispatch, connected} = await prepareOrdinary('ordinary-layout-identity');
     const file = {name: 'TOMAK', vendorProductId: TOMAK_VPID, layers: [['KC_A']]};
