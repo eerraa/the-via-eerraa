@@ -17,9 +17,9 @@
 ## 승인과 Git
 
 - 실제 root·branch·HEAD·status·관련 diff를 확인하고 사용자 변경과 ignored 입력을 보존한다.
-- 현재 branch를 임의로 전환하지 않는다. 과거 커밋·태그와 미이관 LM20 브랜치는 이전 구조이므로 해당 워크트리의 AGENTS를 따른다.
-- 구현·수정 요청은 이 저장소에서 개발 branch를 열고 검증된 논리 단위마다 로컬 commit을 쌓는 것까지 포함한다. 같은 작업의 branch를 재사용하고 `main`에서는 직접 구현하지 않는다. 조사·리뷰만 요청했거나 사용자가 금지·중단한 경우에는 적용하지 않는다.
-- commit은 검증된 관심사별로 자신의 변경과 승인된 사용자 변경만 포함하며, 전체 작업 종료까지 미루지 않는다. 사용자 삭제를 자동 복원하지 않는다.
+- 구현·수정 요청은 개발 branch를 열고 검증된 관심사별 로컬 commit을 작업 종료까지 미루지 않고 쌓는 것까지 포함한다. 같은 작업의 branch를 재사용하고 `main`에서는 직접 구현하지 않으며, 조사·리뷰만 요청했거나 사용자가 금지·중단한 경우에는 적용하지 않는다.
+- commit에는 자신의 변경과 승인된 사용자 변경만 포함한다. 사용자 삭제를 자동 복원하지 않는다.
+- branch를 임의로 전환하지 않는다. 과거 커밋·태그와 미이관 LM20 브랜치는 이전 구조이므로 해당 워크트리의 AGENTS를 따른다.
 - push·merge·기존 이력 재작성·tag·release·배포·Cloudflare·DNS·의존성 변경은 사용자가 명시한 범위에서만 수행한다.
 - hook 설정은 `git config core.hooksPath hooks`다. 로컬 hook은 staged 스냅샷의 문서·제품 계약 검사를 실행한다.
 - 검증은 로컬 명령과 hook을 사용한다. 예외는 루트 `.github/workflows/deploy-to-cloudflare.yml`의 main 전용 배포다. 컴포넌트 내부의 upstream workflow는 참조용이다. main 반영·push·실제 배포는 별도 승인 범위다.
