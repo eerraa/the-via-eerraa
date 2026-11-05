@@ -17,9 +17,10 @@
 ## 승인과 Git
 
 - 실제 root·branch·HEAD·status·관련 diff를 확인하고 사용자 변경과 ignored 입력을 보존한다.
-- 현재 branch를 임의로 전환하지 않는다. 과거 커밋·태그와 미이관 LM20 브랜치는 이전 구조이므로 해당 워크트리의 AGENTS를 따른다.
-- commit·push·merge·rebase·tag·release·배포·Cloudflare·DNS·의존성 변경은 사용자가 명시한 범위에서만 수행한다.
-- commit은 검증된 관심사별로 자신의 변경과 승인된 사용자 변경만 포함한다. 사용자 삭제를 자동 복원하지 않는다.
+- 구현·수정 요청은 승인된 범위의 전용 개발 브랜치·관리 워크트리 준비와 검증된 논리 단위의 자기 변경 stage·로컬 commit에 대한 명시적 상시 승인이다. 조사·리뷰만 요청했거나 사용자가 금지·중단한 경우에는 적용하지 않으며, 단계·commit마다 재승인을 묻지 않는다.
+- 같은 작업의 개발 브랜치·워크트리를 재사용한다. 새 작업은 지정된 기준 브랜치에서, 지정이 없으면 확인된 로컬 main에서 준비한다. main에서 직접 구현하거나 사용 중인 branch를 전환하지 않는다. 기준이나 변경 소유권이 불명확하면 확인한다. 과거 커밋·태그와 미이관 LM20 브랜치는 이전 구조이므로 해당 워크트리의 AGENTS를 따른다.
+- main 반영·push·merge·기존 이력 재작성(amend·rebase·reset·force 포함)·tag·release·배포·브랜치/워크트리 삭제·기타 파괴적 작업·Cloudflare·DNS·의존성 변경은 각각 별도 명시 승인 범위에서만 수행한다. 개발 승인으로 추정하지 않는다.
+- commit은 필요한 집중 검사를 통과한 논리 단위마다 전체 작업 종료까지 미루지 않고, 관심사별로 자신의 변경과 승인된 사용자 변경만 포함한다. commit 전 작업 diff를 확인하고 경로·hunk로 stage한 뒤 staged diff와 공백 오류를 확인한다. 기존 staged 변경을 임의로 포함·변경하지 않으며 안전하게 분리할 수 없거나 필요한 검사가 실패·차단되면 미커밋으로 보존하고 보고한다. 공유 작업트리의 stage·commit은 Lead가 담당한다. 사용자 삭제를 자동 복원하지 않는다.
 - hook 설정은 `git config core.hooksPath hooks`다. 로컬 hook은 staged 스냅샷의 문서·제품 계약 검사를 실행한다.
 - 검증은 로컬 명령과 hook을 사용한다. 예외는 루트 `.github/workflows/deploy-to-cloudflare.yml`의 main 전용 배포다. 컴포넌트 내부의 upstream workflow는 참조용이다. main 반영·push·실제 배포는 별도 승인 범위다.
 - 기존 폴더 경로와 컴포넌트 ignore·개행 정책을 보존한다.
