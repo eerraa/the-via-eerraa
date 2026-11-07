@@ -7,7 +7,7 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faClapperboard, faCode} from '@fortawesome/free-solid-svg-icons';
 import {ScriptExample, ScriptMode} from './script-mode';
 import {ProgressBarTooltip} from 'src/components/inputs/tooltip';
-import {getIsDelaySupported, getMacroBufferSize, getIsMacroWriting} from 'src/store/macrosSlice';
+import {getExpressions, getIsDelaySupported, getMacroBufferSize, getIsMacroWriting} from 'src/store/macrosSlice';
 import {macroOptionsDraftKey, type MacroOptionsControl} from '../../macro-options';
 import {
   getSelectedDevicePath,
@@ -25,6 +25,7 @@ import {
   checkMacroDraft,
   countMacroBytes,
   type IMacroAPI,
+  type MacroDraft,
 } from 'src/utils/macro-api/macro-api.common';
 import {useTranslation} from 'react-i18next';
 import {DeferredApplyButtons} from '../../custom/deferred-apply';
@@ -34,10 +35,17 @@ import {
   type MacroDraftCheck,
   type MacroSaveStatus,
 } from './save-message';
+import {
+  sameMacroEditSource,
+  type MacroEditRequest,
+  type MacroEditSource,
+} from './macro-edit-model';
 
 const ProgressBarContainer = styled.div`
   position: relative;
-  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  margin: 0;
   &:hover {
     & .tooltip {
       transform: scale(1) translateY(0px);
@@ -45,18 +53,20 @@ const ProgressBarContainer = styled.div`
     }
   }
   .tooltip {
-    transform: translateY(5px) scale(0.6);
+    top: calc(100% + 8px) !important;
+    margin-top: 0 !important;
+    transform: translateY(-5px) scale(0.6);
     opacity: 0;
   }
 `;
 const ProgressBar = styled.div<{$over: boolean; $recording: boolean}>`
   background: var(--bg_control);
   position: relative;
-  padding: 5px;
-  border-radius: 5px;
+  padding: 4px;
+  border-radius: 4px;
   overflow: hidden;
-  margin-bottom: 10px;
-  width: 250px;
+  margin: 0;
+  width: clamp(75px, 10vw, 120px);
 
   > span {
     content: '';
@@ -65,7 +75,7 @@ const ProgressBar = styled.div<{$over: boolean; $recording: boolean}>`
     top: 0;
     background: ${(props) =>
       props.$over ? errorColor : 'var(--color_accent)'};
-    height: 10px;
+    height: 8px;
     width: 100%;
     transform: scaleX(0.1);
     transform-origin: left;
@@ -100,15 +110,15 @@ const TabBar = styled.div`
 
 const TabContainer = styled.div`
   display: flex;
-  margin-bottom: 10px;
+  margin: 0;
   width: 100%;
   max-width: 960px;
 `;
 const CenterTabContainer = styled(TabContainer)`
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
-  column-gap: 12px;
+  gap: 8px 12px;
 `;
 const LeadCell = styled.div`
   justify-self: start;
@@ -117,6 +127,44 @@ const LeadCell = styled.div`
 const TrailCell = styled.div`
   justify-self: end;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+`;
+const FooterContainer = styled.div`
+  width: 100%;
+  max-width: 960px;
+  > div {
+    padding: 0;
+  }
+`;
+
+const RecorderFooter = styled(FooterContainer)`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+
+  > :first-child {
+    grid-column: 2;
+  }
+  > ${FooterContainer} {
+    grid-column: 3;
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: minmax(0, 1fr);
+    > :first-child {
+      grid-column: 1;
+      justify-self: center;
+    }
+    > ${FooterContainer} {
+      grid-column: 1;
+    }
+  }
 `;
 
 /**
@@ -146,6 +194,8 @@ type Props = {
   selectedMacro: number;
   saveMacros: (macroIndex: number, macro: string) => Promise<void>;
   macroApi?: IMacroAPI;
+  draft?: string;
+  draftCheck: MacroDraft;
   /** Told when recording starts and stops, for the links that leave the menu. */
   onRecordingChange?: (recording: boolean) => void;
   /** At the start of the mode row: the links that leave the menu. */
@@ -179,10 +229,11 @@ export const isMacroDraftPending = (
   macroApi: IMacroAPI | undefined,
   draft: string | undefined,
   saved: string,
+  checkedDraft?: MacroDraft,
 ) =>
   draft !== undefined &&
   draft !== saved &&
-  (macroApi ? checkMacroDraft(macroApi, draft).stored : draft) !== saved;
+  (checkedDraft?.stored ?? (macroApi ? checkMacroDraft(macroApi, draft).stored : draft)) !== saved;
 
 const printBytesUsed = (bytesUsed: number, bufferSize: number) => {
   const {t} = useTranslation();
@@ -219,7 +270,7 @@ const BufferSizeUsage: React.FC<{bytesUsed: number; capacity: number; recording:
 
 export const MacroDetailPane: React.FC<Props> = (props) => {
   const {t} = useTranslation();
-  const {macroApi, selectedMacro: macroIndex} = props;
+  const {macroApi, selectedMacro: macroIndex, draft, draftCheck} = props;
   const dispatch = useAppDispatch();
   const devicePath = useAppSelector(getSelectedDevicePath);
   const keyboardApi = useAppSelector(getSelectedKeyboardAPI);
@@ -227,7 +278,6 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   const currentMacro = props.macroExpressions[macroIndex] || '';
   // Both modes show and edit the slot's draft. It lives in the store, so another
   // slot, the other mode or another pane leaves it as it was.
-  const draft = useAppSelector(getSelectedMacroDrafts)[macroIndex];
   const macroText = draft ?? currentMacro;
   const [showAdvancedView, setShowAdvancedView] = React.useState(false);
   const [recording, setRecording] = useState(false);
@@ -245,6 +295,40 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   const savingRef = useRef(false);
   const selectedMacroRef = useRef(macroIndex);
   selectedMacroRef.current = macroIndex;
+  const editContext = useRef({
+    devicePath,
+    connectionGeneration,
+    macroIndex,
+    showAdvancedView,
+    epoch: 0,
+  });
+  const previousContext = editContext.current;
+  if (
+    previousContext.devicePath !== devicePath ||
+    previousContext.connectionGeneration !== connectionGeneration ||
+    previousContext.macroIndex !== macroIndex ||
+    previousContext.showAdvancedView !== showAdvancedView
+  ) {
+    editContext.current = {
+      devicePath,
+      connectionGeneration,
+      macroIndex,
+      showAdvancedView,
+      epoch: previousContext.epoch + 1,
+    };
+  }
+  const editSource: MacroEditSource = {
+    devicePath: devicePath ?? null,
+    connectionGeneration: connectionGeneration ?? null,
+    macroIndex,
+    epoch: editContext.current.epoch,
+    macroApi,
+    draft,
+    savedExpression: currentMacro,
+    savedSequence: ast[macroIndex],
+  };
+  const editSourceRef = useRef(editSource);
+  editSourceRef.current = editSource;
 
   // The last byte of the buffer is the completion marker, not macro space.
   const capacity = bufferSize - 1;
@@ -276,8 +360,11 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
     [macroApi, otherMacroBytes, capacity],
   );
   const macroCheck = useMemo(
-    () => checkDraft(macroText),
-    [checkDraft, macroText],
+    () => ({
+      ...draftCheck,
+      overCapacity: otherMacroBytes + draftCheck.byteCount > capacity,
+    }),
+    [draftCheck, otherMacroBytes, capacity],
   );
   // Compared in the form the keyboard keeps, so a draft that only spells the macro
   // differently has nothing to write.
@@ -291,24 +378,42 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   }, [macroText, macroIndex, showAdvancedView]);
 
   const editMacro = useCallback(
-    (expression: string, index: number) => {
+    (expression: string, index: number, request?: MacroEditRequest): boolean => {
       if (!devicePath) {
-        return;
+        return false;
       }
       const key = macroDraftKey(index);
-      dispatch((dispatch, getState) => {
+      return dispatch((dispatch, getState) => {
+        const state = getState();
         // An unmount can flush a paced recording after a device was removed.
         // Keep a connected device's draft, never resurrect a disconnected session.
         if (
-          !getState().devices.connectedDevicePaths[devicePath] ||
+          !state.devices.connectedDevicePaths[devicePath] ||
           !keyboardApi ||
           keyboardApi.getConnectionGeneration() !== connectionGeneration
-        ) return;
+        ) return false;
+        if (request) {
+          const source = editSourceRef.current;
+          if (
+            index !== source.macroIndex ||
+            !sameMacroEditSource(request.source, source) ||
+            getSelectedDevicePath(state) !== devicePath ||
+            getSelectedConnectionGeneration(state) !== connectionGeneration ||
+            getSelectedMacroDrafts(state)[index] !== source.draft ||
+            state.macros.ast[index] !== source.savedSequence ||
+            (getExpressions(state)[index] || '') !== source.savedExpression
+          ) return false;
+          if (!request.prepare({
+            ...source,
+            draft: expression === source.savedExpression ? undefined : expression,
+          })) return false;
+        }
         dispatch(
           expression === (props.macroExpressions[index] || '')
             ? discardDrafts({devicePath, keys: [key]})
             : setDraft({devicePath, key, value: expression}),
         );
+        return true;
       });
     },
     [devicePath, dispatch, props.macroExpressions, keyboardApi, connectionGeneration],
@@ -394,9 +499,43 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
   ]);
 
   const idle = !recording && !saving && !writing;
+  const renderFooter = (lead?: React.ReactNode) => (
+    <FooterContainer>
+      <DeferredApplyButtons
+        canCancel={(pending || optionsPending) && idle}
+        canApply={
+          (pending || optionsPending) &&
+          (!optionsPending || options?.valid !== false) &&
+          idle &&
+          !macroCheck.overCapacity &&
+          macroCheck.problem?.type !== 'untypeable'
+        }
+        onCancel={cancel}
+        onApply={apply}
+      >
+        {lead}
+        <ApplyMessage draft={macroCheck} status={saveStatus} />
+      </DeferredApplyButtons>
+    </FooterContainer>
+  );
   return (
     <>
-      <MacroModeRow lead={props.lead} trail={options?.control}>
+      <MacroModeRow
+        lead={props.lead}
+        trail={
+          <>
+            <BufferSizeUsage
+              bytesUsed={
+                otherMacroBytes +
+                (recording ? recordingBytes : macroCheck.byteCount)
+              }
+              capacity={capacity}
+              recording={recording}
+            />
+            {options?.control}
+          </>
+        }
+      >
         <TabBar>
           <MacroTab
             type="button"
@@ -420,49 +559,35 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
           </MacroTab>
         </TabBar>
       </MacroModeRow>
-      <BufferSizeUsage
-        bytesUsed={otherMacroBytes + (recording ? recordingBytes : macroCheck.byteCount)}
-        capacity={capacity}
-        recording={recording}
-      />
       {showAdvancedView ? (
-        <ScriptMode
-          value={macroText}
-          onChange={(expression) => editMacro(expression, macroIndex)}
-          isModified={pending}
-          refused={saveStatus?.type === 'refused'}
-          key={macroIndex}
-        />
+        <>
+          <ScriptMode
+            value={macroText}
+            onChange={(expression) => editMacro(expression, macroIndex)}
+            isModified={pending}
+            refused={saveStatus?.type === 'refused'}
+            key={macroIndex}
+          />
+          {renderFooter(<ScriptExample isDelaySupported={isDelaySupported} />)}
+        </>
       ) : (
         <MacroRecorder
           macroIndex={macroIndex}
-          selectedMacro={ast[macroIndex]}
-          draft={draft}
+          editSource={editSource}
           editMacro={editMacro}
           isModified={pending}
           canEditItems={!macroCheck.problem}
           onRecordingChange={setRecording}
           onRecordingPreview={setRecordingBytes}
           isDelaySupported={isDelaySupported}
+          renderFooter={(controls) => (
+            <RecorderFooter>
+              {controls}
+              {renderFooter()}
+            </RecorderFooter>
+          )}
         />
       )}
-      <DeferredApplyButtons
-        canCancel={(pending || optionsPending) && idle}
-        canApply={
-          (pending || optionsPending) &&
-          (!optionsPending || options?.valid !== false) &&
-          idle &&
-          !macroCheck.overCapacity &&
-          macroCheck.problem?.type !== 'untypeable'
-        }
-        onCancel={cancel}
-        onApply={apply}
-      >
-        {showAdvancedView ? (
-          <ScriptExample isDelaySupported={isDelaySupported} />
-        ) : null}
-        <ApplyMessage draft={macroCheck} status={saveStatus} />
-      </DeferredApplyButtons>
     </>
   );
 };

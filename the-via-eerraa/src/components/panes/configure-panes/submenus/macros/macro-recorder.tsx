@@ -6,11 +6,13 @@ import {
   RawKeycodeSequenceAction,
 } from 'src/utils/macro-api/types';
 import {useKeycodeRecorder} from 'src/utils/use-keycode-recorder';
-import {MACRO_PREVIEW_ITEMS} from 'src/utils/macro-recording-preview';
+import {
+  getMacroRecordingPreviewStart,
+  MACRO_PREVIEW_ITEMS,
+} from 'src/utils/macro-recording-preview';
 import styled from 'styled-components';
 import {
   convertCharacterTaps,
-  expressionToSequence,
   foldKeydownKeyupKeys,
   convertToCharacterStreams,
   mergeConsecutiveWaits,
@@ -21,7 +23,6 @@ import {getKeycodes, IKeycode} from 'src/utils/key';
 import {
   getSequenceItemComponent,
   getSequenceLabel,
-  SequenceLabelSeparator,
   KeycodeSequenceWait,
   WaitInput,
 } from './keycode-sequence-components';
@@ -36,6 +37,35 @@ import {
 import {useDispatch} from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {focusRing} from 'src/components/inputs/accent-button';
+import {
+  completeMacroEventEdit,
+  createMacroEditFrame,
+  prepareMacroEventEdit,
+  rebaseMacroEditFrame,
+  remapMacroViewId,
+  type MacroEditCompletion,
+  type MacroEditFrame,
+  type MacroEditRequest,
+  type MacroEditSource,
+  type MacroEventEdit,
+  type MacroViewId,
+} from './macro-edit-model';
+import {
+  MacroEventViewport,
+  type MacroEventCellProps,
+  type MacroEventViewportHandle,
+  type MacroFocusTarget,
+  type MacroViewportSnapshot,
+} from './macro-event-viewport';
+import {
+  MACRO_EVENT_BLOCK_PADDING,
+  MACRO_EVENT_COLUMN_GAP,
+  MACRO_EVENT_INLINE_PADDING,
+  MACRO_EVENT_ROW_GAP,
+  getMacroContainerGridTemplateColumns,
+  getMacroRecordingFitBottom,
+  isMacroSingleColumn,
+} from './macro-row-layout';
 
 declare global {
   interface Navigator {
@@ -47,6 +77,7 @@ declare global {
 }
 
 const NoMacroRecorded = styled.div`
+  grid-column: 1 / -1;
   font-style: italic;
   color: var(--color_label-highlighted);
 `;
@@ -54,46 +85,56 @@ const NoMacroRecorded = styled.div`
 const RECORDING_PREVIEW_CHARACTERS = 160;
 // Events a recording shows before the box has been measured.
 const UNMEASURED_PREVIEW_ITEMS = 80;
-// A stopped macro is one list the pane scrolls, as in VIA. Past this many events
-// only the newest are listed, so a very long recording cannot stall the editor;
-// Script shows all of it.
-const MACRO_LIST_ITEMS = 5000;
 // Fullscreen/Keyboard Lock promises can outlive a recorder or a slot change.
 let keyboardLockOwner: symbol | undefined;
-const PreviewNote = styled.div`
-  color: var(--color_label);
-  font-size: 12px;
-`;
-
-// The pane a stopped macro scrolls with: the nearest box around it that scrolls.
-const scrollingPane = (element: HTMLElement) => {
-  for (let node = element.parentElement; node; node = node.parentElement) {
-    if (/auto|scroll/.test(getComputedStyle(node).overflowY)) return node;
-  }
-  return null;
-};
-
-// Recording, the box fills the pane and shows the newest events that fit it.
-// Stopped, it grows with the macro and the pane scrolls it whole, as in VIA.
-const MacroSequenceContainer = styled.div<{
-  $isModified: boolean;
-  $isRecording: boolean;
-}>`
+const RecorderFrame = styled.div`
   max-width: 960px;
   width: 100%;
-  display: block;
-  flex: ${(props) => (props.$isRecording ? '1 1 0' : '1 0 auto')};
-  min-height: 140px;
-  overflow: ${(props) => (props.$isRecording ? 'auto' : 'visible')};
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+`;
+const SequenceBorder = styled.div<{$isModified: boolean}>`
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border_color_cell);
+  border-style: ${(props) => (props.$isModified ? 'dashed' : 'solid')};
+  border-radius: 10px;
+`;
+const RecorderTools = styled.div`
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  z-index: 1;
+`;
+
+const MacroSequenceContainer = styled.div<{$singleColumn: boolean}>`
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  /* Wrap complete pairs, so alternating input and delay cells keep their columns. */
+  grid-template-columns: ${(props) =>
+    getMacroContainerGridTemplateColumns(props.$singleColumn)};
+  gap: ${MACRO_EVENT_ROW_GAP}px ${MACRO_EVENT_COLUMN_GAP}px;
+  align-content: start;
+  align-items: stretch;
+  flex: 1 1 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable;
   outline: none;
   ${focusRing}
-  border: 1px solid var(--border_color_cell);
-  border-style: ${(props) => (props.$isModified ? 'dashed' : 'solid')};
-  padding: 30px 20px;
-  border-radius: 15px;
-  margin-top: 10px;
+  padding: ${MACRO_EVENT_BLOCK_PADDING}px ${MACRO_EVENT_INLINE_PADDING}px;
+  border-radius: inherit;
+  margin: 0;
   box-sizing: border-box;
+
 `;
 
 type SmartTransformAcc = [
@@ -140,16 +181,6 @@ const smartTransform = (
   return [acc, [curr, id], currHeld] as SmartTransformAcc;
 };
 
-const componentJoin = (arr: (JSX.Element | null)[], separator: JSX.Element) => {
-  return arr.reduce((acc, next, idx) => {
-    if (idx) {
-      acc.push({...separator, key: idx.toString()});
-    }
-    acc.push(next);
-    return acc;
-  }, [] as (JSX.Element | null)[]);
-};
-
 const KeycodeMap = getKeycodes()
   .flatMap((menu) => menu.keycodes)
   .reduce((p, n) => ({...p, [n.code]: n}), {} as Record<string, IKeycode>);
@@ -164,10 +195,6 @@ const optimizeKeycodeSequence = (sequence: RawKeycodeSequence) => {
     convertToCharacterStreams,
   );
 };
-const cleanKeycodeSequence = (sequence: RawKeycodeSequence) => {
-  return pipeline(sequence, mergeConsecutiveWaits);
-};
-
 // Holding Escape is how a browser leaves fullscreen while the keyboard is locked, so
 // a recording that fullscreen ended closes with that press. It is not part of the
 // macro: the last Escape, whatever came after it and the wait before it are dropped.
@@ -197,32 +224,75 @@ const withoutFullscreenExit = (
 
 type MacroEventProps = {
   index: number;
+  viewId?: MacroViewId;
+  cellRef?: MacroEventCellProps['ref'];
+  row?: number;
   action: OptimizedKeycodeSequenceItem[0];
-  /** What a key, chord or text shows. */
-  label: string;
-  /** A wait's milliseconds. */
-  wait: number;
+  /** Formatted only when this cell renders. */
+  actionArg: OptimizedKeycodeSequenceItem[1];
   locked: boolean;
   isRecording: boolean;
-  deleteItem(index: number): void;
-  editWait(index: number, wait: number): void;
+  deleteItem(index: number, viewId?: MacroViewId): void;
+  editWait(index: number, wait: number, viewId?: MacroViewId): void;
 };
 
-// One event of the list. Its props are plain values and handlers that stay the
-// same, so an edit draws again only the events it changes.
+// Normalization can rebuild equal chord arrays without changing the cell.
+const sameMacroEventProps = (previous: MacroEventProps, next: MacroEventProps) => {
+  const keys = Object.keys(previous) as (keyof MacroEventProps)[];
+  return keys.length === Object.keys(next).length && keys.every((key) => {
+    if (!Object.prototype.hasOwnProperty.call(next, key)) return false;
+    const before = previous[key];
+    const after = next[key];
+    return Object.is(before, after) ||
+      (key === 'actionArg' && Array.isArray(before) && Array.isArray(after) &&
+        before.length === after.length &&
+        before.every((value, index) => value === after[index]));
+  });
+};
+
+// Compare event values and handlers before formatting the display label.
 const MacroEvent = React.memo(function MacroEvent({
   index,
+  viewId,
+  cellRef,
+  row,
   action,
-  label,
-  wait,
+  actionArg,
   locked,
   isRecording,
   deleteItem,
   editWait,
 }: MacroEventProps) {
+  const label = useMemo(() => {
+    if (action === RawKeycodeSequenceAction.Delay) return '';
+    const text = String(actionArg);
+    const shownText = isRecording && text.length > RECORDING_PREVIEW_CHARACTERS
+      ? `…${text.slice(-RECORDING_PREVIEW_CHARACTERS)}` : text;
+    return action === RawKeycodeSequenceAction.CharacterStream
+      ? shownText.replace(/ /g, '␣')
+      : Array.isArray(actionArg)
+      ? actionArg.map((key) => getSequenceLabel(KeycodeMap[key]) || key).join(' + ')
+      : getSequenceLabel(KeycodeMap[actionArg]) || text;
+  }, [action, actionArg, isRecording]);
+  const wait = action === RawKeycodeSequenceAction.Delay ? Number(actionArg) : 0;
   const Label = getSequenceItemComponent(action);
+  const remove = useCallback(
+    (index: number) => deleteItem(index, viewId),
+    [deleteItem, viewId],
+  );
+  const updateWait = useCallback(
+    (index: number, wait: number) => editWait(index, wait, viewId),
+    [editWait, viewId],
+  );
   return (
-    <Deletable index={index} deleteItem={deleteItem} disabled={locked}>
+    <Deletable
+      index={index}
+      viewId={viewId}
+      row={row}
+      eventRef={cellRef}
+      deleteItem={remove}
+      disabled={locked}
+    >
       {action !== RawKeycodeSequenceAction.Delay ? (
         <Label>{label}</Label>
       ) : isRecording ? (
@@ -231,22 +301,19 @@ const MacroEvent = React.memo(function MacroEvent({
         <WaitInput
           index={index}
           value={wait}
-          updateValue={editWait}
+          updateValue={updateWait}
           disabled={locked}
         />
       )}
     </Deletable>
   );
-});
+}, sameMacroEventProps);
 
 export const MacroRecorder: React.FC<{
   macroIndex: number;
-  /** The macro as the keyboard holds it. */
-  selectedMacro?: OptimizedKeycodeSequence;
-  /** The slot's edit that is not written yet, shown in place of the macro. */
-  draft?: string;
+  editSource: MacroEditSource;
   /** Keeps an edit as the draft of the slot it belongs to. */
-  editMacro(expression: string, macroIndex: number): void;
+  editMacro(expression: string, macroIndex: number, request?: MacroEditRequest): boolean;
   isModified: boolean;
   /**
    * Whether its keys and waits can be changed one by one. A change writes the whole
@@ -257,27 +324,35 @@ export const MacroRecorder: React.FC<{
   onRecordingChange(isRecording: boolean): void;
   onRecordingPreview?(byteCount: number): void;
   isDelaySupported: boolean;
+  renderFooter?: (controls: React.ReactNode) => React.ReactNode;
 }> = ({
   macroIndex,
-  selectedMacro,
-  draft,
+  editSource,
   editMacro,
   isModified,
   canEditItems,
   onRecordingChange,
   onRecordingPreview,
   isDelaySupported,
+  renderFooter = (controls) => controls,
 }) => {
   const {t} = useTranslation();
   // The slot a recording goes to, even once another is shown.
   const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
   const isRecording = recordingIndex !== null;
   const [viewport, setViewport] = useState({width: 0, height: 0});
+  const toolbar = useRef<HTMLDivElement | null>(null);
+  const [toolbarElement, setToolbarElement] = useState<HTMLDivElement | null>(null);
+  const bindToolbar = useCallback((element: HTMLDivElement | null) => {
+    toolbar.current = element;
+    setToolbarElement(element);
+  }, []);
   const [fit, setFit] = useState<{
     source: OptimizedKeycodeSequence;
     width: number;
     height: number;
     count: number;
+    measuredStart: number;
   }>();
   // A probe whose every event fitted while more remained, drawn again larger.
   const [probe, setProbe] = useState<{
@@ -305,7 +380,41 @@ export const MacroRecorder: React.FC<{
     smartOptimizeEnabled,
     isDelaySupported,
   );
-  const macroSequenceRef = useRef<HTMLDivElement>(null);
+  const macroSequenceRef = useRef<HTMLDivElement | null>(null);
+  const [scrollerElement, setScrollerElement] = useState<HTMLDivElement | null>(null);
+  const bindScroller = useCallback((element: HTMLDivElement | null) => {
+    macroSequenceRef.current = element;
+    setScrollerElement(element);
+  }, []);
+  const eventViewportRef = useRef<MacroEventViewportHandle>(null);
+  const idCounter = useRef(0);
+  const allocateId = useCallback(() => `event-${++idCounter.current}`, []);
+  const editFrameRef = useRef<MacroEditFrame>();
+  editFrameRef.current = editFrameRef.current
+    ? rebaseMacroEditFrame(editFrameRef.current, editSource, allocateId)
+    : createMacroEditFrame(editSource, allocateId);
+  const editFrame = editFrameRef.current;
+  const [, publishEditFrame] = useState(0);
+  const pendingSnapshot = useRef<{
+    frame: MacroEditFrame;
+    snapshot: MacroViewportSnapshot;
+  }>();
+  const contextKey = JSON.stringify([
+    editSource.devicePath,
+    editSource.connectionGeneration,
+    macroIndex,
+    editSource.epoch,
+  ]);
+  useLayoutEffect(() => {
+    const pending = pendingSnapshot.current;
+    pendingSnapshot.current = undefined;
+    if (pending?.frame === editFrame) {
+      eventViewportRef.current?.restoreSnapshot({
+        ...pending.snapshot,
+        invalidateUnseenMeasurements: true,
+      });
+    }
+  }, [editFrame]);
   const resetRecordingRef = useRef(resetRecording);
   resetRecordingRef.current = resetRecording;
   const mounted = useRef(true);
@@ -327,19 +436,10 @@ export const MacroRecorder: React.FC<{
 
   const recordedSequence = keycodeSequence;
 
-  const displayedSequence: OptimizedKeycodeSequence = useMemo(
-    () =>
-      recordingIndex === macroIndex
-        ? recordedSequence
-        : draft !== undefined
-        ? expressionToSequence(draft)
-        : selectedMacro ?? [],
-    [draft, macroIndex, recordedSequence, recordingIndex, selectedMacro],
-  );
-  // Edits read the sequence from here, so the events' handlers stay the same and
-  // an edit draws again only the events it changes.
-  const latestSequence = useRef(displayedSequence);
-  latestSequence.current = displayedSequence;
+  const displayedSequence = recordingIndex === macroIndex
+    ? recordedSequence : editFrame.sequence;
+  const editable = useRef(canEditItems);
+  editable.current = canEditItems;
 
   // The complete input is flushed on Stop, slot changes and unmount. Preview
   // updates publish only a byte count, not a full draft to parse and encode again.
@@ -438,44 +538,80 @@ export const MacroRecorder: React.FC<{
     [editMacro, macroIndex],
   );
 
-  const editSequence = useCallback(
-    (sequence: OptimizedKeycodeSequence) =>
-      editMacro(
-        sequenceToExpression(
-          cleanKeycodeSequence(sequence as RawKeycodeSequence),
-        ),
-        macroIndex,
-      ),
-    [editMacro, macroIndex],
-  );
-
+  const editEvent = useCallback((viewId: MacroViewId | undefined, edit: MacroEventEdit) => {
+    if (!viewId || !mounted.current || recording.current || !editable.current) return;
+    const frame = editFrameRef.current!;
+    const prepared = prepareMacroEventEdit(frame, viewId, edit);
+    if (!prepared) return;
+    const snapshot = eventViewportRef.current?.captureSnapshot();
+    // Move focus off a node before its deletion, then restore its logical neighbour.
+    if (edit.type === 'delete' &&
+      document.activeElement?.closest('[data-macro-view-id]')
+        ?.getAttribute('data-macro-view-id') === viewId) {
+      macroSequenceRef.current?.focus({preventScroll: true});
+    }
+    let completion: MacroEditCompletion | undefined;
+    const accepted = editMacro(prepared.trace.expression, frame.source.macroIndex, {
+      source: frame.source,
+      prepare: (source) => {
+        completion = completeMacroEventEdit(prepared, source, allocateId);
+        if (!completion) return false;
+        // Install before draft publication, which can synchronously render the recorder.
+        editFrameRef.current = completion.frame;
+        if (snapshot) {
+          const remap = <T extends {eventIndex: number; viewId?: string | number}>(
+            target: T | null,
+          ): T | null => {
+            if (!target) return null;
+            const oldId = target.viewId === undefined
+              ? frame.ids[target.eventIndex] : String(target.viewId);
+            const id = oldId === undefined
+              ? undefined : remapMacroViewId(oldId, completion!);
+            if (id === undefined) return null;
+            return {
+              ...target,
+              viewId: id,
+              eventIndex: completion!.frame.indexById.get(id)!,
+            };
+          };
+          const focus = (target: MacroFocusTarget | null) => {
+            const next = remap(target);
+            if (next?.controlKind === 'delay-input' &&
+              completion!.frame.sequence[next.eventIndex][0] !== RawKeycodeSequenceAction.Delay) {
+              next.controlKind = 'delete';
+            }
+            return next;
+          };
+          pendingSnapshot.current = {
+            frame: completion.frame,
+            snapshot: {
+              ...snapshot,
+              anchor: remap(snapshot.anchor),
+              focus: focus(snapshot.focus),
+              pendingNavigation: focus(snapshot.pendingNavigation),
+            },
+          };
+        }
+        return true;
+      },
+    });
+    if (accepted) publishEditFrame((revision) => revision + 1);
+  }, [allocateId, editMacro]);
   const deleteSequenceItem = useCallback(
-    (id: number) => {
-      // Deleting the focused item must not leave focus on a shifted event or body.
-      if (document.activeElement?.closest('[data-macro-event]')?.getAttribute('data-macro-event') === String(id)) {
-        macroSequenceRef.current?.focus({preventScroll: true});
-      }
-      const newSequence = [...latestSequence.current];
-      newSequence.splice(id, 1);
-      editSequence(newSequence);
-    },
-    [editSequence],
+    (_index: number, viewId?: MacroViewId) => editEvent(viewId, {type: 'delete'}),
+    [editEvent],
   );
-
   const editSequenceItem = useCallback(
-    (id: number, val: number) => {
-      const newSequence = [...latestSequence.current];
-      newSequence.splice(id, 1, [RawKeycodeSequenceAction.Delay, val]);
-      editSequence(newSequence);
-    },
-    [editSequence],
+    (_index: number, value: number, viewId?: MacroViewId) =>
+      editEvent(viewId, {type: 'wait', value}),
+    [editEvent],
   );
 
   // A recording shows the newest events that fit the box: it probes a slice the
   // size of the box, larger while all of it fits and more remain, then keeps the
   // events whose actual wrapped bounds fit, whole rows back from the newest one.
-  // Stopped, the macro is one list that the pane scrolls.
-  const fitted = fit?.source === displayedSequence &&
+  // Stopped, the viewport mounts the visible rows of the complete macro.
+  const hasFit = fit?.source === displayedSequence &&
     fit.width === viewport.width && fit.height === viewport.height;
   const probed = probe?.source === displayedSequence &&
     probe.width === viewport.width && probe.height === viewport.height;
@@ -485,12 +621,18 @@ export const MacroRecorder: React.FC<{
       ? Math.min(MACRO_PREVIEW_ITEMS, Math.max(1, Math.ceil(viewport.width / 40) * Math.ceil(viewport.height / 50)))
       : UNMEASURED_PREVIEW_ITEMS;
   const visibleCount = isRecording
-    ? fitted ? fit.count : probeCount
-    : Math.min(displayedSequence.length, MACRO_LIST_ITEMS);
-  const previewStart = Math.max(0, displayedSequence.length - visibleCount);
+    ? hasFit ? fit.count : probeCount
+    : 0;
+  const previewStart = getMacroRecordingPreviewStart(
+    displayedSequence,
+    visibleCount,
+    recordingIndex === macroIndex ? totalItems : displayedSequence.length,
+  );
+  // Trimming an orphan wait can regroup wrapped cells beyond the measured row boundary.
+  const fitted = hasFit && fit.measuredStart === previewStart;
 
   useEffect(() => {
-    const element = macroSequenceRef.current;
+    const element = scrollerElement;
     if (!element || typeof ResizeObserver === 'undefined') return;
     const update = () => setViewport((previous) => {
       const width = element.clientWidth;
@@ -502,7 +644,7 @@ export const MacroRecorder: React.FC<{
     const observer = new ResizeObserver(update);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [scrollerElement]);
 
   // A font that loads late changes the size of events: a recording is fitted again.
   useEffect(() => {
@@ -515,38 +657,38 @@ export const MacroRecorder: React.FC<{
 
   // The newest recorded event stays in view, also once the fit replaces the probe.
   useLayoutEffect(() => {
-    if (isRecording && macroSequenceRef.current) {
-      macroSequenceRef.current.scrollTop = macroSequenceRef.current.scrollHeight;
+    if (isRecording && scrollerElement) {
+      scrollerElement.scrollTop = scrollerElement.scrollHeight;
     }
-  }, [isRecording, recordedSequence, previewStart, visibleCount]);
+  }, [isRecording, recordedSequence, previewStart, visibleCount, scrollerElement]);
 
-  // Once a recording stops, the whole macro is listed and the pane scrolls to its
-  // end, where the recording left its newest events; another slot opens at its
-  // start.
+  // Once a recording stops, the whole macro is listed and the sequence box
+  // scrolls to its end, where the recording left its newest events; another
+  // slot opens at its start.
   const scrolledSlot = useRef({macroIndex, recordingIndex});
   useLayoutEffect(() => {
     const previous = scrolledSlot.current;
     scrolledSlot.current = {macroIndex, recordingIndex};
-    const pane =
-      macroSequenceRef.current && scrollingPane(macroSequenceRef.current);
+    const pane = scrollerElement;
     if (!pane) return;
     if (previous.macroIndex !== macroIndex) {
+      eventViewportRef.current?.scrollToStart();
       pane.scrollTop = 0;
     } else if (previous.recordingIndex === macroIndex && recordingIndex === null) {
-      pane.scrollTop = pane.scrollHeight;
+      eventViewportRef.current?.scrollToEnd();
     }
-  }, [macroIndex, recordingIndex]);
+  }, [macroIndex, recordingIndex, scrollerElement]);
 
   useLayoutEffect(() => {
-    const element = macroSequenceRef.current;
+    const element = scrollerElement;
     if (!element || !viewport.height || !isRecording || fitted) return;
     element.scrollTop = 0;
-    const bottom = element.getBoundingClientRect().bottom - parseFloat(getComputedStyle(element).paddingBottom) - element.clientTop;
+    const bottom = getMacroRecordingFitBottom(element, 0);
     const rects = Array.from(element.querySelectorAll<HTMLElement>('[data-macro-event]'), (item) => item.getBoundingClientRect());
     const overflow = rects.findIndex((rect) => rect.bottom > bottom + 1);
     const context = {source: displayedSequence, ...viewport};
     // Every drawn event fits while older ones remain before the probe: draw more.
-    if (overflow === -1 && previewStart > 0 && probeCount < MACRO_PREVIEW_ITEMS) {
+    if (!hasFit && overflow === -1 && previewStart > 0 && probeCount < MACRO_PREVIEW_ITEMS) {
       setProbe({...context, count: Math.min(MACRO_PREVIEW_ITEMS, probeCount * 2)});
       return;
     }
@@ -567,61 +709,57 @@ export const MacroRecorder: React.FC<{
       while (row > 0 && end - rowTop(row - 1) <= room + 1) row--;
       count = rects.length - starts[row];
     }
-    setFit({...context, count: Math.max(1, count)});
-  }, [displayedSequence, previewStart, probeCount, viewport, isRecording, fitted]);
+    const fittedCount = Math.max(1, count);
+    setFit({
+      ...context,
+      count: fittedCount,
+      measuredStart: Math.max(0, displayedSequence.length - fittedCount),
+    });
+  }, [displayedSequence, previewStart, probeCount, viewport, isRecording, hasFit, fitted, scrollerElement]);
 
-  // A recording is measured with its note in place, so the events fitted below
-  // the note still fit once it stays.
-  const shortenedPreview = isRecording && ((!fitted && viewport.height > 0) ||
-    totalItems > displayedSequence.length - previewStart ||
-    displayedSequence.some(([action, value]) =>
-      action === RawKeycodeSequenceAction.CharacterStream &&
-      String(value).length > RECORDING_PREVIEW_CHARACTERS,
-    ));
-  const sequence = useMemo(() => {
-    const locked = isRecording || !canEditItems;
-    return componentJoin(
-      displayedSequence.slice(previewStart, previewStart + visibleCount).map(([action, actionArg], offset) => {
-        const id = previewStart + offset;
-        const text = String(actionArg);
-        const shownText = isRecording && text.length > RECORDING_PREVIEW_CHARACTERS
-          ? `…${text.slice(-RECORDING_PREVIEW_CHARACTERS)}`
-          : text;
-        return (
-          <MacroEvent
-            key={`${id}-${action}`}
-            index={id}
-            action={action}
-            label={
-              action === RawKeycodeSequenceAction.Delay
-                ? ''
-                : action === RawKeycodeSequenceAction.CharacterStream
-                ? shownText.replace(/ /g, '␣')
-                : Array.isArray(actionArg)
-                ? actionArg
-                    .map((k) => getSequenceLabel(KeycodeMap[k]) || k)
-                    .join(' + ')
-                : getSequenceLabel(KeycodeMap[actionArg]) || text
-            }
-            wait={action === RawKeycodeSequenceAction.Delay ? Number(actionArg) : 0}
-            locked={locked}
-            isRecording={isRecording}
-            deleteItem={deleteSequenceItem}
-            editWait={editSequenceItem}
-          />
-        );
+  const getViewId = useCallback(
+    (index: number) => editFrame.ids[index],
+    [editFrame],
+  );
+  const getIndexForViewId = useCallback(
+    (id: string | number) => editFrame.indexById.get(String(id)) ?? -1,
+    [editFrame],
+  );
+  const getEventKind = useCallback(
+    (index: number) => editFrame.sequence[index][0] === RawKeycodeSequenceAction.Delay
+      ? 'delay' as const : 'key' as const,
+    [editFrame],
+  );
+  const renderEvent = useCallback(
+    (index: number, viewId: string | number, cell?: MacroEventCellProps) => {
+      const [action, actionArg] = displayedSequence[index];
+      return (
+        <MacroEvent
+          key={viewId}
+          viewId={cell ? String(viewId) : undefined}
+          cellRef={cell?.ref}
+          row={cell?.['data-macro-row']}
+          index={index}
+          action={action}
+          actionArg={actionArg}
+          locked={isRecording || !canEditItems}
+          isRecording={isRecording}
+          deleteItem={deleteSequenceItem}
+          editWait={editSequenceItem}
+        />
+      );
+    },
+    [displayedSequence, isRecording, canEditItems, deleteSequenceItem, editSequenceItem],
+  );
+  const sequence = useMemo(
+    () => !isRecording ? [] : displayedSequence
+      .slice(previewStart, previewStart + visibleCount)
+      .map(([action], offset) => {
+        const index = previewStart + offset;
+        return renderEvent(index, `${index}-${action}`);
       }),
-      <SequenceLabelSeparator />,
-    );
-  }, [
-    displayedSequence,
-    deleteSequenceItem,
-    editSequenceItem,
-    isRecording,
-    canEditItems,
-    previewStart,
-    visibleCount,
-  ]);
+    [displayedSequence, isRecording, previewStart, visibleCount, renderEvent],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -668,59 +806,70 @@ export const MacroRecorder: React.FC<{
     }
   }, [stopRecording]);
 
+  const controls = (
+    <MacroEditControls
+      isFullscreen={isFullscreen}
+      isEmpty={!displayedSequence.length}
+      optimizeRecording={smartOptimizeEnabled}
+      recordDelays={recordDelaysEnabled}
+      isRecording={isRecording}
+      addText={() => {}}
+      clearMacro={clearMacro}
+      toggleOptimizeRecording={() => {
+        dispatch(
+          setMacroEditorSettings({
+            smartOptimizeEnabled: !smartOptimizeEnabled,
+          }),
+        );
+      }}
+      toggleRecordDelays={() => {
+        dispatch(
+          setMacroEditorSettings({
+            recordDelaysEnabled: !recordDelaysEnabled,
+          }),
+        );
+      }}
+      toggleFullscreen={toggleFullscreen}
+      recordingToggleChange={(start) =>
+        start ? startRecording() : stopRecording()
+      }
+      isDelaySupported={isDelaySupported}
+    />
+  );
+
   return (
     <>
-      <MacroSequenceContainer ref={macroSequenceRef} $isModified={isModified || isRecording}
-        $isRecording={isRecording} tabIndex={0} aria-label={t('Macros')}>
-        {!isRecording && previewStart > 0 ? (
-          <PreviewNote>{t('Showing recent inputs; Script shows all of them')}</PreviewNote>
-        ) : null}
-        {sequence.length ? (
-          sequence
-        ) : (
-          <NoMacroRecorded>{t('No macro recorded yet...')}</NoMacroRecorded>
-        )}
-      </MacroSequenceContainer>
-      {/* Below the box, not on its edge as VIA has them. */}
-      <div
-        style={{
-          border: 'none',
-          maxWidth: 960,
-          width: '100%',
-          display: 'flex',
-          justifyContent: 'center',
-          marginTop: 10,
-        }}
-      >
-        <MacroEditControls
-          isFullscreen={isFullscreen}
-          isEmpty={!displayedSequence.length}
-          optimizeRecording={smartOptimizeEnabled}
-          recordDelays={recordDelaysEnabled}
-          isRecording={isRecording}
-          addText={() => {}}
-          clearMacro={clearMacro}
-          toggleOptimizeRecording={() => {
-            dispatch(
-              setMacroEditorSettings({
-                smartOptimizeEnabled: !smartOptimizeEnabled,
-              }),
-            );
-          }}
-          toggleRecordDelays={() => {
-            dispatch(
-              setMacroEditorSettings({
-                recordDelaysEnabled: !recordDelaysEnabled,
-              }),
-            );
-          }}
-          toggleFullscreen={toggleFullscreen}
-          recordingToggleChange={(start) =>
-            start ? startRecording() : stopRecording()
-          }
-          isDelaySupported={isDelaySupported}
-        />
-      </div>
+      <RecorderFrame>
+        <SequenceBorder $isModified={isModified || isRecording}>
+          <MacroSequenceContainer
+            ref={bindScroller}
+            $singleColumn={isMacroSingleColumn(viewport.width)}
+            tabIndex={0}
+            aria-label={t('Macros')}
+          >
+            {!isRecording ? (
+              <MacroEventViewport
+                ref={eventViewportRef}
+                eventCount={editFrame.sequence.length}
+                contextKey={contextKey}
+                modelRevision={editFrame.revision}
+                scrollerElement={scrollerElement}
+                toolbarElement={toolbarElement}
+                hasTrailingAfterPseudo={false}
+                disabled={!canEditItems}
+                getViewId={getViewId}
+                getIndexForViewId={getIndexForViewId}
+                getEventKind={getEventKind}
+                renderEvent={renderEvent}
+                emptyState={<NoMacroRecorded>{t('No macro recorded yet...')}</NoMacroRecorded>}
+              />
+            ) : sequence.length ? sequence : (
+              <NoMacroRecorded>{t('No macro recorded yet...')}</NoMacroRecorded>
+            )}
+          </MacroSequenceContainer>
+        </SequenceBorder>
+      </RecorderFrame>
+      {renderFooter(<RecorderTools ref={bindToolbar}>{controls}</RecorderTools>)}
     </>
   );
 };

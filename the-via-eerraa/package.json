@@ -35,6 +35,7 @@
     "@react-three/drei": "^9.114.2",
     "@react-three/fiber": "^8.17.9",
     "@reduxjs/toolkit": "^2.3.0",
+    "@tanstack/react-virtual": "3.14.26",
     "@the-via/pelpi": "^0.0.3",
     "@the-via/reader": "^1.14.4",
     "@webscopeio/react-textarea-autocomplete": "^4.9.2",

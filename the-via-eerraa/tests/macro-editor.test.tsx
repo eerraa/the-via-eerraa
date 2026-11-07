@@ -27,6 +27,11 @@ import ko from '../src/locales/ko.json';
 import type {ConnectedDevice} from '../src/types/types';
 import type {KeyboardAPI} from '../src/utils/keyboard-api';
 import {ERA_WIRE as W} from '../src/utils/era-wire.generated';
+import {
+  GroupedKeycodeSequenceAction as Grouped,
+  RawKeycodeSequenceAction as Action,
+  type RawKeycodeSequence,
+} from '../src/utils/macro-api/types';
 
 const originalWarn = console.warn;
 console.warn = () => undefined;
@@ -35,6 +40,7 @@ const modules = await (async () => {
     await import('../src/utils/keyboard-api');
     return {
       pane: await import('../src/components/panes/configure-panes/macros'),
+      viewport: await import('../src/components/panes/configure-panes/submenus/macros/macro-event-viewport'),
       devices: await import('../src/store/devicesSlice'),
       macros: await import('../src/store/macrosSlice'),
       firmware: await import('../src/store/firmwareSlice'),
@@ -45,6 +51,7 @@ const modules = await (async () => {
       configurePlace: await import('../src/store/configurePlaceSlice'),
       macroApi: await import('../src/utils/macro-api'),
       common: await import('../src/utils/macro-api/macro-api.common'),
+      recordingPreview: await import('../src/utils/macro-recording-preview'),
       definitions: await import('../src/store/definitionsSlice'),
       menus: await import('../src/store/menusSlice'),
       macroOptions: await import('../src/store/macroOptionsSlice'),
@@ -66,6 +73,7 @@ const {
   configurePlace,
   macroApi: {getMacroAPI},
   common: {checkMacroDraft, expressionToRawSequence},
+  recordingPreview: {createMacroRecordingPreview, getMacroRecordingPreviewStart},
   definitions,
   menus,
   macroOptions,
@@ -135,6 +143,133 @@ describe('macro values', () => {
         1_000_001,
       );
     }
+  });
+});
+
+describe('macro provenance', () => {
+  test('retains both text origins when deleting the intervening key', () => {
+    const trace = modules.common.transformMacroSequenceTracked(
+      [[Action.CharacterStream, 'a'], [Action.CharacterStream, 'b']],
+      [[0], [2]],
+    );
+    expect(trace.expression).toBe('ab');
+    expect(trace.sequence).toEqual([[Action.CharacterStream, 'ab']]);
+    expect(trace.origins).toEqual([[0, 2]]);
+    expect(trace.ranges).toEqual([
+      {start: 0, end: 1, origins: [0]},
+      {start: 1, end: 2, origins: [2]},
+    ]);
+  });
+
+  test('unions adjacent waits including the edited second wait', () => {
+    const trace = modules.common.transformMacroSequenceTracked([
+      [Action.Delay, 10],
+      [Action.Delay, 25],
+      [Action.Delay, 5],
+    ]);
+    expect(trace.expression).toBe('{40}');
+    expect(trace.sequence).toEqual([[Action.Delay, 40]]);
+    expect(trace.origins).toEqual([[0, 1, 2]]);
+    expect(trace.ranges).toEqual([
+      {start: 0, end: 4, origins: [0, 1, 2]},
+    ]);
+  });
+
+  test('attributes each generated backslash tap without shifting a later wait', () => {
+    const trace = modules.common.transformMacroSequenceTracked([
+      [Action.CharacterStream, 'a\\'],
+      [Action.CharacterStream, '\\'],
+      [Action.Tap, 'KC_A'],
+      [Action.Delay, 20],
+    ]);
+    expect(trace.expression).toBe('a{KC_BSLS}{KC_BSLS}{KC_A}{20}');
+    expect(trace.sequence).toEqual([
+      [Action.CharacterStream, 'a'],
+      [Action.Tap, 'KC_BSLS'],
+      [Action.Tap, 'KC_BSLS'],
+      [Action.Tap, 'KC_A'],
+      [Action.Delay, 20],
+    ]);
+    expect(trace.origins).toEqual([[0], [0], [1], [2], [3]]);
+    expect(trace.ranges).toEqual([
+      {start: 0, end: 1, origins: [0]},
+      {start: 1, end: 10, origins: [0]},
+      {start: 10, end: 19, origins: [1]},
+      {start: 19, end: 25, origins: [2]},
+      {start: 25, end: 29, origins: [3]},
+    ]);
+  });
+
+  test('uses UTF-16 escaped text ranges and actual scanner token boundaries', () => {
+    const trace = modules.common.transformMacroSequenceTracked([
+      [Action.CharacterStream, '😀{'],
+      [Action.CharacterStream, 'z'],
+      [Action.Down, 'KC_A'],
+      [Action.Up, 'KC_A'],
+    ]);
+    expect(trace.expression).toBe('😀\\{z{+KC_A}{-KC_A}');
+    expect(trace.sequence).toEqual([
+      [Action.CharacterStream, '😀{z'],
+      [Action.Down, 'KC_A'],
+      [Action.Up, 'KC_A'],
+    ]);
+    expect(trace.origins).toEqual([[0, 1], [2], [3]]);
+    expect(trace.ranges).toEqual([
+      {start: 0, end: 4, origins: [0]},
+      {start: 4, end: 5, origins: [1]},
+      {start: 5, end: 12, origins: [2]},
+      {start: 12, end: 19, origins: [3]},
+    ]);
+    expect(modules.common.splitExpressionTracked('a\\{b{10}{KC_A}')).toEqual([
+      {value: 'a\\{b', start: 0, end: 4},
+      {value: '{10}', start: 4, end: 8},
+      {value: '{KC_A}', start: 8, end: 14},
+    ]);
+  });
+
+  test('projects taps and chords back onto actual saved down/up events', () => {
+    const saved: RawKeycodeSequence = [
+      [Action.Down, 'KC_A'],
+      [Action.Up, 'KC_A'],
+      [Action.Down, 'KC_LCTL'],
+      [Action.Down, 'KC_C'],
+      [Action.Up, 'KC_C'],
+      [Action.Up, 'KC_LCTL'],
+      [Action.Delay, 10],
+    ];
+    const projection = modules.common.projectSavedMacroSequenceTracked(saved);
+    expect(projection.expression).toBe('{KC_A}{KC_LCTL,KC_C}{10}');
+    expect(projection.expression).toBe(
+      modules.common.sequenceToExpression(
+        modules.common.rawSequenceToOptimizedSequence(saved),
+      ),
+    );
+    expect(projection.ranges).toEqual([
+      {start: 0, end: 6, origins: [0, 1]},
+      {start: 6, end: 20, origins: [2, 3, 4, 5]},
+      {start: 20, end: 24, origins: [6]},
+    ]);
+    const edit = modules.common.transformMacroSequenceTracked([
+      [Action.Tap, 'KC_A'],
+      [Grouped.Chord, ['KC_LCTL', 'KC_C']],
+      [Action.Delay, 10],
+    ], [[10], [11], [12]]);
+    expect(modules.common.mapMacroExpressionOrigins(edit, projection, saved.length))
+      .toEqual([[10], [10], [11], [11], [11], [11], [12]]);
+    expect(() => modules.common.mapMacroExpressionOrigins(
+      {...edit, expression: 'different'},
+      projection,
+      saved.length,
+    )).toThrow('Macro expressions must match');
+    expect(saved).toEqual([
+      [Action.Down, 'KC_A'],
+      [Action.Up, 'KC_A'],
+      [Action.Down, 'KC_LCTL'],
+      [Action.Down, 'KC_C'],
+      [Action.Up, 'KC_C'],
+      [Action.Up, 'KC_LCTL'],
+      [Action.Delay, 10],
+    ]);
   });
 });
 
@@ -285,21 +420,49 @@ const bounds = () => ({
   width: 0,
   height: 0,
 });
-const inertElement = () => ({
+const inertWindow = {
+  setTimeout,
+  clearTimeout,
+  performance,
+  requestAnimationFrame: (callback: FrameRequestCallback) =>
+    setTimeout(() => callback(performance.now()), 0),
+  cancelAnimationFrame: clearTimeout,
+};
+const inertElement = () => {
+  const listeners = new Map<string, Set<() => void>>();
+  const element = {
   style: {} as Record<string, string>,
   classList: {add: () => undefined, remove: () => undefined},
   getBoundingClientRect: bounds,
+  ownerDocument: {defaultView: inertWindow},
+  querySelectorAll: () => [],
+  querySelector: () => null,
   appendChild: () => undefined,
   removeChild: () => undefined,
   contains: () => true,
-  addEventListener: () => undefined,
-  removeEventListener: () => undefined,
+  addEventListener: (type: string, listener: () => void) => {
+    const registered = listeners.get(type) ?? new Set();
+    registered.add(listener);
+    listeners.set(type, registered);
+  },
+  removeEventListener: (type: string, listener: () => void) => {
+    listeners.get(type)?.delete(listener);
+  },
   focus: () => undefined,
   scrollTop: 0,
   scrollHeight: 240,
+  clientWidth: 0,
+  clientHeight: 0,
+  scrollTo: ({top}: {top?: number}) => {
+    if (top === undefined || element.scrollTop === top) return;
+    element.scrollTop = top;
+    listeners.get('scroll')?.forEach((listener) => listener());
+  },
   offsetTop: 0,
   offsetLeft: 0,
-});
+  };
+  return element;
+};
 const documentElement = {
   addEventListener: (type: string, listener: () => void) => {
     if (type === 'fullscreenchange') page.listeners.add(listener);
@@ -504,9 +667,13 @@ const scriptBoxElement = () => {
   return element;
 };
 let scriptBox: ReturnType<typeof scriptBoxElement>;
+let sequenceBox: ReturnType<typeof inertElement>;
 // Elements given keyboard focus, by the popup they open.
 let focused: string[] = [];
-const render = async (store: TestStore) => {
+const render = async (
+  store: TestStore,
+  sequenceElement?: ReturnType<typeof inertElement>,
+) => {
   await act(async () => {
     renderer = create(
       <Provider store={store}>
@@ -519,6 +686,14 @@ const render = async (store: TestStore) => {
           if (element.props['aria-haspopup']) {
             const popup = String(element.props['aria-haspopup']);
             return {...inertElement(), focus: () => focused.push(popup)};
+          }
+          if (element.props['aria-label'] === '매크로' && element.props.tabIndex === 0) {
+            sequenceBox = sequenceElement ?? inertElement();
+            if (!sequenceElement) {
+              sequenceBox.clientWidth = 960;
+              sequenceBox.clientHeight = 440;
+            }
+            return sequenceBox;
           }
           if (element.type !== 'textarea') return inertElement();
           scriptBox = scriptBoxElement();
@@ -898,6 +1073,144 @@ describe('editing and saving macros', () => {
     );
   });
 
+  test('normalizing a wait edit preserves the active input identity', async () => {
+    const {store} = await connect('macro-wait-identity', {stored: ['', '']});
+    const root = await render(store);
+    openScript(root);
+    type(root, '{10}{20}');
+    openRecorder(root);
+    const edited = waitInputs(root)[1];
+    act(() => edited.props.onChange({target: {value: '25'}}));
+    expect(waitInputs(root).map((field) => field.props.value)).toEqual([35]);
+    expect(waitInputs(root)[0] === edited).toBe(true);
+    act(() => renderer!.unmount());
+
+    const {store: savedStore} = await connect('macro-wait-saved-identity', {
+      stored: ['{+KC_A}{-KC_A}{20}', ''],
+    });
+    const savedRoot = await render(savedStore);
+    openScript(savedRoot);
+    type(savedRoot, '{KC_A}{10}');
+    openRecorder(savedRoot);
+    const savedInput = waitInputs(savedRoot)[0];
+    act(() => savedInput.props.onChange({target: {value: '20'}}));
+    expect(waitInputs(savedRoot)[0].props.value).toBe(20);
+    expect(waitInputs(savedRoot)[0] === savedInput).toBe(true);
+    expect(applyButton(savedRoot).props.disabled).toBe(true);
+  });
+
+  test('pre-renders wheel-scroll headroom without mounting the whole macro', async () => {
+    const {store} = await connect('macro-scroll-headroom', {
+      size: 8192,
+      stored: ['{KC_A}{1}'.repeat(400), ''],
+    });
+    const root = await render(store);
+    const renderedEvents = () => new Set(
+      root.findAll(
+        (node) => typeof node.type === 'string' &&
+          node.props['data-macro-event'] !== undefined,
+      ).map((node) => node.props['data-macro-event']),
+    );
+    // The 960px-wide, 440px-high fixture fits eight events per 44px row.
+    expect(renderedEvents().has(95)).toBe(true);
+    expect(renderedEvents().has(799)).toBe(false);
+    sequenceBox.scrollHeight = 4400;
+    act(() => sequenceBox.scrollTo({top: 1760}));
+    expect(renderedEvents().has(296)).toBe(true);
+    expect(renderedEvents().has(408)).toBe(true);
+    expect(renderedEvents().has(799)).toBe(false);
+  });
+
+  test('shrinking a row maximum keeps the visible macro event anchored', async () => {
+    const originalObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+    const observers: TestObserver[] = [];
+    class TestObserver {
+      targets = new Set<Element>();
+      constructor(private callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
+      observe(target: Element) { this.targets.add(target); }
+      unobserve(target: Element) { this.targets.delete(target); }
+      disconnect() { this.targets.clear(); }
+      resize(target: Element, height: number) {
+        this.callback([{
+          target,
+          borderBoxSize: [{blockSize: height}],
+        }] as unknown as ResizeObserverEntry[], this as unknown as ResizeObserver);
+      }
+    }
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: TestObserver,
+    });
+    const heights = new Map([[0, 80], [1, 60]]);
+    const cells = new Map<number, ReturnType<typeof inertElement>>();
+    const scroller = Object.assign(inertElement(), {
+      clientWidth: 214,
+      clientHeight: 176,
+      offsetWidth: 214,
+      offsetHeight: 176,
+      scrollHeight: 4400,
+      getBoundingClientRect: () => ({
+        top: 0, left: 0, right: 214, bottom: 176, width: 214, height: 176,
+      }),
+    });
+    const grid = Object.assign(inertElement(), {
+      querySelectorAll: () => Array.from(cells.values()),
+    });
+    const {MacroEventViewport} = modules.viewport;
+    try {
+      act(() => {
+        renderer = create(
+          <MacroEventViewport
+            eventCount={80}
+            contextKey="row-maximum"
+            scrollerElement={scroller as unknown as HTMLElement}
+            getViewId={(index) => index}
+            getIndexForViewId={(id) => Number(id)}
+            renderEvent={(_index, _id, {key, ...props}) => <div key={key} {...props} />}
+            hasTrailingAfterPseudo={false}
+          />,
+          {
+            createNodeMock: (element) => {
+              const index = element.props['data-macro-event'];
+              if (index === undefined) return grid;
+              const attributes = new Map<string, string>();
+              const cell = Object.assign(inertElement(), {
+                isConnected: true,
+                getAttribute: (name: string) =>
+                  attributes.get(name) ??
+                  (element.props[name] === undefined ? null : String(element.props[name])),
+                setAttribute: (name: string, value: string) => attributes.set(name, value),
+                getBoundingClientRect: () => ({
+                  ...bounds(),
+                  height: heights.get(index) ?? 36,
+                }),
+              });
+              cells.set(index, cell);
+              return cell;
+            },
+          },
+        );
+      });
+      const first = cells.get(0)! as unknown as Element;
+      const second = cells.get(1)! as unknown as Element;
+      const observer = observers.find((item) => item.targets.has(first))!;
+      act(() => scroller.scrollTo({top: 120}));
+      heights.set(0, 40);
+      act(() => observer.resize(first, 40));
+      expect(scroller.scrollTop).toBe(100);
+      heights.set(1, 36);
+      act(() => observer.resize(second, 36));
+      expect(scroller.scrollTop).toBe(80);
+    } finally {
+      act(() => renderer?.unmount());
+      renderer = undefined;
+      if (originalObserver) Object.defineProperty(globalThis, 'ResizeObserver', originalObserver);
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver');
+    }
+  });
+
   test('editing and deleting a long recording preserves event positions and its tail', async () => {
     const expression = Array.from(
       {length: 170},
@@ -908,16 +1221,146 @@ describe('editing and saving macros', () => {
       stored: [expression, ''],
     });
     const root = await render(store);
-    act(() => waitInputs(root)[40].props.onChange({target: {value: '7000'}}));
-    act(() => itemDeletes(root)[80].props.onClick());
+    const event = (index: number) => root.find(
+      (node) => typeof node.type === 'string' &&
+        node.props['data-macro-event'] === index,
+    );
+    expect(itemDeletes(root).length).toBeLessThan(340);
+    sequenceBox.scrollHeight = 2000;
+    act(() => sequenceBox.scrollTo({top: 440}));
+    act(() => event(81).findByType('input').props.onChange({target: {value: '7000'}}));
+    act(() => event(80).findByType('button').props.onClick());
     await clickApply(root);
     const saved = macros.getExpressions(store.getState() as any)[0];
     expect(saved).toContain('{KC_A}{7040}{KC_A}{42}');
     expect(saved.endsWith('{KC_A}{170}')).toBe(true);
+    act(() => sequenceBox.scrollTo({top: 1560}));
+    expect(waitInputs(root).some((field) => field.props.value === 170)).toBe(true);
+    sequenceBox.scrollTop = 120;
+    act(() => button(root, 'M1').props.onClick());
+    expect(sequenceBox.scrollTop).toBe(0);
   });
 });
 
 describe('recording macros', () => {
+  test('an uncropped recording preview preserves its initial wait', () => {
+    const preview = createMacroRecordingPreview(true, true);
+    preview.append([Action.Up, 'KC_A']);
+    preview.append([Action.Delay, 100]);
+    preview.append([Action.Down, 'KC_A']);
+    const frame = preview.read();
+    const start = getMacroRecordingPreviewStart(
+      frame.sequence,
+      frame.sequence.length,
+      frame.totalItems,
+    );
+    expect(frame.sequence.slice(start)).toEqual([
+      [Action.Delay, 100],
+      [Action.CharacterStream, 'a'],
+    ]);
+  });
+
+  test('a cropped recording preview keeps input before its following delay', () => {
+    const sequence: RawKeycodeSequence = [
+      [Action.Down, 'KC_A'],
+      [Action.Delay, 17],
+      [Action.Up, 'KC_A'],
+      [Action.Delay, 23],
+      [Action.Down, 'KC_B'],
+      [Action.Delay, 19],
+      [Action.Up, 'KC_B'],
+      [Action.Delay, 21],
+      [Action.Down, 'KC_C'],
+    ];
+    const start = getMacroRecordingPreviewStart(sequence, 6, sequence.length);
+    expect(sequence.slice(start)).toEqual([
+      [Action.Down, 'KC_B'],
+      [Action.Delay, 19],
+      [Action.Up, 'KC_B'],
+      [Action.Delay, 21],
+      [Action.Down, 'KC_C'],
+    ]);
+  });
+
+  test('a recording remeasures wrapped rows after aligning its cropped start', async () => {
+    const originalObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+    const originalTimeout = globalThis.setTimeout;
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    });
+    // Two 86px columns: trimming a wait separates two tall cells into different rows.
+    const layouts: Record<number, [number, number][]> = {
+      0: [[14, 36], [14, 36], [58, 36], [58, 36], [102, 60], [102, 60], [170, 36], [170, 36]],
+      3: [[14, 60], [14, 60], [82, 60], [82, 60], [150, 36]],
+      5: [[14, 60], [14, 60], [82, 36]],
+    };
+    const element = Object.assign(inertElement(), {
+      clientWidth: 214,
+      clientHeight: 176,
+      clientTop: 0,
+      getBoundingClientRect: () => ({
+        top: 0, left: 0, right: 214, bottom: 176, width: 214, height: 176,
+      }),
+      querySelectorAll: () => {
+        const cells = renderer!.root.findAll(
+          (node) => typeof node.type === 'string' &&
+            node.props['data-macro-event'] !== undefined,
+        );
+        if (!cells.length) return [];
+        const layout = layouts[cells[0].props['data-macro-event']];
+        return cells.map((_, index) => ({
+          getBoundingClientRect: () => {
+            const [top, height] = layout[index];
+            const left = index % 2 ? 112 : 16;
+            return {top, bottom: top + height, left, right: left + 86, width: 86, height};
+          },
+        }));
+      },
+    });
+    try {
+      const {store} = await connect('macro-recording-row-refit');
+      store.dispatch(settings.setMacroEditorSettings({
+        smartOptimizeEnabled: false,
+        recordDelaysEnabled: true,
+      }));
+      const root = await render(store, element);
+      await pressRecord(root);
+      let publishPreview!: () => void;
+      const timer = originalTimeout(() => undefined, 0);
+      clearTimeout(timer);
+      globalThis.setTimeout = ((callback: () => void) => {
+        publishPreview = callback;
+        return timer;
+      }) as typeof setTimeout;
+      act(() => {
+        timedKey('keydown', 'KeyA', 0);
+        timedKey('keyup', 'KeyA', 0);
+        timedKey('keydown', 'KeyB', 10);
+        timedKey('keydown', 'PrintScreen', 10);
+        timedKey('keyup', 'PrintScreen', 10);
+        timedKey('keydown', 'KeyC', 20);
+      });
+      globalThis.setTimeout = originalTimeout;
+      act(() => publishPreview());
+      const indices = root.findAll(
+        (node) => typeof node.type === 'string' &&
+          node.props['data-macro-event'] !== undefined,
+      ).map((node) => node.props['data-macro-event']);
+      expect(indices).toEqual([5, 6, 7]);
+    } finally {
+      globalThis.setTimeout = originalTimeout;
+      act(() => renderer?.unmount());
+      renderer = undefined;
+      if (originalObserver) Object.defineProperty(globalThis, 'ResizeObserver', originalObserver);
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver');
+    }
+  });
+
   test('recording tooltips require mouse hover and stay dismissed after stop', async () => {
     const {store} = await connect('macro-record-hover');
     const root = await render(store);

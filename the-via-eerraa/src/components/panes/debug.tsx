@@ -168,8 +168,17 @@ const TestControls = () => {
       </ControlRow>
       <MacroRecorder
         macroIndex={0}
-        selectedMacro={[[RawKeycodeSequenceAction.Delay, 4]]}
-        editMacro={() => undefined}
+        editSource={{
+          devicePath: null,
+          connectionGeneration: null,
+          macroIndex: 0,
+          epoch: 0,
+          macroApi: undefined,
+          draft: undefined,
+          savedExpression: '{4}',
+          savedSequence: [[RawKeycodeSequenceAction.Delay, 4]],
+        }}
+        editMacro={() => false}
         isModified={false}
         canEditItems={true}
         onRecordingChange={() => undefined}
@@ -177,7 +186,17 @@ const TestControls = () => {
       />
       <MacroRecorder
         macroIndex={1}
-        editMacro={() => undefined}
+        editSource={{
+          devicePath: null,
+          connectionGeneration: null,
+          macroIndex: 1,
+          epoch: 0,
+          macroApi: undefined,
+          draft: undefined,
+          savedExpression: '',
+          savedSequence: [],
+        }}
+        editMacro={() => false}
         isModified={false}
         canEditItems={true}
         onRecordingChange={() => undefined}

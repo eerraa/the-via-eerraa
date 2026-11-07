@@ -24,18 +24,18 @@ const CharacterStreamContainer = styled.div`
 `;
 
 const KeycodeSequenceLabel = styled.div`
-  display: inline-flex;
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
   user-select: none;
-  color: #717070;
-  padding: 6px 4px;
-  text-overflow: ellipsis;
-  min-width: 30px;
-  font-size: 12px;
+  padding: 6px 6px;
   text-align: center;
-  border-radius: 4px;
   justify-content: center;
   align-items: center;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 16px;
   border: 2px solid var(--border_color_icon);
   background: var(--bg_control);
@@ -44,84 +44,114 @@ const KeycodeSequenceLabel = styled.div`
   box-shadow: none;
   position: relative;
   border-radius: 2px;
-  white-space: nowrap;
-  position: relative;
-  margin: 15px 0px;
 `;
-const KeycodeDownLabel = styled(KeycodeSequenceLabel)`
-  &::after {
-    border-style: solid;
-    border-color: transparent;
-    content: '';
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 6px solid var(--color_accent);
-    position: absolute;
-    margin-top: 55px;
-    width: 0;
-  }
+const KeycodeStateContainer = styled(KeycodeSequenceLabel)<{
+  $direction: 'down' | 'up';
+}>`
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: stretch;
+  padding: 0;
+  border-top-color: ${(props) =>
+    props.$direction === 'up'
+      ? 'var(--color_accent)'
+      : 'var(--border_color_icon)'};
+  border-bottom-color: ${(props) =>
+    props.$direction === 'down'
+      ? 'var(--color_accent)'
+      : 'var(--border_color_icon)'};
 `;
 
-export const SequenceLabelSeparator = styled.div`
+const KeycodeStateLane = styled.span`
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
   width: 20px;
-  display: inline-flex;
-  vertical-align: middle;
-  border: 1px solid var(--color_accent);
+  padding: 2px 0;
+  background: color-mix(in srgb, var(--bg_menu) 45%, var(--bg_control));
+  border-right: 1px solid
+    color-mix(in srgb, var(--border_color_icon) 55%, transparent);
+  color: var(--color_accent);
 `;
+
+const KeycodeStateGlyph = styled.svg`
+  display: block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 12px;
+`;
+
+const KeycodeStateText = styled.span`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px 5px;
+  font-size: 16px;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+`;
+
+const KeycodeStateLabel: React.FC<
+  PropsWithChildren<{direction: 'down' | 'up'}>
+> = ({children, direction}) => (
+  <KeycodeStateContainer $direction={direction}>
+    <KeycodeStateLane aria-hidden="true">
+      <KeycodeStateGlyph viewBox="0 0 10 12" focusable="false">
+        <path
+          d={
+            direction === 'down'
+              ? 'M1 2h8L5 7.5 1 2zm0 7.5h8v1.8H1V9.5z'
+              : 'M1 .7h8v1.8H1V.7zm4 3.8L9 10H1l4-5.5z'
+          }
+          fill="currentColor"
+        />
+      </KeycodeStateGlyph>
+    </KeycodeStateLane>
+    <KeycodeStateText>{children}</KeycodeStateText>
+  </KeycodeStateContainer>
+);
+
+const KeycodeDownLabel: React.FC<PropsWithChildren<{}>> = ({children}) => (
+  <KeycodeStateLabel direction="down">{children}</KeycodeStateLabel>
+);
 
 const CharacterStreamLabel = styled(KeycodeSequenceLabel)`
-  display: block;
-  box-sizing: border-box;
   max-width: 100%;
-  overflow-wrap: anywhere;
   border-color: var(--border_color_cell);
   background: var(--bg_menu);
-  white-space: pre-wrap;
-  min-height: 1.25em;
+  min-height: 36px;
   letter-spacing: 2px;
 `;
 
 const KeycodePressLabel = styled(KeycodeSequenceLabel)`
-  display: block;
-  box-sizing: border-box;
   max-width: 100%;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
   border-color: var(--color_accent);
 `;
 
-const KeycodeUpLabel = styled(KeycodeSequenceLabel)`
-  &::after {
-    content: '';
-    border-style: solid;
-    margin-top: -55px;
-    border-color: transparent;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-bottom: 6px solid var(--color_accent);
-    position: absolute;
-    width: 0;
-  }
-`;
+const KeycodeUpLabel: React.FC<PropsWithChildren<{}>> = ({children}) => (
+  <KeycodeStateLabel direction="up">{children}</KeycodeStateLabel>
+);
 
 export const KeycodeSequenceWait = styled.div`
-  display: inline-flex;
+  display: flex;
   font-weight: bold;
   user-select: none;
-  color: #717070;
-  text-overflow: ellipsis;
-  min-width: 30px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
   text-align: center;
   justify-content: center;
   align-items: center;
-  white-space: pre-wrap;
   font-size: 16px;
   color: var(--color_label-highlighted);
+  background: var(--bg_menu);
   box-shadow: none;
-  position: relative;
   white-space: nowrap;
   position: relative;
-  margin: 15px 0px;
+  margin: 0;
   box-sizing: border-box;
   border: 2px solid;
   padding: 4px 4px;

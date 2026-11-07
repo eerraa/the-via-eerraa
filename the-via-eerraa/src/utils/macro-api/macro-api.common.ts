@@ -6,6 +6,31 @@ import {
   RawKeycodeSequenceAction,
   RawKeycodeSequenceItem,
 } from './types';
+import {
+  createMacroOriginReader,
+  traceMacroSequence,
+  unionMacroOrigins,
+  type MacroExpressionToken,
+  type MacroExpressionTrace,
+  type MacroOrigin,
+  type MacroOriginRange,
+  type MacroOrigins,
+  type MacroSequenceTrace,
+  type MacroTransformTrace,
+} from './macro-provenance';
+export {
+  mapMacroExpressionOrigins,
+  traceMacroSequence,
+} from './macro-provenance';
+export type {
+  MacroExpressionToken,
+  MacroExpressionTrace,
+  MacroOrigin,
+  MacroOriginRange,
+  MacroOrigins,
+  MacroSequenceTrace,
+  MacroTransformTrace,
+} from './macro-provenance';
 
 /** Why a macro draft cannot be written as it is. */
 export type MacroExpressionProblem =
@@ -45,8 +70,10 @@ export const MAX_MACRO_DELAY_MS = 9999;
 
 // split "{KC_A}bcd{KC_E}" into "{KC_A}","bcd","{KC_E}",
 // handles escaped braces e.g. "\{"
-function splitExpression(expression: string): string[] {
-  const parts: string[] = [];
+function splitExpression(
+  expression: string,
+  emit: (value: string, start: number, end: number) => void,
+): void {
   let literalStart = 0;
   let open = -1;
   // Match the existing grammar in one pass. Retrying the regex at every open
@@ -59,14 +86,23 @@ function splitExpression(expression: string): string[] {
     } else if (open === -1 && character === '{' && expression[index - 1] !== '\\') {
       open = index;
     } else if (open !== -1 && character === '}') {
-      if (literalStart < open) parts.push(expression.slice(literalStart, open));
-      parts.push(expression.slice(open, index + 1));
+      if (literalStart < open) emit(expression.slice(literalStart, open), literalStart, open);
+      emit(expression.slice(open, index + 1), open, index + 1);
       literalStart = index + 1;
       open = -1;
     }
   }
-  if (literalStart < expression.length) parts.push(expression.slice(literalStart));
-  return parts;
+  if (literalStart < expression.length) {
+    emit(expression.slice(literalStart), literalStart, expression.length);
+  }
+}
+
+export function splitExpressionTracked(expression: string): MacroExpressionToken[] {
+  const tokens: MacroExpressionToken[] = [];
+  splitExpression(expression, (value, start, end) => {
+    tokens.push({value, start, end});
+  });
+  return tokens;
 }
 
 function optimizedSequenceToRawSequence(
@@ -98,27 +134,47 @@ export function rawSequenceToOptimizedSequence(
   return result;
 }
 
+export function rawSequenceToOptimizedSequenceTracked(
+  sequence: RawKeycodeSequence,
+  origins?: MacroOrigins[],
+): MacroSequenceTrace {
+  const input = traceMacroSequence(sequence, origins);
+  const output: MacroOrigins[] = [];
+  return {
+    sequence: convertToTapsAndChords(sequence, {input: input.origins, output}),
+    origins: output,
+  };
+}
+
+type SequenceProvenance = {input: MacroOrigins[]; output: MacroOrigins[]};
+
 function convertToTapsAndChords(
   sequence: OptimizedKeycodeSequence,
+  trace?: SequenceProvenance,
 ): OptimizedKeycodeSequence {
   let cat: OptimizedKeycodeSequence = [];
+  let catOrigins = trace ? [] as MacroOrigins[] : undefined;
   let keyDownKeycodes: string[] = [];
   let unmatchedKeyDownCount: number = 0;
 
   // Convert taps to down/up so that chord detection algorithm is simpler
-  const seq: OptimizedKeycodeSequence = sequence.reduce((p, n) => {
+  const seqOrigins = trace ? [] as MacroOrigins[] : undefined;
+  const seq: OptimizedKeycodeSequence = sequence.reduce((p, n, index) => {
     if (n[0] === RawKeycodeSequenceAction.Tap) {
       p.push(
         [RawKeycodeSequenceAction.Down, n[1]],
         [RawKeycodeSequenceAction.Up, n[1]],
       );
+      seqOrigins?.push(trace!.input[index], trace!.input[index]);
     } else {
       p.push(n);
+      seqOrigins?.push(trace!.input[index]);
     }
     return p;
   }, [] as OptimizedKeycodeSequenceItem[]);
 
   let seq2: OptimizedKeycodeSequence = [];
+  const seq2Origins = trace ? [] as MacroOrigins[] : undefined;
   seq.forEach((element, index) => {
     // This gets set true while we are iterating over
     // a possible key chord (symmetric nested key downs/key ups)
@@ -126,6 +182,7 @@ function convertToTapsAndChords(
     // Concatenate elements of a possible key chord, if it turns out
     // not possible, then we concatenate this to the output
     cat.push(element);
+    catOrigins?.push(seqOrigins![index]);
 
     if (element[0] === RawKeycodeSequenceAction.Down) {
       // If key down
@@ -153,8 +210,10 @@ function convertToTapsAndChords(
           } else {
             seq2.push([GroupedKeycodeSequenceAction.Chord, keyDownKeycodes]);
           }
+          if (seq2Origins) seq2Origins.push(unionMacroOrigins(catOrigins!));
           // We don't want this concatenated in the default case below.
           cat = [];
+          if (catOrigins) catOrigins = [];
         } else {
           // Still a possible key chord, keep going
           keepGoing = true;
@@ -168,7 +227,9 @@ function convertToTapsAndChords(
 
     if (!keepGoing) {
       seq2.push(...cat);
+      if (seq2Origins) seq2Origins.push(...catOrigins!);
       cat = [];
+      if (catOrigins) catOrigins = [];
       keyDownKeycodes = [];
       unmatchedKeyDownCount = 0;
     }
@@ -184,9 +245,13 @@ function convertToTapsAndChords(
       seq2[index][1] === seq2[index + 1][1]
     ) {
       seq3.push([RawKeycodeSequenceAction.Tap, seq2[index][1] as string]);
+      trace?.output.push(unionMacroOrigins([
+        seq2Origins![index], seq2Origins![index + 1],
+      ]));
       index++;
     } else {
       seq3.push(seq2[index]);
+      trace?.output.push(seq2Origins![index]);
     }
   }
 
@@ -288,7 +353,34 @@ export function trimLastWait(sequence: RawKeycodeSequence): RawKeycodeSequence {
 export function mergeConsecutiveWaits(
   sequence: RawKeycodeSequence,
 ): RawKeycodeSequence {
-  return sequence.reduce((p, n) => {
+  return mergeConsecutiveWaitsCore(sequence) as RawKeycodeSequence;
+}
+
+export function mergeConsecutiveWaitsTracked(
+  input: MacroSequenceTrace,
+): MacroSequenceTrace {
+  const origins: MacroOrigins[] = [];
+  return {
+    sequence: mergeConsecutiveWaitsCore(input.sequence, {
+      input: input.origins,
+      output: origins,
+    }),
+    origins,
+  };
+}
+
+function mergeConsecutiveWaitsCore(
+  sequence: OptimizedKeycodeSequence,
+  trace?: SequenceProvenance,
+): OptimizedKeycodeSequence {
+  let waitOrigins: Set<MacroOrigin> | undefined;
+  const finishWait = () => {
+    if (waitOrigins) {
+      trace!.output[trace!.output.length - 1] = [...waitOrigins];
+      waitOrigins = undefined;
+    }
+  };
+  const result = sequence.reduce((p, n, index) => {
     if (
       p[p.length - 1] &&
       p[p.length - 1][0] === RawKeycodeSequenceAction.Delay &&
@@ -298,11 +390,19 @@ export function mergeConsecutiveWaits(
         RawKeycodeSequenceAction.Delay,
         Number(p[p.length - 1][1]) + Number(n[1]),
       ]);
+      if (trace) {
+        waitOrigins ??= new Set(trace.output[trace.output.length - 1]);
+        for (const origin of trace.input[index]) waitOrigins.add(origin);
+      }
     } else {
+      finishWait();
       p.push(n);
+      trace?.output.push(trace.input[index]);
     }
     return p;
-  }, [] as RawKeycodeSequence);
+  }, [] as OptimizedKeycodeSequence);
+  finishWait();
+  return result;
 }
 
 export function foldKeydownKeyupKeys(
@@ -397,40 +497,87 @@ export function convertToCharacterStreams(
 export function sequenceToExpression(
   sequence: OptimizedKeycodeSequence,
 ): string {
+  return sequenceToExpressionCore(sequence);
+}
+
+export function sequenceToExpressionTracked(
+  input: MacroSequenceTrace,
+): MacroExpressionTrace {
+  const ranges: MacroOriginRange[] = [];
+  return {
+    expression: sequenceToExpressionCore(input.sequence, {
+      origins: input.origins,
+      ranges,
+    }),
+    ranges,
+  };
+}
+
+function sequenceToExpressionCore(
+  sequence: OptimizedKeycodeSequence,
+  trace?: {origins: MacroOrigins[]; ranges: MacroOriginRange[]},
+): string {
   let result: string[] = [];
   let text: string[] = [];
+  let textOrigins = trace ? [] as MacroOrigins[] : undefined;
+  let offset = 0;
+  const append = (value: string, origins?: MacroOrigins, tokenWidth?: number) => {
+    result.push(value);
+    if (trace && value.length) {
+      if (tokenWidth) {
+        for (let start = offset; start < offset + value.length; start += tokenWidth) {
+          trace.ranges.push({start, end: start + tokenWidth, origins: origins!});
+        }
+      } else {
+        trace.ranges.push({start: offset, end: offset + value.length, origins: origins!});
+      }
+    }
+    offset += value.length;
+  };
   const flushText = (beforeCommand: boolean) => {
     if (!text.length) return;
-    let literal = text.join('').replace(/{/g, '\\{');
+    const literal = text.join('');
     // The existing VIA expression grammar treats a backslash before a command
     // as an escaped brace. Spell that trailing run as ordinary key taps instead.
-    if (beforeCommand) {
-      literal = literal.replace(/\\+$/, (slashes) => '{KC_BSLS}'.repeat(slashes.length));
-    }
-    result.push(literal);
+    const trailingStart = beforeCommand ? literal.search(/\\+$/) : -1;
+    let consumed = 0;
+    text.forEach((fragment, index) => {
+      const literalLength = trailingStart < 0
+        ? fragment.length
+        : Math.max(0, Math.min(fragment.length, trailingStart - consumed));
+      append(fragment.slice(0, literalLength).replace(/{/g, '\\{'), textOrigins?.[index]);
+      const slashCount = fragment.length - literalLength;
+      if (slashCount) {
+        append('{KC_BSLS}'.repeat(slashCount), textOrigins?.[index], '{KC_BSLS}'.length);
+      }
+      consumed += fragment.length;
+    });
     text = [];
+    if (textOrigins) textOrigins = [];
   };
-  sequence.forEach((element) => {
+  sequence.forEach((element, index) => {
     if (element[0] === RawKeycodeSequenceAction.CharacterStream) {
       text.push(element[1] as string);
+      textOrigins?.push(trace!.origins[index]);
       return;
     }
     flushText(true);
+    const origins = trace?.origins[index];
     switch (element[0]) {
       case RawKeycodeSequenceAction.Tap:
-        result.push('{' + element[1] + '}');
+        append('{' + element[1] + '}', origins);
         break;
       case RawKeycodeSequenceAction.Down:
-        result.push('{+' + element[1] + '}');
+        append('{+' + element[1] + '}', origins);
         break;
       case RawKeycodeSequenceAction.Up:
-        result.push('{-' + element[1] + '}');
+        append('{-' + element[1] + '}', origins);
         break;
       case RawKeycodeSequenceAction.Delay:
-        result.push('{' + element[1] + '}');
+        append('{' + element[1] + '}', origins);
         break;
       case GroupedKeycodeSequenceAction.Chord:
-        result.push('{' + element[1].join(',') + '}');
+        append('{' + element[1].join(',') + '}', origins);
         break;
     }
   });
@@ -439,15 +586,36 @@ export function sequenceToExpression(
 }
 
 export function expressionToSequence(str: string): OptimizedKeycodeSequence {
-  let expression: string[] = splitExpression(str);
-  let result: OptimizedKeycodeSequence = [];
+  return expressionToSequenceCore(str);
+}
 
-  expression.forEach((element) => {
+export function expressionToSequenceTracked(
+  input: MacroExpressionTrace,
+): MacroSequenceTrace {
+  const origins: MacroOrigins[] = [];
+  return {
+    sequence: expressionToSequenceCore(input.expression, {ranges: input.ranges, origins}),
+    origins,
+  };
+}
+
+function expressionToSequenceCore(
+  str: string,
+  trace?: {ranges: MacroOriginRange[]; origins: MacroOrigins[]},
+): OptimizedKeycodeSequence {
+  let result: OptimizedKeycodeSequence = [];
+  const readOrigins = trace && createMacroOriginReader(trace.ranges);
+
+  splitExpression(str, (element, start, end) => {
+    const emit = (item: OptimizedKeycodeSequenceItem) => {
+      result.push(item);
+      if (trace) trace.origins.push(readOrigins!(start, end));
+    };
     if (/^{.*}$/.test(element)) {
       // If it's a tag with braces
       element = element.slice(1, -1);
       if (/^\d+$/.test(element)) {
-        result.push([RawKeycodeSequenceAction.Delay, parseInt(element)]);
+        emit([RawKeycodeSequenceAction.Delay, parseInt(element)]);
       } else {
         // Otherwise handle as a keycode block
         // Test if there's a + or - after the {
@@ -462,16 +630,16 @@ export function expressionToSequence(str: string): OptimizedKeycodeSequence {
         if (keycodes.length > 0) {
           if (downOrUpAction == null) {
             if (keycodes.length == 1) {
-              result.push([RawKeycodeSequenceAction.Tap, keycodes[0]]);
+              emit([RawKeycodeSequenceAction.Tap, keycodes[0]]);
             } else {
-              result.push([GroupedKeycodeSequenceAction.Chord, keycodes]);
+              emit([GroupedKeycodeSequenceAction.Chord, keycodes]);
             }
           } else {
             const action: RawKeycodeSequenceAction =
               downOrUpAction == '+'
                 ? RawKeycodeSequenceAction.Down
                 : RawKeycodeSequenceAction.Up;
-            result.push([action, keycodes[0]]);
+            emit([action, keycodes[0]]);
           }
         }
       }
@@ -479,11 +647,29 @@ export function expressionToSequence(str: string): OptimizedKeycodeSequence {
       // It's a character sequence
       // Remove escape character \ before {
       element = element.replace(/\\{/g, '{');
-      result.push([RawKeycodeSequenceAction.CharacterStream, element]);
+      emit([RawKeycodeSequenceAction.CharacterStream, element]);
     }
   });
 
   return result;
+}
+
+/** The recorder's existing wait-clean / serialize / reparse transaction. */
+export function transformMacroSequenceTracked(
+  sequence: OptimizedKeycodeSequence,
+  origins?: MacroOrigins[],
+): MacroTransformTrace {
+  const expression = sequenceToExpressionTracked(
+    mergeConsecutiveWaitsTracked(traceMacroSequence(sequence, origins)),
+  );
+  return {...expression, ...expressionToSequenceTracked(expression)};
+}
+
+/** Exactly the getExpressions projection, retaining actual saved AST indices. */
+export function projectSavedMacroSequenceTracked(
+  sequence: RawKeycodeSequence,
+): MacroExpressionTrace {
+  return sequenceToExpressionTracked(rawSequenceToOptimizedSequenceTracked(sequence));
 }
 
 /** What a macro types, its waits left out: a macro key's tooltip shows this. */

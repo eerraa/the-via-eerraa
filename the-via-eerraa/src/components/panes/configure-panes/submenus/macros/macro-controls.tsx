@@ -12,7 +12,7 @@ import {
   IconButtonContainer,
   IconToggleContainer,
 } from 'src/components/inputs/icon-button';
-import {IconButtonTooltip} from 'src/components/inputs/tooltip';
+import {ProgressBarTooltip} from 'src/components/inputs/tooltip';
 import styled from 'styled-components';
 import {useTranslation} from 'react-i18next';
 import {useState} from 'react';
@@ -20,7 +20,11 @@ import {useState} from 'react';
 const MacroEditControlsContainer = styled.div`
   background: var(--bg_menu);
   display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0 10px;
 `;
 const MacroControlGroupContainer = styled.div`
@@ -82,7 +86,7 @@ export const MacroEditControls: React.FC<{
         color={'var(--color_label)'}
         icon={isRecording ? faSquare : faCircle}
       />
-      {recordHovered && <IconButtonTooltip>{recordLabel}</IconButtonTooltip>}
+      {recordHovered && <ProgressBarTooltip>{recordLabel}</ProgressBarTooltip>}
     </IconButtonContainer>
   );
   return (
@@ -96,9 +100,9 @@ export const MacroEditControls: React.FC<{
                 color="var(--color_label)"
                 icon={faTrash}
               />
-              <IconButtonTooltip>
+              <ProgressBarTooltip>
                 {t('Clear', {context: 'key'})}
-              </IconButtonTooltip>
+              </ProgressBarTooltip>
             </IconButtonContainer>
           </MacroControlGroupContainer>
           <MacroControlGroupDivider />
@@ -115,9 +119,9 @@ export const MacroEditControls: React.FC<{
               color="var(--color_label)"
               icon={isFullscreen ? faCompress : faExpand}
             />
-            <IconButtonTooltip>
+            <ProgressBarTooltip>
               {isFullscreen ? t('Exit Fullscreen') : t('Fullscreen')}
-            </IconButtonTooltip>
+            </ProgressBarTooltip>
           </IconButtonContainer>
         }
       </MacroControlGroupContainer>
@@ -130,11 +134,11 @@ export const MacroEditControls: React.FC<{
               onClick={toggleOptimizeRecording}
             >
               <FontAwesomeIcon size={'sm'} icon={faMagicWandSparkles} />
-              <IconButtonTooltip>
+              <ProgressBarTooltip>
                 {!optimizeRecording
                   ? t('Use Smart Optimization')
                   : t('Skip Smart Optimization')}
-              </IconButtonTooltip>
+              </ProgressBarTooltip>
             </IconToggleContainer>
             <IconToggleContainer
               disabled={!isDelaySupported}
@@ -146,13 +150,13 @@ export const MacroEditControls: React.FC<{
                 icon={faStopwatch}
                 className={'fa-stack-1x'}
               />
-              <IconButtonTooltip>
+              <ProgressBarTooltip>
                 {!isDelaySupported
                   ? t('Upgrade firmware to use delays')
                   : !recordDelays
                   ? t('Record Delays')
                   : t('Skip Recording Delays')}
-              </IconButtonTooltip>
+              </ProgressBarTooltip>
             </IconToggleContainer>
           </MacroControlGroupContainer>
         </>

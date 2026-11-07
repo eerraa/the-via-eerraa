@@ -82,6 +82,12 @@ test('macro write bookkeeping does not repaint keyboard canvases; accepted conte
     selectable: false,
   };
   const fillText = mock(() => {});
+  const consoleErrors: string[] = [];
+  const originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    consoleErrors.push(args.map(String).join(' '));
+    originalConsoleError(...args);
+  };
   const app = () => <Provider store={store}><KeyGroup {...props} /></Provider>;
   let renderer: ReturnType<typeof create> | undefined;
   try {
@@ -98,6 +104,14 @@ test('macro write bookkeeping does not repaint keyboard canvases; accepted conte
         } : null,
       });
     });
+    expect(
+      consoleErrors.filter((message) =>
+        message.includes(
+          'A props object containing a "key" prop is being spread into JSX',
+        ),
+      ),
+    ).toEqual([]);
+    expect(renderer!.root.findAllByType('canvas')).toHaveLength(2);
     const rendered = () => JSON.stringify(renderer!.toJSON());
     expect(fillText).toHaveBeenCalled();
     expect(rendered()).toContain('before');
@@ -120,6 +134,7 @@ test('macro write bookkeeping does not repaint keyboard canvases; accepted conte
     expect(rendered()).not.toContain('before');
     expect(fillText).toHaveBeenCalled();
   } finally {
+    console.error = originalConsoleError;
     if (renderer) act(() => renderer!.unmount());
     for (const [name, original] of originals) {
       if (original) Object.defineProperty(globalThis, name, original);

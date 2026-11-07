@@ -22,7 +22,7 @@ const TextArea = styled.textarea`
   scrollbar-gutter: stable;
   color: var(--color_label);
   width: 100%;
-  height: 200px;
+  height: 100%;
   font-size: 16px;
   line-height: 18px;
   resize: none;
@@ -40,7 +40,9 @@ const TextArea = styled.textarea`
 const TextAreaFrame = styled.div`
   position: relative;
   background: var(--bg_control);
+  width: 100%;
   height: 100%;
+  min-height: 0;
 `;
 
 // Laid out like the textarea over it, with its text invisible, so a mark sits under
@@ -135,9 +137,11 @@ const MarkedTextArea: React.FC<MarkedTextAreaProps> = ({
 };
 
 const AutoHeightRow = styled(ControlRow)`
-  height: auto;
+  height: 100%;
   flex: 1 1 0;
-  min-height: 140px;
+  min-height: 0;
+  border-bottom: none;
+  padding: 0;
   align-items: stretch;
 `;
 

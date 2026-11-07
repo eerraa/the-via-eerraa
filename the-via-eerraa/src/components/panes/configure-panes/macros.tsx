@@ -34,29 +34,43 @@ import {getSelectedKeycodesVersion} from '../../../store/firmwareSlice';
 import {getSelectedStateSyncCapability} from '../../../store/stateSyncSlice';
 import {ensureMacroContents} from '../../../store/stateSyncThunks';
 import {getMacroAPI} from '../../../utils/macro-api';
+import {checkMacroDraft} from '../../../utils/macro-api/macro-api.common';
 import {getSelectedPendingMacroOptions, useMacroOptions} from './macro-options';
 import {ConfigureStatusMessage} from './status-message';
 import {useTranslation} from 'react-i18next';
 import {useSubmenuTab} from '../../../utils/use-configure-place';
 
+const MacroBody = styled(TabbedBody)`
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+`;
+
 const MacroPane = styled(CenterPane)`
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--color_dark_grey);
 `;
 
 const Container = styled.div`
-  display: flex;
-  align-items: center;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  row-gap: 6px;
+  width: 100%;
   height: 100%;
+  min-height: 0;
   box-sizing: border-box;
-  padding: 12px;
-  /* As far below the slot tabs as KEYMAP's keys sit below its tabs. */
-  padding-top: 20px;
-  /* A long macro grows past the pane, as in VIA, and the column scrolls it. */
-  overflow: auto;
-  > * {
-    flex-shrink: 0;
+  padding: 6px 12px;
+  overflow: hidden;
+
+  @media (max-height: 540px) {
+    grid-template-rows: auto minmax(56px, 1fr) auto;
+    overflow-y: auto;
   }
 `;
 
@@ -103,6 +117,15 @@ export const Pane: FC = () => {
     [api, keycodesVersion, protocol],
   );
 
+  const selectedDraft = macroDrafts[selectedMacro];
+  const macroText = selectedDraft ?? macroExpressions[selectedMacro] ?? '';
+  const macroDraftCheck = useMemo(
+    () => macroApi
+      ? checkMacroDraft(macroApi, macroText)
+      : {byteCount: 0, stored: macroText},
+    [macroApi, macroText],
+  );
+
   // Asked again when State Sync capability settles, which can follow the first render.
   useEffect(() => {
     if (selectedDevice && !macrosReady) {
@@ -140,6 +163,7 @@ export const Pane: FC = () => {
               macroApi,
               macroDrafts[idx],
               macroExpressions[idx] || '',
+              idx === selectedMacro ? macroDraftCheck : undefined,
             ) ||
               pendingOptions.has(idx)) ? (
               <DirtyDot aria-hidden="true" />
@@ -153,6 +177,7 @@ export const Pane: FC = () => {
       openSubmenu,
       macrosReady,
       macroApi,
+      macroDraftCheck,
       macroDrafts,
       macroExpressions,
       pendingOptions,
@@ -183,7 +208,7 @@ export const Pane: FC = () => {
   return (
     <TabbedCell>
       <SubmenuTabBar label={t('Macros')}>{macroMenus}</SubmenuTabBar>
-      <TabbedBody>
+      <MacroBody>
         <MacroPane>
           <Container>
             {macrosReady ? (
@@ -193,6 +218,8 @@ export const Pane: FC = () => {
                 selectedMacro={selectedMacro}
                 saveMacros={saveMacro}
                 macroApi={macroApi}
+                draft={selectedDraft}
+                draftCheck={macroDraftCheck}
                 onRecordingChange={setRecording}
                 lead={<BackLinks>{backLinks}</BackLinks>}
                 options={macroOptions ?? undefined}
@@ -207,7 +234,7 @@ export const Pane: FC = () => {
             )}
           </Container>
         </MacroPane>
-      </TabbedBody>
+      </MacroBody>
     </TabbedCell>
   );
 };

@@ -5,6 +5,7 @@ import {
   splitLongDelays,
 } from './macro-api/macro-api.common';
 import {
+  type OptimizedKeycodeSequence,
   RawKeycodeSequence,
   RawKeycodeSequenceAction as Action,
   RawKeycodeSequenceItem,
@@ -12,6 +13,19 @@ import {
 
 /** The most events a macro preview shows; a recording keeps that many of its newest. */
 export const MACRO_PREVIEW_ITEMS = 1000;
+
+export const getMacroRecordingPreviewStart = (
+  sequence: OptimizedKeycodeSequence,
+  visibleCount: number,
+  totalItems: number,
+) => {
+  let start = Math.max(0, sequence.length - visibleCount);
+  // A wait exposed by cropping belongs to an omitted input.
+  if (start > 0 || totalItems > sequence.length) {
+    while (sequence[start]?.[0] === Action.Delay) start++;
+  }
+  return start;
+};
 
 type PreviewState = {
   pending: RawKeycodeSequence[];

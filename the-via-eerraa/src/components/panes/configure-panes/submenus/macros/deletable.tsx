@@ -1,6 +1,6 @@
 import {faXmarkCircle} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {PropsWithChildren} from 'react';
+import {PropsWithChildren, type Ref} from 'react';
 import styled from 'styled-components';
 import {focusRing} from 'src/components/inputs/accent-button';
 import {useTranslation} from 'react-i18next';
@@ -9,7 +9,8 @@ const DeleteButton = styled.button`
   appearance: none;
   position: absolute;
   right: -5px;
-  top: 6px;
+  top: -6px;
+  z-index: 1;
   padding: 0;
   border: none;
   line-height: 1;
@@ -24,11 +25,23 @@ const DeleteButton = styled.button`
   ${focusRing}
 `;
 
-const DeletableContainer = styled.div`
-  display: inline-flex;
+const DeletableContainer = styled.div<{}>`
+  display: flex;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   vertical-align: middle;
   position: relative;
+  &:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    right: -8px;
+    top: 50%;
+    width: 6px;
+    border-top: 1px solid var(--color_accent);
+    opacity: 0.45;
+    pointer-events: none;
+  }
   &:hover ${DeleteButton}, &:focus-within ${DeleteButton} {
     opacity: 1;
     transform: scale(1);
@@ -38,6 +51,9 @@ const DeletableContainer = styled.div`
 export const Deletable: React.FC<
   PropsWithChildren<{
     index: number;
+    viewId?: string;
+    row?: number;
+    eventRef?: Ref<HTMLDivElement>;
     disabled: boolean;
     deleteItem: (index: number) => void;
   }>
@@ -45,7 +61,10 @@ export const Deletable: React.FC<
   const {t} = useTranslation();
   return (
     <DeletableContainer
+      ref={props.eventRef}
       data-macro-event={props.index}
+      data-macro-view-id={props.viewId}
+      data-macro-row={props.row}
       style={{pointerEvents: !props.disabled ? 'all' : 'none'}}
     >
       {props.children}
