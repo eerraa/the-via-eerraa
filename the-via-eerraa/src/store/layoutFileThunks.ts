@@ -9,12 +9,20 @@ import {loadEraAdvancedMetadata} from '../utils/era-advanced-metadata';
 import {getTapDanceSlots} from '../utils/keycode-palette';
 import {readTapDanceDraft, tapDanceTermBounds} from '../utils/tap-dance-values';
 import {requireConnectionProtocol} from '../utils/connection-profile';
-import {getSelectedKeycodesVersion} from './firmwareSlice';
+import {collectMaxLedIndex} from '../utils/via-definition-keys';
+import {getFirmwareVersionMap, getSelectedKeycodesVersion} from './firmwareSlice';
 import {
+  layoutOptionCounts,
   planLayoutImport,
   readLayoutCode,
+  saveCustomMenuValues,
+  saveLayoutOptions,
+  saveMacroOptions,
   saveTapDance,
+  type CustomMenuTarget,
   type LayoutImportError,
+  type LayoutOptionsTarget,
+  type MacroOptionsTarget,
   type LayoutPlace,
   type TapDanceTarget,
   type ViaSaveFile,
@@ -23,9 +31,11 @@ import {
   getBasicKeyToByte,
   getDefinitionForDevice,
   getDefinitionSyncIdentity,
+  getSelectedLayoutOptionsPending,
 } from './definitionsSlice';
 import {
   getSelectedConnectedDevice,
+  getSelectedConnectionGeneration,
   getSelectionGeneration,
   isSelectedDeviceOperationCurrent,
 } from './devicesSlice';
@@ -39,8 +49,15 @@ import {
 } from './macrosSlice';
 import {
   getCustomMenuAvailabilityForDevice,
+  getCustomMenuControlsForDefinition,
   getSelectedCustomMenuData,
 } from './menusSlice';
+import {
+  ensureMacroOptions,
+  getMacroOptionsChannel,
+  getMacroOptionsForDevice,
+} from './macroOptionsSlice';
+import {MACRO_OPTIONS_SAVE_RETRY} from '../utils/macro-api/era-macro-options';
 import {getPathSyncState} from './stateSyncSlice';
 import {ensureMacroContents, refreshStateSyncDomain} from './stateSyncThunks';
 import {importLayoutToDevice} from './importLayoutThunks';
@@ -122,20 +139,94 @@ const tapDanceTarget = (
   };
 };
 
+// The Custom Menu as the menu reads it. Firmware that State Sync could not verify
+// has its menu values never read (ADR 0001), so its files carry none, as for Tap Dance.
+const customMenuTarget = (
+  state: RootState,
+  device: ConnectedDevice,
+): (CustomMenuTarget & {failed: boolean}) | undefined => {
+  const definition = getDefinitionForDevice(state, device);
+  const availability = getCustomMenuAvailabilityForDevice(state, device);
+  if (!definition || availability === 'unverified') {
+    return undefined;
+  }
+  return {
+    controls: getCustomMenuControlsForDefinition(
+      definition,
+      getFirmwareVersionMap(state)[device.path],
+    ),
+    values: state.menus.customMenuDataMap[device.path],
+    available: availability === 'available',
+    ledCount: collectMaxLedIndex(definition) + 1,
+    unsaved: state.menus.saveRetries?.[device.path],
+    failed: availability === 'failed',
+  };
+};
+
+// Options a previous connection read are not this keyboard's now.
+const layoutOptionsTarget = (
+  state: RootState,
+  device: ConnectedDevice,
+): LayoutOptionsTarget | undefined => {
+  const labels = getDefinitionForDevice(state, device)?.layouts.labels;
+  if (!labels?.length) {
+    return undefined;
+  }
+  const {layoutOptionsMap, layoutOptionsGenerationMap} = state.definitions;
+  const current =
+    layoutOptionsGenerationMap[device.path] ===
+    getSelectedConnectionGeneration(state)
+      ? layoutOptionsMap[device.path] ?? undefined
+      : undefined;
+  return {counts: layoutOptionCounts(labels), current};
+};
+
+// None where they are not asked for, as firmware State Sync could not verify is
+// not (getMacroOptionsChannel), or where CAPABILITIES reported no support. Options
+// whose read failed, is not done, or that CONFIG is reading again are unavailable,
+// as for the Custom Menu.
+const macroOptionsTarget = (
+  state: RootState,
+  device: ConnectedDevice,
+): MacroOptionsTarget | undefined => {
+  const channel = getMacroOptionsChannel(state, device);
+  const read = getMacroOptionsForDevice(state, device);
+  if (channel === null || read?.kind === 'unsupported') return undefined;
+  return read?.kind === 'read' &&
+    getCustomMenuAvailabilityForDevice(state, device) === 'available'
+    ? {
+        available: true,
+        channel,
+        supported: read.supported,
+        options: read.options,
+        unsaved: !!state.menus.saveRetries?.[device.path]?.[MACRO_OPTIONS_SAVE_RETRY],
+      }
+    : {available: false};
+};
+
+// Null where the keyboard is not asked for them; undefined while they are unread.
+const readMacroOptionsForFile =
+  (device: ConnectedDevice): AppThunk<Promise<Parameters<typeof saveMacroOptions>[0]>> =>
+  async (dispatch, getState) =>
+    getMacroOptionsChannel(getState(), device) === null
+      ? null
+      : (await dispatch(ensureMacroOptions(device))) ?? undefined;
+
 const codeNamer = (state: RootState) => {
   const {basicKeyToByte, byteToKey} = getBasicKeyToByte(state);
   return (byte: number) =>
     getCodeForByte(byte, basicKeyToByte, byteToKey) || '';
 };
 
-// Tap Dance values come with CONFIG, which a State Sync keyboard may still be
-// reading (just connected, or back from a hidden tab). A layout file waits for
-// that read, as it does for the macros, instead of being refused.
-const settleTapDance =
+// Tap Dance values, the Custom Menu values and the layout options come with
+// CONFIG, which a State Sync keyboard may still be reading (just connected, or
+// back from a hidden tab). A layout file waits for that read, as it does for the
+// macros, instead of being refused.
+const settleConfig =
   (device: ConnectedDevice): AppThunk<Promise<void>> =>
   async (dispatch, getState) => {
-    const tapDance = tapDanceTarget(getState(), device);
-    if (tapDance && !tapDance.available) {
+    const menu = customMenuTarget(getState(), device);
+    if ((menu && !menu.available) || getSelectedLayoutOptionsPending(getState())) {
       await dispatch(refreshStateSyncDomain(device, 'config'));
     }
   };
@@ -191,10 +282,14 @@ export const canExportLayoutFile =
     ) {
       return false;
     }
-    // Tap Dance values still being read are waited for after the dialog; values
-    // the keyboard refused to report would not come by waiting.
+    // Tap Dance and menu values still being read are waited for after the dialog;
+    // values the keyboard refused to report would not come by waiting.
     const tapDance = tapDanceTarget(state, device);
     if (tapDance?.failed) {
+      return false;
+    }
+    const menu = customMenuTarget(state, device);
+    if (menu?.failed && 'error' in saveCustomMenuValues(menu, codeNamer(state))) {
       return false;
     }
     return (
@@ -205,9 +300,9 @@ export const canExportLayoutFile =
 
 /**
  * The selected keyboard as a layout file: official VIA's format, plus its Tap
- * Dance. The macros are read first when State Sync has not read them yet, Tap
- * Dance values still being read are waited for, and the save is refused rather
- * than written with anything missing.
+ * Dance, layout options, Custom Menu settings and per-key RGB. The macros are read first when
+ * State Sync has not read them yet, CONFIG values still being read are waited
+ * for, and the save is refused rather than written with anything missing.
  */
 export const exportLayoutFile =
   (device: ConnectedDevice): AppThunk<Promise<LayoutExportResult>> =>
@@ -217,11 +312,18 @@ export const exportLayoutFile =
     if (!(await dispatch(ensureMacroContents(device))) || !isCurrent(getState())) {
       return {error: 'keyboard-not-ready'};
     }
-    await dispatch(settleTapDance(device));
+    await dispatch(settleConfig(device));
     if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
+    const savedMacroOptions = saveMacroOptions(
+      await dispatch(readMacroOptionsForFile(device)),
+    );
+    if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
+    if ('error' in savedMacroOptions) {
+      return savedMacroOptions;
+    }
     const state = getState();
     const definition = getDefinitionForDevice(state, device);
-    if (!definition) {
+    if (!definition || getSelectedLayoutOptionsPending(state)) {
       return {error: 'keyboard-not-ready'};
     }
     const toCode = codeNamer(state);
@@ -229,6 +331,10 @@ export const exportLayoutFile =
     const savedTapDance = tapDance ? saveTapDance(tapDance, toCode) : {};
     if ('error' in savedTapDance) {
       return savedTapDance;
+    }
+    const savedMenu = saveCustomMenuValues(customMenuTarget(state, device), toCode);
+    if ('error' in savedMenu) {
+      return savedMenu;
     }
     const rawLayers = getSelectedRawLayers(state);
     const encoders = await readEncoders(
@@ -249,6 +355,9 @@ export const exportLayoutFile =
         layers: rawLayers.map((layer) => layer.keymap.map(toCode)),
         encoders,
         ...savedTapDance,
+        ...saveLayoutOptions(layoutOptionsTarget(state, device)),
+        ...savedMenu,
+        ...savedMacroOptions,
       },
     };
   };
@@ -269,8 +378,18 @@ export const importLayoutFile =
     // reported; the metadata that ties the two together is read before comparing.
     await loadEraAdvancedMetadata();
     if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
-    if (file.tapDance !== undefined) {
-      await dispatch(settleTapDance(device));
+    if (
+      file.tapDance !== undefined ||
+      file.layoutOptions !== undefined ||
+      file.customMenuValues !== undefined ||
+      file.perKeyRGB !== undefined ||
+      file.macroOptions !== undefined
+    ) {
+      await dispatch(settleConfig(device));
+    }
+    // After CONFIG: options it has made stale are compared only once read again.
+    if (file.macroOptions !== undefined) {
+      await dispatch(ensureMacroOptions(device));
     }
     if (!isCurrent(getState())) return {error: 'keyboard-not-ready'};
     const state = getState();
@@ -293,6 +412,9 @@ export const importLayoutFile =
           layers: getSelectedRawLayers(state).map((layer) => layer.keymap),
           macroCount: getKnownMacroCount(state),
           tapDance: tapDanceTarget(state, device),
+          layoutOptions: layoutOptionsTarget(state, device),
+          customMenu: customMenuTarget(state, device),
+          macroOptions: macroOptionsTarget(state, device),
         },
         (code) => read(code).value,
         (code) => read(code).asWritten,
@@ -306,7 +428,11 @@ export const importLayoutFile =
       return plan;
     }
     try {
-      await dispatch(importLayoutToDevice(device, plan));
+      // Settings the keyboard took but refused to keep are not loaded, as an
+      // edit whose SAVE is refused is not done.
+      if (!(await dispatch(importLayoutToDevice(device, plan)))) {
+        return {error: 'write-failed'};
+      }
     } catch (error) {
       console.warn('Loading layout failed', error);
       return {error: 'write-failed'};

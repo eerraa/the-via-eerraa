@@ -97,16 +97,6 @@ const UsbErrorWebHIDLink = styled.a`
   }
 `;
 
-const timeoutRepeater =
-  (fn: () => void, timeout: number, numToRepeat = 0) =>
-  () =>
-    setTimeout(() => {
-      fn();
-      if (numToRepeat > 0) {
-        timeoutRepeater(fn, timeout, numToRepeat - 1)();
-      }
-    }, timeout);
-
 type RouteErrorBoundaryProps = {
   location: string;
   onError: (error: unknown) => void;
@@ -197,14 +187,6 @@ export const Home: React.FC<HomeProps> = (props) => {
       }),
     );
 
-  const updateDevicesRepeat: () => void = timeoutRepeater(
-    () => {
-      dispatch(reloadConnectedDevices());
-    },
-    500,
-    1,
-  );
-
   const toggleLights = async () => {
     if (!api || !selectedDefinition) {
       return;
@@ -247,6 +229,26 @@ export const Home: React.FC<HomeProps> = (props) => {
       homeElem.current.focus();
     }
 
+    const scanTimers = new Set<ReturnType<typeof setTimeout>>();
+    let disposed = false;
+    const scheduleScan = (repeat: boolean) => {
+      if (disposed) {
+        return;
+      }
+      const timer = setTimeout(() => {
+        scanTimers.delete(timer);
+        if (disposed) {
+          return;
+        }
+        dispatch(reloadConnectedDevices());
+        if (repeat) {
+          scheduleScan(false);
+        }
+      }, 500);
+      scanTimers.add(timer);
+    };
+    const updateDevicesRepeat = () => scheduleScan(true);
+
     startMonitoring();
     const removeGenerationListener = addHIDTransportGenerationListener(
       ({path, generation, poisoned}) => {
@@ -269,7 +271,9 @@ export const Home: React.FC<HomeProps> = (props) => {
 
     return () => {
       // Cleanup function equiv to componentWillUnmount
+      disposed = true;
       usbDetect.off('change', updateDevicesRepeat);
+      scanTimers.forEach(clearTimeout);
       removeGenerationListener();
     };
   }, []); // Passing an empty array as the second arg makes the body of the function equiv to componentDidMount (not including the cleanup func)

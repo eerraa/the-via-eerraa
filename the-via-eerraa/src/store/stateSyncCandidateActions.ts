@@ -1,6 +1,7 @@
 import {createAction} from '@reduxjs/toolkit';
 import type {Layer} from '../types/types';
 import type {RawKeycodeSequence} from '../utils/macro-api/types';
+import type {MacroOptionsState} from '../utils/macro-api/era-macro-options';
 
 type StableCandidateContext = {
   devicePath: string;
@@ -30,6 +31,8 @@ type StateSyncCustomMenuData = Record<string, number[] | number[][]>;
 export type StateSyncConfigCandidate = {
   layoutOptions?: number[];
   menuData?: StateSyncCustomMenuData;
+  /** Absent where the keyboard is not asked for macro options. */
+  macroOptions?: MacroOptionsState;
 };
 
 export const commitStableKeymapCandidate = createAction<

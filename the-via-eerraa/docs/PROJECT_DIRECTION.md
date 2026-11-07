@@ -4,7 +4,7 @@ Genre: contract
 Canonical for: what this fork is for, its priority order, definition ownership and
 lookup order, user-facing VIA compatibility boundary, the brick65 exception,
 Tap Dance and exact-ms/exact-sec product rules, QMK and H7S lighting sleep dual-surface rules,
-State Sync product guarantees, and the durable non-goals
+macro playback options, State Sync product guarantees, and the durable non-goals
 
 > Durable project brief: what the product is for and what must never be done to
 > it. Where a fact lives and which side is canonical is `docs/MAP.md`. Individual
@@ -537,6 +537,74 @@ Use Vial only to study interaction design.
 > **WHY:** firmware remains the authority for keyboard state; TOMAK firmware
 > and VIA V3 JSON already implement the engine, slots, and storage.
 > **REOPENS:** never.
+
+## Macro playback options
+
+EERRAA (QMK) and H7S firmware give each dynamic macro its own playback options;
+LM20 is outside this contract. Firmware plays one macro at a time and has no
+pending queue: a macro key pressed during playback neither starts nor queues its
+macro, because a queued macro would play later than intended and would leave
+every stop judgment unsure which macro it ends.
+
+Every option defaults to today's behavior:
+
+- Repeat: once (the default), N times (2..255), or until stopped. Between plays,
+  release every key the macro holds and play again from the beginning. N times
+  ends after its last play unless a stop condition, a cancel or a system event
+  ends it earlier; until stopped runs until one of those.
+- Stop on release: releasing the key that started the macro stops it.
+- Stop on re-tap: a new press of a key bound to the playing macro stops it on
+  release before the hold time, or on any release while Stop on hold is off.
+- Stop on hold: such a press reaching the hold time stops it; with re-tap also
+  on, whichever comes first stops it. Hold time is 1..65535 ms, default 1000.
+- Stop on other key: a press of any key not bound to the playing macro stops it;
+  modifiers and other macro keys count. That key's own action still happens
+  unless Block other keys is on, except that a macro key does not start its
+  macro, by the one-macro rule.
+- Ignore modifiers: while the macro has output in the report, physical
+  (non-macro) modifiers are left out of it, so a held modifier cannot change
+  what the macro types.
+- Block other keys (default allow): a press of any key not bound to the playing
+  macro that begins during playback produces no action and no output, and its
+  release is dropped too, even after playback ends. Keys already held when
+  playback began keep working, and stop judgments still see blocked presses, so
+  Stop on other key still stops the macro.
+
+Only presses that begin during playback count and the starting press never
+does, so the press that started a macro cannot also end it. A stop never
+restarts the macro. With Stop on release on, re-tap and hold are inert, so one
+release rule decides. Until stopped with none of release, re-tap, hold or other
+key could end only by a cancel, so firmware plays it once and the app refuses to
+save it.
+
+A stop, a repeat boundary, and a cancel or system event release every key the
+macro holds, so nothing stays stuck after playback ends. Normal completion of
+the last play keeps today's behavior: an explicit DOWN without UP stays held,
+as in stock QMK, because existing macros rely on it. With every option at its
+default the only change from today is the removed queue.
+
+Options are firmware state on ERA Custom Values, so a change advances the State
+Sync CONFIG domain like other ERA Custom Values. Editing a macro's content keeps
+its options, because they belong to the macro slot rather than its text. VIA's
+macro RESET therefore keeps them too, because firmware without macro replace
+(H7S, and official VIA on any board) saves content through RESET; only an
+EEPROM clear that clears the macros, or invalid storage, restores the defaults.
+On split keyboards the halves' storage sync carries the options with the macro
+content, so either half plays a macro the same way.
+In the MACROS pane an options draft belongs to the keyboard like the macro's
+text draft. Wire numbers, payloads and the
+capability marker are owned by `config/era-wire.json`
+([ADR 0005](adr/0005-era-wire-registry.md)).
+
+The MACROS pane puts one Playback button in the macro editor's top row, beside
+the Record and Script tabs. It summarizes the repeat setting, marks other
+options set away from their defaults, and opens a small form with every option;
+the macro's own Apply and Cancel save or discard them. Each flag control is
+gated by the firmware's supported-option mask, and every version-2 firmware
+supports the repeat count, so no control promises behavior the firmware lacks. The KEYMAP palette is unchanged. Stock QMK (VIA)
+firmware and official VIA keep working unchanged, and firmware-local official
+JSON gets no options UI, because V3 menus have no per-macro surface and the
+support policy above sends such features to the Custom app.
 
 ## State Sync
 

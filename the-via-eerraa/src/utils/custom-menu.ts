@@ -6,6 +6,20 @@ export const isCustomMenuCommandContent = (
   typeof content[0] === 'string' &&
   content.slice(1).every((value) => typeof value === 'number');
 
+// A dropdown's options in its own order, with the value the dropdown sends for each.
+export const dropdownChoices = (options: unknown) =>
+  (options as ([string, number] | string)[]).map((option, idx) => {
+    const [label, value] = typeof option === 'string' ? [option, idx] : option;
+    return {label, value: value || idx};
+  });
+
+/** A menu control bound to a Custom Value, as a V3 definition spells it. */
+export type CustomMenuControl = {
+  type: string;
+  content: [string, number, number, ...number[]];
+  options?: unknown;
+};
+
 // The firmware keeps some values aside until a second command, which the definition
 // spells as a switch, puts them into effect. Where it also reports the value in
 // effect and the value it keeps for the next start, it does so with labels naming

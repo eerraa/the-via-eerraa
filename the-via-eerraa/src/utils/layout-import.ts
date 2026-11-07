@@ -1,5 +1,16 @@
 import {typedModifierProblem} from './advanced-keys';
+import {packBits, unpackBits} from './bit-pack';
+import {
+  ACTION_SWITCHES,
+  dropdownChoices,
+  HELD_VALUES,
+  type CustomMenuControl,
+} from './custom-menu';
 import {isSameEraBoard} from './era-advanced-metadata';
+import {isExactTermCommand} from './era-exact-ms';
+import {isExactSecondCommand} from './era-exact-sec';
+import {hasMousePrecision, mouseExact, readMouseExact} from './era-mousekey';
+import {decodeRangeValue, encodeRangeValue} from './range-constraints';
 import {ERA_WIRE} from './era-wire.generated';
 import {getByteForCode} from './key';
 import deprecatedKeycodes from './key-to-byte/deprecated-keycodes';
@@ -15,6 +26,14 @@ import {
   type TapDanceWrite,
 } from './keycode-palette';
 import {parseKeycodeInput} from './keycode-picker';
+import {
+  fitsMacroOptionFlags,
+  fitsMacroOptionHold,
+  fitsMacroOptionRepeatCount,
+  isUntilStoppedWithoutStop,
+  type MacroOptionsState,
+  type MacroOptionValues,
+} from './macro-api/era-macro-options';
 
 /** One Tap Dance slot as a layout file keeps it: keycode names and the term in ms. */
 type SavedTapDance = Record<TapDanceActionRole, string> & {term?: number; mode?: number; holdTerm?: number; holdOnOther?: number};
@@ -26,11 +45,28 @@ export type ViaSaveFile = {
   macros?: string[];
   encoders?: [string, string][][];
   /**
-   * ERA Tap Dance settings, indexed by TD number. Nothing else official VIA's format
-   * cannot carry is added: official VIA ignores this field and loads the rest, and
-   * a file without it leaves the keyboard's Tap Dance as it is.
+   * ERA Tap Dance settings, indexed by TD number. This and the fields below are
+   * what official VIA's format cannot carry: official VIA ignores them and loads
+   * the rest, and a file without one leaves those settings as they are.
    */
   tapDance?: (SavedTapDance | null)[];
+  /**
+   * The layout options as VIA's `id_layout_options` holds them: one integer, the
+   * choices packed by the definition's `layouts.labels`, as Vial's `.vil` keeps it.
+   */
+  layoutOptions?: number;
+  /**
+   * Custom Menu settings by command name: the value bytes the control writes, a
+   * keycode by name as on the layers.
+   */
+  customMenuValues?: Record<string, number[] | string>;
+  /** Per-key RGB as `__perKeyRGB` holds it: [hue, saturation] by LED index. */
+  perKeyRGB?: [number, number][];
+  /**
+   * ERA macro playback options by macro index: the FLAGS byte, the hold time in ms
+   * and REPEAT_COUNT (1 once, 2..255 that many times, 0 until stopped).
+   */
+  macroOptions?: MacroOptionValues[];
 };
 
 export const isViaSaveFile = (obj: any): obj is ViaSaveFile =>
@@ -104,9 +140,66 @@ type LayoutImport = {
   encoders?: Record<number, [number, number][]>;
   /** Tap Dance values that differ from the keyboard's, in slot order. */
   customValues: TapDanceWrite[];
+  /** The layout options, when they differ from the keyboard's. */
+  layoutOptions?: {value: number; options: number[]};
+  /** Custom Menu settings that differ from the keyboard's, in the order they go out. */
+  menuValues: CustomMenuWrite[];
+  /** Per-key colours that differ from the keyboard's, by LED index. */
+  perKeyRGB: PerKeyRGBWrite[];
+  /** Macro options that fit the keyboard, written after the macros' contents. */
+  macroOptions?: {channel: number; writes: MacroOptionsWrite[]};
   /** What loads other than the file has it, in the order the file names it. */
   changed: LayoutCodeChange[];
 };
+
+/** The keyboard's layout options, by the definition's labels. */
+export type LayoutOptionsTarget = {
+  /** How many choices each label offers. */
+  counts: readonly number[];
+  /** The choices this connection has read, undefined until it has. */
+  current: readonly number[] | undefined;
+};
+
+/** The keyboard's Custom Menu, as the menu reads it. */
+export type CustomMenuTarget = {
+  controls: readonly CustomMenuControl[];
+  /** What the keyboard reported for each command, undefined while nothing was read. */
+  values: Readonly<Record<string, unknown>> | undefined;
+  /** Whether its values are current and may be written, as for the menu. */
+  available: boolean;
+  /** How many LEDs the definition maps to keys; absent or 0 without per-key RGB. */
+  ledCount?: number;
+  /** Commands whose last SET the keyboard has not kept, as the menu's edits track them. */
+  unsaved?: Readonly<Record<string, boolean>>;
+};
+
+/** One Custom Value SET: the command's channel and value id, then the value. */
+export type CustomMenuWrite = {name: string; address: number[]; bytes: number[]};
+
+/** Where the menu read keeps per-key RGB among the Custom Menu values. */
+export const PER_KEY_RGB = '__perKeyRGB';
+
+/** One per-key RGB SET: the LED index, then [hue, saturation]. */
+export type PerKeyRGBWrite = {led: number; bytes: [number, number]};
+
+/**
+ * A keyboard asked for macro options. Available: CAPABILITIES reported support
+ * and CONFIG is current, with its channel, supported flags, the options it holds,
+ * and whether an options SAVE is still owed. Unavailable: their read failed, is
+ * not done, or CONFIG is being read again, so they cannot be compared yet.
+ */
+export type MacroOptionsTarget =
+  | {
+      available: true;
+      channel: number;
+      supported: number;
+      options: readonly MacroOptionValues[];
+      unsaved: boolean;
+    }
+  | {available: false};
+
+/** One macro's option values a load writes; a value that does not fit is absent. */
+export type MacroOptionsWrite = {index: number} & Partial<MacroOptionValues>;
 
 /** The keyboard's Tap Dance, as the KEYMAP editor reads it. */
 export type TapDanceTarget = {
@@ -125,6 +218,12 @@ type Target = {
   macroCount: number | null | undefined;
   /** Absent on a keyboard without Tap Dance. */
   tapDance?: TapDanceTarget;
+  /** Absent on a definition without layout options. */
+  layoutOptions?: LayoutOptionsTarget;
+  /** Absent where the Custom Menu is never read, as on firmware State Sync could not verify. */
+  customMenu?: CustomMenuTarget;
+  /** Absent where macro options are not asked for or not supported. */
+  macroOptions?: MacroOptionsTarget;
 };
 
 // KC_NO and KC_TRNS: a layer holding only these does nothing of its own.
@@ -225,6 +324,370 @@ const planSavedTapDance = (
   });
 };
 
+/** How many choices each layout label offers, as VIA packs them. */
+export const layoutOptionCounts = (labels: readonly (string | string[])[]) =>
+  labels.map((label) => (Array.isArray(label) ? label.slice(1).length : 2));
+
+const packLayoutOptions = (options: readonly number[], counts: readonly number[]) =>
+  packBits(options.map((option, idx) => [option, counts[idx]]));
+
+/** The layout options for a layout file, once this connection has read them. */
+export const saveLayoutOptions = (
+  target: LayoutOptionsTarget | undefined,
+): {layoutOptions?: number} =>
+  target?.current
+    ? {layoutOptions: packLayoutOptions(target.current, target.counts)}
+    : {};
+
+// A value that does not fit the labels, as from a definition with other layout
+// options, is left alone rather than read into choices the keyboard lacks.
+const planLayoutOptions = (
+  saved: unknown,
+  {counts, current}: LayoutOptionsTarget,
+): LayoutImport['layoutOptions'] => {
+  if (
+    typeof saved !== 'number' ||
+    !Number.isInteger(saved) ||
+    saved < 0 ||
+    saved > 0xffffffff
+  ) {
+    return undefined;
+  }
+  const options = unpackBits(saved, [...counts]);
+  if (
+    options.some((option, idx) => option >= counts[idx]) ||
+    packLayoutOptions(options, counts) !== saved ||
+    (current && options.every((option, idx) => option === current[idx]))
+  ) {
+    return undefined;
+  }
+  return {value: saved, options};
+};
+
+// A switch whose write is an action rather than a setting (the bootloader, EEPROM
+// clean, an Apply), and a value the firmware keeps aside until such an Apply puts
+// it into effect: the split link speed, and the USB boot polling mode, whose Apply
+// restarts the keyboard. A restore writes stored values only, so it sends neither.
+// EEPROM SYNC is a stored switch, but turning it on starts the halves' storage
+// sync, which replaces one half's settings with the other's for good; only the
+// user turns it on.
+const NOT_SETTINGS = new Set<string>([
+  'id_qmk_eeprom_sync_requested',
+  ...ACTION_SWITCHES.keys(),
+  ...HELD_VALUES.flatMap((commands) => Object.values(commands)),
+  'id_qmk_system_reset_0',
+  'id_qmk_system_reset_1',
+  'id_qmk_system_reset_done',
+  'id_qmk_usb_bootmode',
+  'id_qmk_usb_bootmode_apply',
+]);
+
+// Two bytes, high first, as VIA sends a 16-bit value.
+const WORD = 0xffff;
+const isByte = (value: unknown) =>
+  Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 0xff;
+const boxed = (option: unknown) => (Array.isArray(option) ? option : [option]);
+const hasEntry = (record: object, key: string) =>
+  Object.prototype.hasOwnProperty.call(record, key);
+const toggleOptions = (options: unknown) =>
+  Array.isArray(options) ? options : [0, 1];
+// The exact presentation of a value another control also sets in steps.
+const isExactValue = (name: string) =>
+  !!mouseExact(name) || isExactTermCommand(name) || isExactSecondCommand(name);
+
+const rangeBounds = ({content: [name], options}: CustomMenuControl) => {
+  const mouse = mouseExact(name);
+  if (mouse) {
+    return {min: mouse.min, max: mouse.max};
+  }
+  return Array.isArray(options) &&
+    typeof options[0] === 'number' &&
+    typeof options[1] === 'number'
+    ? {min: options[0], max: options[1]}
+    : null;
+};
+
+// How many value bytes the control writes, as the Custom Menu writes it; null for
+// a control that writes no setting (a label, a button, the per-key palette).
+const valueWidth = (control: CustomMenuControl): number | null => {
+  const [name] = control.content;
+  switch (control.type) {
+    case 'toggle':
+      return boxed(toggleOptions(control.options)[1]).length;
+    case 'dropdown':
+      return 1;
+    case 'keycode':
+    case 'color':
+      return 2;
+    case 'range': {
+      const bounds = rangeBounds(control);
+      return bounds && (isExactValue(name) || bounds.max > 255 ? 2 : 1);
+    }
+    default:
+      return null;
+  }
+};
+
+type MenuSetting = {control: CustomMenuControl; width: number};
+
+// Each setting once, in menu order, but an exact value after the others: written
+// before its stepped twin, the step would replace it.
+const menuSettings = (controls: readonly CustomMenuControl[]) => {
+  const seen = new Set<string>();
+  const settings = controls.flatMap((control): MenuSetting[] => {
+    const [name] = control.content;
+    const width = valueWidth(control);
+    if (width === null || NOT_SETTINGS.has(name) || seen.has(name)) {
+      return [];
+    }
+    seen.add(name);
+    return [{control, width}];
+  });
+  return [
+    ...settings.filter(({control}) => !isExactValue(control.content[0])),
+    ...settings.filter(({control}) => isExactValue(control.content[0])),
+  ];
+};
+
+// What the keyboard reported, cut to the bytes the control writes; null where it
+// reported nothing usable, such as an exact MOUSE value firmware without
+// precision support only stands in for.
+const reportedBytes = (
+  {content: [name]}: CustomMenuControl,
+  width: number,
+  values: CustomMenuTarget['values'],
+): number[] | null => {
+  const value = values?.[name];
+  if (
+    !Array.isArray(value) ||
+    value.length < width ||
+    !value.slice(0, width).every(isByte)
+  ) {
+    return null;
+  }
+  if (mouseExact(name)) {
+    try {
+      if (!hasMousePrecision(values)) return null;
+      readMouseExact(name, value);
+    } catch {
+      return null;
+    }
+  }
+  return value.slice(0, width);
+};
+
+const isColor = (color: unknown): color is [number, number] =>
+  Array.isArray(color) && color.length === 2 && color.every(isByte);
+
+// The colours the keyboard reported, one for each LED the definition maps.
+const reportedColors = ({values, ledCount = 0}: CustomMenuTarget) => {
+  const colors = values?.[PER_KEY_RGB];
+  return ledCount > 0 &&
+    Array.isArray(colors) &&
+    colors.length === ledCount &&
+    colors.every(isColor)
+    ? colors.map(([hue, sat]): [number, number] => [hue, sat])
+    : undefined;
+};
+
+/**
+ * The keyboard's Custom Menu settings and per-key RGB for a layout file. Until the
+ * menu's values are current the save is refused, as for Tap Dance; a value the
+ * keyboard did not report is left out, and a keyboard whose menu was never read
+ * adds nothing.
+ */
+export const saveCustomMenuValues = (
+  target: CustomMenuTarget | undefined,
+  toCode: (byte: number) => string,
+):
+  | Pick<ViaSaveFile, 'customMenuValues' | 'perKeyRGB'>
+  | {error: 'keyboard-not-ready'} => {
+  const settings = target ? menuSettings(target.controls) : [];
+  if (!target || (settings.length === 0 && !target.ledCount)) {
+    return {};
+  }
+  if (!target.available) {
+    return {error: 'keyboard-not-ready'};
+  }
+  const saved: Record<string, number[] | string> = {};
+  for (const {control, width} of settings) {
+    const bytes = reportedBytes(control, width, target.values);
+    if (bytes) {
+      saved[control.content[0]] =
+        control.type === 'keycode' ? toCode(decodeRangeValue(bytes, WORD)) : bytes;
+    }
+  }
+  const colors = reportedColors(target);
+  return {
+    ...(Object.keys(saved).length > 0 && {customMenuValues: saved}),
+    ...(colors && {perKeyRGB: colors}),
+  };
+};
+
+const savedBytes = (
+  control: CustomMenuControl,
+  width: number,
+  entry: unknown,
+  toByte: (code: string) => number,
+  asWritten: (code: string) => boolean,
+): number[] | null => {
+  if (control.type === 'keycode') {
+    if (typeof entry !== 'string' || !asWritten(entry)) {
+      return null;
+    }
+    try {
+      const code = toByte(entry);
+      return Number.isInteger(code) && code >= 0 && code <= WORD
+        ? encodeRangeValue(code, WORD)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(entry) || entry.length !== width || !entry.every(isByte)) {
+    return null;
+  }
+  if (control.type === 'toggle') {
+    return toggleOptions(control.options).some((option) => {
+      const bytes = boxed(option);
+      return bytes.every((byte, idx) => byte === entry[idx]);
+    })
+      ? entry
+      : null;
+  }
+  if (control.type === 'range') {
+    const bounds = rangeBounds(control)!;
+    const value = decodeRangeValue(entry, width === 2 ? WORD : 0xff);
+    return value >= bounds.min && value <= bounds.max ? entry : null;
+  }
+  if (control.type === 'dropdown') {
+    return Array.isArray(control.options) &&
+      dropdownChoices(control.options).some(({value}) => value === entry[0])
+      ? entry
+      : null;
+  }
+  return entry;
+};
+
+// Only what differs goes out, or what the keyboard has not kept yet, and only to a
+// command the keyboard reported: a command it did not answer is never sent. A
+// value the file cannot describe for this control, such as a keycode that does
+// not load as written or a choice the dropdown lacks, is left alone.
+const planCustomMenuValues = (
+  saved: unknown,
+  target: CustomMenuTarget,
+  toByte: (code: string) => number,
+  asWritten: (code: string) => boolean,
+): CustomMenuWrite[] => {
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+    return [];
+  }
+  return menuSettings(target.controls).flatMap(({control, width}) => {
+    const [name, ...address] = control.content;
+    if (!hasEntry(saved, name)) {
+      return [];
+    }
+    const current = reportedBytes(control, width, target.values);
+    const bytes =
+      current &&
+      savedBytes(control, width, (saved as Record<string, unknown>)[name], toByte, asWritten);
+    if (
+      !current ||
+      !bytes ||
+      (!target.unsaved?.[name] && bytes.every((byte, idx) => byte === current[idx]))
+    ) {
+      return [];
+    }
+    return [{name, address, bytes: [...bytes]}];
+  });
+};
+
+// Colours saved for another LED mapping are left alone, all of them.
+const planPerKeyRGB = (
+  saved: unknown,
+  target: CustomMenuTarget,
+): PerKeyRGBWrite[] => {
+  const current = reportedColors(target);
+  if (
+    !current ||
+    !Array.isArray(saved) ||
+    saved.length !== current.length ||
+    !saved.every(isColor)
+  ) {
+    return [];
+  }
+  const resend = !!target.unsaved?.[PER_KEY_RGB];
+  return current.flatMap(([hue, sat], led) => {
+    const [savedHue, savedSat] = saved[led];
+    return resend || savedHue !== hue || savedSat !== sat
+      ? [{led, bytes: [savedHue, savedSat] as [number, number]}]
+      : [];
+  });
+};
+
+/**
+ * The keyboard's macro options for a layout file: none where they are not asked
+ * for (null) or unsupported, and the save is refused while they are unread.
+ */
+export const saveMacroOptions = (
+  state: MacroOptionsState | null | undefined,
+): Pick<ViaSaveFile, 'macroOptions'> | {error: 'keyboard-not-ready'} =>
+  state === null || state?.kind === 'unsupported'
+    ? {}
+    : state?.kind === 'read'
+      ? {
+          macroOptions: state.options.map(({flags, holdMs, repeatCount}) => ({
+            flags,
+            holdMs,
+            repeatCount,
+          })),
+        }
+      : {error: 'keyboard-not-ready'};
+
+// A value that fits goes out where it differs from what the keyboard holds, which
+// the macro writes before it leave as they were (VIA's macro RESET keeps the
+// options). While a SAVE is owed, everything that fits goes out again, as for
+// per-key RGB.
+const planMacroOptions = (
+  saved: unknown,
+  {channel, supported, options, unsaved}: Extract<MacroOptionsTarget, {available: true}>,
+  macroCount: number | null | undefined,
+): LayoutImport['macroOptions'] => {
+  if (!Array.isArray(saved) || typeof macroCount !== 'number') {
+    return undefined;
+  }
+  const writes = saved.slice(0, macroCount).flatMap((entry, index) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const {flags, holdMs, repeatCount} = entry as Record<string, unknown>;
+    const current = options[index];
+    const write: MacroOptionsWrite = {index};
+    const flagsFit = fitsMacroOptionFlags(supported, flags);
+    const countFits = fitsMacroOptionRepeatCount(repeatCount);
+    // What the keyboard would hold after the load; until stopped with no stop is
+    // never written, so neither of the values that make it goes out.
+    const playable = !isUntilStoppedWithoutStop({
+      flags: flagsFit ? flags : (current?.flags ?? 0),
+      repeatCount: countFits ? repeatCount : (current?.repeatCount ?? 1),
+    });
+    if (playable && flagsFit && (unsaved || flags !== current?.flags)) {
+      write.flags = flags;
+    }
+    if (playable && countFits && (unsaved || repeatCount !== current?.repeatCount)) {
+      write.repeatCount = repeatCount;
+    }
+    // The hold time serves Stop on hold alone.
+    if (
+      (supported & ERA_WIRE.MACRO_OPTIONS_FLAGS.HOLD) !== 0 &&
+      fitsMacroOptionHold(holdMs) &&
+      (unsaved || holdMs !== current?.holdMs)
+    ) {
+      write.holdMs = holdMs;
+    }
+    return Object.keys(write).length > 1 ? [write] : [];
+  });
+  return writes.length > 0 ? {channel, writes} : undefined;
+};
+
 /**
  * Checks a saved layout against the keyboard it is loaded onto and fits it there.
  *
@@ -236,7 +699,8 @@ const planSavedTapDance = (
  *
  * Keys are stored per switch position, so they load whatever layout option is
  * showing: a key that option hides is still written, and shows once the option
- * that has it is chosen.
+ * that has it is chosen. The layout options and Custom Menu settings a file
+ * carries load where they differ from the keyboard's and fit its definition.
  *
  * A keycode that does not load as written (`asWritten`) does not stop the rest:
  * it loads as `toByte` reads it, and the plan names it with where it goes, so
@@ -348,6 +812,31 @@ export const planLayoutImport = (
   if (customValues.length > 0 && !target.tapDance?.available) {
     return {error: 'keyboard-not-ready'};
   }
+  // Values not yet current cannot be compared, and a file's settings are not
+  // dropped for that: the load waits, as for Tap Dance.
+  const menu = target.customMenu;
+  const savedMenu = file.customMenuValues;
+  if (
+    menu &&
+    !menu.available &&
+    ((savedMenu &&
+      typeof savedMenu === 'object' &&
+      menuSettings(menu.controls).some(({control}) =>
+        hasEntry(savedMenu, control.content[0]),
+      )) ||
+      (Array.isArray(file.perKeyRGB) && !!menu.ledCount))
+  ) {
+    return {error: 'keyboard-not-ready'};
+  }
+  // Nor are a file's macro options dropped because the keyboard's could not be
+  // read or are being read again.
+  if (
+    target.macroOptions?.available === false &&
+    Array.isArray(file.macroOptions) &&
+    file.macroOptions.length > 0
+  ) {
+    return {error: 'keyboard-not-ready'};
+  }
 
   return {
     keymap: target.layers.map((layer, idx) => keymap[idx] ?? [...layer]),
@@ -358,6 +847,16 @@ export const planLayoutImport = (
         encoders.map((encoder, id) => [id, encoder.slice(0, layerCount)]),
       ),
     customValues,
+    layoutOptions:
+      target.layoutOptions &&
+      planLayoutOptions(file.layoutOptions, target.layoutOptions),
+    menuValues: menu
+      ? planCustomMenuValues(savedMenu, menu, toByte, asWritten)
+      : [],
+    perKeyRGB: menu ? planPerKeyRGB(file.perKeyRGB, menu) : [],
+    macroOptions: target.macroOptions?.available
+      ? planMacroOptions(file.macroOptions, target.macroOptions, target.macroCount)
+      : undefined,
     changed,
   };
 };

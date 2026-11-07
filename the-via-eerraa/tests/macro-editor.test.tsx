@@ -45,6 +45,10 @@ const modules = await (async () => {
       configurePlace: await import('../src/store/configurePlaceSlice'),
       macroApi: await import('../src/utils/macro-api'),
       common: await import('../src/utils/macro-api/macro-api.common'),
+      definitions: await import('../src/store/definitionsSlice'),
+      menus: await import('../src/store/menusSlice'),
+      macroOptions: await import('../src/store/macroOptionsSlice'),
+      metadata: await import('../src/utils/era-advanced-metadata'),
     };
   } finally {
     console.warn = originalWarn;
@@ -62,6 +66,10 @@ const {
   configurePlace,
   macroApi: {getMacroAPI},
   common: {checkMacroDraft, expressionToRawSequence},
+  definitions,
+  menus,
+  macroOptions,
+  metadata,
 } = modules;
 const translations = i18n.createInstance();
 await translations.init({lng: 'ko', resources: {ko: {translation: ko}}});
@@ -139,9 +147,19 @@ class MacroKeyboard {
   opened = false;
   listeners = new Set<Listener>();
   commands: number[] = [];
+  requests: number[][] = [];
   buffer: number[];
   refuseReset = false;
   eraReplace = false;
+  // MACRO_OPTIONS on the EERRAA channel; id_unhandled while unset.
+  macroOptions?: {
+    supported: number;
+    options: {flags: number; holdMs: number; repeatCount: number}[];
+  };
+  macroOptionsVersion = 2;
+  refuseOptionsFlags = false;
+  refuseOptionsHold = false;
+  refuseOptionsSave = false;
   eraOperations: number[] = [];
   private replacement: number[] = [];
   private replacementCRC: number[] = [];
@@ -178,7 +196,35 @@ class MacroKeyboard {
     const offset = (request[1] << 8) | request[2];
     const size = request[3];
     this.commands.push(command);
-    if (this.eraReplace && request[1] === W.CHANNELS_EERRAA.MACRO_REPLACE &&
+    this.requests.push(request);
+    if (request[1] === W.CHANNELS_EERRAA.MACRO_OPTIONS && command >= 7 && command <= 9) {
+      const [, , id, index] = request;
+      const options = this.macroOptions;
+      const entry = options?.options[index];
+      if (
+        !options ||
+        (command !== 9 && id !== W.MACRO_OPTIONS.CAPABILITIES && !entry) ||
+        (command === 7 && id === W.MACRO_OPTIONS.FLAGS && this.refuseOptionsFlags) ||
+        (command === 7 && id === W.MACRO_OPTIONS.HOLD_MS && this.refuseOptionsHold) ||
+        (command === 9 && this.refuseOptionsSave)
+      ) {
+        reply[0] = 0xff;
+      } else if (command === 8 && id === W.MACRO_OPTIONS.CAPABILITIES) {
+        reply.splice(3, 6, this.macroOptionsVersion, options.supported, 0x45, 0x4d, 0x4f, 0x31);
+      } else if (command === 8) {
+        reply.splice(4, 2, ...(id === W.MACRO_OPTIONS.FLAGS
+          ? [entry!.flags, 0]
+          : id === W.MACRO_OPTIONS.REPEAT_COUNT
+            ? [entry!.repeatCount, 0]
+            : [entry!.holdMs >>> 8, entry!.holdMs & 0xff]));
+      } else if (command === 7 && id === W.MACRO_OPTIONS.FLAGS) {
+        entry!.flags = request[4];
+      } else if (command === 7 && id === W.MACRO_OPTIONS.REPEAT_COUNT) {
+        entry!.repeatCount = request[4];
+      } else if (command === 7) {
+        entry!.holdMs = (request[4] << 8) | request[5];
+      }
+    } else if (this.eraReplace && request[1] === W.CHANNELS_EERRAA.MACRO_REPLACE &&
         (command === 7 || command === 8)) {
       const op = request[2];
       if (op === W.MACRO_REPLACE.CAPABILITIES) {
@@ -250,6 +296,7 @@ const inertElement = () => ({
   removeEventListener: () => undefined,
   focus: () => undefined,
   scrollTop: 0,
+  scrollHeight: 240,
   offsetTop: 0,
   offsetLeft: 0,
 });
@@ -327,7 +374,7 @@ afterEach(() => {
 
 const connect = async (
   path: string,
-  {size = 64, stored = ['', ''] as string[], protocol = 12} = {},
+  {size = 64, stored = ['', ''] as string[], protocol = 12, era = false} = {},
 ) => {
   configureHIDTransport({responseTimeoutMs: 200});
   const keyboard = new MacroKeyboard(
@@ -347,8 +394,38 @@ const connect = async (
       stateSync: stateSync.default,
       drafts: drafts.default,
       configurePlace: configurePlace.default,
+      // An ERA family board on its own definition, without State Sync.
+      ...(era && {
+        definitions: definitions.default,
+        menus: menus.default,
+        macroOptions: macroOptions.default,
+      }),
     },
   });
+  if (era) {
+    metadata.setEraAdvancedMetadataForTesting({
+      schemaVersion: 2,
+      definitions: [{
+        id: 'era',
+        vendorProductId: keyboard.vendorId * 65536 + keyboard.productId,
+        stateSync: false,
+        exactMsFamily: 'qmk',
+      }],
+    });
+    store.dispatch(definitions.updateEraDefinitions({
+      [keyboard.vendorId * 65536 + keyboard.productId]: {
+        v3: {
+          name: 'ERA',
+          vendorProductId: keyboard.vendorId * 65536 + keyboard.productId,
+          firmwareVersion: 0,
+          keycodes: [],
+          menus: [],
+          layouts: {keys: [], optionKeys: {}},
+          matrix: {rows: 1, cols: 1},
+        },
+      },
+    } as any));
+  }
   const connected: ConnectedDevice = {
     path,
     vendorId: keyboard.vendorId,
@@ -427,6 +504,8 @@ const scriptBoxElement = () => {
   return element;
 };
 let scriptBox: ReturnType<typeof scriptBoxElement>;
+// Elements given keyboard focus, by the popup they open.
+let focused: string[] = [];
 const render = async (store: TestStore) => {
   await act(async () => {
     renderer = create(
@@ -437,6 +516,10 @@ const render = async (store: TestStore) => {
       </Provider>,
       {
         createNodeMock: (element) => {
+          if (element.props['aria-haspopup']) {
+            const popup = String(element.props['aria-haspopup']);
+            return {...inertElement(), focus: () => focused.push(popup)};
+          }
           if (element.type !== 'textarea') return inertElement();
           scriptBox = scriptBoxElement();
           return scriptBox;
@@ -1329,4 +1412,462 @@ test('Enter in prose remains a line break while Enter in a keycode block selects
   await typeAndSettle('{');
   expect((await pressEnter()).defaultPrevented).toBe(true);
   expect(textarea(root).props.value).toMatch(/^\{KC_\w+,$/);
+});
+
+describe('macro playback options', () => {
+  const F = W.MACRO_OPTIONS_FLAGS;
+  const ALL = F.RELEASE | F.RETAP | F.HOLD | F.OTHER | F.IGNORE_MODS | F.BLOCK_OTHERS;
+  const DEFAULT = {flags: 0, holdMs: 1000, repeatCount: 1};
+  const optionsControl = (root: ReactTestInstance) =>
+    root.findAll((node) => typeof node.type === 'string' && node.props['data-macro-options'] !== undefined);
+  const settle = () => act(async () => {
+    for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const playback = (root: ReactTestInstance) =>
+    root.find((node) => node.type === 'button' && node.props['aria-haspopup'] === 'dialog');
+  const form = (root: ReactTestInstance) =>
+    root.findAll((node) => typeof node.type === 'string' && node.props.role === 'dialog')[0];
+  const openForm = (root: ReactTestInstance) => act(() => playback(root).props.onClick());
+  const explanation = (root: ReactTestInstance, label: string) => {
+    const toggle = form(root).find(
+      (node) => node.type === 'button' && node.props['aria-label'] === label,
+    );
+    const body = form(root).find(
+      (node) => typeof node.type === 'string' &&
+        node.props.id === toggle.props['aria-controls'],
+    );
+    return {toggle, body};
+  };
+  const checkbox = (root: ReactTestInstance, label: string) =>
+    root.find((node) => node.type === 'label' && textOf(node) === label)
+      .find((node) => node.type === 'input');
+  const toggle = (root: ReactTestInstance, label: string) =>
+    act(() => {
+      const input = checkbox(root, label);
+      input.props.onChange({target: {checked: !input.props.checked}});
+    });
+  const field = (root: ReactTestInstance, label: string) =>
+    root.findAll((node) => node.type === 'input' && node.props['aria-label'] === label)[0];
+  const fill = (root: ReactTestInstance, label: string, value: string) =>
+    act(() => field(root, label).props.onChange({target: {value}}));
+  const repeat = (root: ReactTestInstance, value: string) =>
+    act(() => root.find((node) => node.type === 'select').props.onChange({target: {value}}));
+  const refusals = (root: ReactTestInstance) =>
+    root.findAll((node) => typeof node.type === 'string' && node.props['data-macro-options-refused'])
+      .map(textOf);
+  const dotted = (root: ReactTestInstance, label: string) =>
+    button(root, label).findAll(
+      (node) => typeof node.type === 'string' && node.props['aria-hidden'] === 'true',
+    ).length > 0;
+  // The dot, not the chevron icon beside it.
+  const playbackDotted = (root: ReactTestInstance) =>
+    playback(root).findAll(
+      (node) => node.type === 'span' && node.props['aria-hidden'] === 'true',
+    ).length > 0;
+  afterEach(() => {
+    metadata.setEraAdvancedMetadataForTesting(null);
+    focused = [];
+  });
+
+  test('the playback form fits above its button without the badge menu height limit', async () => {
+    const {badgePopupBounds} = await import('../src/components/inputs/badge-dropdown');
+    const anchor = {right: 900, top: 620, bottom: 660};
+    const viewport = {width: 1000, height: 1000};
+    const badge = badgePopupBounds(anchor, viewport, 480, 480);
+    const form = badgePopupBounds(anchor, viewport, 480, 480, {
+      maxHeight: viewport.height,
+      minBelowHeight: 480,
+    });
+    expect(badge.top).toBeGreaterThanOrEqual(anchor.bottom);
+    expect(form.maxHeight).toBe(480);
+    expect(form.top + form.maxHeight).toBeLessThan(anchor.top);
+  });
+
+  test('stock, unsupported and other-version firmware leave the editor as it was', async () => {
+    const {store: stock, keyboard: stockKeyboard} = await connect('macro-options-stock');
+    expect(optionsControl(await render(stock))).toEqual([]);
+    await settle();
+    expect(stockKeyboard.commands).toEqual([]);
+    act(() => renderer!.unmount());
+
+    const {store, keyboard} = await connect('macro-options-unsupported', {era: true});
+    const root = await render(store);
+    await settle();
+    expect(keyboard.commands).toContain(0x08);
+    expect(optionsControl(root)).toEqual([]);
+    act(() => renderer!.unmount());
+
+    // Version 1 was never released: its reply is no support at all.
+    const {store: v1, keyboard: v1Keyboard} = await connect('macro-options-v1', {era: true});
+    v1Keyboard.macroOptions = {supported: ALL, options: [{...DEFAULT}, {...DEFAULT}]};
+    v1Keyboard.macroOptionsVersion = 1;
+    const v1Root = await render(v1);
+    await settle();
+    expect(optionsControl(v1Root)).toEqual([]);
+    expect(
+      v1Keyboard.requests.filter(
+        (request) => request[1] === W.CHANNELS_EERRAA.MACRO_OPTIONS && request[2] !== W.MACRO_OPTIONS.CAPABILITIES,
+      ),
+    ).toEqual([]);
+  });
+
+  test('the Playback button sits beside the modes and spells out the repeat count', async () => {
+    const {store, keyboard} = await connect('macro-options-count', {era: true});
+    keyboard.macroOptions = {supported: ALL, options: [{...DEFAULT}, {...DEFAULT}]};
+    const root = await render(store);
+    await settle();
+    // No options line under the editor: one control, in the mode row.
+    expect(optionsControl(root).map((node) => node.props['data-macro-options'])).toEqual(['playback']);
+    expect(textOf(playback(root))).toBe('재생: 1회');
+    expect(playbackDotted(root)).toBe(false);
+    expect(form(root)).toBeUndefined();
+
+    openForm(root);
+    expect(playback(root).props['aria-expanded']).toBe(true);
+    expect(form(root).props['aria-label']).toBe('재생 옵션');
+    expect(field(root, '반복 횟수')).toBeUndefined();
+
+    repeat(root, 'times');
+    expect(field(root, '반복 횟수').props.value).toBe('2');
+    expect(textOf(playback(root))).toBe('재생: 2회');
+    expect(applyButton(root).props.disabled).toBe(false);
+    for (const wrong of ['1', '256', '']) {
+      fill(root, '반복 횟수', wrong);
+      expect(refusals(root)).toEqual(['반복 횟수는 2–255회로 입력하세요.']);
+      expect(applyButton(root).props.disabled).toBe(true);
+    }
+    fill(root, '반복 횟수', '255');
+    expect(refusals(root)).toEqual([]);
+    expect(textOf(playback(root))).toBe('재생: 255회');
+    // The count is not another option: no dot for it.
+    expect(playbackDotted(root)).toBe(false);
+
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0]).toEqual({...DEFAULT, repeatCount: 255});
+    expect(applyButton(root).props.disabled).toBe(true);
+    expect(textOf(playback(root))).toBe('재생: 255회');
+
+    repeat(root, 'once');
+    expect(field(root, '반복 횟수')).toBeUndefined();
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0]).toEqual(DEFAULT);
+  });
+
+  test('until stopped needs a stop condition before Apply', async () => {
+    const {store, keyboard} = await connect('macro-options-until', {era: true});
+    keyboard.macroOptions = {supported: ALL, options: [{...DEFAULT}, {...DEFAULT}]};
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    repeat(root, 'until');
+    expect(textOf(playback(root))).toBe('재생: 멈출 때까지');
+    expect(refusals(root)).toEqual(['멈출 때까지 반복하려면 재생 제어 옵션을 하나 켜세요.']);
+    expect(applyButton(root).props.disabled).toBe(true);
+    await clickApply(root);
+    expect(keyboard.requests.filter(([command]) => command === 0x07)).toEqual([]);
+
+    toggle(root, '다른 키를 누르면 멈춤');
+    expect(refusals(root)).toEqual([]);
+    expect(playbackDotted(root)).toBe(true);
+    keyboard.requests = [];
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0]).toEqual({flags: F.OTHER, holdMs: 1000, repeatCount: 0});
+    expect(
+      keyboard.requests
+        .filter(([command, channel]) => command === 0x07 && channel === W.CHANNELS_EERRAA.MACRO_OPTIONS)
+        .map((request) => request[2]),
+    ).toEqual([W.MACRO_OPTIONS.FLAGS, W.MACRO_OPTIONS.HOLD_MS, W.MACRO_OPTIONS.REPEAT_COUNT]);
+  });
+
+  test('playback help describes only controls the firmware supports', async () => {
+    const {store, keyboard} = await connect('macro-options-help-capabilities', {era: true});
+    keyboard.macroOptions = {
+      supported: F.RELEASE | F.RETAP,
+      options: [{...DEFAULT}, {...DEFAULT}],
+    };
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    const help = () => textOf(explanation(root, '재생 제어').body);
+    expect(help()).toContain('같은 매크로 키');
+    expect(help()).not.toContain('길게');
+
+    toggle(root, '키를 누르는 동안만 재생');
+    expect(checkbox(root, '다시 눌렀다 떼면 멈춤').props.disabled).toBe(true);
+    expect(help()).not.toContain('길게');
+  });
+
+  test('Stop on release makes re-tap and hold inert, keeps their values and says why', async () => {
+    const {store, keyboard} = await connect('macro-options-release', {era: true});
+    keyboard.macroOptions = {
+      supported: F.RELEASE | F.RETAP | F.HOLD,
+      options: [{...DEFAULT}, {...DEFAULT}],
+    };
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    // Only what the firmware supports.
+    const text = textOf(form(root));
+    for (const label of ['반복', '재생 제어', '키를 누르는 동안만 재생', '다시 눌렀다 떼면 멈춤', '다시 길게 누르면 멈춤']) {
+      expect(text).toContain(label);
+    }
+    expect(explanation(root, '재생 제어').body.props.hidden).toBe(true);
+    act(() => explanation(root, '재생 제어').toggle.props.onClick());
+    expect(explanation(root, '재생 제어').body.props.hidden).toBe(false);
+    expect(text).toContain(
+      '다시 누르는 동작으로 멈추는 옵션은 재생 중 같은 매크로 키를 새로 누를 때 적용됩니다.',
+    );
+    for (const label of ['다른 키를 누르면 멈춤', '다른 키 입력', '수식 키']) {
+      expect(text).not.toContain(label);
+    }
+    expect(field(root, '누름 시간')).toBeUndefined();
+
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    toggle(root, '다시 길게 누르면 멈춤');
+    expect(field(root, '누름 시간').props.value).toBe('1000');
+    fill(root, '누름 시간', '0');
+    expect(refusals(root)).toEqual(['누름 시간은 1–65535 ms로 입력하세요.']);
+    expect(applyButton(root).props.disabled).toBe(true);
+
+    toggle(root, '키를 누르는 동안만 재생');
+    for (const label of ['다시 눌렀다 떼면 멈춤', '다시 길게 누르면 멈춤']) {
+      expect(checkbox(root, label).props).toMatchObject({checked: true, disabled: true});
+    }
+    expect(field(root, '누름 시간').props).toMatchObject({value: '0', disabled: true});
+    expect(textOf(form(root))).toContain(
+      '키를 누르는 동안만 재생을 켜면 같은 매크로 키를 다시 눌러 멈추는 옵션은 쓰이지 않습니다.',
+    );
+    expect(textOf(form(root))).not.toContain(
+      '다시 누르는 동작으로 멈추는 옵션은 재생 중 같은 매크로 키를 새로 누를 때 적용됩니다.',
+    );
+    // An inert hold time blocks nothing; the keyboard keeps its own.
+    expect(refusals(root)).toEqual([]);
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0]).toEqual({
+      flags: F.RELEASE | F.RETAP | F.HOLD,
+      holdMs: 1000,
+      repeatCount: 1,
+    });
+  });
+
+  test('other keys are allowed by default; Block says what happens to them and is written', async () => {
+    const {store, keyboard} = await connect('macro-options-block', {era: true});
+    keyboard.macroOptions = {supported: ALL, options: [{...DEFAULT}, {...DEFAULT}]};
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    expect(checkbox(root, '허용').props.checked).toBe(true);
+    expect(checkbox(root, '차단').props.checked).toBe(false);
+    expect(explanation(root, '다른 키 입력').body.props.hidden).toBe(true);
+    act(() => explanation(root, '다른 키 입력').toggle.props.onClick());
+    expect(explanation(root, '다른 키 입력').body.props.hidden).toBe(false);
+    expect(textOf(form(root))).toContain('다른 키 입력');
+    expect(textOf(form(root))).not.toContain('멈추게 한 키의 입력');
+    expect(textOf(form(root))).toContain('재생을 계속하며, 새로 누른 일반 키도 동작합니다.');
+    expect(textOf(form(root))).toContain(
+      '재생 중 누른 다른 매크로 키는 해당 매크로를 시작하거나 예약하지 않습니다.',
+    );
+
+    toggle(root, '다른 키를 누르면 멈춤');
+    expect(textOf(form(root))).toContain('멈추게 한 키의 입력');
+    expect(textOf(form(root))).not.toContain('다른 키 입력');
+    expect(textOf(form(root))).toContain('매크로를 멈추고, 누른 일반 키의 동작도 실행합니다.');
+    expect(textOf(form(root))).not.toContain('재생을 계속하며, 새로 누른 일반 키도 동작합니다.');
+    expect(textOf(form(root))).toContain(
+      '재생 중 누른 다른 매크로 키는 해당 매크로를 시작하거나 예약하지 않습니다.',
+    );
+
+    toggle(root, '다른 키를 누르면 멈춤');
+    act(() => checkbox(root, '차단').props.onChange());
+    expect(textOf(form(root))).toContain('다른 키 입력');
+    expect(textOf(form(root))).toContain('재생 중에 누른 다른 키는 입력되지 않습니다.');
+    expect(textOf(form(root))).toContain(
+      '재생 중 누른 다른 매크로 키는 해당 매크로를 시작하거나 예약하지 않습니다.',
+    );
+    expect(playbackDotted(root)).toBe(true);
+    toggle(root, '다른 키를 누르면 멈춤');
+    expect(textOf(form(root))).toContain('멈추게 한 키의 입력');
+    expect(textOf(form(root))).toContain('다른 키는 매크로를 멈추고, 그 키 입력은 버려집니다.');
+    expect(textOf(form(root))).not.toContain('재생 중에 누른 다른 키는 입력되지 않습니다.');
+    expect(textOf(form(root))).toContain(
+      '재생 중 누른 다른 매크로 키는 해당 매크로를 시작하거나 예약하지 않습니다.',
+    );
+
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0]).toEqual({
+      ...DEFAULT,
+      flags: F.BLOCK_OTHERS | F.OTHER,
+    });
+    expect(textOf(playback(root))).toBe('재생: 1회');
+    expect(playbackDotted(root)).toBe(true);
+  });
+
+  test('Escape and a click outside close the form and focus the button; closing keeps the draft', async () => {
+    const {store, keyboard} = await connect('macro-options-popover', {era: true});
+    keyboard.macroOptions = {supported: ALL, options: [{...DEFAULT}, {...DEFAULT}]};
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    repeat(root, 'times');
+    fill(root, '반복 횟수', '4');
+
+    // Escape closes it wherever focus went: a key from outside the form, such as
+    // the Script tab Shift+Tab reaches, arrives only at the window.
+    const escape = () => {
+      const event = Object.assign(new Event('keydown', {cancelable: true}), {key: 'Escape'});
+      act(() => {
+        globalThis.dispatchEvent(event);
+      });
+      return event;
+    };
+    expect(escape().defaultPrevented).toBe(true);
+    expect(form(root)).toBeUndefined();
+    expect(playback(root).props['aria-expanded']).toBe(false);
+    expect(focused).toEqual(['dialog']);
+    // The draft stays, marked on the button and on its macro.
+    expect(textOf(playback(root))).toBe('재생: 4회');
+    expect(playbackDotted(root)).toBe(true);
+    expect(dotted(root, 'M0')).toBe(true);
+    expect(applyButton(root).props.disabled).toBe(false);
+    expect(keyboard.requests.filter(([command]) => command === 0x07)).toEqual([]);
+
+    openForm(root);
+    expect(checkbox(root, '다시 눌렀다 떼면 멈춤').props.checked).toBe(true);
+    expect(field(root, '반복 횟수').props.value).toBe('4');
+    act(() =>
+      root.find((node) => typeof node.type === 'string' && node.props['data-macro-options-cover'])
+        .props.onClick(),
+    );
+    expect(form(root)).toBeUndefined();
+    expect(focused).toEqual(['dialog', 'dialog']);
+    expect(textOf(playback(root))).toBe('재생: 4회');
+
+    // A closed form no longer listens.
+    expect(escape().defaultPrevented).toBe(false);
+    expect(focused).toEqual(['dialog', 'dialog']);
+
+    // Only Cancel discards it.
+    clickCancel(root);
+    expect(textOf(playback(root))).toBe('재생: 1회');
+    expect(playbackDotted(root)).toBe(false);
+    expect(dotted(root, 'M0')).toBe(false);
+    openForm(root);
+    expect(checkbox(root, '다시 눌렀다 떼면 멈춤').props.checked).toBe(false);
+  });
+
+  test('a content save through RESET keeps the options, so they are not asked for again', async () => {
+    const {store, keyboard} = await connect('macro-options-reset', {era: true});
+    keyboard.macroOptions = {
+      supported: F.RETAP | F.HOLD,
+      options: [{flags: F.RETAP, holdMs: 400, repeatCount: 1}, {...DEFAULT}],
+    };
+    const root = await render(store);
+    await settle();
+    keyboard.requests = [];
+    openScript(root);
+    type(root, 'new0');
+    await clickApply(root);
+    await settle();
+    expect(keyboard.requests.some(([command]) => command === 0x10)).toBe(true);
+    expect(keyboard.requests.filter((request) => request[1] === W.CHANNELS_EERRAA.MACRO_OPTIONS))
+      .toEqual([]);
+    openForm(root);
+    expect(checkbox(root, '다시 눌렀다 떼면 멈춤').props.checked).toBe(true);
+  });
+
+  test('an options draft belongs to the keyboard: it outlives the pane and marks its macro', async () => {
+    const {store, keyboard} = await connect('macro-options-draft', {era: true});
+    keyboard.macroOptions = {
+      supported: F.RETAP,
+      options: [{...DEFAULT}, {...DEFAULT}],
+    };
+    let root = await render(store);
+    await settle();
+    openForm(root);
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    expect([dotted(root, 'M0'), dotted(root, 'M1')]).toEqual([true, false]);
+
+    act(() => renderer!.unmount());
+    root = await render(store);
+    await settle();
+    openForm(root);
+    expect(checkbox(root, '다시 눌렀다 떼면 멈춤').props.checked).toBe(true);
+    expect(dotted(root, 'M0')).toBe(true);
+    expect(applyButton(root).props.disabled).toBe(false);
+
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    expect(dotted(root, 'M0')).toBe(false);
+    expect(keyboard.requests.filter(([command]) => command === 0x07)).toEqual([]);
+  });
+
+  test('a write the keyboard takes only in part still saves what it took', async () => {
+    const {store, keyboard} = await connect('macro-options-partial', {era: true});
+    keyboard.macroOptions = {
+      supported: F.RETAP | F.HOLD,
+      options: [{...DEFAULT}, {...DEFAULT}],
+    };
+    keyboard.refuseOptionsHold = true;
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    keyboard.requests = [];
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0].flags).toBe(F.RETAP);
+    expect(
+      keyboard.requests.some(
+        ([command, channel]) => command === 0x09 && channel === W.CHANNELS_EERRAA.MACRO_OPTIONS,
+      ),
+    ).toBe(true);
+    expect(store.getState().menus.saveRetries['macro-options-partial'] ?? {}).toEqual({});
+  });
+
+  test('a refused FLAGS write stops that macro, so until stopped never lands without its stop', async () => {
+    const {store, keyboard} = await connect('macro-options-refused-flags', {era: true});
+    keyboard.macroOptions = {supported: ALL, options: [{...DEFAULT}, {...DEFAULT}]};
+    keyboard.refuseOptionsFlags = true;
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    repeat(root, 'until');
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    keyboard.requests = [];
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0]).toEqual(DEFAULT);
+    const sent = keyboard.requests.filter(
+      ([command, channel]) =>
+        (command === 0x07 || command === 0x09) && channel === W.CHANNELS_EERRAA.MACRO_OPTIONS,
+    );
+    expect(sent.map((request) => request.slice(0, 3))).toEqual([
+      [0x07, W.CHANNELS_EERRAA.MACRO_OPTIONS, W.MACRO_OPTIONS.FLAGS],
+    ]);
+    expect([dotted(root, 'M0'), dotted(root, 'M1')]).toEqual([true, false]);
+    expect(applyButton(root).props.disabled).toBe(false);
+  });
+
+  test('a refused SAVE keeps its macro marked while the save is owed', async () => {
+    const {store, keyboard} = await connect('macro-options-refused-save', {era: true});
+    keyboard.macroOptions = {
+      supported: F.RETAP,
+      options: [{...DEFAULT}, {...DEFAULT}],
+    };
+    keyboard.refuseOptionsSave = true;
+    const root = await render(store);
+    await settle();
+    openForm(root);
+    toggle(root, '다시 눌렀다 떼면 멈춤');
+    await clickApply(root);
+    await settle();
+    expect(keyboard.macroOptions.options[0].flags).toBe(F.RETAP);
+    expect([dotted(root, 'M0'), dotted(root, 'M1')]).toEqual([true, false]);
+    expect(applyButton(root).props.disabled).toBe(false);
+  });
 });

@@ -34,6 +34,7 @@ import {getSelectedKeycodesVersion} from '../../../store/firmwareSlice';
 import {getSelectedStateSyncCapability} from '../../../store/stateSyncSlice';
 import {ensureMacroContents} from '../../../store/stateSyncThunks';
 import {getMacroAPI} from '../../../utils/macro-api';
+import {getSelectedPendingMacroOptions, useMacroOptions} from './macro-options';
 import {ConfigureStatusMessage} from './status-message';
 import {useTranslation} from 'react-i18next';
 import {useSubmenuTab} from '../../../utils/use-configure-place';
@@ -75,6 +76,7 @@ export const Pane: FC = () => {
   const macroExpressions = useAppSelector(getExpressions);
   const macroCount = useAppSelector(getMacroCount);
   const macroDrafts = useAppSelector(getSelectedMacroDrafts);
+  const pendingOptions = useAppSelector(getSelectedPendingMacroOptions);
   const stateSyncCapability = useAppSelector(getSelectedStateSyncCapability);
   const api = useAppSelector(getSelectedKeyboardAPI);
   const keycodesVersion = useAppSelector(getSelectedKeycodesVersion);
@@ -90,6 +92,8 @@ export const Pane: FC = () => {
     macroLabels.findIndex((label) => label === selectedLabel),
     0,
   );
+  // Shown only where the connected firmware reports macro-option support.
+  const macroOptions = useMacroOptions(selectedMacro);
 
   const macroApi = useMemo(
     () =>
@@ -132,11 +136,12 @@ export const Pane: FC = () => {
           >
             {macroLabels[idx]}
             {macrosReady &&
-            isMacroDraftPending(
+            (isMacroDraftPending(
               macroApi,
               macroDrafts[idx],
               macroExpressions[idx] || '',
-            ) ? (
+            ) ||
+              pendingOptions.has(idx)) ? (
               <DirtyDot aria-hidden="true" />
             ) : null}
           </SubmenuTab>
@@ -150,6 +155,7 @@ export const Pane: FC = () => {
       macroApi,
       macroDrafts,
       macroExpressions,
+      pendingOptions,
     ],
   );
 
@@ -189,6 +195,7 @@ export const Pane: FC = () => {
                 macroApi={macroApi}
                 onRecordingChange={setRecording}
                 lead={<BackLinks>{backLinks}</BackLinks>}
+                options={macroOptions ?? undefined}
               />
             ) : (
               <>

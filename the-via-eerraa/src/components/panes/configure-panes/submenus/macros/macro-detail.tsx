@@ -8,6 +8,7 @@ import {faClapperboard, faCode} from '@fortawesome/free-solid-svg-icons';
 import {ScriptExample, ScriptMode} from './script-mode';
 import {ProgressBarTooltip} from 'src/components/inputs/tooltip';
 import {getIsDelaySupported, getMacroBufferSize, getIsMacroWriting} from 'src/store/macrosSlice';
+import {macroOptionsDraftKey, type MacroOptionsControl} from '../../macro-options';
 import {
   getSelectedDevicePath,
   getSelectedKeyboardAPI,
@@ -113,19 +114,26 @@ const LeadCell = styled.div`
   justify-self: start;
   min-width: 0;
 `;
+const TrailCell = styled.div`
+  justify-self: end;
+  min-width: 0;
+`;
 
 /**
- * The mode row: the two modes in the middle and, at its start, the links that
- * leave the menu, so they take no row of their own. While the macros load it
- * holds the links alone, in the same place.
+ * The mode row: the two modes in the middle, at its start the links that leave
+ * the menu, so they take no row of their own, and at its end the macro's
+ * Playback button. While the macros load it holds the links alone, in the same
+ * place.
  */
 export const MacroModeRow: React.FC<{
   lead?: React.ReactNode;
+  trail?: React.ReactNode;
   children?: React.ReactNode;
-}> = ({lead, children}) => (
+}> = ({lead, trail, children}) => (
   <CenterTabContainer>
     <LeadCell>{lead}</LeadCell>
     {children}
+    {trail ? <TrailCell>{trail}</TrailCell> : null}
   </CenterTabContainer>
 );
 const ApplyMessage = styled(MacroSaveMessage)`
@@ -142,6 +150,11 @@ type Props = {
   onRecordingChange?: (recording: boolean) => void;
   /** At the start of the mode row: the links that leave the menu. */
   lead?: React.ReactNode;
+  /**
+   * The macro's Playback button, where the firmware reports macro-option
+   * support. One Apply writes the macro's content, then its options.
+   */
+  options?: MacroOptionsControl;
 };
 
 const MACRO_DRAFT_PREFIX = draftKey('macro', '');
@@ -301,9 +314,16 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
     [devicePath, dispatch, props.macroExpressions, keyboardApi, connectionGeneration],
   );
 
+  const {options} = props;
+  const optionsPending = options?.pending ?? false;
   const cancel = useCallback(() => {
     if (devicePath) {
-      dispatch(discardDrafts({devicePath, keys: [macroDraftKey(macroIndex)]}));
+      dispatch(
+        discardDrafts({
+          devicePath,
+          keys: [macroDraftKey(macroIndex), macroOptionsDraftKey(macroIndex)],
+        }),
+      );
     }
   }, [devicePath, dispatch, macroIndex]);
 
@@ -330,19 +350,30 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
           value: expression,
         }),
       );
-    if (check.stored === currentMacro) {
+    const contentPending = check.stored !== currentMacro;
+    if (!contentPending) {
       settle();
-      return;
+      if (!optionsPending) return;
     }
     savingRef.current = true;
     setSaving(true);
     setSaveStatus(undefined);
+    let contentSaved = false;
     try {
-      await props.saveMacros(index, expression);
-      settle();
+      if (contentPending) {
+        await props.saveMacros(index, expression);
+        settle();
+        contentSaved = true;
+      }
+      // After the content, so content the keyboard refused leaves the options a
+      // draft too.
+      if (optionsPending && options && !(await options.save(index))) {
+        throw new Error('Macro options were not saved');
+      }
     } catch {
       if (selectedMacroRef.current === index) {
-        setSaveStatus({type: 'failed'});
+        // The content is on the keyboard already; only its options are not.
+        setSaveStatus({type: contentSaved ? 'options-failed' : 'failed'});
       }
     } finally {
       savingRef.current = false;
@@ -358,12 +389,14 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
     macroText,
     props.saveMacros,
     writing,
+    options,
+    optionsPending,
   ]);
 
   const idle = !recording && !saving && !writing;
   return (
     <>
-      <MacroModeRow lead={props.lead}>
+      <MacroModeRow lead={props.lead} trail={options?.control}>
         <TabBar>
           <MacroTab
             type="button"
@@ -414,9 +447,10 @@ export const MacroDetailPane: React.FC<Props> = (props) => {
         />
       )}
       <DeferredApplyButtons
-        canCancel={pending && idle}
+        canCancel={(pending || optionsPending) && idle}
         canApply={
-          pending &&
+          (pending || optionsPending) &&
+          (!optionsPending || options?.valid !== false) &&
           idle &&
           !macroCheck.overCapacity &&
           macroCheck.problem?.type !== 'untypeable'

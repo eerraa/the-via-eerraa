@@ -19,6 +19,7 @@ import {getUISyncCommandIds, type UISyncRequest} from 'src/utils/ui-sync';
 import {
   decodeCustomMenuText,
   isCustomMenuCommandContent,
+  type CustomMenuControl,
 } from 'src/utils/custom-menu';
 import {
   collectRangeControls,
@@ -290,7 +291,7 @@ const readCurrentMenuValue = async <T>(
 // read and goes out after it, rather than being dropped: writing before it would
 // act on a snapshot that is no longer current (ADR 0001). False when another
 // keyboard was chosen meanwhile; the caller checks availability again either way.
-const selectedMenuWriteIsCurrent = (getState: () => RootState) => {
+export const selectedMenuWriteIsCurrent = (getState: () => RootState) => {
   const state = getState();
   const device = getSelectedConnectedDevice(state);
   if (!device) return () => false;
@@ -332,7 +333,7 @@ const awaitConfigReread = async (
 
 // A write that may go out now starts in the same tick, so its value shows at
 // once; only one waiting on a re-read is deferred.
-const awaitCustomMenuWriteAuthority = (
+export const awaitCustomMenuWriteAuthority = (
   dispatch: (action: any) => any,
   getState: () => RootState,
 ): boolean | Promise<boolean> =>
@@ -1520,10 +1521,10 @@ const isFirmwareOnlyExpr = (showIf: string): boolean => {
 };
 
 // TODO: properly type the input and add proper type guards
-const extractCommands = (
+const extractControls = (
   menuOrControls: any,
   firmwareVersion?: number,
-): any[] => {
+): CustomMenuControl[] => {
   if (typeof menuOrControls === 'string') {
     return [];
   }
@@ -1539,14 +1540,17 @@ const extractCommands = (
   }
   return 'type' in menuOrControls
     ? isCustomMenuCommandContent(menuOrControls.content)
-      ? [menuOrControls.content]
+      ? [menuOrControls]
       : []
     : 'content' in menuOrControls && typeof menuOrControls.content !== 'string'
       ? menuOrControls.content.flatMap((item: any) =>
-          extractCommands(item, firmwareVersion),
+          extractControls(item, firmwareVersion),
         )
       : [];
 };
+
+const extractCommands = (menuOrControls: any, firmwareVersion?: number): any[] =>
+  extractControls(menuOrControls, firmwareVersion).map(({content}) => content);
 
 type MenuDefinition = NonNullable<ReturnType<typeof getDefinitionForDevice>>;
 
@@ -1573,6 +1577,19 @@ const getV3MenusForDefinition = (definition: MenuDefinition): V3Menu[] => {
       isVIAMenu(menu) ? compileMenu('custom_menu', 3, menu, idx) : menu,
     );
 };
+
+/**
+ * The controls of a V3 definition's menus, as the keyboard reporting
+ * `firmwareVersion` reads them. Tap Dance's commands-only menu is left out: its
+ * values are edited, and kept in layout files, as Tap Dance.
+ */
+export const getCustomMenuControlsForDefinition = (
+  definition: MenuDefinition,
+  firmwareVersion?: number,
+): CustomMenuControl[] =>
+  getV3MenusForDefinition(definition)
+    .filter((menu: any) => !menu[COMMANDS_ONLY_MENU])
+    .flatMap((menu) => extractControls(menu, firmwareVersion));
 
 const commandsForMenus = (menus: any[], firmwareVersion?: number) =>
   menus

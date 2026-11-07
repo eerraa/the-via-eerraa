@@ -65,6 +65,7 @@ import definitionsReducer, {
   getSelectedLayoutOptions,
   getSelectedLayoutOptionsPending,
   loadCustomDefinitions,
+  loadLayoutOptions,
   reloadDefinitions,
   updateDefinitions,
   updateEraDefinitions,
@@ -73,6 +74,7 @@ import definitionsReducer, {
 } from '../src/store/definitionsSlice';
 import menusReducer, {
   getCustomMenuAvailabilityForDevice,
+  getCustomMenuControlsForDefinition,
   getSelectedCustomMenuAvailability,
   getV3Menus,
   refreshCustomMenuValue,
@@ -119,6 +121,17 @@ import {
   importLayoutFile,
 } from '../src/store/layoutFileThunks';
 import definitionNameReducer from '../src/store/definitionNameSlice';
+import macroOptionsReducer, {
+  ensureMacroOptions,
+  getMacroOptionsForDevice,
+  saveMacroOptionsToDevice,
+} from '../src/store/macroOptionsSlice';
+import {keyboardDefinitionV3ToVIADefinitionV3} from '@the-via/reader';
+import {
+  planLayoutImport,
+  saveCustomMenuValues,
+} from '../src/utils/layout-import';
+import {dropdownChoices} from '../src/utils/custom-menu';
 import {
   collectUniqueEncoderIds,
   collectMaxLedIndex,
@@ -265,6 +278,7 @@ const makeStore = () =>
       menus: menusReducer,
       firmware: firmwareReducer,
       stateSync: stateSyncReducer,
+      macroOptions: macroOptionsReducer,
     },
   });
 
@@ -419,6 +433,10 @@ class FakeStateSyncFirmware {
   ) {}
 
   onSend = (data: Uint8Array) => {
+    if ([0x07, 0x08, 0x09].includes(data[0]) && data[1] === ERA_WIRE.CHANNELS_EERRAA.MACRO_OPTIONS) {
+      this.onMacroOptions(data);
+      return;
+    }
     if (data[0] === 0x08 && data[1] === ERA_WIRE.CHANNELS_EERRAA.MACRO_REPLACE) {
       const unsupported = data.slice();
       unsupported[0] = 0xff;
@@ -721,6 +739,64 @@ class FakeStateSyncFirmware {
       this.device.emit(payload(0x08, 0x00, 0x01, data[3], data[4], ...color));
     }
   };
+
+  // MACRO_OPTIONS on the EERRAA channel; id_unhandled while `macroOptions` is unset.
+  macroOptions?: {
+    supported: number;
+    options: {flags: number; holdMs: number; repeatCount: number}[];
+  };
+  refuseNextMacroOptionsSave = false;
+  refuseMacroOptionsFlags = false;
+  // Any version but 2 is one this app does not speak.
+  macroOptionsVersion = 2;
+
+  onMacroOptions(data: Uint8Array) {
+    const [command, channel, id, index] = data;
+    const options = this.macroOptions;
+    const entry = options?.options[index];
+    const unhandled = () => {
+      const reply = data.slice();
+      reply[0] = 0xff;
+      this.device.emit(reply);
+    };
+    if (!options) return unhandled();
+    if (command === 0x09) {
+      if (this.refuseNextMacroOptionsSave) {
+        this.refuseNextMacroOptionsSave = false;
+        return unhandled();
+      }
+      this.operationLog.push('macro-options-save');
+      this.device.emit(payload(0x09, channel));
+      return;
+    }
+    if (id === ERA_WIRE.MACRO_OPTIONS.CAPABILITIES && command === 0x08) {
+      this.device.emit(payload(0x08, channel, id, this.macroOptionsVersion, options.supported, 0x45, 0x4d, 0x4f, 0x31));
+      return;
+    }
+    if (!entry) return unhandled();
+    const field =
+      id === ERA_WIRE.MACRO_OPTIONS.FLAGS
+        ? 'flags'
+        : id === ERA_WIRE.MACRO_OPTIONS.REPEAT_COUNT
+          ? 'repeat'
+          : 'hold';
+    if (command === 0x08) {
+      this.device.emit(payload(0x08, channel, id, index,
+        ...(field === 'flags'
+          ? [entry.flags]
+          : field === 'repeat'
+            ? [entry.repeatCount]
+            : [entry.holdMs >>> 8, entry.holdMs & 0xff])));
+      return;
+    }
+    if (field === 'flags' && this.refuseMacroOptionsFlags) return unhandled();
+    if (field === 'flags') entry.flags = data[4];
+    else if (field === 'repeat') entry.repeatCount = data[4];
+    else entry.holdMs = (data[4] << 8) | data[5];
+    this.revisions.config++;
+    this.operationLog.push(`macro-options-${field}:${index}`);
+    this.device.emit(payload(...Array.from(data)));
+  }
 
   releaseHeldStateSync() {
     if (!this.heldStateSyncRequest) {
@@ -1810,6 +1886,136 @@ describe('layout files on an ordinary VIA keyboard', () => {
     });
   });
 
+  // Read as the app reads a keyboard it connects to.
+  const readSettings = async (dispatch: any, connected: ConnectedDevice) => {
+    await dispatch(loadLayoutOptions(connected));
+    await dispatch(updateV3MenuData(connected));
+  };
+
+  // A keyboard cleared to its defaults comes back from its file with its layout
+  // option and its Custom Menu values, not only its keys.
+  test('restores the layout option and Custom Menu values a reset cleared', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareOrdinary('ordinary-layout-settings');
+    firmware.layoutValue = 1;
+    firmware.menuValue = 42;
+    await readSettings(dispatch, connected);
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved.file).toMatchObject({
+      layoutOptions: 1,
+      customMenuValues: {id_test_value: [42]},
+    });
+
+    firmware.layoutValue = 0;
+    firmware.menuValue = 0;
+    await readSettings(dispatch, connected);
+    firmware.customEvents = [];
+    const loaded = await dispatch(
+      importLayoutFile(connected, JSON.parse(JSON.stringify(saved.file))),
+    );
+
+    expect(loaded).toEqual({ok: true});
+    expect(firmware.layoutValue).toBe(1);
+    expect(firmware.menuValue).toBe(42);
+    expect(firmware.customEvents).toEqual(['set:42', 'save:1']);
+    expect(getSelectedLayoutOptions(store.getState() as any)).toEqual([1]);
+    expect(
+      (store.getState() as any).menus.customMenuDataMap[connected.path]
+        .id_test_value,
+    ).toEqual([42]);
+  });
+
+  test('a setting the keyboard answers as unhandled stays as it is, and the rest loads', async () => {
+    const {firmware, dispatch, connected} =
+      await prepareOrdinary('ordinary-layout-unhandled-setting');
+    firmware.layoutValue = 1;
+    firmware.menuValue = 42;
+    await readSettings(dispatch, connected);
+    const saved = await dispatch(exportLayoutFile(connected));
+    firmware.layoutValue = 0;
+    firmware.menuValue = 0;
+    await readSettings(dispatch, connected);
+    firmware.customEvents = [];
+    firmware.device.onSend = (data) => {
+      if (data[0] === 0x07 && data[1] === 0x01 && data[2] === 0x01) {
+        const unhandled = data.slice();
+        unhandled[0] = 0xff;
+        firmware.device.emit(unhandled);
+        return;
+      }
+      firmware.onSend(data);
+    };
+
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({
+      ok: true,
+    });
+    expect(firmware.layoutValue).toBe(1);
+    expect(firmware.menuValue).toBe(0);
+    expect(firmware.customEvents).toEqual([]);
+  });
+
+  // As for an edit, a value the keyboard took but did not keep is not reported
+  // loaded, and the next load sends it again although the keyboard shows it.
+  test('settings whose SAVE the keyboard refuses are not reported loaded, and load again', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareOrdinary('ordinary-layout-refused-save');
+    firmware.menuValue = 42;
+    await readSettings(dispatch, connected);
+    const saved = await dispatch(exportLayoutFile(connected));
+    firmware.menuValue = 0;
+    await readSettings(dispatch, connected);
+    firmware.device.onSend = (data) => {
+      if (data[0] === 0x09) {
+        const unhandled = data.slice();
+        unhandled[0] = 0xff;
+        firmware.device.emit(unhandled);
+        return;
+      }
+      firmware.onSend(data);
+    };
+
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({
+      error: 'write-failed',
+    });
+    expect((store.getState() as any).menus.saveRetries[connected.path]).toEqual({
+      id_test_value: true,
+    });
+
+    firmware.device.onSend = firmware.onSend;
+    firmware.customEvents = [];
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({ok: true});
+    expect(firmware.customEvents).toEqual(['set:42', 'save:1']);
+    expect((store.getState() as any).menus.saveRetries[connected.path]).toEqual({});
+  });
+
+  test('restores per-key RGB a reset cleared, on the LEDs the keyboard maps', async () => {
+    const {firmware, store, dispatch, connected} =
+      await prepareOrdinary('ordinary-layout-per-key-rgb');
+    firmware.perKeyRGB = [33, 44];
+    await readSettings(dispatch, connected);
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved.file.perKeyRGB).toEqual([[33, 44]]);
+    firmware.perKeyRGB = [10, 20];
+    await readSettings(dispatch, connected);
+    firmware.customEvents = [];
+
+    // Colours saved for another LED mapping are left alone.
+    expect(
+      await dispatch(importLayoutFile(connected, {
+        ...saved.file,
+        perKeyRGB: [[33, 44], [55, 66]],
+      })),
+    ).toEqual({ok: true});
+    expect(firmware.perKeyRGB).toEqual([10, 20]);
+
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({ok: true});
+    expect(firmware.perKeyRGB).toEqual([33, 44]);
+    expect(firmware.customEvents).toEqual(['save:0']);
+    expect(
+      (store.getState() as any).menus.customMenuDataMap[connected.path].__perKeyRGB,
+    ).toEqual([[33, 44]]);
+  });
+
   test('takes only its own identity', async () => {
     const {dispatch, connected} = await prepareOrdinary('ordinary-layout-identity');
     const file = {name: 'TOMAK', vendorProductId: TOMAK_VPID, layers: [['KC_A']]};
@@ -1901,6 +2107,165 @@ describe('layout file operation ownership', () => {
       expect(changed).toBe(true);
     });
   }
+});
+
+// BRICK60-H7S as shipped: besides its settings, its menus hold the bootloader and
+// EEPROM clean switches, USB polling's Apply, which restarts the keyboard, the
+// boot polling mode that Apply puts into effect, and labels.
+describe('Custom Menu settings in layout files', () => {
+  test('only stored settings are saved and loaded, each exact value after its steps', () => {
+    const raw = JSON.parse(readFileSync(
+      'era-definitions/custom/v3/brick60-h7s/BRICK60-H7S-VIA.json', 'utf8',
+    ));
+    const {tapdanceKeycodes, ...stock} = raw;
+    const controls = getCustomMenuControlsForDefinition({
+      ...keyboardDefinitionV3ToVIADefinitionV3(stock),
+      tapdanceKeycodes,
+    } as any);
+    const isMouseExact = (name: string) =>
+      name.startsWith('id_qmk_mousekey_') && name.endsWith('_exact');
+    // Every value as the keyboard reports it, with MOUSE precision supported.
+    const reported = (value: number) => ({
+      ...Object.fromEntries(controls.map(({content: [name]}) => [
+        name,
+        isMouseExact(name) ? [0, value + 1, 0xe4] : [value, 0, 0],
+      ])),
+      id_qmk_mousekey_precision: [0xe4, 1],
+    });
+    const never = [
+      'id_qmk_system_dfu',
+      'id_qmk_system_reset_0',
+      'id_qmk_system_reset_1',
+      'id_qmk_system_reset_done',
+      'id_qmk_usb_bootmode',
+      'id_qmk_usb_bootmode_apply',
+      'id_qmk_usb_polling_current',
+      'id_qmk_ver_ascii',
+      'id_qmk_mousekey_precision',
+    ];
+
+    const saved = saveCustomMenuValues(
+      {controls, values: reported(1), available: true},
+      (byte) => `K${byte}`,
+    ) as {customMenuValues: Record<string, unknown>};
+    const names = Object.keys(saved.customMenuValues);
+    expect(names).toEqual(expect.arrayContaining([
+      'id_qmk_rgblight_brightness',
+      'id_qmk_rgblight_color',
+      'id_qmk_custom_ind_selec',
+      'id_qmk_kill_switch_left',
+      'id_qmk_tapping_global_term_exact',
+      'id_qmk_mousekey_cursor_start_exact',
+    ]));
+    expect(saved.customMenuValues).toMatchObject({
+      id_qmk_rgblight_color: [1, 0],
+      id_qmk_kill_switch_left: 'K256',
+      id_qmk_mousekey_cursor_start_exact: [0, 2],
+    });
+    expect(names.filter((name) =>
+      never.includes(name) || name.startsWith('id_qmk_tapdance_'),
+    )).toEqual([]);
+
+    // A file that names them anyway does not send them.
+    const plan = planLayoutImport(
+      {
+        name: 'BRICK60',
+        vendorProductId: 1,
+        layers: [],
+        customMenuValues: {
+          ...saved.customMenuValues,
+          ...Object.fromEntries(never.map((name) => [name, [1]])),
+        } as any,
+      },
+      {
+        vendorProductId: 1,
+        layers: [],
+        macroCount: null,
+        customMenu: {controls, values: reported(0), available: true},
+      },
+      (code) => Number(code.slice(1)),
+    );
+    if ('error' in plan) throw new Error(plan.error);
+    const written = plan.menuValues.map(({name}) => name);
+    // A dropdown that offers no choice 1 keeps its value.
+    const offered = (name: string) => {
+      const control = controls.find(({content: [command]}) => command === name)!;
+      return (
+        control.type !== 'dropdown' ||
+        dropdownChoices(control.options).some(({value}) => value === 1)
+      );
+    };
+    expect(written).toEqual(names.filter(offered));
+    const exact = written.filter((name) => name.endsWith('_exact'));
+    expect(written.slice(-exact.length)).toEqual(exact);
+  });
+
+  const controlsOf = (path: string) => {
+    const {tapdanceKeycodes, ...stock} = JSON.parse(readFileSync(path, 'utf8'));
+    return getCustomMenuControlsForDefinition({
+      ...keyboardDefinitionV3ToVIADefinitionV3(stock),
+      tapdanceKeycodes,
+    } as any);
+  };
+  const planMenu = (
+    controls: ReturnType<typeof controlsOf>,
+    customMenuValues: Record<string, number[]>,
+    reported: number,
+  ) => {
+    const plan = planLayoutImport(
+      {name: 'ERA', vendorProductId: 1, layers: [], customMenuValues},
+      {
+        vendorProductId: 1,
+        layers: [],
+        macroCount: null,
+        customMenu: {
+          controls,
+          values: Object.fromEntries(
+            controls.map(({content: [name]}) => [name, [reported, 0, 0]]),
+          ),
+          available: true,
+        },
+      },
+      (code) => Number(code.slice(1)),
+    );
+    if ('error' in plan) throw new Error(plan.error);
+    return plan.menuValues.map(({name, bytes}) => [name, bytes]);
+  };
+
+  // Turning EEPROM SYNC on starts the halves' storage sync, which replaces one
+  // half's settings with the other's for good, so only the user turns it on.
+  test("a split board's EEPROM SYNC is neither saved nor loaded; INPUT and RGB SYNC are", () => {
+    const controls = controlsOf(
+      'era-definitions/custom/v3/tomak79h/TOMAK79H-L-VIA.json',
+    );
+    const sync = [
+      'id_qmk_eeprom_sync_requested',
+      'id_qmk_input_sync_requested',
+      'id_qmk_rgb_sync_requested',
+    ];
+    const saved = saveCustomMenuValues(
+      {
+        controls,
+        values: Object.fromEntries(sync.map((name) => [name, [1]])),
+        available: true,
+      },
+      (byte) => `K${byte}`,
+    ) as {customMenuValues: Record<string, unknown>};
+    expect(Object.keys(saved.customMenuValues)).toEqual(sync.slice(1));
+    expect(
+      planMenu(controls, Object.fromEntries(sync.map((name) => [name, [1]])), 0),
+    ).toEqual(sync.slice(1).map((name) => [name, [1]]));
+  });
+
+  test('a dropdown loads only a choice its definition offers', () => {
+    const controls = controlsOf(
+      'era-definitions/custom/v3/brick60-h7s/BRICK60-H7S-VIA.json',
+    );
+    expect(planMenu(controls, {id_qmk_custom_ind_selec: [3]}, 0)).toEqual([
+      ['id_qmk_custom_ind_selec', [3]],
+    ]);
+    expect(planMenu(controls, {id_qmk_custom_ind_selec: [255]}, 0)).toEqual([]);
+  });
 });
 
 // An ERA board with one Tap Dance slot. Its settings share the fake firmware's one
@@ -4990,4 +5355,299 @@ test('custom menu write lifetime: a failed SET cannot roll back a newer SET of t
   expect(new KeyboardAPI(path).getConnectionGeneration()).toBe(generation);
   expect(firmwareValue).toBe(9);
   expect(store.getState().menus.customMenuDataMap[path].id_test_value[0]).toBe(9);
+});
+
+describe('macro playback options', () => {
+  const F = ERA_WIRE.MACRO_OPTIONS_FLAGS;
+  const ALL = F.RETAP | F.HOLD | F.RELEASE | F.OTHER | F.IGNORE_MODS | F.BLOCK_OTHERS;
+  const prepare = async (
+    path: string,
+    macroOptions?: FakeStateSyncFirmware['macroOptions'],
+  ) => {
+    const {device} = await connectFake(path);
+    const firmware = new FakeStateSyncFirmware(device);
+    firmware.macroOptions = macroOptions;
+    device.onSend = firmware.onSend;
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = makeConnectedDevice(path, TOMAK_VPID);
+    installEraDefinition(store);
+    dispatch(updateConnectedDevices({[path]: connected}));
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    dispatch(selectDevice({device: connected, connectionGeneration: generation}));
+    expect(await dispatch(probeStateSyncCapabilityForDevice(connected))).toBe(true);
+    await dispatch(loadMacroMetadata(connected));
+    for (const domain of ['keymap', 'config'] as const) {
+      expect(
+        await dispatch(refreshStateSyncDomain(connected, domain, {allowBeforeReady: true})),
+      ).toBe(true);
+    }
+    dispatch(
+      markDeviceReady({
+        devicePath: path,
+        connectionGeneration: generation,
+        selectionGeneration: store.getState().devices.selectionGeneration,
+      }),
+    );
+    return {firmware, store, dispatch, connected};
+  };
+  const optionsSent = (firmware: FakeStateSyncFirmware) =>
+    firmware.device.sentReports.filter(
+      ({data}) => data[1] === ERA_WIRE.CHANNELS_EERRAA.MACRO_OPTIONS,
+    );
+
+  test('CONFIG reads them, and reads them again once CONFIG changes', async () => {
+    const {firmware, store, dispatch, connected} = await prepare('macro-options-config', {
+      supported: ALL,
+      options: [{flags: F.RETAP, holdMs: 1000, repeatCount: 1}],
+    });
+    expect(getMacroOptionsForDevice(store.getState() as any, connected)).toEqual({
+      kind: 'read',
+      supported: ALL,
+      options: [{flags: F.RETAP, holdMs: 1000, repeatCount: 1}],
+    });
+
+    firmware.macroOptions!.options[0] = {flags: F.RELEASE | F.BLOCK_OTHERS, holdMs: 400, repeatCount: 0};
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+
+    expect(getMacroOptionsForDevice(store.getState() as any, connected)).toMatchObject({
+      options: [{flags: F.RELEASE | F.BLOCK_OTHERS, holdMs: 400, repeatCount: 0}],
+    });
+  });
+
+  test('a Save and Load round trip restores them, the repeat count and the block flag too, after the macros', async () => {
+    const {firmware, dispatch, connected} = await prepare('macro-options-round-trip', {
+      supported: ALL,
+      options: [{flags: F.BLOCK_OTHERS | F.RETAP | F.HOLD, holdMs: 250, repeatCount: 9}],
+    });
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved.file.macroOptions).toEqual([
+      {flags: F.BLOCK_OTHERS | F.RETAP | F.HOLD, holdMs: 250, repeatCount: 9},
+    ]);
+
+    firmware.macroOptions!.options[0] = {flags: 0, holdMs: 1000, repeatCount: 1};
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+    firmware.operationLog = [];
+    expect(
+      await dispatch(importLayoutFile(connected, JSON.parse(JSON.stringify({
+        ...saved.file,
+        macros: ['B'],
+      })))),
+    ).toEqual({ok: true});
+
+    expect(firmware.macroText).toBe('B');
+    expect(firmware.macroOptions!.options[0]).toEqual({
+      flags: F.BLOCK_OTHERS | F.RETAP | F.HOLD,
+      holdMs: 250,
+      repeatCount: 9,
+    });
+    const log = firmware.operationLog;
+    // A count other than until stopped goes before FLAGS.
+    expect(log.indexOf('macro-options-repeat:0')).toBeGreaterThan(log.lastIndexOf('macro-close'));
+    expect(log.slice(log.indexOf('macro-options-repeat:0'))).toEqual([
+      'macro-options-repeat:0',
+      'macro-options-flags:0',
+      'macro-options-hold:0',
+      'macro-options-save',
+    ]);
+
+    // RESET keeps the options, so a load whose options the keyboard already
+    // holds writes none of them, even after rewriting the macros.
+    firmware.operationLog = [];
+    expect(
+      await dispatch(importLayoutFile(connected, JSON.parse(JSON.stringify({
+        ...saved.file,
+        macros: ['C'],
+      })))),
+    ).toEqual({ok: true});
+    expect(firmware.macroText).toBe('C');
+    expect(firmware.operationLog.filter((entry) => entry.startsWith('macro-options'))).toEqual([]);
+  });
+
+  test('unsupported firmware, and a file without them, load as before', async () => {
+    const {firmware, store, dispatch, connected} = await prepare('macro-options-unsupported');
+    expect(getMacroOptionsForDevice(store.getState() as any, connected)).toEqual({
+      kind: 'unsupported',
+    });
+    const saved = await dispatch(exportLayoutFile(connected));
+    expect(saved.file).not.toHaveProperty('macroOptions');
+    const before = optionsSent(firmware).length;
+    expect(
+      await dispatch(importLayoutFile(connected, {
+        ...saved.file,
+        macroOptions: [{flags: F.RETAP, holdMs: 250, repeatCount: 1}],
+      })),
+    ).toEqual({ok: true});
+    expect(optionsSent(firmware).slice(before).filter(({data}) => data[0] === 0x07)).toEqual([]);
+
+    firmware.macroOptions = {supported: ALL, options: [{flags: F.OTHER, holdMs: 900, repeatCount: 1}]};
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+    firmware.operationLog = [];
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({ok: true});
+    expect(firmware.operationLog.filter((entry) => entry.startsWith('macro-options'))).toEqual([]);
+    expect(firmware.macroOptions.options[0]).toEqual({flags: F.OTHER, holdMs: 900, repeatCount: 1});
+  });
+
+  test('a SAVE the keyboard refuses stays owed and fails the load, as for Custom Menu values', async () => {
+    const {firmware, store, dispatch, connected} = await prepare('macro-options-refused-save', {
+      supported: ALL,
+      options: [{flags: F.OTHER, holdMs: 300, repeatCount: 1}],
+    });
+    const saved = await dispatch(exportLayoutFile(connected));
+    firmware.macroOptions!.options[0] = {flags: 0, holdMs: 1000, repeatCount: 1};
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+    firmware.refuseNextMacroOptionsSave = true;
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({
+      error: 'write-failed',
+    });
+    expect((store.getState() as any).menus.saveRetries[connected.path]).toEqual({
+      __macroOptions: true,
+    });
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({ok: true});
+    expect((store.getState() as any).menus.saveRetries[connected.path]).toEqual({});
+  });
+
+  test('a FLAGS SET the keyboard refuses stops that macro and fails the load', async () => {
+    const {firmware, dispatch, connected} = await prepare('macro-options-refused-flags', {
+      supported: ALL,
+      options: [{flags: 0, holdMs: 1000, repeatCount: 1}],
+    });
+    const saved = await dispatch(exportLayoutFile(connected));
+    firmware.refuseMacroOptionsFlags = true;
+    firmware.operationLog = [];
+    expect(
+      await dispatch(importLayoutFile(connected, {
+        ...saved.file,
+        macroOptions: [{flags: F.RETAP, holdMs: 1000, repeatCount: 0}],
+      })),
+    ).toEqual({error: 'write-failed'});
+    // Until stopped never reached the keyboard without its stop.
+    expect(firmware.macroOptions!.options[0]).toEqual({flags: 0, holdMs: 1000, repeatCount: 1});
+    expect(firmware.operationLog.filter((entry) => entry.startsWith('macro-options'))).toEqual([]);
+  });
+
+  const optionSets = (firmware: FakeStateSyncFirmware) =>
+    optionsSent(firmware).filter(({data}) => data[0] === 0x07);
+
+  test('a save queued behind other traffic does not outlive its definition before the first SET', async () => {
+    const path = 'macro-options-queued';
+    const {firmware, store, dispatch, connected} = await prepare(path, {
+      supported: ALL,
+      options: [{flags: 0, holdMs: 1000, repeatCount: 1}],
+    });
+    const api = new KeyboardAPI(path);
+    let acquired = false;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const busy = api.withPathReservation(
+      api.getConnectionGeneration(),
+      Symbol('macro-options-gate'),
+      async () => {
+        acquired = true;
+        await gate;
+      },
+    );
+    await waitUntil(() => acquired);
+    const writing = dispatch(saveMacroOptionsToDevice(connected, 0, {flags: F.RETAP, holdMs: 1000, repeatCount: 1}));
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    installEraDefinition(store, makeV3Definition(true));
+    release!();
+    await busy;
+    expect(await writing).toBe(false);
+    expect(optionSets(firmware)).toEqual([]);
+    expect(firmware.macroOptions!.options[0]).toEqual({flags: 0, holdMs: 1000, repeatCount: 1});
+  });
+
+  test('a load and a write wait for the CONFIG re-read the keyboard owes before using its options', async () => {
+    const path = 'macro-options-stale';
+    const {firmware, dispatch, connected} = await prepare(path, {
+      supported: ALL,
+      options: [{flags: F.OTHER, holdMs: 1000, repeatCount: 1}],
+    });
+    const generation = new KeyboardAPI(path).getConnectionGeneration();
+    const stale = () => {
+      firmware.revisions.config++;
+      dispatch(setDomainStatus({path, generation, domain: 'config', status: 'dirty'}));
+    };
+    const saved = await dispatch(exportLayoutFile(connected));
+    const {tapDance, layoutOptions, customMenuValues, perKeyRGB, ...optionsOnly} = saved.file;
+
+    // Changed on the keyboard; the app knows CONFIG is stale but holds the old options.
+    firmware.macroOptions!.options[0] = {flags: 0, holdMs: 1000, repeatCount: 1};
+    stale();
+    expect(await dispatch(importLayoutFile(connected, optionsOnly))).toEqual({ok: true});
+    expect(firmware.macroOptions!.options[0]).toEqual({flags: F.OTHER, holdMs: 1000, repeatCount: 1});
+
+    // Re-tap is no longer supported, which only the re-read shows.
+    firmware.macroOptions!.supported = F.OTHER;
+    stale();
+    const before = optionSets(firmware).length;
+    expect(
+      await dispatch(saveMacroOptionsToDevice(connected, 0, {flags: F.RETAP, holdMs: 1000, repeatCount: 1})),
+    ).toBe(false);
+    expect(optionSets(firmware).slice(before)).toEqual([]);
+  });
+
+  test('a load is refused, not silently partial, while the keyboard cannot report its options', async () => {
+    const path = 'macro-options-failed-read';
+    const {firmware, store, dispatch, connected} = await prepare(path, {
+      supported: ALL,
+      options: [{flags: F.OTHER, holdMs: 1000, repeatCount: 1}],
+    });
+    const saved = await dispatch(exportLayoutFile(connected));
+    firmware.macroOptions!.options[0] = {flags: 0, holdMs: 1000, repeatCount: 1};
+    // A reserved bit in the supported mask is off the registry.
+    firmware.macroOptions!.supported = ALL | 0x80;
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+    expect(getMacroOptionsForDevice(store.getState() as any, connected)?.kind).toBe('failed');
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({
+      error: 'keyboard-not-ready',
+    });
+    expect(optionSets(firmware)).toEqual([]);
+  });
+
+  test('firmware speaking another version gets no options, and its file loads without them', async () => {
+    const path = 'macro-options-v1';
+    const {firmware, store, dispatch, connected} = await prepare(path, {
+      supported: ALL,
+      options: [{flags: F.OTHER, holdMs: 1000, repeatCount: 1}],
+    });
+    const saved = await dispatch(exportLayoutFile(connected));
+    firmware.macroOptionsVersion = 1;
+    firmware.revisions.config++;
+    expect(await dispatch(refreshStateSyncDomain(connected, 'config'))).toBe(true);
+    expect(getMacroOptionsForDevice(store.getState() as any, connected)).toEqual({
+      kind: 'unsupported',
+    });
+    expect(await dispatch(importLayoutFile(connected, saved.file))).toEqual({ok: true});
+    expect(optionSets(firmware)).toEqual([]);
+  });
+
+  test('stock firmware and an official definition are never asked', async () => {
+    const {device} = await connectFake('macro-options-official');
+    const firmware = new FakeStateSyncFirmware(device);
+    firmware.macroOptions = {supported: ALL, options: [{flags: 0, holdMs: 1000, repeatCount: 1}]};
+    device.onSend = firmware.onSend;
+    const store = makeStore();
+    const dispatch = store.dispatch as any;
+    const connected = makeConnectedDevice('macro-options-official', TOMAK_VPID);
+    dispatch(updateDefinitions({[TOMAK_VPID]: {v3: makeV3Definition()}} as any));
+    dispatch(updateConnectedDevices({[connected.path]: connected}));
+    expect(await dispatch(ensureMacroOptions(connected))).toBeNull();
+
+    installEraDefinition(store);
+    setEraAdvancedMetadataForTesting({
+      schemaVersion: 2,
+      definitions: [{id: 'stock', vendorProductId: TOMAK_VPID, stateSync: false}],
+    });
+    expect(await dispatch(ensureMacroOptions(connected))).toBeNull();
+    expect(optionsSent(firmware)).toEqual([]);
+  });
 });

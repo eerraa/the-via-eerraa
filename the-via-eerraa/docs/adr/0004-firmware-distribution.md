@@ -88,13 +88,57 @@ mirrors it for the app.
   lacks keeps what the keyboard has, and a layer the keyboard
   lacks is taken only when it is empty. The file stays official VIA's format:
   keys load per switch position whatever layout option is showing, so a key
-  the current option hides is still written, and layout options are not saved.
-  The one addition is `tapDance`, the Tap Dance settings official VIA has no
-  place for; official VIA ignores it, and a file without it leaves the
-  keyboard's Tap Dance as it is. On a keyboard that State Sync leaves
-  `unverified` ([ADR 0001](0001-state-sync-protocol.md)), files are saved and
-  loaded without `tapDance`, as in official VIA: its Tap Dance is never read,
-  and refusing the rest would block the backup its firmware update needs.
+  the current option hides is still written.
+- The file also carries the settings the app reads through VIA for the
+  keyboard, in fields official VIA ignores: `tapDance`, `layoutOptions` (the
+  `id_layout_options` integer packed by the definition's layout labels, as
+  Vial's `.vil` keeps it), `customMenuValues` (V3 Custom Menu values by
+  command name; a keycode by name, as on the layers) and `perKeyRGB` (the
+  per-key [hue, saturation] pairs by LED index). Why: an EEPROM clean or an
+  update that resets settings otherwise loses the layout option and the
+  lighting a backup was made to keep. A setting without a VIA read, such as a
+  keycode-only swap, is not saved, so no firmware command is added for it. A
+  file without a field leaves those settings as they are. A load writes only
+  values that differ or that the keyboard has not kept yet, only to a command
+  the keyboard reported, and only what the control could send: one of a
+  toggle's options, a value within a range's bounds, one of a dropdown's
+  choices, a keycode that loads as written, and per-key colours only when the
+  file has one for every LED the definition maps. Anything else keeps the
+  keyboard's value. It never sends an action switch (bootloader, EEPROM clean,
+  an Apply) or a value held until such an Apply (split link speed, USB boot
+  polling, whose Apply restarts the keyboard): a restore must not reboot or
+  re-enumerate the keyboard.
+- `macroOptions` carries each macro's playback options (the FLAGS byte and
+  the hold time in ms, by macro index), saved only where CAPABILITIES
+  confirmed support. A load writes them after the macro contents and, like the
+  Custom Menu values, only where they differ from the keyboard's, because VIA's
+  macro RESET, which starts a macro write without macro replace, keeps the
+  options; while their SAVE is owed it writes every value that fits again.
+  A value fits when its flags are all supported and are not REPEAT without a
+  stop condition, and when its hold time is 1..65535 ms on firmware that
+  supports Stop on hold; anything else keeps the keyboard's value. Their SET
+  and SAVE take the Custom Menu values' handling below. As for those values, a
+  load compares them only after CONFIG is current again, and a keyboard whose
+  options could not be read refuses the load rather than drop them; firmware
+  that reports no support loads without them.
+- Safety exception: a split keyboard's EEPROM SYNC switch is neither saved nor
+  loaded, although it is a stored setting. Turning it on starts the halves'
+  storage sync, which replaces the losing half's settings with the other's for
+  good (the larger divergence count wins, a tie goes to the left half), so a
+  load could overwrite either half. Turning it on stays the user's explicit
+  action. INPUT SYNC and RGB SYNC do not replace a half's stored settings and
+  load like any other setting.
+- A SET the keyboard answers as unhandled leaves that setting as it is, so
+  ordinary VIA firmware still loads the rest. A SAVE it refuses is handled as
+  for an edit: that channel's values run but are not kept, stay owed a SAVE,
+  and go out again with the next load even where the keyboard shows them; the
+  load reports that it failed, and other channels still save. On a keyboard
+  that State Sync leaves `unverified`
+  ([ADR 0001](0001-state-sync-protocol.md)), files are saved and loaded
+  without `tapDance`, `customMenuValues`, `perKeyRGB` and `macroOptions`, as
+  in official VIA:
+  those values are never read, and refusing the rest would block the backup
+  its firmware update needs.
 - Both halves of a split keyboard take the same maker build, as they already
   must take the same `.uf2`.
 

@@ -2877,6 +2877,16 @@ describe('device chooser and reconnect', () => {
     });
     const testStore = makeAppTestStore();
     const dispatch = testStore.dispatch as any;
+    let completedReloads = 0;
+    let connectedDevices = testStore.getState().devices.connectedDevicePaths;
+    // Each reload publishes its own list after its probes and definitions settle.
+    const unsubscribe = testStore.subscribe(() => {
+      const next = testStore.getState().devices.connectedDevicePaths;
+      if (next !== connectedDevices) {
+        connectedDevices = next;
+        completedReloads += 1;
+      }
+    });
     let renderer: ReactTestRenderer | undefined;
     try {
       await act(async () => {
@@ -2897,16 +2907,15 @@ describe('device chooser and reconnect', () => {
 
       const selected = makeProtocol13Board('kept-selected', [0, 0, 0, 0x09]);
       const other = makeProtocol13Board('kept-other', [0, 0, 0, 0x09]);
-      const scans = browser.scans();
+      const reloadsBeforePlug = completedReloads;
       browser.plugIn(asHIDDevice(selected.fake), true);
       browser.plugIn(asHIDDevice(other.fake), true);
       await waitUntil(
         () =>
           testStore.getState().devices.readyDevicePath === selected.path &&
-          browser.scans() >= scans + 4,
+          completedReloads >= reloadsBeforePlug + 4,
         3000,
       );
-      await settle();
 
       selected.fake.onSend = () => undefined;
       await expect(
@@ -2914,10 +2923,12 @@ describe('device chooser and reconnect', () => {
       ).rejects.toBeInstanceOf(HIDTransportTimeoutError);
 
       // Home scans again, and the locked keyboard fails that scan's probe.
-      const scansBeforeUnplug = browser.scans();
+      const reloadsBeforeUnplug = completedReloads;
       browser.unplug(asHIDDevice(other.fake));
-      await waitUntil(() => browser.scans() >= scansBeforeUnplug + 2, 3000);
-      await settle();
+      await waitUntil(
+        () => completedReloads >= reloadsBeforeUnplug + 2,
+        3000,
+      );
       expect(testStore.getState().devices).toMatchObject({
         selectedDevicePath: selected.path,
         selectedConnectionLocked: true,
@@ -2935,6 +2946,7 @@ describe('device chooser and reconnect', () => {
       expect(testStore.getState().devices.selectedConnectionLocked).toBe(false);
     } finally {
       act(() => renderer?.unmount());
+      unsubscribe();
       usbDetect.stopMonitoring();
       restoreDocument();
       browser.restore();

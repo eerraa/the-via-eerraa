@@ -15,6 +15,7 @@ import stateSyncReducer from './stateSyncSlice';
 import draftsReducer from './draftsSlice';
 import applyingReducer from './applyingSlice';
 import configurePlaceReducer from './configurePlaceSlice';
+import macroOptionsReducer from './macroOptionsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -33,6 +34,7 @@ export const store = configureStore({
     drafts: draftsReducer,
     applying: applyingReducer,
     configurePlace: configurePlaceReducer,
+    macroOptions: macroOptionsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().prepend(errorsListenerMiddleware.middleware),

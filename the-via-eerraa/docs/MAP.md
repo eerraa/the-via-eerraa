@@ -38,7 +38,8 @@ looks right, report it; do not silently invert the table.
 | App route list | `src/utils/pane-config.ts`, `src/components/panes/errors.tsx`, `src/utils/firmware-route.ts` | none — `public/_redirects` is hand-matched (§7) |
 | Maker VID block, PID allocation, legacy identity resolution, firmware download surface | [ADR 0004](adr/0004-firmware-distribution.md); concrete USB identities stay firmware-owned and mirrored in `config/era-definitions.manifest.json` | `tests/docs-contract.test.ts`, `tests/era-definition.test.ts`, `tests/firmware-distribution.test.tsx` |
 | Firmware link previews (the `/firmware-app` and maker shells) and short board links | [ADR 0004](adr/0004-firmware-distribution.md) §4 | `scripts/firmware-share-page.ts`, `vite.config.ts`, `public/_redirects`, `tests/firmware-distribution.test.tsx` |
-| Saved layout files across identities and layer counts, Tap Dance in them | [ADR 0004](adr/0004-firmware-distribution.md) §2; transaction and lazy macros in [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/layout-import.ts`, `src/store/layoutFileThunks.ts`, `tests/layout-import.test.ts`, `tests/state-sync-transport.test.ts`, `tests/save-load-pane.test.tsx`, `tests/era-definition.test.ts` |
+| Saved layout files across identities and layer counts; the VIA-readable settings in them (Tap Dance, layout options, Custom Menu values, per-key RGB, macro options; never EEPROM SYNC) so a reset keyboard restores from one file, each loaded only where the control could send it and not counted loaded until saved | [ADR 0004](adr/0004-firmware-distribution.md) §2; transaction and lazy macros in [ADR 0001](adr/0001-state-sync-protocol.md) | `src/utils/layout-import.ts`, `src/store/layoutFileThunks.ts`, `tests/layout-import.test.ts`, `tests/state-sync-transport.test.ts`, `tests/save-load-pane.test.tsx`, `tests/era-definition.test.ts` |
+| Macro playback options: product rules, the MACROS options line, the CONFIG read | `docs/PROJECT_DIRECTION.md` **Macro playback options**; wire numbers in `config/era-wire.json`; host adapter `src/utils/macro-api/era-macro-options.ts`, state `src/store/macroOptionsSlice.ts`, line `src/components/panes/configure-panes/macro-options.tsx` | `tests/era-macro-options.test.ts`, `tests/macro-editor.test.tsx`, `tests/state-sync-transport.test.ts` |
 | Distributed makers, board membership, every published firmware version and its files | `config/firmware-catalog.json`; family and identity come from `config/era-definitions.manifest.json` | `tests/firmware-distribution.test.tsx`, `scripts/validate-firmware-catalog.ts` in the build |
 
 ## 2. Definition inventory ownership
@@ -75,7 +76,7 @@ Do not invent a freshness decision outside this ownership:
 | Per-WebHID-path listener, serial queue, pending matcher, connection generation | `src/utils/keyboard-api.ts`, `src/shims/node-hid.ts` |
 | Freshness coordinator (observed/accepted revision, candidate commit) | `src/store/stateSyncThunks.ts`, `src/store/stateSyncSlice.ts`, `src/store/stateSyncCandidateActions.ts` |
 | Device selection and connection lifecycle | `src/store/devicesThunks.ts`, `src/components/Home.tsx` |
-| Where a domain candidate commits | `src/store/keymapSlice.ts`, `src/store/macrosSlice.ts`, `src/store/menusSlice.ts` |
+| Where a domain candidate commits | `src/store/keymapSlice.ts`, `src/store/macrosSlice.ts`, `src/store/menusSlice.ts`, `src/store/macroOptionsSlice.ts` |
 | Custom pane availability | `getCustomMenuAvailabilityForDevice()` in `src/store/menusSlice.ts` |
 | Definition-priority merge | `src/utils/definition-priority.ts` |
 | Capability opt-in lookup | `src/utils/era-advanced-metadata.ts` |

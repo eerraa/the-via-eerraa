@@ -20,8 +20,11 @@ type DraftValue =
   | unknown[]
   | {[field: string]: unknown};
 
-/** What a draft is for: a Custom Value command, a macro slot, a Tap Dance slot. */
-export type DraftScope = 'menu' | 'macro' | 'tapDance';
+/**
+ * What a draft is for: a Custom Value command, a macro slot, a macro slot's
+ * playback options, a Tap Dance slot.
+ */
+export type DraftScope = 'menu' | 'macro' | 'macroOptions' | 'tapDance';
 
 export const draftKey = (scope: DraftScope, id: string | number) =>
   `${scope}:${id}`;

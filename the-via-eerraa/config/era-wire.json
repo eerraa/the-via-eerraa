@@ -59,6 +59,7 @@
       "values.mousekey": [{"min": "0x01", "max": "0x0E"}],
       "values.debounce": [{"min": "0x01", "max": "0x04"}],
       "values.tapping": [{"min": "0x01", "max": "0x05"}],
+      "values.macroOptions": [{"min": "0x01", "max": "0x04"}],
       "values.keyboard.eerraa": [{"min": "0x00", "max": "0x7F"}],
       "values.keyboard.tomak": [{"min": "0x00", "max": "0x04"}],
       "values.keyboard.odessey": [{"min": "0x01", "max": "0x04"}],
@@ -94,6 +95,40 @@
           "INVALID": {"value": "0x02", "status": "current"},
           "IO_ERROR": {"value": "0x03", "status": "current"},
           "STALE": {"value": "0x04", "status": "current"}
+        }
+      },
+      "MACRO_OPTIONS": {
+        "namespace": "values.macroOptions", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "CAPABILITIES": {"value": "0x01", "status": "current", "note": "GET only; reply after the channel byte: [value_id, MACRO_OPTIONS_VERSION.CURRENT, supported MACRO_OPTIONS_FLAGS mask, MACRO_OPTIONS_MARKER BYTE_0..BYTE_3]. SET is refused with id_unhandled."},
+          "FLAGS": {"value": "0x02", "status": "current", "note": "GET/SET [channel, value_id, macro_index, flags]; one byte of MACRO_OPTIONS_FLAGS, default 0. A macro index at or beyond the macro count, or a SET carrying RESERVED_MASK or unsupported bits, is refused with id_unhandled; id_custom_save persists."},
+          "HOLD_MS": {"value": "0x03", "status": "current", "note": "GET/SET [channel, value_id, macro_index, hi, lo]; big-endian uint16 milliseconds, 1..65535, default 1000. A macro index at or beyond the macro count, or a SET of zero, is refused with id_unhandled; id_custom_save persists."},
+          "REPEAT_COUNT": {"value": "0x04", "status": "current", "note": "GET/SET [channel, value_id, macro_index, count]; one byte: 1 plays once (default), 2..255 plays that many times, 0 plays until a stop condition. A macro index at or beyond the macro count is refused with id_unhandled; id_custom_save persists."}
+        }
+      },
+      "MACRO_OPTIONS_VERSION": {
+        "namespace": "macroOptions.version", "users": ["app", "eerraa", "h7s"],
+        "entries": {"CURRENT": {"value": "0x02", "status": "current", "note": "Version 2 replaces the REPEAT flag with REPEAT_COUNT and adds BLOCK_OTHERS. Version 1 was never released."}}
+      },
+      "MACRO_OPTIONS_MARKER": {
+        "namespace": "macroOptions.marker", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "BYTE_0": {"value": "0x45", "status": "current", "note": "ASCII E of the capability marker EMO1."},
+          "BYTE_1": {"value": "0x4D", "status": "current", "note": "ASCII M of the capability marker EMO1."},
+          "BYTE_2": {"value": "0x4F", "status": "current", "note": "ASCII O of the capability marker EMO1."},
+          "BYTE_3": {"value": "0x31", "status": "current", "note": "ASCII 1 of the capability marker EMO1."}
+        }
+      },
+      "MACRO_OPTIONS_FLAGS": {
+        "namespace": "macroOptions.flag", "users": ["app", "eerraa", "h7s"],
+        "entries": {
+          "RETAP": {"value": "0x01", "status": "current"},
+          "HOLD": {"value": "0x02", "status": "current"},
+          "RELEASE": {"value": "0x04", "status": "current"},
+          "OTHER": {"value": "0x08", "status": "current"},
+          "IGNORE_MODS": {"value": "0x20", "status": "current"},
+          "BLOCK_OTHERS": {"value": "0x40", "status": "current", "note": "A press of a key not bound to the playing macro that begins during playback produces no action or output, and its release is dropped too."},
+          "RESERVED_MASK": {"value": "0x90", "status": "current", "note": "Bits 4 and 7 are reserved; bit 4 was the unreleased REPEAT flag, replaced by REPEAT_COUNT. Firmware refuses a SET carrying them and never reports them as supported."}
         }
       },
       "STATE_SYNC_SELECTORS": {
@@ -135,7 +170,8 @@
           "MOUSEKEY": {"value": "0x0D", "status": "current"},
           "DEBOUNCE": {"value": "0x0E", "status": "current"},
           "TAPPING": {"value": "0x0F", "status": "current"},
-          "MACRO_REPLACE": {"value": "0x10", "status": "current"}
+          "MACRO_REPLACE": {"value": "0x10", "status": "current"},
+          "MACRO_OPTIONS": {"value": "0x11", "status": "current", "note": "Per-macro playback options; value IDs are MACRO_OPTIONS."}
         }
       },
       "CHANNELS_H7S": {
@@ -151,7 +187,8 @@
           "TAPPING": {"value": "0x0F", "status": "current"},
           "TAPDANCE": {"value": "0x10", "status": "current"},
           "MOUSEKEY": {"value": "0x11", "status": "current"},
-          "RGB_SLEEP": {"value": "0x12", "status": "current"}
+          "RGB_SLEEP": {"value": "0x12", "status": "current"},
+          "MACRO_OPTIONS": {"value": "0x13", "status": "current", "note": "Per-macro playback options; value IDs are MACRO_OPTIONS."}
         }
       },
       "VERSION_EERRAA": {

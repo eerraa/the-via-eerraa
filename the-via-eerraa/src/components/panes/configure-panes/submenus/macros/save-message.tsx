@@ -11,7 +11,9 @@ export type MacroDraftCheck = MacroDraft & {overCapacity: boolean};
 
 /** What the last save left to say: why it was refused, or that it failed. */
 export type MacroSaveStatus =
-  {type: 'refused'; problem: MacroExpressionProblem} | {type: 'failed'};
+  | {type: 'refused'; problem: MacroExpressionProblem}
+  | {type: 'failed'}
+  | {type: 'options-failed'};
 
 export const errorColor = 'var(--color_error)';
 
@@ -67,6 +69,13 @@ export const MacroSaveMessage: React.FC<{
     return (
       <QuietText role="status" className={className}>
         {t('Failed to save.')}
+      </QuietText>
+    );
+  }
+  if (status?.type === 'options-failed') {
+    return (
+      <QuietText role="status" className={className}>
+        {t('The macro was saved; its options were not.')}
       </QuietText>
     );
   }

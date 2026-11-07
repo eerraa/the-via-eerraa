@@ -39,6 +39,10 @@ import {
 } from './keymapSlice';
 import {getIsMacrosReady, readMacrosStateSyncCandidate} from './macrosSlice';
 import {
+  getMacroOptionsChannel,
+  readMacroOptionsFromDevice,
+} from './macroOptionsSlice';
+import {
   readV3MenuStateSyncCandidate,
   syncCustomMenuValuesFromRequest,
 } from './menusSlice';
@@ -212,16 +216,17 @@ const readDomainCandidate = async (
     return null;
   }
   const definition = getDefinitionForDevice(state, device);
-  if (!isEraVIADefinitionV3(definition)) {
-    return layoutCandidate;
+  const menuCandidate = isEraVIADefinitionV3(definition)
+    ? await readV3MenuStateSyncCandidate(device, state, generation, api)
+    : {};
+  if (menuCandidate === null) {
+    return null;
   }
-  const menuCandidate = await readV3MenuStateSyncCandidate(
-    device,
-    state,
-    generation,
-    api,
-  );
-  return menuCandidate === null ? null : {...layoutCandidate, ...menuCandidate};
+  // Macro options are CONFIG state: a CONFIG change re-reads them with the menu.
+  const channel = getMacroOptionsChannel(state, device);
+  const macroOptions =
+    channel === null ? undefined : await readMacroOptionsFromDevice(api, channel);
+  return {...layoutCandidate, ...menuCandidate, ...(macroOptions && {macroOptions})};
 };
 
 const commitStableCandidate = (

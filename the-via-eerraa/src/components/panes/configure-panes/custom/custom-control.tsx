@@ -44,6 +44,7 @@ import {HelpBody, HelpContent} from './help-content';
 import {
   ACTION_SWITCHES,
   decodeCustomMenuText,
+  dropdownChoices,
   isCustomMenuCommandContent,
 } from 'src/utils/custom-menu';
 
@@ -91,12 +92,7 @@ const MissingValueNote = styled.span`
   font-size: 14px;
 `;
 
-// A dropdown's options in its own order, with the value the dropdown sends for each.
-export const dropdownChoices = (options: unknown) =>
-  (options as ([string, number] | string)[]).map((option, idx) => {
-    const [label, value] = typeof option === 'string' ? [option, idx] : option;
-    return {label, value: value || idx};
-  });
+export {dropdownChoices};
 
 // The option label a dropdown holds now, found the way the dropdown itself maps
 // values to options, so the help list can show which choice is in use. A row

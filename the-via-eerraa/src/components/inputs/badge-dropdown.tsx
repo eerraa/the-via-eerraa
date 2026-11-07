@@ -142,11 +142,12 @@ type PopupBounds = {
 };
 
 /** Keep an anchored menu within the viewport, independently of pane clipping. */
-const badgePopupBounds = (
+export const badgePopupBounds = (
   anchor: {right: number; top: number; bottom: number},
   viewport: {width: number; height: number},
   menuWidth = 220,
   menuHeight = 400,
+  limits = {maxHeight: 400, minBelowHeight: 120},
 ): PopupBounds => {
   const width = Math.max(0, Math.min(menuWidth, viewport.width - 16));
   const left = Math.max(
@@ -155,8 +156,10 @@ const badgePopupBounds = (
   );
   const below = Math.max(0, viewport.height - anchor.bottom - 5 - 8);
   const above = Math.max(0, anchor.top - 5 - 8);
-  const openBelow = below >= Math.min(120, menuHeight) || below >= above;
-  const maxHeight = Math.min(400, menuHeight, openBelow ? below : above);
+  const openBelow =
+    below >= Math.min(limits.minBelowHeight, menuHeight, limits.maxHeight) ||
+    below >= above;
+  const maxHeight = Math.min(limits.maxHeight, menuHeight, openBelow ? below : above);
   return {
     left,
     top: openBelow
