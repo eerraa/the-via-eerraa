@@ -9,8 +9,9 @@ import {
 import {useTranslation} from 'react-i18next';
 import styled from 'styled-components';
 import {
+  classifyFirmwareTransition,
+  type FirmwareFamily,
   type FirmwareHistoryEntry,
-  isSameStorageFormat,
 } from 'src/utils/era-firmware-catalog';
 import {SAMPLE_TEXT} from './firmware-history-demo';
 
@@ -281,8 +282,16 @@ export const FirmwareVersionLine: FC<{
   /** The connected keyboard's version, when it is this board. */
   connected: string | null;
   connectedLabel: string;
+  family?: FirmwareFamily | null;
   onSelect: (version: string) => void;
-}> = ({history, selected, connected, connectedLabel, onSelect}) => {
+}> = ({
+  history,
+  selected,
+  connected,
+  connectedLabel,
+  family = 'qmk',
+  onSelect,
+}) => {
   const {t, i18n} = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -310,8 +319,12 @@ export const FirmwareVersionLine: FC<{
   const breaks = history.map(
     (entry, index) =>
       index > 0 &&
-      isSameStorageFormat(history[index - 1].storageKey, entry.storageKey) ===
-        false,
+      classifyFirmwareTransition(
+        family,
+        history,
+        history[index - 1].file.version,
+        entry.file.version,
+      ).formatBreak === true,
   );
   const geometry = layOut(breaks, width);
   // Ticks closer than a few pixels merge into a soft band along the line.
@@ -323,10 +336,29 @@ export const FirmwareVersionLine: FC<{
   const language = i18n.resolvedLanguage ?? 'en';
   const noteOf = (entry: FirmwareHistoryEntry) =>
     entry.note ? entry.note[language] ?? entry.note.en : null;
-  const resets = (entry: FirmwareHistoryEntry) =>
-    ring !== null &&
-    entry !== ring &&
-    isSameStorageFormat(entry.storageKey, ring.storageKey) === false;
+  const alertOf = (entry: FirmwareHistoryEntry) => {
+    if (!connected) {
+      return null;
+    }
+    const transition = classifyFirmwareTransition(
+      family,
+      history,
+      connected,
+      entry.file.version,
+    );
+    if (transition.status === 'reset') {
+      return t('Resets settings');
+    }
+    if (transition.reason === 'legacy-bootmagic') {
+      return t('Top-left key entry (Bootmagic) resets settings');
+    }
+    if (transition.reason === 'qmk-downgrade') {
+      return t(
+        'Uses the previous storage area; current settings do not carry over',
+      );
+    }
+    return null;
+  };
   const describe = (entry: FirmwareHistoryEntry, index: number) =>
     [
       entry.file.version,
@@ -334,7 +366,7 @@ export const FirmwareVersionLine: FC<{
       entry.draft ? t('Draft') : null,
       entry.sample ? SAMPLE_TEXT.tag : null,
       entry === ring ? connectedLabel : null,
-      resets(entry) ? t('Resets settings') : null,
+      alertOf(entry),
       breaks[index] ? t('Settings reset across this gap') : null,
     ]
       .filter(Boolean)
@@ -476,6 +508,7 @@ export const FirmwareVersionLine: FC<{
     shown === null || isGap(shown) ? -1 : versions.indexOf(shown);
   const shownEntry = shownIndex < 0 ? null : history[shownIndex];
   const shownNote = shownEntry && noteOf(shownEntry);
+  const shownAlert = shownEntry && alertOf(shownEntry);
 
   return (
     <Root ref={rootRef} data-firmware-version-line="true">
@@ -645,9 +678,7 @@ export const FirmwareVersionLine: FC<{
               </TipHead>
               {shownNote && <div>{shownNote}</div>}
               {shownEntry === ring && <TipMuted>{connectedLabel}</TipMuted>}
-              {resets(shownEntry) && (
-                <TipAlert>{t('Resets settings')}</TipAlert>
-              )}
+              {shownAlert && <TipAlert>{shownAlert}</TipAlert>}
             </>
           ) : (
             <div>{t('Settings reset across this gap')}</div>

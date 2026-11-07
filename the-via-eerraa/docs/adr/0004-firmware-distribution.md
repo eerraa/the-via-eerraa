@@ -265,13 +265,74 @@ download-only browsers and phones are the audience a vendor link reaches.
 `src/Routes.tsx` therefore renders the firmware route outside the HID-support
 gate.
 
-A board's page shows the version, size and download, the SHA-256 and the
-flashing steps for that family. No release date is shown: the version already
-encodes it. When the board has more than one published version, the version
-unfolds its release line under the drawing: every published version, its note
-where one is written, and where a storage-format change resets settings.
-Choosing a version puts its file in the row
-(`src/components/panes/firmware-version-line.tsx`). Distribution ZIPs contain `.uf2`,
+A board's page shows the version, its EEPROM transition status, size and
+download, the SHA-256 and the flashing steps for that family. No release date is
+shown: the version already encodes it. The file row shows an explicit EEPROM
+status (`EEPROM kept`, `EEPROM reset`, or `Settings retention unknown` — `EEPROM 유지`,
+`EEPROM 초기화`, `설정 유지 여부 알 수 없음`) without opening the release line, driven by
+the connected keyboard's authoritative VERSION and the selected target version
+through `classifyFirmwareTransition` in `src/utils/era-firmware-catalog.ts`,
+including when the selected version equals the installed version:
+- On QMK RP2040 boards, `QMK_STORAGE_PLACEMENT_BOUNDARY` moves the NVM store out
+  of the final 128 KiB and makes Bootmagic entry non-destructive. Any valid
+  authoritative QMK VERSION below that boundary selecting a known target at or
+  above it shows `EEPROM reset` even when the older build is not in the catalog
+  or shares the same `storageKey`, because the first boot on the new region
+  initializes storage.
+- When both the installed and selected QMK versions are at or above that
+  boundary, equal known `storageKey` values show `EEPROM kept` and unequal keys
+  show `EEPROM reset`.
+- When both QMK versions are below that boundary, a `storageKey` mismatch shows
+  `EEPROM reset`, while equal keys show `Settings retention unknown` with a short
+  Bootmagic note because holding the top-left key while plugging in USB on
+  pre-boundary QMK firmware formats EEPROM before flashing.
+- A QMK downgrade from at or above that boundary to a build below it shows
+  `Settings retention unknown` with a concise previous-storage note rather than
+  claiming an unconditional reset, because the older build reads the previous
+  storage region and current new-region settings do not transfer.
+- H7S boards have no un-keyed placement boundary and compare known `storageKey`
+  values directly.
+- While the connected keyboard's full CONFIG read for the current connection,
+  selection and definition is still pending (`getSelectedCustomMenuAvailability`
+  is `'checking'`), the file row shows neutral `Checking installed firmware…`
+  (`설치된 펌웨어 확인 중…`) without a failure warning.
+- When the page's keyboard is not connected, an unverified-current result shows
+  only the compact `Connect keyboard to check` (`키보드 연결 후 확인`) guidance.
+  Once the read settles, a connected keyboard with an unavailable or unverified
+  VERSION shows `Settings retention unknown` with a visible explanation that
+  its current version and settings retention cannot be determined; when a valid
+  VERSION was read but its storage compatibility is absent from the catalog, the
+  explanation states that compatibility data for the installed version is
+  unavailable rather than claiming the version read failed. Neither wording
+  implies a memory fault or changes the classifier's result.
+- Unverified-current explanations reuse the common `i` help disclosure
+  (`useExplainDisclosure` and `HelpBody`), with the same icon face and
+  inherited typeface as other help. Activation expands one initially folded
+  right-aligned explanation directly below the download controls, inside the
+  file row; a second activation folds it again. The file row has extra vertical
+  room above the version and grows downward when help opens, moving SHA-256 and
+  the following content down without moving the download controls.
+  There is no floating popup, native title or duplicate explanation.
+- Firmware-page secondary text uses `#999999` in the dark theme; the light
+  theme keeps its existing label color. The help circle remains 20 px while
+  its transparent hit target is 44 × 44 px, positioned without covering the
+  version selector or changing the row layout.
+- The exclamation warning icon is reserved for the `EEPROM reset` state,
+  which indicates settings loss, not for unknown compatibility or help.
+- The backup note directs users to the localized `Save + Load` menu.
+  The redundant post-update device-authorization note is omitted.
+- Bootmagic and downgrade operational warnings stay visible in the flashing
+  notes rather than being hidden in the folded help.
+- `Reset.uf2` is documented in the flashing notes as unconditionally resetting
+  the keymap and settings, without adding a separate file-selection control.
+When the board has more than one published version, the version unfolds its
+release line under the drawing: every published version, its note where one is
+written, and where a storage-format or QMK placement change resets settings,
+using the same `classifyFirmwareTransition` helper so equal-key pre-boundary QMK
+releases stay unbroken on the historical format line while the QMK placement
+boundary and key changes break it (`src/components/panes/firmware-version-line.tsx`).
+Choosing a version puts its file and EEPROM status in the row. Distribution ZIPs
+contain `.uf2`,
 readme, and the `usevia.app` folder. Do not include `RELEASE.json` or internal
 packaging evidence; keep that evidence outside the distributed archive.
 ZIP filenames use the model and firmware version without a content-hash suffix.
@@ -335,9 +396,11 @@ repository growth becomes a real cost.
 
 Under `CONFIGURE → SYSTEM → VERSION`, one read-only row below Current Version
 reports the result of comparing the VERSION value with the bundled catalog:
-up to date, a newer version with a button that opens the board's download
-page, the ordinary firmware selection link for a shared legacy identity,
-or no distributed file. The header indicator uses the same comparison. The row sends nothing to the
+up to date, a newer version and a button that
+opens the board's download page, the ordinary firmware selection link for a
+shared legacy identity, or no distributed file. The header indicator uses the
+same comparison. EEPROM status and transition explanations appear only on the
+download page, not in SYSTEM → VERSION. The row sends nothing to the
 keyboard and adds no SET or SAVE affordance, preserving ADR 0003 §7. An
 unreadable or malformed version makes no claim. VERSION used by the header and
 download page must come from a successful full CONFIG read on the current

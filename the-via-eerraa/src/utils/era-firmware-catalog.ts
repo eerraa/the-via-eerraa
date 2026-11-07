@@ -1,5 +1,6 @@
 import {
   compareEraFirmwareVersions,
+  formatEraFirmwareVersion,
   parseEraFirmwareVersion,
 } from './era-firmware-version';
 
@@ -50,7 +51,7 @@ type FirmwareCatalog = {
   versions?: FirmwareVersion[];
 };
 
-type FirmwareFamily = 'qmk' | 'h7s';
+export type FirmwareFamily = 'qmk' | 'h7s';
 
 /** What one version means for one firmware family. */
 type FirmwareVersionFamily = {
@@ -273,6 +274,145 @@ export const isSameStorageFormat = (
         (key) => a[key] === b[key],
       )
     : null;
+
+/**
+ * The QMK RP2040 NVM placement boundary. Builds at or above this version move
+ * EEPROM to a disjoint 128 KiB region before the final 136 KiB reserve and make
+ * Bootmagic entry non-destructive; earlier QMK builds use the final 128 KiB and
+ * Bootmagic formats EEPROM on entry.
+ */
+export const QMK_STORAGE_PLACEMENT_BOUNDARY = '261106R1';
+
+export type FirmwareEepromStatus = 'keep' | 'reset' | 'unknown';
+
+export type FirmwareEepromReason =
+  | 'same-storage'
+  | 'key-change'
+  | 'placement-migration'
+  | 'reset-image'
+  | 'legacy-bootmagic'
+  | 'qmk-downgrade'
+  | 'unverified-current';
+
+export type FirmwareEepromTransition = {
+  status: FirmwareEepromStatus;
+  reason: FirmwareEepromReason;
+  /**
+   * Whether the stored format or physical NVM placement breaks between the two
+   * builds (`true` when a gap belongs between adjacent timeline entries).
+   */
+  formatBreak: boolean | null;
+};
+
+export type FirmwareEepromOptions = {
+  /** Reset recovery images always initialize EEPROM regardless of key equality. */
+  resetImage?: boolean;
+};
+
+/**
+ * Single shared compatibility and normal-update policy classifier across the
+ * download row, the VERSION update row, and the release timeline.
+ */
+export const classifyFirmwareTransition = (
+  family: FirmwareFamily | null | undefined,
+  history: readonly FirmwareHistoryEntry[],
+  currentVersion: string | null | undefined,
+  targetVersion: string | null | undefined,
+  options?: FirmwareEepromOptions,
+): FirmwareEepromTransition => {
+  if (options?.resetImage) {
+    return {status: 'reset', reason: 'reset-image', formatBreak: true};
+  }
+  if (!family || !currentVersion || !targetVersion) {
+    return {status: 'unknown', reason: 'unverified-current', formatBreak: null};
+  }
+  const normalizedCurrent = formatEraFirmwareVersion(currentVersion);
+  const normalizedTarget = formatEraFirmwareVersion(targetVersion);
+  if (
+    parseEraFirmwareVersion(normalizedCurrent) === null ||
+    parseEraFirmwareVersion(normalizedTarget) === null
+  ) {
+    return {status: 'unknown', reason: 'unverified-current', formatBreak: null};
+  }
+  const targetEntry =
+    history.find((entry) => entry.file.version === normalizedTarget) ?? null;
+  if (!targetEntry || !targetEntry.storageKey) {
+    return {status: 'unknown', reason: 'unverified-current', formatBreak: null};
+  }
+  const currentEntry =
+    history.find((entry) => entry.file.version === normalizedCurrent) ?? null;
+
+  if (family === 'h7s') {
+    const same = isSameStorageFormat(
+      currentEntry?.storageKey ?? null,
+      targetEntry.storageKey,
+    );
+    return same === true
+      ? {status: 'keep', reason: 'same-storage', formatBreak: false}
+      : same === false
+        ? {status: 'reset', reason: 'key-change', formatBreak: true}
+        : {status: 'unknown', reason: 'unverified-current', formatBreak: null};
+  }
+
+  const currentAtOrAboveBoundary =
+    (compareEraFirmwareVersions(
+      normalizedCurrent,
+      QMK_STORAGE_PLACEMENT_BOUNDARY,
+    ) ?? -1) >= 0;
+  const targetAtOrAboveBoundary =
+    (compareEraFirmwareVersions(
+      normalizedTarget,
+      QMK_STORAGE_PLACEMENT_BOUNDARY,
+    ) ?? -1) >= 0;
+
+  if (!currentAtOrAboveBoundary && targetAtOrAboveBoundary) {
+    return {
+      status: 'reset',
+      reason: 'placement-migration',
+      formatBreak: true,
+    };
+  }
+  if (currentAtOrAboveBoundary && !targetAtOrAboveBoundary) {
+    return {
+      status: 'unknown',
+      reason: 'qmk-downgrade',
+      formatBreak: true,
+    };
+  }
+
+  const same = isSameStorageFormat(
+    currentEntry?.storageKey ?? null,
+    targetEntry.storageKey,
+  );
+  if (same === false) {
+    return {status: 'reset', reason: 'key-change', formatBreak: true};
+  }
+  if (same === null) {
+    return {status: 'unknown', reason: 'unverified-current', formatBreak: null};
+  }
+  return currentAtOrAboveBoundary
+    ? {status: 'keep', reason: 'same-storage', formatBreak: false}
+    : {status: 'unknown', reason: 'legacy-bootmagic', formatBreak: false};
+};
+
+/**
+ * Shared EEPROM status for a board's published history given its family, the
+ * connected keyboard's current VERSION, and the selected target version.
+ */
+export const getFirmwareEepromStatus = (
+  family: FirmwareFamily | null | undefined,
+  history: readonly FirmwareHistoryEntry[],
+  currentVersion: string | null | undefined,
+  targetVersion: string | null | undefined,
+  options?: FirmwareEepromOptions,
+): FirmwareEepromStatus =>
+  classifyFirmwareTransition(
+    family,
+    history,
+    currentVersion,
+    targetVersion,
+    options,
+  ).status;
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -548,6 +688,8 @@ export type FirmwareUpdateStatus =
       makers: FirmwareMaker[];
       file: FirmwareFile;
       current: string | null;
+      eeprom: FirmwareEepromStatus;
+      eepromReason: FirmwareEepromReason;
     };
 
 /**
@@ -606,6 +748,14 @@ export const getFirmwareUpdateStatus = (
   }
   const order =
     version === null ? null : compareEraFirmwareVersions(version, file.version);
+  const current = order === null ? null : version;
+  const history = getFirmwareHistory(data.catalog, maker.id, board);
+  const transition = classifyFirmwareTransition(
+    board.family,
+    history,
+    current,
+    file.version,
+  );
   return {
     kind:
       order === null
@@ -617,7 +767,9 @@ export const getFirmwareUpdateStatus = (
     maker,
     makers,
     file,
-    current: order === null ? null : version,
+    current,
+    eeprom: transition.status,
+    eepromReason: transition.reason,
   };
 };
 

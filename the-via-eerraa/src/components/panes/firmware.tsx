@@ -1,13 +1,28 @@
-import {faChevronDown, faDownload} from '@fortawesome/free-solid-svg-icons';
+import {
+  faChevronDown,
+  faDownload,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {type FC, useEffect, useMemo, useState, useSyncExternalStore} from 'react';
+import {
+  type FC,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {useTranslation} from 'react-i18next';
 import styled from 'styled-components';
 import {useLocation} from 'wouter';
 import {navigate} from 'wouter/use-location';
 import {
+  classifyFirmwareTransition,
   type FirmwareBoardInfo,
   type FirmwareData,
+  type FirmwareEepromReason,
+  type FirmwareEepromStatus,
+  type FirmwareEepromTransition,
   type FirmwareFile,
   type FirmwareMaker,
   formatFirmwareFileSize,
@@ -23,8 +38,15 @@ import {
   formatEraFirmwareVersion,
   readEraFirmwareVersion,
 } from 'src/utils/era-firmware-version';
+import {
+  getSelectedConnectionLocked,
+  getSelectedConnectionNeedsReload,
+} from 'src/store/devicesSlice';
 import {useAppSelector} from 'src/store/hooks';
-import {getSelectedCurrentCustomMenuData} from 'src/store/menusSlice';
+import {
+  getSelectedCurrentCustomMenuData,
+  getSelectedCustomMenuAvailability,
+} from 'src/store/menusSlice';
 import {
   followFirmwareLink,
   getFirmwareBoardPath,
@@ -43,6 +65,7 @@ import {
   PrimaryAccentLink,
 } from '../firmware-link';
 import {AccentButton, focusRing} from '../inputs/accent-button';
+import {useExplainDisclosure} from '../inputs/explain';
 import {DirtyDot} from '../inputs/dirty-dot';
 import {Announcement} from '../inputs/keycode-palette/palette-parts';
 import {
@@ -62,6 +85,7 @@ import {
   Row,
 } from './grid';
 import {Pane} from './pane';
+import {HelpBody} from './configure-panes/custom/help-content';
 import {
   SubmenuTabBar,
   SubmenuTabLink,
@@ -77,6 +101,7 @@ import {
 // render without WebHID.
 
 const NARROW = '@media (max-width: 720px)';
+const FILE_STACKED = '@media (max-width: 960px)';
 
 const FirmwareGrid = styled(Grid)`
   overflow: hidden;
@@ -269,6 +294,10 @@ const Column = styled.div`
   align-items: center;
   padding: 0 12px 24px;
 
+  html[data-theme-mode='dark'] & {
+    --color_label: #999999;
+  }
+
   ${NARROW} {
     padding: 0 16px 24px;
   }
@@ -295,6 +324,67 @@ const Values = styled(Detail)`
   line-height: 1.4;
 `;
 
+const FileLine = styled(Line)`
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-rows: 88px;
+  row-gap: 0;
+  flex: none;
+  height: auto;
+  min-height: 88px;
+  line-height: 1.4;
+
+  ${Values} {
+    min-width: 0;
+  }
+
+  ${FILE_STACKED} {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 28px auto;
+    row-gap: 8px;
+    min-height: 180px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+`;
+
+const FileValues = styled(Values)`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  justify-items: end;
+  width: 100%;
+  height: 100%;
+
+  > :only-child {
+    grid-column: 1 / -1;
+  }
+
+  ${FILE_STACKED} {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-rows: minmax(72px, auto) 44px;
+    row-gap: 6px;
+  }
+`;
+
+const VersionComparison = styled.span`
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  text-align: right;
+  ${FILE_STACKED} {
+    grid-column: 1 / -1;
+    /* Reserve the help target's lower reach when the version pair wraps. */
+    padding: 18px 0;
+  }
+`;
+
 const BoardLink = styled.a<{$strong: boolean}>`
   color: ${(props) =>
     props.$strong ? 'var(--color_label-highlighted)' : 'var(--color_label)'};
@@ -318,17 +408,149 @@ const VersionText = styled.span`
   font-variant-numeric: tabular-nums;
 `;
 
+const EepromBadge = styled.span<{$status: FirmwareEepromStatus}>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 20px;
+  max-width: 100%;
+  color: ${(props) =>
+    props.$status === 'reset'
+      ? 'var(--color_accent-text)'
+      : props.$status === 'keep'
+        ? 'var(--color_label-highlighted)'
+        : 'var(--color_label)'};
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+`;
+
+const FirmwareHelpBody = styled(HelpBody)`
+  flex: none;
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0 0 14px;
+  text-align: right;
+`;
+
+const FirmwareHelpToggle = styled.span`
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+
+  > button {
+    position: absolute;
+    left: -12px;
+    top: -6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 6px 12px 18px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    isolation: isolate;
+  }
+
+  > button::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 6px;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    z-index: -1;
+  }
+
+  > button[aria-expanded='true']::before {
+    border-color: var(--color_accent);
+    background: var(--color_accent);
+  }
+`;
+
+const eepromReasonText = (
+  reason: FirmwareEepromReason,
+  t: (key: string) => string,
+  connected: boolean,
+  hasCurrentVersion: boolean,
+): string | null =>
+  reason === 'legacy-bootmagic'
+    ? t('Top-left key entry (Bootmagic) resets settings')
+    : reason === 'qmk-downgrade'
+      ? t('Uses the previous storage area; current settings do not carry over')
+      : reason === 'unverified-current' && connected
+        ? hasCurrentVersion
+          ? t(
+              'Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.',
+            )
+          : t(
+              'Current firmware version is unavailable or unverified; settings retention cannot be determined.',
+            )
+        : null;
+
+const FirmwareEepromTag: FC<{
+  transition: FirmwareEepromTransition;
+  connected: boolean;
+  explanation?: ReactNode;
+}> = ({
+  transition,
+  connected,
+  explanation,
+}) => {
+  const {t} = useTranslation();
+  const {status, reason} = transition;
+  const label =
+    status === 'keep'
+      ? t('EEPROM kept')
+      : status === 'reset'
+        ? t('EEPROM reset')
+        : reason === 'unverified-current' && !connected
+          ? t('Connect keyboard to check')
+          : t('Settings retention unknown');
+  return (
+    <EepromBadge
+      $status={status}
+      data-firmware-eeprom={status}
+      data-firmware-eeprom-reason={reason}
+    >
+      {status === 'reset' && (
+        <FontAwesomeIcon icon={faExclamationTriangle} aria-hidden="true" />
+      )}
+      <span>{label}</span>
+      {explanation}
+    </EepromBadge>
+  );
+};
+
 // A board page's name, bright when it is the connected keyboard's.
 const BoardName = styled(Label)<{$connected: boolean}>`
   color: ${(props) =>
     props.$connected ? 'var(--color_label-highlighted)' : 'var(--color_label)'};
+  line-height: 28px;
+  white-space: nowrap;
 `;
 
 // The connected keyboard's version leading into the file's: "Current 261005R1 →".
 const VersionPair = styled.span`
   display: inline-flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  justify-content: flex-end;
   align-items: baseline;
   gap: 6px;
+  max-width: 100%;
+  line-height: 20px;
 `;
 
 // A board's version, which unfolds its release line. Older versions are for the
@@ -438,7 +660,10 @@ const CopyHash: FC<{value: string}> = ({value}) => {
   );
 };
 
-const FlashingSteps: FC<{board: FirmwareBoardInfo}> = ({board}) => {
+const FlashingSteps: FC<{
+  board: FirmwareBoardInfo;
+  warning?: string | null;
+}> = ({board, warning}) => {
   const {t} = useTranslation();
   const h7s = board.family === 'h7s';
   // Bootmagic reads each half's own top-left key, and each half reports only
@@ -451,10 +676,10 @@ const FlashingSteps: FC<{board: FirmwareBoardInfo}> = ({board}) => {
         )
       : board.split
       ? t(
-          'Enter the bootloader with SYSTEM → BOOT → Jump To BOOT, a QK_BOOT key, or by holding the top-left key of each half while plugging in its USB (Bootmagic, resets the keymap and settings).',
+          'Enter the bootloader with SYSTEM → BOOT → Jump To BOOT, a QK_BOOT key, or by holding the top-left key of each half while plugging in its USB (Bootmagic).',
         )
       : t(
-          'Enter the bootloader with SYSTEM → BOOT → Jump To BOOT, a QK_BOOT key, or by holding the top-left key while plugging in USB (Bootmagic, resets the keymap and settings).',
+          'Enter the bootloader with SYSTEM → BOOT → Jump To BOOT, a QK_BOOT key, or by holding the top-left key while plugging in USB (Bootmagic).',
         ),
     h7s
       ? t(
@@ -470,16 +695,16 @@ const FlashingSteps: FC<{board: FirmwareBoardInfo}> = ({board}) => {
       : t('Check SYSTEM → VERSION after the update.'),
   ];
   const notes = [
+    ...(warning ? [warning] : []),
     t(
-      'Settings may reset after updating. Export a backup first.',
+      'Keyboard settings may reset after updating. Save them in the "{{menu}}" menu.',
+      {menu: t('Save + Load')},
     ),
+    t('Reset.uf2 always resets the keymap and settings.'),
     ...(board.id === 'may65-h7s' ? [t(
       'MAY65: backups from before Insert was added require manual keymap reconfiguration.',
     )] : []),
-    t(
-      "If the keyboard doesn't appear after the update, press Authorize device again.",
-    ),
-    t('The ZIP also contains a readme and the usevia.app folder for official VIA.'),
+    t('The ZIP contains a usevia.app folder for compatibility with official VIA (usevia.app).'),
   ];
   return (
     <Steps>
@@ -527,10 +752,20 @@ const DownloadLink: FC<{
 
 const useConnected = () => {
   const menuData = useAppSelector(getSelectedCurrentCustomMenuData);
+  const menuAvailability = useAppSelector(getSelectedCustomMenuAvailability);
+  const connectionNeedsReload = useAppSelector(
+    getSelectedConnectionNeedsReload,
+  );
+  const connectionLocked = useAppSelector(getSelectedConnectionLocked);
   // The keyboard's own VERSION, whether or not its maker is resolved: a legacy
   // shared-board identity leaves the maker open but still reports it.
   const version = menuData ? readEraFirmwareVersion('ascii', menuData) : null;
   const status = useSelectedFirmwareUpdate(version);
+  const versionPending =
+    !menuData &&
+    !connectionNeedsReload &&
+    !connectionLocked &&
+    menuAvailability === 'checking';
   const board = status && 'board' in status ? status.board : null;
   const maker = getStatusMaker(status);
   const makerIds = maker
@@ -538,7 +773,7 @@ const useConnected = () => {
     : status && 'makers' in status
     ? status.makers.map((candidate) => candidate.id)
     : [];
-  return {status, board, maker, makerIds, version};
+  return {status, board, maker, makerIds, version, versionPending};
 };
 
 const MakersView: FC<{makers: FirmwareMaker[]}> = ({makers}) => {
@@ -564,6 +799,13 @@ const ListView: FC<{
 }> = ({data, makers, maker}) => {
   const {t} = useTranslation();
   const connected = useConnected();
+  const boards = [...maker.boards].sort((a, b) =>
+    getFirmwareBoardInfo(data, a.board).name.localeCompare(
+      getFirmwareBoardInfo(data, b.board).name,
+      'en',
+      {sensitivity: 'base'},
+    ),
+  );
   return (
     <BoardPane data-firmware-page="true" data-firmware-view="list">
       <FirmwarePlaceholder />
@@ -574,7 +816,7 @@ const ListView: FC<{
             <MakerNavigation makers={makers} maker={maker} />
             <TabbedBody>
               <Column>
-                {maker.boards.map((entry) => {
+                {boards.map((entry) => {
                   const board = getFirmwareBoardInfo(data, entry.board);
                   const to = getFirmwarePath(maker.id, board.id);
                   const isConnected =
@@ -626,6 +868,9 @@ const BoardView: FC<{
   maker: FirmwareMaker;
 }> = ({data, boardId, maker}) => {
   const {t} = useTranslation();
+  const eepromHelp = useExplainDisclosure(
+    t('What this means: {{name}}', {name: t('Settings retention unknown')}),
+  );
   const connected = useConnected();
   const board = getFirmwareBoardInfo(data, boardId);
   const latest = getMakerBoard(maker, boardId)?.file ?? null;
@@ -662,10 +907,30 @@ const BoardView: FC<{
   // version it reports, where that can be trusted, leads into the file's.
   const isConnected =
     connected.board?.id === boardId && connected.makerIds.includes(maker.id);
+  const isVersionPending = isConnected && connected.versionPending && !demo;
   const connectedVersion = isConnected ? connected.version : null;
   const status = isConnected ? connected.status : null;
   const current = status && 'current' in status ? status.current : null;
+  const eepromTransition =
+    file && !isVersionPending
+      ? classifyFirmwareTransition(
+          board.family,
+          history,
+          connectedVersion ?? (demo ? SAMPLE_CONNECTED_VERSION : null),
+          file.version,
+        )
+      : null;
   const connectedLabel = t('Connected keyboard {{board}}', {board: board.name});
+  const eepromNote = eepromTransition
+    ? eepromReasonText(
+        eepromTransition.reason,
+        t,
+        isConnected,
+        current !== null,
+      )
+    : null;
+  const eepromExplanation =
+    eepromTransition?.reason === 'unverified-current' ? eepromNote : null;
   const selectVersion = (version: string) => {
     const next = new URLSearchParams(readFirmwareSearch());
     next.set('version', version);
@@ -681,6 +946,7 @@ const BoardView: FC<{
           ? connectedLabel
           : `${connectedLabel} · ${SAMPLE_TEXT.tag}`
       }
+      family={board.family}
       onSelect={selectVersion}
     />
   );
@@ -707,7 +973,7 @@ const BoardView: FC<{
                     {SAMPLE_TEXT.caption(history.length - published.length)}
                   </DemoCaption>
                 )}
-                <Line
+                <FileLine
                   $connected={isConnected}
                   data-firmware-file={file ? 'published' : 'none'}
                   data-firmware-file-version={file?.version}
@@ -720,34 +986,59 @@ const BoardView: FC<{
                   >
                     {board.name}
                   </BoardName>
-                  <Values>
+                  <FileValues>
                     {file ? (
                       <>
-                        <VersionPair>
-                          {current !== null && (
-                            <Muted>
-                              {compareEraFirmwareVersions(
-                                current,
-                                file.version,
-                              ) === 0
-                                ? t('Current')
-                                : `${t('Current {{version}}', {version: current})} →`}
-                            </Muted>
-                          )}
-                          {history.length > 1 ? (
-                            <VersionToggle
-                              type="button"
-                              aria-expanded={expanded}
-                              title={t('Firmware versions')}
-                              onClick={() => setExpanded((open) => !open)}
+                        <VersionComparison>
+                          <VersionPair>
+                            {current !== null && (
+                              <Muted>
+                                {compareEraFirmwareVersions(
+                                  current,
+                                  file.version,
+                                ) === 0
+                                  ? t('Current')
+                                  : `${t('Current {{version}}', {version: current})} →`}
+                              </Muted>
+                            )}
+                            {history.length > 1 ? (
+                              <VersionToggle
+                                type="button"
+                                aria-expanded={expanded}
+                                title={t('Firmware versions')}
+                                onClick={() => setExpanded((open) => !open)}
+                              >
+                                {file.version}
+                                <FontAwesomeIcon icon={faChevronDown} />
+                              </VersionToggle>
+                            ) : (
+                              <VersionText>{file.version}</VersionText>
+                            )}
+                          </VersionPair>
+                          {isVersionPending ? (
+                            <EepromBadge
+                              $status="unknown"
+                              data-firmware-eeprom="checking"
                             >
-                              {file.version}
-                              <FontAwesomeIcon icon={faChevronDown} />
-                            </VersionToggle>
+                              {t('Checking installed firmware…')}
+                            </EepromBadge>
                           ) : (
-                            <VersionText>{file.version}</VersionText>
+                            eepromTransition && (
+                              <FirmwareEepromTag
+                                key={`${board.id}:${file.version}:${connectedVersion}:${eepromTransition.reason}`}
+                                transition={eepromTransition}
+                                connected={isConnected}
+                                explanation={
+                                  eepromExplanation ? (
+                                    <FirmwareHelpToggle>
+                                      {eepromHelp.toggle}
+                                    </FirmwareHelpToggle>
+                                  ) : undefined
+                                }
+                              />
+                            )
                           )}
-                        </VersionPair>
+                        </VersionComparison>
                         <Muted>
                           {selected?.sample
                             ? SAMPLE_TEXT.tag
@@ -771,8 +1062,13 @@ const BoardView: FC<{
                     ) : (
                       <Muted>{t('Not published')}</Muted>
                     )}
-                  </Values>
-                </Line>
+                  </FileValues>
+                  {eepromExplanation && (
+                    <FirmwareHelpBody {...eepromHelp.bodyProps}>
+                      {eepromExplanation}
+                    </FirmwareHelpBody>
+                  )}
+                </FileLine>
                 {file && (
                   <Line>
                     <Label>{t('SHA-256')}</Label>
@@ -791,7 +1087,14 @@ const BoardView: FC<{
                 <Line>
                   <Label>{t('How to flash')}</Label>
                 </Line>
-                <FlashingSteps board={board} />
+                <FlashingSteps
+                  board={board}
+                  warning={
+                    eepromTransition?.reason === 'unverified-current'
+                      ? null
+                      : eepromNote
+                  }
+                />
               </Column>
             </TabbedBody>
           </TabbedCell>

@@ -52,7 +52,6 @@ const FirmwareUpdateRow: FC<{version: string | null}> = ({version}) => {
     'board' in status
       ? getFirmwareBoardPath(maker?.id ?? null, status.board.id)
       : FIRMWARE_ROUTE;
-
   let content;
   switch (status.kind) {
     case 'update-available':

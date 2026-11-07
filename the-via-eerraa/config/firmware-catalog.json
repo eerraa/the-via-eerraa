@@ -459,6 +459,62 @@
           }
         }
       }
+    },
+    {
+      "version": "261107R1",
+      "families": {
+        "qmk": {"storageKey": {"QMK_BUILDDATE": "2024-04-23-11:29:54", "ERA_EEPROM_RESET_KEY": "0x45524109UL"}},
+        "h7s": {"storageKey": {"reset_key": "0x48375304"}}
+      },
+      "files": {
+        "sirind": {
+          "divine": {"url": "/firmware-files/261107R1/sirind/DIVINE-V261107R1.zip", "size": 133014, "sha256": "68a74cc90a6536de425af355d0214c293f30ad6668c539ee9ca9e1e66adf706b"},
+          "klein-hs": {"url": "/firmware-files/261107R1/sirind/KLEIN-HS-V261107R1.zip", "size": 133477, "sha256": "3dc75d6da21202921d640345f13bc144803fd96c4edd2a1be3ca4ff1ac6f857b"},
+          "klein-sd": {"url": "/firmware-files/261107R1/sirind/KLEIN-SD-V261107R1.zip", "size": 159497, "sha256": "b3dc7977c1b67d8db2588195e3186da7d6c77c10ce950aaccf86b25c9d4489ec"},
+          "tomak-tkl": {"url": "/firmware-files/261107R1/sirind/TOMAK-TKL-V261107R1.zip", "size": 282429, "sha256": "ceba264204f23503850447f21214b6fb12c8df1224113e62e52770e58b665fb6"},
+          "n8x": {"url": "/firmware-files/261107R1/sirind/N8X-V261107R1.zip", "size": 136001, "sha256": "86a65a27a8b52da0245a0b28fcae2205f9ac8103a8177649c56308b48415c75e"},
+          "n86": {"url": "/firmware-files/261107R1/sirind/N86-V261107R1.zip", "size": 158136, "sha256": "0c1aff71d3db03065ef4f91665d54c7260d750354b8fe153f8f73625facd6b23"},
+          "n87": {"url": "/firmware-files/261107R1/sirind/N87-V261107R1.zip", "size": 158157, "sha256": "a9fb0e558e404e69e1ee2ca283a2ff51e126fbbfb4a5a07735ca71cfd18124e6"},
+          "brick65s": {"url": "/firmware-files/261107R1/sirind/BRICK65S-V261107R1.zip", "size": 144275, "sha256": "abc374008bf54c487583ddff5206def366b1faa4c8eace0843c30b3967aa6be4"},
+          "tomak79s": {"url": "/firmware-files/261107R1/sirind/TOMAK79S-V261107R1.zip", "size": 279936, "sha256": "c4c3bf27888fbab347331ef652d803bf268f0a380b7583db780978e0edf1d214"},
+          "tomak79h": {"url": "/firmware-files/261107R1/sirind/TOMAK79H-V261107R1.zip", "size": 279700, "sha256": "5e07fc30ff025fd69c01298ff63e392a443eea87424bba1a898cfecc0c23f018"},
+          "chickpad": {"url": "/firmware-files/261107R1/sirind/CHICKPAD-V261107R1.zip", "size": 154116, "sha256": "876f6792a9614573187b26e7952ef404effe5534e89a2b07df5d89ef8ae77aab"},
+          "brick60-h7s": {"url": "/firmware-files/261107R1/sirind/BRICK60-V261107R1.zip", "size": 284479, "sha256": "6a5e6fc507f11ecd60de91e0598d03c3fe0067d1d3e053064c33f161adbf5350"},
+          "brick65-h7s": {"url": "/firmware-files/261107R1/sirind/BRICK65-V261107R1.zip", "size": 284989, "sha256": "dd6ae38276cfdb8f7af54b11fd5901dcf34c50e5de0af9c6721acc5d34be4e0d"},
+          "sculpturei-h7s": {"url": "/firmware-files/261107R1/sirind/SCULPTUREI-V261107R1.zip", "size": 285289, "sha256": "ad727fb82e33a64cc6c7c8c45810e31b4ff1b980f93d766b1a592e26ac29a67b"}
+        },
+        "linworks": {
+          "n8x": {"url": "/firmware-files/261107R1/linworks/N8X-V261107R1.zip", "size": 135998, "sha256": "721c32b71b05cde2602d635fd2f45ec278838e50cd337c2f813179e07e7ba2d9"},
+          "n86": {"url": "/firmware-files/261107R1/linworks/N86-V261107R1.zip", "size": 158123, "sha256": "9234e6c0c7d1deaa4d9d8fe62ae19738c6a26d3e2fb353ef96f369a193bbc904"},
+          "n87": {"url": "/firmware-files/261107R1/linworks/N87-V261107R1.zip", "size": 158140, "sha256": "5dfac05e59fd43d96857c020bb844cfe825631ddf07f95e4223652864b31b13c"},
+          "fave65s": {"url": "/firmware-files/261107R1/linworks/FAVE65S-V261107R1.zip", "size": 157224, "sha256": "25c3141b71ce3385dd63f2c27470845255bb28cc62c81ae0c8d465ee911075c3"}
+        },
+        "newone": {
+          "newone-a1": {"url": "/firmware-files/261107R1/newone/NEWONE-A1-V261107R1.zip", "size": 136055, "sha256": "49fa57c6b2bf87e5c10b5c7dfb26e9d850bb834eba257eea283838d6060dd7a7"},
+          "newone-h1": {"url": "/firmware-files/261107R1/newone/NEWONE-H1-V261107R1.zip", "size": 129047, "sha256": "7ebea948b8ff57e344d9377e3502f3785c9c0591b0eaf915a8786451edb0db81"},
+          "newone-odessey60s": {"url": "/firmware-files/261107R1/newone/ODESSEY60S-V261107R1.zip", "size": 147923, "sha256": "f58f6fd24e7ab8ed244593ff50c189d1769d46d530aca539929e5ab151ccf94c"},
+          "newone-odessey60h": {"url": "/firmware-files/261107R1/newone/ODESSEY60H-V261107R1.zip", "size": 147836, "sha256": "2f89ed6c7814b3e5f5f303ae6e7711f3c9f08b510fc9c8ce9129fa282235900a"}
+        },
+        "keynetix": {
+          "n8x": {"url": "/firmware-files/261107R1/keynetix/N8X-V261107R1.zip", "size": 135996, "sha256": "a1f0e203b98bea2dbc6220ceca9eb9082be414a089091f80469f1d0e059b1774"},
+          "n86": {"url": "/firmware-files/261107R1/keynetix/N86-V261107R1.zip", "size": 158123, "sha256": "5eb603ad7d6eb0d1ac328c76fe38452f5d0df5d026543025db06990d944856e2"},
+          "n87": {"url": "/firmware-files/261107R1/keynetix/N87-V261107R1.zip", "size": 158139, "sha256": "6d3445998a20e5ceadd0a6db6c7a73b5364c68b405eb3485925a8b1ae666d735"},
+          "may65-h7s": {"url": "/firmware-files/261107R1/keynetix/MAY65-V261107R1.zip", "size": 284376, "sha256": "a49b1d0bcb53ade80a5512e4bfbedd308fef2606d45d319bbb7aac4a808fdfd2"}
+        },
+        "classicd": {
+          "classicd-core": {"url": "/firmware-files/261107R1/classicd/CLASSIC-D-CORE-V261107R1.zip", "size": 152489, "sha256": "4d17cb777d1465891d697be18f44997554bccec9be228f297db3c64d26b3ba66"},
+          "classicd-coreless": {"url": "/firmware-files/261107R1/classicd/CLASSIC-D-CORELESS-V261107R1.zip", "size": 152508, "sha256": "594f60ef51e5e4f6ec5fb1da90bf5c755054da14cc4fca06ca1ced86b1e51a5f"},
+          "classicd-a1": {"url": "/firmware-files/261107R1/classicd/CLASSIC-D-A1-V261107R1.zip", "size": 136051, "sha256": "0bbccfab4380b35738e5fb73c60f672a0c7c6ef09cf51e7316f7af3f552ff17e"},
+          "classicd-a1-ug": {"url": "/firmware-files/261107R1/classicd/CLASSIC-D-A1-UG-V261107R1.zip", "size": 151807, "sha256": "40d97d7dd5996ef5fa1117ac5f505dfb30b5f9bd4b5385fab1c331d7c8b96883"}
+        },
+        "common": {
+          "era65": {"url": "/firmware-files/261107R1/common/ERA65-V261107R1.zip", "size": 135872, "sha256": "73ed57ef6501c73ef4cc29bca7f58dd33d194b7f0e3be7ec567f54325c12de78"},
+          "7b75": {"url": "/firmware-files/261107R1/common/7B75-V261107R1.zip", "size": 152607, "sha256": "194d78be5f23cbd9de8c77c2ece7ce197e943f6519d7ccc1a5d34ac1405f9173"},
+          "et-tkl": {"url": "/firmware-files/261107R1/common/ET-TKL-V261107R1.zip", "size": 135949, "sha256": "a6ff15f285d7d0563af873e6a23a8a8810f05c4551ba266c913e219c4c677545"},
+          "riley": {"url": "/firmware-files/261107R1/common/RILEY-V261107R1.zip", "size": 148601, "sha256": "307792207b393f81842727b17c3e80c3b819d95821e27da8f57588f3a0170447"},
+          "intigrity80-h7s": {"url": "/firmware-files/261107R1/common/INTIGRITY80-V261107R1.zip", "size": 284382, "sha256": "1e87c2720cf48189c825ae5a1c6f3f25eeb8d553e5b1479c45ae6afd474f2211"}
+        }
+      }
     }
   ]
 }

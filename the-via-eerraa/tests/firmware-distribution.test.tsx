@@ -22,15 +22,18 @@ import {act, create, type ReactTestInstance} from 'react-test-renderer';
 import {Router} from 'wouter';
 import staticLocationHook from 'wouter/static-location';
 import {
+  classifyFirmwareTransition,
   type FirmwareCatalogSource,
   type FirmwareData,
   type FirmwareManifest,
   formatFirmwareFileSize,
   getBoardDefinitions,
   getFirmwareBoardInfo,
+  getFirmwareEepromStatus,
   getFirmwareHistory,
   getFirmwareUpdateStatus,
   getManifestEntryIdentities,
+  QMK_STORAGE_PLACEMENT_BOUNDARY,
   resolveFirmwareCatalog,
   resolveFirmwareIdentity,
   validateFirmwareCatalog,
@@ -91,6 +94,30 @@ const {HID} = await import('../src/shims/node-hid');
 const deviceThunks = await import('../src/store/devicesThunks');
 const {ExternalLinks} = await import('../src/components/menus/external-links');
 const {default: settingsReducer} = await import('../src/store/settingsSlice');
+const {
+  default: devicesReducer,
+  selectDevice,
+  updateConnectedDevices,
+  invalidateDeviceConnection,
+  getSelectionGeneration,
+} = await import('../src/store/devicesSlice');
+const {
+  default: definitionsReducer,
+  updateEraDefinitions,
+  getDefinitionSyncIdentity,
+} = await import('../src/store/definitionsSlice');
+const {default: menusReducer} = await import('../src/store/menusSlice');
+const {
+  default: stateSyncReducer,
+  ensurePathSync,
+  setPathCapability,
+  markPathDirty,
+  markDomainReadFailed,
+} = await import('../src/store/stateSyncSlice');
+const {commitStableConfigCandidate} =
+  await import('../src/store/stateSyncCandidateActions');
+const {setEraAdvancedMetadataForTesting, eraAdvancedEntry} =
+  await import('../src/utils/era-advanced-metadata');
 console.warn = originalWarn;
 
 const translations = i18n.createInstance();
@@ -293,7 +320,10 @@ const text = (node: ReactTestInstance): string =>
 const anchor = (root: ReactTestInstance, href: string) =>
   root.findAll((node) => node.type === 'a' && node.props.href === href)[0];
 
-afterEach(() => setFirmwareDataForTesting(null));
+afterEach(() => {
+  setFirmwareDataForTesting(null);
+  setEraAdvancedMetadataForTesting(null);
+});
 
 test('every released keyboard ships the catalogued bytes, version and USB identities', async () => {
   expect(await validateFirmwareCatalogAt(repoRoot)).toEqual([]);
@@ -311,7 +341,10 @@ test('every released keyboard ships the catalogued bytes, version and USB identi
         const images = names.filter((name) => name.endsWith('.uf2'));
         expect(images.length).toBeGreaterThan(0);
         for (const image of images) {
-          expect(image.endsWith(`-V${release.version}.uf2`)).toBe(true);
+          expect(
+            image.endsWith(`-V${release.version}.uf2`) ||
+              path.basename(image) === 'Reset.uf2',
+          ).toBe(true);
         }
         const maker = source.makers.find(({id}) => id === makerId)!;
         const expected = getBoardDefinitions(manifest, boardId).flatMap(
@@ -753,6 +786,19 @@ test('offline board pages offer each latest file, size and checksum without a re
         const board = getFirmwareBoardInfo(committed, entry.board);
         expect(html.includes('RPI-RP2')).toBe(board.family === 'qmk');
         expect(html.includes('flash both halves')).toBe(board.split);
+        if (board.family === 'qmk') {
+          expect(html).toContain(
+            board.split
+              ? '<li>Enter the bootloader with SYSTEM → BOOT → Jump To BOOT, a QK_BOOT key, or by holding the top-left key of each half while plugging in its USB (Bootmagic).</li>'
+              : '<li>Enter the bootloader with SYSTEM → BOOT → Jump To BOOT, a QK_BOOT key, or by holding the top-left key while plugging in USB (Bootmagic).</li>',
+          );
+          expect(html).toContain(
+            '<li>Keyboard settings may reset after updating. Save them in the &quot;Save + Load&quot; menu.</li>',
+          );
+          expect(html).toContain(
+            '<li>Reset.uf2 always resets the keymap and settings.</li>',
+          );
+        }
       }
     }
     const html = renderPage(
@@ -767,6 +813,40 @@ test('offline board pages offer each latest file, size and checksum without a re
   }
 });
 
+test('maker pages list keyboards A-Z by their displayed names', () => {
+  const restore = globals({navigator: {}});
+  const expected = {
+    classicd: ['classicd-a1', 'classicd-a1-ug', 'classicd-core', 'classicd-coreless'],
+    keynetix: ['may65-h7s', 'n86', 'n87', 'n8x'],
+    linworks: ['fave65s', 'n86', 'n87', 'n8x'],
+    newone: ['newone-a1', 'newone-h1', 'newone-odessey60h', 'newone-odessey60s'],
+    sirind: [
+      'brick60-h7s', 'brick65-h7s', 'brick65s', 'chickpad', 'divine',
+      'klein-hs', 'klein-sd', 'n86', 'n87', 'n8x', 'sculpturei-h7s',
+      'tomak-tkl', 'tomak79h', 'tomak79s',
+    ],
+    common: ['7b75', 'era65', 'et-tkl', 'intigrity80-h7s', 'riley'],
+  };
+  const originalBoards = committed.catalog.makers.map(({boards}) =>
+    boards.map(({board}) => board),
+  );
+  try {
+    for (const [makerId, boards] of Object.entries(expected)) {
+      const html = renderPage(`/firmware/${makerId}`);
+      expect(
+        [...html.matchAll(/data-firmware-board="([^"]+)"/g)].map(
+          ([, board]) => board,
+        ),
+      ).toEqual(boards);
+    }
+    expect(
+      committed.catalog.makers.map(({boards}) => boards.map(({board}) => board)),
+    ).toEqual(originalBoards);
+  } finally {
+    restore();
+  }
+});
+
 test('a connected keyboard’s page names it once, its VERSION leading into the file', () => {
   const restore = globals({navigator: {}});
   try {
@@ -774,21 +854,549 @@ test('a connected keyboard’s page names it once, its VERSION leading into the 
     const device = usbId('classicd-a1');
     const {name} = getFirmwareBoardInfo(committed, 'classicd-a1');
     const named = (html: string) => html.split(`>${name}<`).length - 1;
-    const outdated = renderPage(route, committed, device, '250101R1');
+    const preBoundaryRoute = `${route}?version=261019R1`;
+    const outdated = renderPage(preBoundaryRoute, committed, device, '250101R1');
     expect(named(outdated)).toBe(1);
     expect(outdated).toContain('data-firmware-connected="true"');
     expect(outdated).toContain('Current 250101R1 →');
-    const current = renderPage(route, committed, device, a1Latest);
+    expect(outdated).toContain('data-firmware-eeprom="unknown"');
+    expect(outdated).toContain('data-firmware-eeprom-reason="unverified-current"');
+    expect(outdated).toContain('>Settings retention unknown<');
+    expect(outdated).toContain(
+      '>Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.<',
+    );
+    expect(outdated).toContain('Reset.uf2 always resets the keymap and settings.');
+    const reset = renderPage(route, committed, device, '261005R1');
+    expect(reset).toContain('data-firmware-eeprom="reset"');
+    expect(reset).toContain('data-icon="triangle-exclamation"');
+    // Pre-boundary QMK -> pre-boundary QMK with equal keys warns about Bootmagic entry.
+    const preBoundaryEqual = renderPage(preBoundaryRoute, committed, device, '261005R1');
+    expect(preBoundaryEqual).toContain('Current 261005R1 →');
+    expect(preBoundaryEqual).toContain('data-firmware-eeprom="unknown"');
+    expect(preBoundaryEqual).toContain(
+      'data-firmware-eeprom-reason="legacy-bootmagic"',
+    );
+    expect(preBoundaryEqual).toContain('>Settings retention unknown<');
+    expect(preBoundaryEqual).toContain(
+      '>Top-left key entry (Bootmagic) resets settings<',
+    );
+    // Same-version reinstallation on pre-boundary QMK still shows the status.
+    const current = renderPage(preBoundaryRoute, committed, device, '261019R1');
     expect(named(current)).toBe(1);
     expect(current).toContain('>Current<');
-    expect(current).not.toContain(`Current ${a1Latest}`);
+    expect(current).not.toContain('Current 261019R1');
+    expect(current).toContain('data-firmware-eeprom="unknown"');
+    expect(current).toContain('data-firmware-eeprom-reason="legacy-bootmagic"');
+    // H7S uses direct key comparison without the QMK placement boundary.
+    const h7sRoute = '/firmware/sirind/brick60-h7s?version=261015R1';
+    const h7sDevice = usbId('brick60-h7s');
+    const h7sKept = renderPage(h7sRoute, committed, h7sDevice, '261005R1');
+    expect(h7sKept).toContain('data-firmware-eeprom="keep"');
+    expect(h7sKept).toContain('data-firmware-eeprom-reason="same-storage"');
+    expect(h7sKept).toContain('>EEPROM kept<');
     // A VERSION that makes no claim marks the keyboard but shows no version.
     const unclaimed = renderPage(route, committed, device, 'bad');
     expect(unclaimed).toContain('data-firmware-connected="true"');
-    expect(unclaimed).not.toContain('>Current');
-    expect(renderPage(route)).not.toContain('data-firmware-connected');
+    expect(unclaimed).not.toContain('>Current<');
+    expect(unclaimed).not.toContain('Current bad');
+    expect(unclaimed).toContain('data-firmware-eeprom="unknown"');
+    expect(unclaimed).toContain('>Settings retention unknown<');
+    expect(unclaimed).toContain(
+      '>Current firmware version is unavailable or unverified; settings retention cannot be determined.<',
+    );
+    const unread = renderPage(route, committed, device);
+    expect(unread).toContain('>Settings retention unknown<');
+    expect(unread).toContain(
+      '>Current firmware version is unavailable or unverified; settings retention cannot be determined.<',
+    );
+    const disconnected = renderPage(route);
+    expect(disconnected).not.toContain('data-firmware-connected');
+    expect(disconnected).toContain('data-firmware-eeprom="unknown"');
+    expect(disconnected).toContain(
+      'data-firmware-eeprom-reason="unverified-current"',
+    );
+    expect(disconnected).toContain('>Connect keyboard to check<');
+    expect(preBoundaryEqual).toContain(
+      '<li>Top-left key entry (Bootmagic) resets settings</li>',
+    );
+
+    // Real ERA State Sync pending lifecycle: initial connect, definition change, and
+    // reconnect show neutral checking without terminal failure text until CONFIG settles.
+    const tomakEntry = manifest.definitions.find(
+      ({id}) => id === 'tomak-tkl-right',
+    )!;
+    const tomakDevicePath = 'tomak-pending-test';
+    const tomakUsb = usbId('tomak-tkl-right');
+    const tomakVpid = tomakUsb.vendorId * 0x10000 + tomakUsb.productId;
+    const tomakConnectedDevice = {
+      path: tomakDevicePath,
+      ...tomakUsb,
+      vendorProductId: tomakVpid,
+      productName: 'TOMAK_R',
+      protocol: 12,
+      requiredDefinitionVersion: 'v3' as const,
+      hasResolvedDefinition: true,
+    };
+    setEraAdvancedMetadataForTesting({
+      schemaVersion: 2,
+      definitions: [
+        eraAdvancedEntry(
+          {...tomakEntry, stateSync: true, exactMsFamily: 'qmk'},
+          tomakVpid,
+        ),
+      ],
+    });
+    const liveStore = configureStore({
+      reducer: {
+        settings: settingsReducer,
+        devices: devicesReducer,
+        definitions: definitionsReducer,
+        menus: menusReducer,
+        stateSync: stateSyncReducer,
+        definitionName: () => ({selectedOptionMap: {}}),
+        firmware: () => ({firmwareVersionMap: {}, keycodesVersionMap: {}}),
+      },
+    });
+    liveStore.dispatch(
+      updateConnectedDevices({[tomakDevicePath]: tomakConnectedDevice} as any),
+    );
+    liveStore.dispatch(
+      updateEraDefinitions({
+        [tomakVpid]: {v3: {name: 'TOMAK_R'} as any},
+      }),
+    );
+    const renderTomak = () => {
+      const location = new URL('/firmware/sirind/tomak-tkl', 'http://localhost');
+      const restoreLocation = globals({location});
+      setFirmwareDataForTesting(committed);
+      try {
+        return renderToStaticMarkup(
+          providers(
+            <FirmwarePane />,
+            liveStore as any,
+            staticLocationHook(location.pathname),
+          ),
+        );
+      } finally {
+        restoreLocation();
+      }
+    };
+    const commitTomakVersion = (acceptedVersion: string, generation = 1) => {
+      const state = liveStore.getState();
+      liveStore.dispatch(
+        commitStableConfigCandidate({
+          devicePath: tomakDevicePath,
+          connectionGeneration: generation,
+          selectionGeneration: getSelectionGeneration(state as any),
+          definitionIdentity: getDefinitionSyncIdentity(
+            state as any,
+            tomakConnectedDevice as any,
+          )!,
+          revision: 1,
+          mutationEpoch: 0,
+          candidate: {
+            menuData: {
+              [ERA_FIRMWARE_VERSION_COMMAND]: ascii(acceptedVersion),
+            },
+          },
+        }),
+      );
+    };
+    liveStore.dispatch(
+      selectDevice({
+        device: tomakConnectedDevice as any,
+        connectionGeneration: 1,
+      }),
+    );
+    liveStore.dispatch(ensurePathSync({path: tomakDevicePath, generation: 1}));
+    for (const capability of ['probing', 'capable'] as const) {
+      liveStore.dispatch(
+        setPathCapability({
+          path: tomakDevicePath,
+          generation: 1,
+          capability,
+        }),
+      );
+      const pendingHtml = renderTomak();
+      expect(pendingHtml).toContain('data-firmware-connected="true"');
+      expect(pendingHtml).toContain('data-firmware-eeprom="checking"');
+      expect(pendingHtml).toContain('>Checking installed firmware…<');
+      expect(pendingHtml).not.toContain('Settings retention unknown');
+      expect(pendingHtml).not.toContain('role="tooltip"');
+    }
+    commitTomakVersion(latest);
+    const settledKeepHtml = renderTomak();
+    expect(settledKeepHtml).toContain('>Current<');
+    expect(settledKeepHtml).toContain('data-firmware-eeprom="keep"');
+    expect(settledKeepHtml).toContain('>EEPROM kept<');
+    expect(settledKeepHtml).not.toContain('role="tooltip"');
+    // Background reconciliation retains accepted authority without flickering to checking.
+    liveStore.dispatch(markPathDirty({path: tomakDevicePath, generation: 1}));
+    expect(renderTomak()).toContain('>EEPROM kept<');
+    // Definition replacement returns to checking until the new context commits.
+    liveStore.dispatch(
+      updateEraDefinitions({
+        [tomakVpid]: {v3: {name: 'TOMAK_R updated'} as any},
+      }),
+    );
+    expect(renderTomak()).toContain('data-firmware-eeprom="checking"');
+    // Valid read of withdrawn/uncatalogued 261106R1 explains missing compatibility data rather than read failure.
+    commitTomakVersion(QMK_STORAGE_PLACEMENT_BOUNDARY);
+    const uncataloguedHtml = renderTomak();
+    expect(uncataloguedHtml).toContain(
+      `Current ${QMK_STORAGE_PLACEMENT_BOUNDARY} →`,
+    );
+    expect(uncataloguedHtml).toContain('data-firmware-eeprom="unknown"');
+    expect(uncataloguedHtml).toContain('>Settings retention unknown<');
+    expect(uncataloguedHtml).toContain(
+      '>Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.<',
+    );
+    expect(uncataloguedHtml).not.toContain(
+      'Current firmware version is unavailable or unverified',
+    );
+    // Terminal failures (unverified capability, refused CONFIG read, locked connection) show the unavailable/unverified warning.
+    for (const failTerminal of [
+      () => {
+        liveStore.dispatch(
+          selectDevice({
+            device: tomakConnectedDevice as any,
+            connectionGeneration: 2,
+          }),
+        );
+        liveStore.dispatch(
+          setPathCapability({
+            path: tomakDevicePath,
+            generation: 2,
+            capability: 'unverified',
+          }),
+        );
+      },
+      () => {
+        liveStore.dispatch(
+          selectDevice({
+            device: tomakConnectedDevice as any,
+            connectionGeneration: 3,
+          }),
+        );
+        liveStore.dispatch(
+          setPathCapability({
+            path: tomakDevicePath,
+            generation: 3,
+            capability: 'capable',
+          }),
+        );
+        const state = liveStore.getState();
+        liveStore.dispatch(
+          markDomainReadFailed({
+            path: tomakDevicePath,
+            generation: 3,
+            domain: 'config',
+            revision: 0,
+            mutationEpoch: 0,
+            selectionGeneration: getSelectionGeneration(state as any),
+            definitionIdentity: getDefinitionSyncIdentity(
+              state as any,
+              tomakConnectedDevice as any,
+            )!,
+          }),
+        );
+      },
+      () => {
+        liveStore.dispatch(
+          invalidateDeviceConnection({
+            devicePath: tomakDevicePath,
+            connectionGeneration: 4,
+            locked: true,
+          }),
+        );
+      },
+    ]) {
+      failTerminal();
+      const failedHtml = renderTomak();
+      expect(failedHtml).toContain('data-firmware-eeprom="unknown"');
+      expect(failedHtml).toContain('>Settings retention unknown<');
+      expect(failedHtml).toContain(
+        '>Current firmware version is unavailable or unverified; settings retention cannot be determined.<',
+      );
+    }
+    const broken = cloneSource();
+    broken.versions.find(({version}) => version === '261019R1')!.families.qmk!.storageKey = {
+      QMK_BUILDDATE: '2024-04-23-11:29:54',
+      ERA_EEPROM_RESET_KEY: '0x45524199UL',
+    };
+    const resetting = renderPage(preBoundaryRoute, dataFor(broken), device, '261005R1');
+    expect(resetting).toContain('data-firmware-eeprom="reset"');
+    expect(resetting).toContain('data-firmware-eeprom-reason="key-change"');
+    expect(resetting).toContain('>EEPROM reset<');
+
+    // QMK placement boundary (261106R1) and post-boundary transitions across QMK boards.
+    const withBoundary = cloneSource();
+    withBoundary.versions = withBoundary.versions.filter(
+      ({version}) =>
+        compareEraFirmwareVersions(version, QMK_STORAGE_PLACEMENT_BOUNDARY) === -1,
+    );
+    const lastRelease = withBoundary.versions.at(-1)!;
+    withBoundary.versions.push({
+      version: QMK_STORAGE_PLACEMENT_BOUNDARY,
+      families: {
+        qmk: {
+          storageKey: structuredClone(lastRelease.families.qmk!.storageKey),
+        },
+        h7s: {
+          storageKey: {reset_key: '0x48375304'},
+        },
+      },
+      files: {
+        classicd: {
+          'classicd-a1': {
+            url: `/firmware-files/${QMK_STORAGE_PLACEMENT_BOUNDARY}/classicd/CLASSIC-D-A1-V${QMK_STORAGE_PLACEMENT_BOUNDARY}.zip`,
+            size: 71343,
+            sha256: '3616ad8d9cf462bc7eced1faeaff8ee20d1f77ed548772cb48a836ecaa57e260',
+          },
+        },
+        sirind: {
+          'tomak-tkl': {
+            url: `/firmware-files/${QMK_STORAGE_PLACEMENT_BOUNDARY}/sirind/TOMAK-TKL-V${QMK_STORAGE_PLACEMENT_BOUNDARY}.zip`,
+            size: 152553,
+            sha256: '1ddfcc7d5cd25749039ff8df7ea670943e3026c6fb6677f460505d5b27d75a9d',
+          },
+          'brick60-h7s': {
+            url: `/firmware-files/${QMK_STORAGE_PLACEMENT_BOUNDARY}/sirind/BRICK60-H7S-V${QMK_STORAGE_PLACEMENT_BOUNDARY}.zip`,
+            size: 125736,
+            sha256: 'ab0d5b9cd48a55ceb6a11fa5d5221566f7233575ec14ae8efa4e7e0284983032',
+          },
+        },
+      },
+    });
+    withBoundary.versions.push({
+      version: '261110R1',
+      families: {
+        qmk: {
+          storageKey: structuredClone(lastRelease.families.qmk!.storageKey),
+        },
+      },
+      files: {
+        sirind: {
+          'tomak-tkl': {
+            url: '/firmware-files/261110R1/sirind/TOMAK-TKL-V261110R1.zip',
+            size: 152553,
+            sha256: '1ddfcc7d5cd25749039ff8df7ea670943e3026c6fb6677f460505d5b27d75a9d',
+          },
+        },
+      },
+    });
+    const boundaryData = dataFor(withBoundary);
+    const tomakHistory = getFirmwareHistory(
+      boundaryData.catalog,
+      'sirind',
+      getFirmwareBoardInfo(boundaryData, 'tomak-tkl'),
+    );
+    const a1BoundaryHistory = getFirmwareHistory(
+      boundaryData.catalog,
+      'classicd',
+      getFirmwareBoardInfo(boundaryData, 'classicd-a1'),
+    );
+    const h7sBoundaryHistory = getFirmwareHistory(
+      boundaryData.catalog,
+      'sirind',
+      getFirmwareBoardInfo(boundaryData, 'brick60-h7s'),
+    );
+    // (1) Pre-boundary QMK (< 261106R1, catalogued or uncatalogued) -> >= 261106R1 resets EEPROM.
+    for (const [boardHistory, oldVer] of [
+      [tomakHistory, '261021R1'],
+      [tomakHistory, '250101R1'],
+      [a1BoundaryHistory, '261019R1'],
+      [a1BoundaryHistory, '250101R1'],
+    ] as const) {
+      expect(
+        classifyFirmwareTransition(
+          'qmk',
+          boardHistory,
+          oldVer,
+          QMK_STORAGE_PLACEMENT_BOUNDARY,
+        ),
+      ).toEqual({
+        status: 'reset',
+        reason: 'placement-migration',
+        formatBreak: true,
+      });
+    }
+    // (2) >= 261106R1 -> >= 261106R1 with equal keys keeps EEPROM; same-version reinstall keeps too.
+    expect(
+      classifyFirmwareTransition(
+        'qmk',
+        tomakHistory,
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+        '261110R1',
+      ),
+    ).toEqual({
+      status: 'keep',
+      reason: 'same-storage',
+      formatBreak: false,
+    });
+    expect(
+      classifyFirmwareTransition(
+        'qmk',
+        tomakHistory,
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+      ),
+    ).toEqual({
+      status: 'keep',
+      reason: 'same-storage',
+      formatBreak: false,
+    });
+    // (3) Pre-boundary -> pre-boundary with equal keys does not break the format timeline.
+    expect(
+      classifyFirmwareTransition('qmk', tomakHistory, '261019R1', '261021R1'),
+    ).toEqual({
+      status: 'unknown',
+      reason: 'legacy-bootmagic',
+      formatBreak: false,
+    });
+    // (4) QMK downgrade across 261106R1 warns about previous storage rather than claiming reset.
+    expect(
+      classifyFirmwareTransition(
+        'qmk',
+        tomakHistory,
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+        '261021R1',
+      ),
+    ).toEqual({
+      status: 'unknown',
+      reason: 'qmk-downgrade',
+      formatBreak: true,
+    });
+    const downgradeHtml = renderPage(
+      '/firmware/sirind/tomak-tkl?version=261021R1',
+      boundaryData,
+      usbId('tomak-tkl-left'),
+      QMK_STORAGE_PLACEMENT_BOUNDARY,
+    );
+    expect(downgradeHtml).toContain('data-firmware-eeprom="unknown"');
+    expect(downgradeHtml).toContain(
+      'data-firmware-eeprom-reason="qmk-downgrade"',
+    );
+    expect(downgradeHtml).toContain(
+      '>Uses the previous storage area; current settings do not carry over<',
+    );
+    expect(downgradeHtml).toContain(
+      '<li>Uses the previous storage area; current settings do not carry over</li>',
+    );
+    // Timeline breaks only at the 261106R1 placement boundary, not between equal-key pre-boundary or post-boundary entries.
+    expect(downgradeHtml).toContain(
+      `aria-label="261021R1, ${lastRelease.families.qmk!.note!.en}, Uses the previous storage area; current settings do not carry over"`,
+    );
+    expect(downgradeHtml).toContain(
+      `aria-label="${QMK_STORAGE_PLACEMENT_BOUNDARY}, Connected keyboard TOMAK TKL, Settings reset across this gap"`,
+    );
+    expect(downgradeHtml).toContain('aria-label="261110R1"');
+    const preBoundaryTimelineHtml = renderPage(
+      '/firmware/sirind/tomak-tkl?version=261019R1',
+      boundaryData,
+      usbId('tomak-tkl-left'),
+      '261005R1',
+    );
+    expect(preBoundaryTimelineHtml).toContain(
+      `aria-label="261021R1, ${lastRelease.families.qmk!.note!.en}, Top-left key entry (Bootmagic) resets settings"`,
+    );
+    expect(preBoundaryTimelineHtml).toContain(
+      `aria-label="${QMK_STORAGE_PLACEMENT_BOUNDARY}, Resets settings, Settings reset across this gap"`,
+    );
+    // (5) H7S uses key comparison only: uncatalogued old version is unknown, unequal key resets.
+    expect(
+      classifyFirmwareTransition(
+        'h7s',
+        h7sBoundaryHistory,
+        '250101R1',
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+      ),
+    ).toEqual({
+      status: 'unknown',
+      reason: 'unverified-current',
+      formatBreak: null,
+    });
+    expect(
+      classifyFirmwareTransition(
+        'h7s',
+        h7sBoundaryHistory,
+        '261015R1',
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+      ),
+    ).toEqual({
+      status: 'reset',
+      reason: 'key-change',
+      formatBreak: true,
+    });
+    // (6) Legacy VID 0x4552 without a read VERSION never guesses a version.
+    const legacyUnverified = renderPage(
+      '/firmware/sirind/tomak-tkl',
+      boundaryData,
+      usbId('tomak-tkl-left', true),
+    );
+    expect(legacyUnverified).toContain('data-firmware-eeprom="unknown"');
+    expect(legacyUnverified).toContain(
+      'data-firmware-eeprom-reason="unverified-current"',
+    );
+    // (7) Reset recovery option always initializes even when normal firmware keeps EEPROM.
+    expect(
+       getFirmwareEepromStatus(
+        'qmk',
+        tomakHistory,
+        QMK_STORAGE_PLACEMENT_BOUNDARY,
+        '261110R1',
+        {resetImage: true},
+      ),
+    ).toBe('reset');
   } finally {
     restore();
+  }
+});
+
+test('an unknown firmware reason uses the common click-to-expand help', () => {
+  setFirmwareDataForTesting(committed);
+  const page = mountPage(
+    '/firmware/classicd/classicd-a1?version=261019R1',
+    usbId('classicd-a1'),
+  );
+  try {
+    const renderer = page.renderer;
+    const info = () => renderer.root.find(
+      (node) =>
+        node.type === 'button' &&
+        node.props['aria-label'] === 'What this means: Settings retention unknown',
+    );
+    const explanation = () => renderer.root.find(
+      (node) =>
+        node.type === 'div' && node.props.id === info().props['aria-controls'],
+    );
+    const reason =
+      'Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.';
+    expect(text(info())).toBe('i');
+    expect(info().props['aria-expanded']).toBe(false);
+    expect(explanation().props.hidden).toBe(true);
+    expect(text(explanation())).toBe(reason);
+    expect(text(renderer.root).split(reason)).toHaveLength(2);
+    const fileBox = renderer.root.find(
+      (node) =>
+        node.type === 'div' && node.props['data-firmware-file'] === 'published',
+    );
+    expect(fileBox.findAll(
+      (node) => node.type === 'div' && node.props.id === info().props['aria-controls'],
+    )).toHaveLength(1);
+    expect(text(renderer.root)).toContain(
+      'Keyboard settings may reset after updating. Save them in the "Save + Load" menu.',
+    );
+
+    act(() => info().props.onClick());
+    expect(info().props['aria-expanded']).toBe(true);
+    expect(explanation().props.hidden).toBe(false);
+    act(() => info().props.onClick());
+    expect(info().props['aria-expanded']).toBe(false);
+    expect(explanation().props.hidden).toBe(true);
+    expect(text(renderer.root).split(reason)).toHaveLength(2);
+  } finally {
+    page.close();
   }
 });
 
