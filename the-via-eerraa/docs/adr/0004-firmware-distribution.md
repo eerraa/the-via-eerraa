@@ -335,6 +335,9 @@ Choosing a version puts its file and EEPROM status in the row. Distribution ZIPs
 contain `.uf2`,
 readme, and the `usevia.app` folder. Do not include `RELEASE.json` or internal
 packaging evidence; keep that evidence outside the distributed archive.
+The package guides are `readme.txt` and `usevia.app/usevia.txt`, each with Korean
+followed by English. Do not add separate guide files for other languages; those
+translations belong to the VIA app's help and menus.
 ZIP filenames use the model and firmware version without a content-hash suffix.
 Repackaging preserves those URLs and updates the catalog size and SHA-256.
 Firmware ZIP responses use `Cache-Control: no-store` in `public/_headers` to
