@@ -747,7 +747,7 @@
   "Settings retention unknown": "設定の維持は不明",
   "Current firmware version is unavailable or unverified; settings retention cannot be determined.": "現在のファームウェアバージョンを読み取れないか検証できないため、設定が維持されるか確認できません。",
   "Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.": "インストールされているファームウェアバージョンの互換情報がないため、設定が維持されるか確認できません。",
-  "Top-left key entry (Bootmagic) resets settings": "左上のキーを押したまま接続（Bootmagic）すると設定が初期化されます。",
+  "Top-left key entry (Bootmagic) resets settings": "以前のファームウェアは Bootmagic での進入時に初期化されることがあるため、最初のアップデートには VIA BOOT または Reset 二回押しを使用してください。",
   "Uses the previous storage area; current settings do not carry over": "以前の保存領域を使用するため、現在の設定は引き継がれません。",
   "Reset.uf2 always resets the keymap and settings.": "Reset.uf2 は常にキーマップと設定を初期化します。",
   "Resets settings": "設定が初期化されます",

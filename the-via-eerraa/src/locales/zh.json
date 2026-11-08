@@ -747,7 +747,7 @@
   "Settings retention unknown": "设置能否保留未知",
   "Current firmware version is unavailable or unverified; settings retention cannot be determined.": "无法读取或验证当前固件版本，无法确认设置是否会保留。",
   "Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.": "没有已安装固件版本的兼容性信息，无法确认设置是否会保留。",
-  "Top-left key entry (Bootmagic) resets settings": "按住左上角按键连接（Bootmagic）会重置设置。",
+  "Top-left key entry (Bootmagic) resets settings": "旧版固件通过 Bootmagic 进入时可能会重置设置，首次更新请使用 VIA BOOT 或连按两次 Reset。",
   "Uses the previous storage area; current settings do not carry over": "由于使用旧版存储区域，当前设置不会迁移。",
   "Reset.uf2 always resets the keymap and settings.": "Reset.uf2 始终会重置按键布局和所有设置。",
   "Resets settings": "会重置设置",

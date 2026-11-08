@@ -285,9 +285,10 @@ export const isSameStorageFormat = (
 
 /**
  * The QMK RP2040 NVM placement boundary. Builds at or above this version move
- * EEPROM to a disjoint 128 KiB region before the final 136 KiB reserve and make
- * Bootmagic entry non-destructive; earlier QMK builds use the final 128 KiB and
- * Bootmagic formats EEPROM on entry.
+ * EEPROM to a disjoint 128 KiB region before the final 136 KiB reserve.
+ * Recovery repacks preserve the earlier storage placement and VERSION. VERSION
+ * alone cannot distinguish an installed original with destructive Bootmagic
+ * from its non-destructive replacement, so earlier builds remain conservative.
  */
 export const QMK_STORAGE_PLACEMENT_BOUNDARY = '261106R1';
 

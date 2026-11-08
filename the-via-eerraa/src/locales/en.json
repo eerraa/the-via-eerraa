@@ -747,7 +747,7 @@
   "Settings retention unknown": "Settings retention unknown",
   "Current firmware version is unavailable or unverified; settings retention cannot be determined.": "The current firmware version could not be read or verified, so whether settings will be kept cannot be determined.",
   "Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.": "Compatibility information for the installed firmware version is unavailable, so whether settings will be kept cannot be determined.",
-  "Top-left key entry (Bootmagic) resets settings": "Connecting while holding the top-left key (Bootmagic) resets settings.",
+  "Top-left key entry (Bootmagic) resets settings": "Earlier firmware may reset settings when entering via Bootmagic, so use VIA BOOT or double-press Reset for the first update.",
   "Uses the previous storage area; current settings do not carry over": "Uses an older storage layout, so current settings are not carried over.",
   "Reset.uf2 always resets the keymap and settings.": "Reset.uf2 always resets the keymap and settings.",
   "Resets settings": "Resets settings",

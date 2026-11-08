@@ -274,7 +274,7 @@ the connected keyboard's authoritative VERSION and the selected target version
 through `classifyFirmwareTransition` in `src/utils/era-firmware-catalog.ts`,
 including when the selected version equals the installed version:
 - On QMK RP2040 boards, `QMK_STORAGE_PLACEMENT_BOUNDARY` moves the NVM store out
-  of the final 128 KiB and makes Bootmagic entry non-destructive. Any valid
+  of the final 128 KiB. Any valid
   authoritative QMK VERSION below that boundary selecting a known target at or
   above it shows `EEPROM reset` even when the older build is not in the catalog
   or shares the same `storageKey`, because the first boot on the new region
@@ -284,8 +284,11 @@ including when the selected version equals the installed version:
   show `EEPROM reset`.
 - When both QMK versions are below that boundary, a `storageKey` mismatch shows
   `EEPROM reset`, while equal keys show `Settings retention unknown` with a short
-  Bootmagic note because holding the top-left key while plugging in USB on
-  pre-boundary QMK firmware formats EEPROM before flashing.
+  Bootmagic note because original pre-boundary QMK firmware may format EEPROM
+  before flashing. Recovery repacks preserve VERSION, so the app cannot tell
+  an installed original from its non-destructive replacement. Keep the first
+  update warning and recommend VIA BOOT or double-press Reset; do not infer
+  installed behavior from the currently hosted ZIP.
 - A QMK downgrade from at or above that boundary to a build below it shows
   `Settings retention unknown` with a concise previous-storage note rather than
   claiming an unconditional reset, because the older build reads the previous
@@ -340,6 +343,14 @@ followed by English. Do not add separate guide files for other languages; those
 translations belong to the VIA app's help and menus.
 ZIP filenames use the model and firmware version without a content-hash suffix.
 Repackaging preserves those URLs and updates the catalog size and SHA-256.
+EERRAA recovery repacks keep the selected release's normal features, storage
+placement and format keys. They backport non-destructive Bootmagic and add a
+full-featured `Reset.uf2` built from that same release, with current Korean and
+English guides. Reset is an explicit once-per-install settings reset; it does
+not silently upgrade to the newest release. Preserve source commits, separate
+normal/recovery build manifests and hashes outside the archive. Include the
+latest firmware-local official VIA definitions for that keyboard and maker,
+alongside the latest guides, and validate them against the current schema.
 Firmware ZIP responses use `Cache-Control: no-store` in `public/_headers` to
 avoid retaining a replaced archive. Previously cached responses still require
 host cache purging and a live download hash check after deployment.

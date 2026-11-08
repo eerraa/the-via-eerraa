@@ -747,7 +747,7 @@
   "Settings retention unknown": "설정 유지 여부 알 수 없음",
   "Current firmware version is unavailable or unverified; settings retention cannot be determined.": "현재 펌웨어 버전을 읽지 못했거나 검증할 수 없어 설정 유지 여부를 알 수 없습니다.",
   "Compatibility data for the installed firmware version is unavailable; settings retention cannot be determined.": "설치된 펌웨어 버전의 호환 정보가 없어 설정 유지 여부를 알 수 없습니다.",
-  "Top-left key entry (Bootmagic) resets settings": "왼쪽 위 키를 누른 채 연결(Bootmagic)하면 설정이 초기화됩니다.",
+  "Top-left key entry (Bootmagic) resets settings": "이전 펌웨어는 Bootmagic 진입 시 초기화될 수 있으므로 첫 업데이트에는 VIA BOOT나 Reset 두 번을 사용하십시오.",
   "Uses the previous storage area; current settings do not carry over": "이전 저장 영역을 사용하므로 현재 설정은 옮겨지지 않습니다.",
   "Reset.uf2 always resets the keymap and settings.": "Reset.uf2는 항상 키맵과 설정을 초기화합니다.",
   "Resets settings": "설정이 초기화됩니다",

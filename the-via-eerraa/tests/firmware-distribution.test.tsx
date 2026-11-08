@@ -340,6 +340,32 @@ test('every released keyboard ships the catalogued bytes, version and USB identi
         expect(names.some((name) => name.endsWith('RELEASE.json'))).toBe(false);
         const images = names.filter((name) => name.endsWith('.uf2'));
         expect(images.length).toBeGreaterThan(0);
+        if (!boardId.endsWith('-h7s')) {
+          expect(images).toHaveLength(2);
+          expect(names).toContain('Reset.uf2');
+          expect(strFromU8(entries['readme.txt'])).toContain('한국어');
+          expect(strFromU8(entries['readme.txt'])).toContain('English');
+          expect(strFromU8(entries['usevia.app/usevia.txt'])).toContain(
+            'English',
+          );
+          expect(
+            names.some((name) =>
+              /(?:readme|usevia)[._-](?:zh|ja|es|de)\.txt$/i.test(name),
+            ),
+          ).toBe(false);
+          const latest = [...source.versions].reverse().find(
+            (version) => version.files[makerId]?.[boardId],
+          )!.files[makerId][boardId];
+          const latestEntries = unzipSync(
+            readFileSync(path.join(repoRoot, 'public', latest.url)),
+          );
+          const documents = Object.keys(latestEntries).filter(
+            (name) => name.endsWith('.txt') || name.toLowerCase().endsWith('.json'),
+          );
+          for (const name of documents) {
+            expect(entries[name]).toEqual(latestEntries[name]);
+          }
+        }
         for (const image of images) {
           expect(
             image.endsWith(`-V${release.version}.uf2`) ||
