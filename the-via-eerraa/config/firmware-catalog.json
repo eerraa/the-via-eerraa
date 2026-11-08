@@ -341,18 +341,18 @@
           },
           "brick60-h7s": {
             "url": "/firmware-files/261005R1/sirind/BRICK60-H7S-V261005R1.zip",
-            "size": 125521,
-            "sha256": "5317fbff600a842b8baf10847f38297660a0dea4162c5ac4d45c21f4f090b8e1"
+            "size": 123039,
+            "sha256": "fd4ecb3b7d7d4e75435bc8268a8a535d9919c9bbf80b5209bcc42ae8e505d624"
           },
           "brick65-h7s": {
             "url": "/firmware-files/261005R1/sirind/BRICK65-H7S-V261005R1.zip",
-            "size": 125650,
-            "sha256": "0dcd0443e2776a230c005439c1b4ff119e9894abb5fc012c79effd170edd2f3d"
+            "size": 123168,
+            "sha256": "03e5cf2f5a92791830557a546cc5f41e09a2f5aeb9dc14dc6de82bf87ed74e4d"
           },
           "sculpturei-h7s": {
             "url": "/firmware-files/261005R1/sirind/SCULPTUREI-H7S-V261005R1.zip",
-            "size": 125878,
-            "sha256": "14fcf02eb331873e9c7ff12f0f9c87905c44b065412ee78306a59a5c5351bff2"
+            "size": 123396,
+            "sha256": "46bf40ed9d7f139bd20f3a42da77364d15ff9ded45188a648bb476b364a7c3d8"
           }
         },
         "linworks": {
@@ -417,8 +417,8 @@
           },
           "may65-h7s": {
             "url": "/firmware-files/261005R1/keynetix/MAY65-H7S-V261005R1.zip",
-            "size": 125508,
-            "sha256": "2329ecfe13a42cecee258b73d35afc6b53ec7167e33df7a322eb58d8d6aba353"
+            "size": 123026,
+            "sha256": "7be192712e197a5305a03f18edd811373f6f84e1eb60ff2a2676e618585e8410"
           }
         },
         "classicd": {
@@ -466,8 +466,8 @@
           },
           "intigrity80-h7s": {
             "url": "/firmware-files/261005R1/common/INTIGRITY80-H7S-V261005R1.zip",
-            "size": 125546,
-            "sha256": "3cc09b5e90709a215dff51c63565ca74fd3606d3ad95becd981a1134443a449a"
+            "size": 123063,
+            "sha256": "e436ecde12555248a1aa540f799d3a95344de0f17e35f0adbfc355fc4823b5db"
           }
         }
       }
@@ -562,18 +562,18 @@
           },
           "brick60-h7s": {
             "url": "/firmware-files/261015R1/sirind/BRICK60-H7S-V261015R1.zip",
-            "size": 125736,
-            "sha256": "ab0d5b9cd48a55ceb6a11fa5d5221566f7233575ec14ae8efa4e7e0284983032"
+            "size": 123059,
+            "sha256": "af04402fab98ab01ad4341fdf224303b2550400a0356e8f126896b290a2569fb"
           },
           "brick65-h7s": {
             "url": "/firmware-files/261015R1/sirind/BRICK65-H7S-V261015R1.zip",
-            "size": 125862,
-            "sha256": "137759d659507bb2ce2ad09e702a458467fd4af69c9f16f27b5945539e987516"
+            "size": 123185,
+            "sha256": "26f836a2dd69758e2368f7d8d8a387458dfb799b4fdf57ace77788588490c854"
           },
           "sculpturei-h7s": {
             "url": "/firmware-files/261015R1/sirind/SCULPTUREI-H7S-V261015R1.zip",
-            "size": 126071,
-            "sha256": "9f7a123319a07bda96d287b888f6124b19f58550093308e1dde1e985067d4d11"
+            "size": 123394,
+            "sha256": "72c3bd3816d859c6a53fa7b629037f1ea4c407253c50b49108af8bf332ae6f38"
           }
         },
         "linworks": {
@@ -638,8 +638,8 @@
           },
           "may65-h7s": {
             "url": "/firmware-files/261015R1/keynetix/MAY65-H7S-V261015R1.zip",
-            "size": 125768,
-            "sha256": "edbded487086150f8c6af6c64121e430e2071bb76d07cdc1d8e2eb06c580eb4b"
+            "size": 123091,
+            "sha256": "fd882ee023bc76a76ddad2e6947928a3bc6bfcf581dfb5e359dcdecb9b65b867"
           }
         },
         "classicd": {
@@ -687,8 +687,8 @@
           },
           "intigrity80-h7s": {
             "url": "/firmware-files/261015R1/common/INTIGRITY80-H7S-V261015R1.zip",
-            "size": 125753,
-            "sha256": "78e53aa5c3b1ac9b4e0649c01e11e230c163b58b4337fa8d64580b569f8ffab2"
+            "size": 123076,
+            "sha256": "2e1705379c71da163c4486696921ced33eb61faf167dd057d7e2c0bead0fa6cd"
           }
         }
       }
