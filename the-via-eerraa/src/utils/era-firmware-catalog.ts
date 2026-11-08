@@ -53,6 +53,14 @@ type FirmwareCatalog = {
 
 export type FirmwareFamily = 'qmk' | 'h7s';
 
+/** A release description in each supported app language. */
+type FirmwareReleaseNote = {en: string} & Record<string, string>;
+
+/** A board may replace the family's common description with its own. */
+type FirmwareVersionFile = Omit<FirmwareFile, 'version'> & {
+  note?: FirmwareReleaseNote;
+};
+
 /** What one version means for one firmware family. */
 type FirmwareVersionFamily = {
   /**
@@ -66,7 +74,7 @@ type FirmwareVersionFamily = {
    * One short line per app language; English is the fallback. Left out where
    * what changed cannot be told.
    */
-  note?: {en: string} & Record<string, string>;
+  note?: FirmwareReleaseNote;
   /** The note is a placeholder still to be written. */
   draft?: boolean;
 };
@@ -81,7 +89,7 @@ type FirmwareVersion = {
   version: string;
   families: Partial<Record<FirmwareFamily, FirmwareVersionFamily>>;
   /** Maker id → board id → file. */
-  files: Record<string, Record<string, Omit<FirmwareFile, 'version'>>>;
+  files: Record<string, Record<string, FirmwareVersionFile>>;
 };
 
 /** `config/firmware-catalog.json` as written: a board names no file itself. */
@@ -254,7 +262,7 @@ export const getFirmwareHistory = (
           {
             file: {version: entry.version, ...file},
             storageKey: family?.storageKey ?? null,
-            note: family?.note ?? null,
+            note: file.note ?? family?.note ?? null,
             draft: family?.draft === true,
           },
         ]
@@ -413,6 +421,21 @@ export const getFirmwareEepromStatus = (
     targetVersion,
     options,
   ).status;
+
+const FIRMWARE_NOTE_LANGUAGES = ['ko', 'en', 'zh', 'ja', 'es', 'de'] as const;
+
+const validateReleaseNote = (note: unknown, label: string): string[] => {
+  if (note === undefined) return [];
+  if (!note || typeof note !== 'object' || Array.isArray(note)) {
+    return [`${label} note must be a localized object`];
+  }
+  const values = note as Record<string, unknown>;
+  return FIRMWARE_NOTE_LANGUAGES.flatMap((language) =>
+    typeof values[language] === 'string' && values[language].trim()
+      ? []
+      : [`${label} note is missing ${language}`],
+  );
+};
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -574,10 +597,14 @@ export const validateFirmwareCatalog = ({
       errors.push(`version "${release.version}" is declared twice`);
     }
     versionIds.add(release.version);
+    for (const [family, details] of Object.entries(release.families)) {
+      errors.push(...validateReleaseNote(details?.note, `${release.version}/${family}`));
+    }
     for (const [makerId, files] of Object.entries(release.files)) {
       const maker = catalog.makers.find(({id}) => id === makerId);
       for (const [boardId, file] of Object.entries(files)) {
         const label = `${release.version}/${makerId}/${boardId}`;
+        errors.push(...validateReleaseNote(file.note, label));
         if (!maker?.boards.some(({board}) => board === boardId)) {
           errors.push(`${label} is not distributed by this maker`);
         }

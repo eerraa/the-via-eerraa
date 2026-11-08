@@ -1285,7 +1285,7 @@ test('a connected keyboard’s page names it once, its VERSION leading into the 
     );
     // Timeline breaks only at the 261106R1 placement boundary, not between equal-key pre-boundary or post-boundary entries.
     expect(downgradeHtml).toContain(
-      `aria-label="261021R1, ${lastRelease.families.qmk!.note!.en}, Uses the previous storage area; current settings do not carry over"`,
+      `aria-label="261021R1, ${getFirmwareHistory(boundaryData.catalog, 'sirind', getFirmwareBoardInfo(boundaryData, 'tomak-tkl')).find(({file}) => file.version === '261021R1')!.note!.en}, Uses the previous storage area; current settings do not carry over"`,
     );
     expect(downgradeHtml).toContain(
       `aria-label="${QMK_STORAGE_PLACEMENT_BOUNDARY}, Connected keyboard TOMAK TKL, Settings reset across this gap"`,
@@ -1298,7 +1298,7 @@ test('a connected keyboard’s page names it once, its VERSION leading into the 
       '261005R1',
     );
     expect(preBoundaryTimelineHtml).toContain(
-      `aria-label="261021R1, ${lastRelease.families.qmk!.note!.en}, Top-left key entry (Bootmagic) resets settings"`,
+      `aria-label="261021R1, ${getFirmwareHistory(boundaryData.catalog, 'sirind', getFirmwareBoardInfo(boundaryData, 'tomak-tkl')).find(({file}) => file.version === '261021R1')!.note!.en}, Top-left key entry (Bootmagic) resets settings"`,
     );
     expect(preBoundaryTimelineHtml).toContain(
       `aria-label="${QMK_STORAGE_PLACEMENT_BOUNDARY}, Resets settings, Settings reset across this gap"`,

@@ -382,6 +382,14 @@ version is withdrawn by deleting its entry and its folder together, with no
 record kept, and the newest remaining version becomes current with no other
 edit. The build checks the files of every version, not only the newest.
 
+Release descriptions must apply to the board being shown. A board-specific
+description replaces the family's common description in full, including in the
+version's accessible name. Choose that scope before choosing a language; a missing
+translation must not fall back to another scope. Every description must have a
+non-empty value in each supported app language. Common descriptions remain only
+for changes that apply to every board in that family. When changes are unknown,
+leave the description absent rather than infer them from the version.
+
 A maker can list a board before any version ships a file for it: the page
 shows the board as not published yet and offers no download, and the VERSION
 check makes no version claim for it. A published file records its
