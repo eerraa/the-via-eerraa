@@ -16,6 +16,8 @@ export const HelpRow = styled(ExplainRow)({
   gap: 10,
   padding: '16px 5px',
   borderBottom: '1px solid var(--border_color_cell)',
+  // The heading already supplies the space below the expanded body.
+  [`& > ${HelpBody}`]: {marginBottom: 0},
 });
 
 // As wide as its sentence, so the ⓘ follows it the way a row's ⓘ follows its label.
