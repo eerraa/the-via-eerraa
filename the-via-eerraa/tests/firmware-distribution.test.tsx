@@ -141,6 +141,7 @@ const latestFor = (makerId: string, boardId: string) =>
     .boards.find(({board}) => board === boardId)!.file!.version;
 const a1Latest = latestFor('classicd', 'classicd-a1');
 const n86Latest = latestFor('linworks', 'n86');
+const tomakLatest = latestFor('sirind', 'tomak-tkl');
 const cloneSource = () => structuredClone(source);
 const usbId = (id: string, legacy = false) => {
   const entry = manifest.definitions.find((entry) => entry.id === id)!;
@@ -1050,7 +1051,7 @@ test('a connected keyboard’s page names it once, its VERSION leading into the 
       expect(pendingHtml).not.toContain('Settings retention unknown');
       expect(pendingHtml).not.toContain('role="tooltip"');
     }
-    commitTomakVersion(latest);
+    commitTomakVersion(tomakLatest);
     const settledKeepHtml = renderTomak();
     expect(settledKeepHtml).toContain('>Current<');
     expect(settledKeepHtml).toContain('data-firmware-eeprom="keep"');

@@ -1149,6 +1149,57 @@
           }
         }
       }
+    },
+    {
+      "version": "261115R1",
+      "families": {
+        "h7s": {
+          "storageKey": {
+            "reset_key": "0x48375304"
+          },
+          "note": {
+            "ko": "USB 연결·인식 안정성 및 전송 처리 효율 개선",
+            "en": "Improved USB connection stability and transfer efficiency",
+            "zh": "提升 USB 连接识别稳定性与传输处理效率",
+            "ja": "USB 接続・認識の安定性および転送効率を改善",
+            "es": "Mejora de la estabilidad de conexión USB y la eficiencia de transferencia",
+            "de": "USB-Verbindungsstabilität und Übertragungseffizienz verbessert"
+          }
+        }
+      },
+      "files": {
+        "sirind": {
+          "brick60-h7s": {
+            "url": "/firmware-files/261115R1/sirind/BRICK60-V261115R1.zip",
+            "size": 272934,
+            "sha256": "d1b4f956866c015167303ff8309fb39c3ebe487dc61c6911047ee4208707687e"
+          },
+          "brick65-h7s": {
+            "url": "/firmware-files/261115R1/sirind/BRICK65-V261115R1.zip",
+            "size": 273395,
+            "sha256": "3cd1a6ef57c7cf5c0e434f73c6bb670bc82206f97e72f0522694e31f49bea11c"
+          },
+          "sculpturei-h7s": {
+            "url": "/firmware-files/261115R1/sirind/SCULPTUREI-V261115R1.zip",
+            "size": 273611,
+            "sha256": "075506edd9110d7011b957a85a53aaa0e19ed47b8a828b5d2d24cb6d6fb58d15"
+          }
+        },
+        "keynetix": {
+          "may65-h7s": {
+            "url": "/firmware-files/261115R1/keynetix/MAY65-V261115R1.zip",
+            "size": 272758,
+            "sha256": "b8549e21cc2d9dd360abb0fd106aef821e7db576957ba5bc6cfb5a4935fc641d"
+          }
+        },
+        "common": {
+          "intigrity80-h7s": {
+            "url": "/firmware-files/261115R1/common/INTIGRITY80-V261115R1.zip",
+            "size": 272800,
+            "sha256": "69c554bb6a595faa3a96e81829c8ac91b6d2f1dea543b9c54dd86f5b713a7f2e"
+          }
+        }
+      }
     }
   ]
 }
