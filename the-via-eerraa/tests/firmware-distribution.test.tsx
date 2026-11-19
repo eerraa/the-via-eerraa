@@ -848,7 +848,8 @@ test('maker pages list keyboards A-Z by their displayed names', () => {
     linworks: ['fave65s', 'n86', 'n87', 'n8x'],
     newone: ['newone-a1', 'newone-h1', 'newone-odessey60h', 'newone-odessey60s'],
     sirind: [
-      'brick60-h7s', 'brick65-h7s', 'brick65s', 'chickpad', 'divine',
+      'brick60-h7s', 'brick65-h7s', 'brick65s', 'chickpad', 'clinch65h',
+      'clinch65s', 'divine',
       'klein-hs', 'klein-sd', 'n86', 'n87', 'n8x', 'sculpturei-h7s',
       'tomak-tkl', 'tomak79h', 'tomak79s',
     ],

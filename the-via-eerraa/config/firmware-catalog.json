@@ -57,6 +57,14 @@
       "name": "SCULPTUREI H7S"
     },
     {
+      "id": "clinch65s",
+      "name": "CLINCH65S"
+    },
+    {
+      "id": "clinch65h",
+      "name": "CLINCH65H"
+    },
+    {
       "id": "fave65s",
       "name": "FAVE65S"
     },
@@ -164,6 +172,12 @@
         },
         {
           "board": "sculpturei-h7s"
+        },
+        {
+          "board": "clinch65s"
+        },
+        {
+          "board": "clinch65h"
         }
       ]
     },
@@ -1031,6 +1045,16 @@
             "url": "/firmware-files/261107R1/sirind/SCULPTUREI-V261107R1.zip",
             "size": 284489,
             "sha256": "1a44769ad33f472e93e7831aa27737483b40b85cbda893a316d9a05edfed1490"
+          },
+          "clinch65s": {
+            "url": "/firmware-files/261107R1/sirind/CLINCH65S-V261107R1.zip",
+            "size": 159826,
+            "sha256": "fde3c6525793d7cbf436fc308254263b59b117c29e289b6fd08c382da8633722"
+          },
+          "clinch65h": {
+            "url": "/firmware-files/261107R1/sirind/CLINCH65H-V261107R1.zip",
+            "size": 159430,
+            "sha256": "1d20235d89f3b471feec9deea8b1ef5b22b541d75088ab80fe6c0435adccbbe6"
           }
         },
         "linworks": {

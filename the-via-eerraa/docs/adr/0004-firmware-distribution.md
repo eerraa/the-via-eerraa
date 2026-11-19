@@ -393,7 +393,10 @@ that ships it (`resolveFirmwareCatalog`), and the board page's version unfolds
 its release line of every published version, so an earlier build stays
 downloadable for rollback. Release ZIPs are packaged after implementation is
 complete in their owning firmware repositories; a release then adds one version
-entry and its folder and leaves the earlier ones as they are. A defective
+entry and its folder and leaves the earlier ones as they are. A board added to
+the firmware with no other change ships under the version its firmware already
+reports: its ZIP joins that version's folder and entry, and the files already
+published there stay as they are. A defective
 version is withdrawn by deleting its entry and its folder together, with no
 record kept, and the newest remaining version becomes current with no other
 edit. The build checks the files of every version, not only the newest.
