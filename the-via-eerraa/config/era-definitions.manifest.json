@@ -393,6 +393,24 @@
       "exactMsFamily": "qmk"
     },
     {
+      "id": "clinch65s",
+      "lighting": "rgb_matrix",
+      "path": "era-definitions/custom/v3/clinch65s/CLINCH65S-VIA.json",
+      "vendorId": "0x4501",
+      "productId": "0x0014",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
+      "id": "clinch65h",
+      "lighting": "rgb_matrix",
+      "path": "era-definitions/custom/v3/clinch65h/CLINCH65H-VIA.json",
+      "vendorId": "0x4501",
+      "productId": "0x0015",
+      "stateSync": true,
+      "exactMsFamily": "qmk"
+    },
+    {
       "id": "tomak79s-left",
       "lighting": "rgb_matrix",
       "path": "era-definitions/custom/v3/tomak79s/TOMAK79S-L-VIA.json",

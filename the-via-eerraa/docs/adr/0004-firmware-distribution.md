@@ -59,7 +59,9 @@ mirrors it for the app.
   `id_unhandled`, which fails the whole menu read. The identity is the only
   signal that tells the builds apart without a new wire command. The frozen tree
   is not a second canonical source: it is never edited, and it is removed
-  together with the legacy identities when the transition ends.
+  together with the legacy identities when the transition ends. A product that
+  never shipped under the shared legacy VID has no legacy identity and no
+  frozen definition, because no older firmware of it exists to be served.
 - A browser grants WebHID access per VID/PID, so after flashing a build with a
   new identity the user authorizes the keyboard once more. The flashing steps
   say so.

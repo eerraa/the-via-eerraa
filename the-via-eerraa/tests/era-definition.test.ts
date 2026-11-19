@@ -183,6 +183,8 @@ const expectedQmkDefinitionIds = [
   'classicd-a1-ug',
   'classicd-core',
   'classicd-coreless',
+  'clinch65h',
+  'clinch65s',
   'divine',
   'era65',
   'et-tkl',
@@ -227,6 +229,8 @@ const expectedRgbSleepToggleDefinitionIds = [
   'classicd-a1-ug',
   'classicd-core',
   'classicd-coreless',
+  'clinch65h',
+  'clinch65s',
   'fave65s',
   'intigrity80-h7s',
   'klein-sd',
@@ -279,6 +283,8 @@ describe('era definition layout options', () => {
     'classicd-a1-ug': [2, 2, 2, 2, 2],
     'classicd-core': [2, 2, 2, 2, 2],
     'classicd-coreless': [2, 2, 2, 2, 2],
+    'clinch65h': [2, 2],
+    'clinch65s': [2, 2],
     'divine': [2, 2],
     'era65': [2, 2, 4],
     'et-tkl': [2, 2, 2, 2],
@@ -903,6 +909,10 @@ describe('canonical ERA definition inventory', () => {
   const isMakerIdentity = ({vendorId}: UsbIdentity) =>
     parseUsbId(vendorId) >= 0x4500 && parseUsbId(vendorId) <= 0x453f;
 
+  // ADR 0004 §2: a product that never shipped under the shared legacy VID has no
+  // legacy identity and no frozen definition. Every other ERA board keeps one.
+  const withoutLegacyIdentity = ['clinch65h', 'clinch65s'];
+
   test('serves every ERA board under a maker identity and its legacy identity', () => {
     const served = new Set<number>();
     for (const entry of manifest.definitions) {
@@ -911,6 +921,12 @@ describe('canonical ERA definition inventory', () => {
         // Not an ERA board: its own identity, no maker identity, no legacy one.
         expect(entry.vendorId).toBe('0x5943');
         expect(entry.identities).toBeUndefined();
+        expect(entry.legacy).toBeUndefined();
+      } else if (withoutLegacyIdentity.includes(entry.id)) {
+        expect({id: entry.id, maker: identities.every(isMakerIdentity)}).toEqual({
+          id: entry.id,
+          maker: true,
+        });
         expect(entry.legacy).toBeUndefined();
       } else {
         expect({id: entry.id, maker: identities.every(isMakerIdentity)}).toEqual({
@@ -1025,7 +1041,7 @@ describe('canonical ERA definition inventory', () => {
     });
   }
 
-  test('gives exactly the 27 RP2040 definitions one live VERSION label and excludes brick65', () => {
+  test('gives exactly the 29 RP2040 definitions one live VERSION label and excludes brick65', () => {
     const actual: string[] = [];
     for (const entry of qmkEntries) {
       const definition = readJSON(entry.path);
@@ -1056,7 +1072,7 @@ describe('canonical ERA definition inventory', () => {
         },
       ]);
     }
-    expect(actual).toHaveLength(27);
+    expect(actual).toHaveLength(29);
     expect(actual.sort()).toEqual(expectedRp2040DefinitionIds);
   });
 
@@ -1234,7 +1250,7 @@ describe('canonical ERA definition inventory', () => {
       ]);
       checked++;
     }
-    expect(checked).toBe(32);
+    expect(checked).toBe(34);
   });
 
   test('leaves the QMK definitions on the reference mouse channel', () => {
@@ -1763,6 +1779,8 @@ describe('canonical ERA definition inventory', () => {
     expect(withEffect.sort()).toEqual(
       [
         'chickpad',
+        'clinch65h',
+        'clinch65s',
         'fave65s',
         'klein-sd',
         'n86',
@@ -1835,6 +1853,8 @@ describe('canonical ERA definition inventory', () => {
     ];
     const effectShared = new Set([
       'brick60-h7s',
+      'clinch65h',
+      'clinch65s',
       'fave65s',
       'intigrity80-h7s',
       'n86',
@@ -1897,6 +1917,8 @@ describe('canonical ERA definition inventory', () => {
       'classicd-a1-ug',
       'classicd-core',
       'classicd-coreless',
+      'clinch65h',
+      'clinch65s',
       'divine',
       'era65',
       'et-tkl',
@@ -1931,6 +1953,8 @@ describe('canonical ERA definition inventory', () => {
       'classicd-a1-ug',
       'classicd-core',
       'classicd-coreless',
+      'clinch65h',
+      'clinch65s',
       'divine',
       'era65',
       'et-tkl',
@@ -1964,6 +1988,8 @@ describe('canonical ERA definition inventory', () => {
       'classicd-a1-ug',
       'classicd-core',
       'classicd-coreless',
+      'clinch65h',
+      'clinch65s',
       'divine',
       'era65',
       'et-tkl',
